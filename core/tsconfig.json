@@ -12,74 +12,45 @@
     "ignoreDeprecations": "6.0",
     "allowImportingTsExtensions": true,
     "skipLibCheck": true,
-    "baseUrl": ".",
     "paths": {
-      "#paths": [
-        "./paths.ts"
-      ],
-      "#kernel_core": [
-        "./individual.bio.organs/kernel.core/core.ts"
-      ],
-      "#kernel_heart": [
-        "./individual.bio.organs/kernel.heart/heart.ts"
-      ],
-      "#kernel_backbone": [
-        "./individual.bio.organs/kernel.backbone/backbone.ts"
-      ],
-      "#hands_execute": [
-        "./individual.bio.organs/hands.execute/execute.ts"
-      ],
-      "#hands_terminal": [
-        "./individual.bio.organs/hands.terminal/terminal.ts"
-      ],
-      "#hands_fileactions": [
-        "./individual.bio.organs/hands.fileactions/fileactions.ts"
-      ],
-      "#ear": [
-        "./individual.bio.organs/ears.listen/listen.ts"
-      ],
-      "#mouth": [
-        "./individual.bio.organs/mouth.speak/speak.ts"
-      ],
-      "#ribosome": [
-        "./individual.bio.organs/cells.ribosome/ribosome.ts"
-      ],
-      "#transpiler": [
-        "./individual.bio.gene/transpiler.ts"
-      ],
-      "#tui_blockrender": [
-        "./god.tui/ui/blockrender.js"
-      ],
-      "#technology_mobile": [
-        "./technology.local.mobile/system.kernel/kernel.ts"
-      ],
-      "#technology_laptop": [
-        "./technology.local.laptop/system.kernel/kernel.ts"
-      ],
-      "#sensitiveactions": [
-        "./individual.bio.organs/hands.sensitive/sensitive.ts"
-      ],
-      "#brain_metaconsciousness": [
-        "./individual.bio.organs/brain.metaconsciousness/metaconsciousness.ts"
-      ],
-      "#brain_hippocampus": [
-        "./individual.bio.organs/brain.hippocampus/hippocampus.ts"
-      ],
-      "#brain_bioclock": [
-        "./individual.bio.organs/brain.bioclock/bioclock.ts"
-      ],
-      "#world_space": [
-        "./world.engine.USTCS/Universe Space Teleport & Creation System/space.ts"
-      ],
-      "#world_organization": [
-        "./world.society/organization/organization.ts"
-      ],
-      "#identity": [
-        "./individual.abio.identity/identity.ts"
-      ],
-      "#status": [
-        "./individual.abio.status/status.ts"
-      ]
+      "#paths": ["./paths.ts"],
+      "#tui_blockrender": ["./god.frontend.tui/ui_elements/blocks_nongod.js"],
+      "#tui_localizations": ["./god.frontend.tui/localizations/i18n.ts"],
+      "#tui_renderers": ["./god.frontend.tui/renderers.ts"],
+      "#gene_riboswitch": ["./spirit.bio.gene/_debug_riboswitch.ts"],
+      "#gene_transpiler": ["./spirit.bio.gene/polymerase.ts"],
+      "#kernel_core": ["./spirit.bio.organs/kernel.core/core.ts"],
+      "#kernel_heart": ["./spirit.bio.organs/kernel.heart/heart.ts"],
+      "#kernel_backbone": ["./spirit.bio.organs/kernel.backbone/backbone.ts"],
+      "#kernel_nerves": ["./spirit.bio.organs/kernel.nerves/nerves.ts"],
+      "#kernel_ribosome": ["./spirit.bio.organs/kernel.ribosome/ribosome.ts"],
+      "#brain_metaconsciousness": ["./spirit.bio.organs/brain.metaconsciousness/metaconsciousness.ts"],
+      "#brain_hippocampus": ["./spirit.bio.organs/brain.hippocampus/hippocampus.ts"],
+      "#brain_memory": ["./spirit.bio.organs/brain.memory/memory.ts"],
+      "#brain_bioclock": ["./spirit.bio.organs/brain.bioclock/bioclock.ts"],
+      "#hands_execute": ["./spirit.bio.organs/hands.executes/executes.ts"],
+      "#hands_fileactions": ["./spirit.bio.organs/hands.fileacts/fileacts.ts"],
+      "#head_eyes": ["./spirit.bio.organs/head.eyes/eyes.ts"],
+      "#head_ears": ["./spirit.bio.organs/head.ears/ears.ts"],
+      "#head_mouth": ["./spirit.bio.organs/head.mouth/mouth.ts"],
+      "#voice_asr": ["./spirit.bio.abilities/voice.asr/asr.ts"],
+      "#voice_tts": ["./spirit.bio.abilities/voice.tts/tts.ts"],
+      "#vision_vlm": ["./spirit.bio.abilities/vision.vlm/vlm.ts"],
+      "#vision_ocr": ["./spirit.bio.abilities/vision.ocr/ocr.ts"],
+      "#internet_fetch": ["./spirit.bio.abilities/internet.fetch/fetch.ts"],
+      "#internet_search": ["./spirit.bio.abilities/internet.search/search.ts"],
+      "#office_docx": ["./spirit.bio.abilities/office.docx/docx.ts"],
+      "#office_pptx": ["./spirit.bio.abilities/office.pptx/pptx.ts"],
+      "#office_xlsx": ["./spirit.bio.abilities/office.xlsx/xlsx.ts"],
+      "#office_pdf": ["./spirit.bio.abilities/office.pdf/pdf.ts"],
+      "#hands_webacts": ["./spirit.bio.organs/hands.webacts/webacts.ts"],
+      "#status_core": ["./spirit.abio.status/status.ts"],
+      "#status_identity": ["./spirit.abio.status/identity.ts"],
+      "#status_organization": ["./spirit.abio.status/organization.ts"],
+      "#infotech_mobile": ["./universe.infotech/local.mobile/system.kernel/kernel.ts"],
+      "#social_communicate": ["./spirit.bio.organs/social.communicate/communicate.ts"],
+      "#physical_space": ["./universe.physical/Universal Space Teleport & Creation System/space.ts"],
+      "#kernel_help": ["./spirit.bio.organs/kernel.help/help.ts"]
     }
   },
   "include": [
@@ -89,7 +60,7 @@
     "node_modules",
     "**/@FUTURE.*/**",
     "**/*.test.ts",
-    "world.accessibility/claudecode/**",
-    "god.services/sync/**"
+    "universe.accessibility/claudecode/**",
+    "god.backend.services/**"
   ]
 }

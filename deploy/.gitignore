@@ -1,0 +1,10 @@
+# 运行时产物，不入库
+.make-lock/
+.DS_Store
+*.bak-*
+*.OLD
+
+# 注意：pi-image-source/ 【故意纳入】版本控制。
+# 它是 install.sh 恢复原版 dist 的输入（rsync --delete 的源），
+# 且第 149 行用 `if [ -d ]` 判断——丢失时会静默跳过恢复，症状隐蔽。
+# 代价：每次 pi 升版增加约 11M。

@@ -1,0 +1,29 @@
+# outbox.ts.SPEC
+
+## 这个东西是干嘛的
+kernel.backbone 的持久化发件箱（outbox）：后台任务推送（web search / fetch / execute 的 continuous-cmd-done）的 at-least-once 投递层。
+
+## 为什么要它
+ISSUE 119 P1（2026-08-18，qwen-3-8-27b-infer-test-01 报）。用户原话："好啊，你在处理啊，没问题"（批准 P1 outbox 方案）。
+
+背景：ISSUE 119 取证实锤——agent loop 被 wait 的 `terminate:true` 停掉期间发出的 `continuous-cmd-done` 推送会被 SDK 吞掉（steer 队列在 abort 窗口成孤儿 / batch 路径 `_runAgentPrompt` 抛错时 unhandled rejection 且消息已 splice 走）。典型场景：web search 进后台 → 模型调 wait → 后台结果几秒后回来 → 推送落进 wait 窗口 → 永远没人收到，表现为"卡住"。
+
+P0（webacts 工具层修复）只降低了触发概率；根治 = 推送与投递窗口解耦：
+
+1. `outboxSend`：推送先落盘 `pending.json` 再发送（正常路径与旧 sendCustomMessage 行为完全一致）
+2. heart 状态机转 working（wait 恢复 / 用户消息 / hibernate 唤醒，onHeartStateChange 统一覆盖）时 `outboxFlush`：
+   - ack 检查：消息内容已在 acked.log 或最近两个 session jsonl 里 → 已送达，移除
+   - 未送达且未超限 → 按原 type/details/overrides 重发
+   - 超限（>30min 或 attempts>=5）→ 移入 failed.json（可见，不无限重试）
+3. 语义：at-least-once（可能重复，不会丢失）
+
+## 文件布局
+`~/.teyvat/RuntimeCache/<pid>/outbox/`（runtimeCacheDir 指向 RuntimeCache，实测 2026-08-18）
+- `pending.json` — 未 ack 的推送（原子写：tmp+rename）
+- `acked.log` — 已确认送达的 id（追加式，2000 行封顶，跨 session 去重用）
+- `failed.json` — 放弃重发的条目（排查用）
+
+## 设计约束
+- 不 import kernel.heart（heart 依赖 backbone，反向会成环）——pid 从 env/全局自解析，flush 订阅由 heart.ts 侧接线
+- flush 全同步（同步 fs + 同步 sendCustomMessage），在 transition 的同一 tick 完成：重发消息与唤醒消息（continuous-resume）进同一批 batch pipeline，进同一个 run
+- debug 码 D0005（Heart 段，_debug_riboswitch.ts REGISTRY 登记，check-debug 门禁校验）

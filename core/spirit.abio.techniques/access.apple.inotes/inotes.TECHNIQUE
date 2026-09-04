@@ -1,0 +1,40 @@
+---
+name: access apple inotes
+description: 用 AppleScript (osascript) 访问 Mac 备忘录 (Notes.app)
+---
+
+用 osascript 控制 Notes.app，不要直读 SQLite（被 TCC 拦截）。
+
+```bash
+osascript -e 'tell application "Notes" to count notes'
+osascript -e 'tell application "Notes" to get name of every note'
+osascript -e 'tell application "Notes" to get plaintext of note "标题"'
+```
+
+首次执行需在系统设置 → 隐私与安全性 → 自动化 授权。
+
+## 图片提取（2026-08-13 实测）
+
+`plaintext` 里图片是 `￼`（U+FFFC）占位符，读不出内容。但 `body` 返回 HTML，图片以
+`data:image/...;base64,...` 直接内嵌在 `<img>` 里——有 Notes 自动化权限即可拿，不需要
+额外授权，也不要去碰被 TCC 拦截的群组容器（`~/Library/Group Containers/group.com.apple.notes`）。
+
+```bash
+NOTE="笔记标题"
+OUT="$HOME/Downloads/笔记图片"
+mkdir -p "$OUT"
+osascript -e "tell application \"Notes\" to get body of note \"$NOTE\"" > /tmp/note-body.html
+python3 - <<'EOF'
+import re, base64, pathlib, os
+html = open("/tmp/note-body.html").read()
+imgs = re.findall(r'src="data:image/(png|jpeg|jpg|gif|webp);base64,([^"]+)"', html)
+out = pathlib.Path(os.environ.get("OUT") or (pathlib.Path.home() / "Downloads" / "笔记图片")); out.mkdir(parents=True, exist_ok=True)
+for i, (fmt, b64) in enumerate(imgs, 1):
+    ext = {"jpeg": "jpg"}.get(fmt, fmt)
+    (out / f"img{i:02d}.{ext}").write_bytes(base64.b64decode(b64))
+print(f"提取 {len(imgs)} 张 → {out}")
+EOF
+```
+
+提取出的图片可交给 `spirit.bio.abilities/vision.ocr`（本地 Vision OCR）识别文字内容；
+如需视觉理解（布局/语义），走 `vision.vlm`。

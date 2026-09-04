@@ -1,0 +1,19 @@
+---
+name: access apple icalendar
+description: 用 AppleScript (osascript) 访问 Mac 日历 (Calendar.app / iCal)
+---
+
+用 osascript 控制 Calendar.app，不要直读 SQLite（被 TCC 拦截）。
+
+```bash
+# 列日历
+osascript -e 'tell application "Calendar" to get name of every calendar'
+
+# 读某日历的事件（标题）
+osascript -e 'tell application "Calendar" to tell calendar "个人" to get summary of every event'
+
+# 事件字段：summary / start date / end date / location / description / allday event
+```
+
+首次执行需在系统设置 → 隐私与安全性 → 自动化 授权（与备忘录相互独立）。
+事件返回不自动按时间过滤，读全量慢，建议按日期范围筛。

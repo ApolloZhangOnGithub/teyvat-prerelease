@@ -1,6 +1,8 @@
 #!/bin/bash
-# paimon-code installer — 必须通过 make 调用，不要直接 bash install.sh
-[ "$PAIMON_VIA_MAKE" = "1" ] || { echo "ERROR: 不要直接跑 install.sh。用 make dev-minutely。"; exit 1; }
+# teyvat installer — 必须通过 make 调用，不要直接 bash install.sh
+# 防裸 install：① PAIMON_VIA_MAKE=1（make 流程显式声明）② MAKELEVEL 非空（make 自动注入的环境变量，
+# 手动 bash/手动 export 伪造不了——2026-08-27 用户定稿：必须用 make）
+[ "$PAIMON_VIA_MAKE" = "1" ] && [ -n "${MAKELEVEL:-}" ] || { echo "ERROR: 不要直接跑 install.sh。用 make dev-minutely。"; exit 1; }
 
 PIN="0.80.7"
 R='\033[0m'; RED='\033[31m'; GRN='\033[32m'; YLW='\033[33m'; DIM='\033[90m'
@@ -12,7 +14,9 @@ quiet_cp() { cp "$1" "$2" 2>/dev/null; }
 # ── 定位源码 ──
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PKG_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-if [ -d "$PKG_ROOT/Codebase/core" ]; then
+if [ -f "$PKG_ROOT/A.core/package.json" ]; then
+  IMPL="$PKG_ROOT/A.core"; DEPLOY="$PKG_ROOT/C.deploy"
+elif [ -d "$PKG_ROOT/Codebase/core" ]; then
   IMPL="$PKG_ROOT/Codebase/core"; DEPLOY="$PKG_ROOT/Codebase/deploy"
 elif [ -d "$PKG_ROOT/core" ]; then
   IMPL="$PKG_ROOT/core"; DEPLOY="$PKG_ROOT/deploy"
@@ -21,7 +25,7 @@ else
 fi
 
 echo ""
-echo -e "  ${GRN}paimon-code${R} installer"
+echo -e "  ${GRN}teyvat${R} installer"
 echo "  ─────────────────────────────────────"
 
 # ── 0. 系统依赖检查 ──
@@ -44,6 +48,30 @@ _check_opt ffmpeg    "语音输入 (ear) 和音频播放 (iPod) 需要 ffmpeg。
 _check_opt ffprobe   "iPod 播放器获取音频时长需要 ffprobe (随 ffmpeg 安装)"
 _check_opt python3   "元意识和睡眠的 session 初始化需要 python3"
 _check_opt curl      "同步服务和隧道检测需要 curl"
+
+# trafilatura（web fetch 正文过滤需要；python3 已有时检查 Python 包）
+if command -v python3 >/dev/null 2>&1; then
+  if python3 -c "import trafilatura" >/dev/null 2>&1; then
+    ok "trafilatura (正文提取)"
+  else
+    warn "未找到 trafilatura — web fetch 正文过滤(auto)将 fallback 到内置启发式。安装: pip3 install trafilatura"
+    DEP_WARN=1
+  fi
+fi
+
+# office 读取能力（office.docx/pptx/xlsx/pdf + read 工具自动分发需要；缺了对应格式不可读）
+OFFICE_PYDEPS="python-docx:docx python-pptx:pptx openpyxl:openpyxl PyMuPDF:fitz xlrd:xlrd"
+if command -v python3 >/dev/null 2>&1; then
+  for dep in $OFFICE_PYDEPS; do
+    PKG="${dep%%:*}"; MOD="${dep##*:}"
+    if python3 -c "import $MOD" >/dev/null 2>&1; then
+      ok "office: $PKG"
+    else
+      warn "未找到 $PKG — office.$([ "$PKG" = "python-docx" ] && echo docx || [ "$PKG" = "python-pptx" ] && echo pptx || [ "$PKG" = "openpyxl" ] && echo xlsx || [ "$PKG" = "PyMuPDF" ] && echo pdf || echo xls) 读取不可用。安装: pip3 install $PKG"
+      DEP_WARN=1
+    fi
+  done
+fi
 
 # Chrome/Chromium 检查（Safari 浏览器 app 需要）
 CHROMIUM_FOUND=0
@@ -87,7 +115,7 @@ fi
 echo ""
 
 # ── 1. runtime ──
-RUNTIME="$HOME/.local/lib/paimon/runtime"
+RUNTIME="$HOME/.local/lib/teyvat/runtime"
 PI_PKG="$RUNTIME/node_modules/@earendil-works/pi-coding-agent"
 PI_DIST="$PI_PKG/dist"
 
@@ -101,11 +129,14 @@ else
   mkdir -p "$RUNTIME"
   [ -f "$RUNTIME/package.json" ] || echo '{"private":true}' > "$RUNTIME/package.json"
   ( cd "$RUNTIME" && npm install "@earendil-works/pi-coding-agent@$PIN" 2>&1 | tail -3 )
+  # 2026-08-20：pi 代码用了 cli-highlight（语法高亮）但 package.json 未声明依赖（pi 的依赖声明 bug）→
+  # 部署时显式安装，否则 interactive-mode.js:81 import 失败（高亮静默失效 + Cannot find package 错误）
+  ( cd "$RUNTIME" && npm install cli-highlight 2>&1 | tail -1 )
   ok "runtime pi@$PIN"
 fi
 
 [ ! -f "$PI_DIST/core/tools/bash.js" ] && err "runtime broken"
-node -e "const f='$PI_PKG/package.json',p=JSON.parse(require('fs').readFileSync(f,'utf8'));if(p.piConfig?.name!=='paimon'){p.piConfig=p.piConfig||{};p.piConfig.name='paimon';require('fs').writeFileSync(f,JSON.stringify(p,null,'\t'))}" 2>/dev/null
+node -e "const f='$PI_PKG/package.json',p=JSON.parse(require('fs').readFileSync(f,'utf8'));if(p.piConfig?.name!=='genshin'){p.piConfig=p.piConfig||{};p.piConfig.name='genshin';require('fs').writeFileSync(f,JSON.stringify(p,null,'\t'))}" 2>/dev/null
 
 # 顶层 pi-ai / pi-agent-core 与 PIN 对齐（扩展经软链解析到顶层副本；不对齐 = 扩展侧与 pi 核心两个版本并存）
 for dep in pi-ai pi-agent-core; do
@@ -121,7 +152,7 @@ done
 # ── 2. live integrity check ──
 # 检查 runtime 是否被手动修改过（对比上次 install 保存的 manifest）
 # make dev-minutely/dev-restore 走正常部署流程，跳过 drift 检查
-MANIFEST="$RUNTIME/.paimon-install-manifest"
+MANIFEST="$RUNTIME/.teyvat-install-manifest"
 if [ -f "$MANIFEST" ] && [ -z "$PAIMON_VER" ]; then
   DRIFT=""
   while IFS=$'\t' read -r hash file; do
@@ -136,17 +167,22 @@ if [ -f "$MANIFEST" ] && [ -z "$PAIMON_VER" ]; then
     echo -e "  ${RED}DRIFT DETECTED${R} — runtime was modified outside make:${DRIFT}"
     echo -e "  ${YLW}修复方法:${R}"
     echo -e "    1. 检查上面的 MODIFIED 文件是否有需要保存的改动"
-    echo -e "    2. 如有，先把改动合并回 god.tui/overrides/ 源码"
-    echo -e "    3. trash ~/.local/lib/paimon/runtime/node_modules/@earendil-works/ 然后重新 make"
+    echo -e "    2. 如有，先把改动合并回 god.frontend.tui/overrides/ 源码"
+    echo -e "    3. trash ~/.local/lib/teyvat/runtime/node_modules/@earendil-works/ 然后重新 make"
     exit 1
   fi
 fi
 
 # ── 3. restore stock dist before overrides ──
-STOCK_BACKUP="$(dirname "$(dirname "$IMPL")")/pi-source-backup/v${PIN}"
+STOCK_BACKUP="$(dirname "$IMPL")/C.deploy/pi-image-source/v${PIN}"
+# 缺失即报错：没有原版镜像就无法把 dist 复位，后续 overrides 会叠加在上一次的产物上，
+# 表现为「改了源码但行为不变」或残留旧补丁 —— 静默跳过时这种退化极难发现。
+[ -d "$STOCK_BACKUP" ] || err "原版镜像缺失: $STOCK_BACKUP（应随 C.deploy 一起版本控制）"
 if [ -d "$STOCK_BACKUP/pi-coding-agent" ]; then
   rsync -a --delete "$STOCK_BACKUP/pi-coding-agent/" "$PI_DIST/"
   ok "runtime pi-coding-agent dist restored from stock"
+else
+  err "原版镜像不完整: $STOCK_BACKUP/pi-coding-agent 不存在"
 fi
 if [ -d "$STOCK_BACKUP/pi-tui" ]; then
   _PI_TUI_RESTORE="$PI_PKG/node_modules/@earendil-works/pi-tui/dist"
@@ -158,7 +194,7 @@ if [ -d "$STOCK_BACKUP/pi-tui" ]; then
 fi
 
 # ── 3. runtime overrides ──
-OVERRIDES="$IMPL/god.tui/overrides"
+OVERRIDES="$IMPL/god.frontend.tui/overrides"
 PI_TUI_DIST="$PI_PKG/node_modules/@earendil-works/pi-tui/dist"
 if [ ! -d "$PI_TUI_DIST" ]; then PI_TUI_DIST="$RUNTIME/node_modules/@earendil-works/pi-tui/dist"; fi
 
@@ -167,7 +203,7 @@ GATE_BAD=0
 while IFS= read -r -d '' js; do
   node --check "$js" 2>/dev/null || { err "syntax error: ${js##*/}"; GATE_BAD=1; }
 done < <(find "$OVERRIDES" -name "*.js" ! -name "*.bak" -print0 2>/dev/null)
-node --check "$IMPL/god.tui/ui/blockrender.js" 2>/dev/null || { err "syntax error: blockrender.js"; }
+node --check "$IMPL/god.frontend.tui/ui_elements/blocks_nongod.js" 2>/dev/null || { err "syntax error: blocks_nongod.js"; }
 
 # overrides 实体拷贝进 pi dist（cp -f，不是 symlink——symlink 会让 Node 按真实路径解析
 # relative import，从 source 树找依赖，路径就断了）
@@ -175,18 +211,16 @@ LINK_FAIL=0
 _override() {
   cp -f "$1" "$2" 2>/dev/null || { echo -e "  ${RED}COPY FAIL${R}  $1 → $2"; LINK_FAIL=1; }
 }
-_override "$IMPL/god.tui/ui/blockrender.js" "$PI_DIST/modes/interactive/components/blockrender.js"
+_override "$IMPL/god.frontend.tui/ui_elements/blocks_nongod.js" "$PI_DIST/modes/interactive/components/blocks_nongod.js"
+_override "$IMPL/god.frontend.tui/overrides/pi-tui/components/custom-message.js" "$PI_DIST/modes/interactive/components/custom-message.js"
 
-# Patch tool-execution.js: inject visibleWidth/wrapTextWithAnsi for blockrender hangWrapText support
-TE="$PI_DIST/modes/interactive/components/tool-execution.js"
-if [ -f "$TE" ]; then
-  sed -i '' 's|import { Box, Container, getCapabilities, Image, Spacer, Text } from "@earendil-works/pi-tui";|import { Box, Container, getCapabilities, Image, Spacer, Text, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";|' "$TE"
-  sed -i '' 's|initBlockrender(Text, Container);|initBlockrender(Text, Container, visibleWidth, wrapTextWithAnsi);|' "$TE"
-fi
+# （2026-08-14 移除）tool-execution.js 的 visibleWidth/wrapTextWithAnsi 注入 sed：
+# 源码 overrides 里已自带这两个 import 与 initBlockrender 带参调用，sed 长期 no-op
 
-_override "$IMPL/god.tui/ui/footer.js" "$PI_DIST/modes/interactive/components/footer.js"
-_override "$IMPL/god.tui/ui/spinner.js" "$PI_DIST/modes/interactive/components/spinner.js"
-_override "$IMPL/god.tui/ui/statusbar.js" "$PI_DIST/modes/interactive/components/statusbar.js"
+_override "$IMPL/god.frontend.tui/ui_elements/footer.js" "$PI_DIST/modes/interactive/components/footer.js"
+# spinner.js 覆盖已移除：源文件在 73029b86 (2026-07-28) 随重构删除，无继任者，改用 pi 原生 spinner
+_override "$IMPL/god.frontend.tui/ui_elements/statebar.js" "$PI_DIST/modes/interactive/components/statebar.js"
+_override "$IMPL/god.frontend.tui/ui_elements/blocks_god.js" "$PI_DIST/modes/interactive/components/blocks_god.js"
 for f in $(cd "$OVERRIDES/modes" && find . -name '*.js' -o -name '*.json'); do
   _override "$OVERRIDES/modes/$f" "$PI_DIST/modes/$f"
 done
@@ -211,8 +245,15 @@ if [ -d "$OVERRIDES/core" ]; then
     _override "$OVERRIDES/core/$f" "$PI_DIST/core/$f"
   done
 fi
+# utils/ overrides（2026-08-18：changelog.js 屏蔽 pi 的 What's New——getChangelogPath 指向不存在路径）
+if [ -d "$OVERRIDES/utils" ]; then
+  for f in $(cd "$OVERRIDES/utils" && find . -name '*.js'); do
+    mkdir -p "$(dirname "$PI_DIST/utils/$f")"
+    _override "$OVERRIDES/utils/$f" "$PI_DIST/utils/$f"
+  done
+fi
 if [ -d "$PI_TUI_DIST" ]; then
-  _override "$IMPL/god.tui/ui/blockrender.js" "$PI_TUI_DIST/blockrender.js"
+  _override "$IMPL/god.frontend.tui/ui_elements/blocks_nongod.js" "$PI_TUI_DIST/blocks_nongod.js"
   for f in $(cd "$OVERRIDES/pi-tui" && find . -name '*.js'); do
     mkdir -p "$(dirname "$PI_TUI_DIST/$f")"
     _override "$OVERRIDES/pi-tui/$f" "$PI_TUI_DIST/$f"
@@ -223,7 +264,7 @@ AI_APPLIED=0
 for AI_PKG in "$PI_PKG/node_modules/@earendil-works/pi-ai" "$RUNTIME/node_modules/@earendil-works/pi-ai"; do
   AI_VER=$(node -e "try{console.log(require('$AI_PKG/package.json').version)}catch {}" 2>/dev/null)
   [ "$AI_VER" = "$PIN" ] || continue
-  for f in openai-completions.js openai-responses-shared.js; do
+  for f in openai-completions.js openai-responses-shared.js transform-messages.js; do
     if [ -f "$OVERRIDES/pi-ai/$f" ]; then _override "$OVERRIDES/pi-ai/$f" "$AI_PKG/dist/api/$f" && AI_APPLIED=1; fi
   done
 done
@@ -236,16 +277,16 @@ done
 # override 拷贝失败 = 线上继续跑旧渲染代码，必须响、必须停（2026-07-17 叠帧事故教训：部署失败不许静默）
 [ "$LINK_FAIL" = "1" ] && err "runtime overrides 部署失败（上面有 COPY FAIL）— 线上会继续跑旧代码" || ok "runtime overrides (copied)"
 
-# ── 4. paimon agent directory ──
-PAIMON_AGENT="$HOME/.paimon"
-PAIMON_EXT="$HOME/.local/lib/paimon/extensions"
-EXT_NAME="paimon-code"
-if [ "$PAIMON_CHANNEL" = "dev-stable" ]; then EXT_NAME="paimon-code-stable"; fi
+# ── 4. genshin agent directory ──
+PAIMON_AGENT="$HOME/.teyvat"
+PAIMON_EXT="$HOME/.local/lib/teyvat/extensions"
+EXT_NAME="teyvat"
+if [ "$PAIMON_CHANNEL" = "dev-stable" ]; then EXT_NAME="teyvat-stable"; fi
 mkdir -p "$PAIMON_EXT"
 # dev-stable: 复制一份独立副本，不受后续 dev-minutely 影响
 if [ "$PAIMON_CHANNEL" = "dev-stable" ]; then
-  STABLE_DIR="$HOME/.local/lib/paimon/extensions-stable/paimon-code"
-  rsync -a --delete --exclude='.DS_Store' --exclude='node_modules' "$IMPL/" "$STABLE_DIR/" 2>/dev/null
+  STABLE_DIR="$HOME/.local/lib/teyvat/extensions-stable/teyvat"
+  rsync -a --delete --exclude='.DS_Store' "$IMPL/" "$STABLE_DIR/" 2>/dev/null
   # dev-stable 副本需要 node_modules（@sinclair/typebox 等），复制
   rm -rf "$STABLE_DIR/node_modules" 2>/dev/null
   ln -sf "$IMPL/node_modules" "$STABLE_DIR/node_modules" 2>/dev/null
@@ -273,16 +314,18 @@ PI_AI_PKG="$PI_PKG/node_modules/@earendil-works/pi-ai"
 ln -sf "$PI_AI_PKG" "$IMPL/node_modules/@earendil-works/pi-ai"
 ln -sf "$RUNTIME/node_modules/@earendil-works/pi-coding-agent" "$IMPL/node_modules/@earendil-works/pi-coding-agent"
 
-mkdir -p "$HOME/.paimon/config"
+for d in config agent RuntimeCache SessionData MemoryData IdentityData AgentFileData UserAccount MemoirData AgentWorkDir ProgramFiles sessions; do
+  mkdir -p "$HOME/.teyvat/$d"
+done
 for f in auth.json models.json settings.json; do
-  SRC="$HOME/.paimon/config/$f"
-  DEST="$PAIMON_AGENT/$f"
+  SRC="$HOME/.teyvat/config/$f"
+  DEST="$HOME/.teyvat/agent/$f"
   [ -e "$SRC" ] || touch "$SRC" 2>/dev/null
-  ln -sf "config/$f" "$DEST" 2>/dev/null
+  ln -sf "../config/$f" "$DEST" 2>/dev/null
 done
 
 # services.json — 第三方服务配置模板（不覆盖已有配置）
-SERVICES_JSON="$HOME/.paimon/config/services.json"
+SERVICES_JSON="$HOME/.teyvat/config/services.json"
 if [ ! -f "$SERVICES_JSON" ]; then
   cat > "$SERVICES_JSON" << 'SVCEOF'
 {
@@ -308,18 +351,28 @@ fi
 
 # extensions (symlink for cross-module imports)
 # dev-stable 只存实体副本到 extensions-stable/，不放 extensions/（避免工具冲突）
-EXT_NAME="paimon-code"
-# 清理旧残留（曾用名 paimon-code.minutely / paimon-code）
-rm -rf "$PAIMON_EXT/paimon-code.minutely" 2>/dev/null
-rm -rf "$PAIMON_EXT/paimon-code" 2>/dev/null
+EXT_NAME="teyvat"
+# 清理旧残留（曾用名 genshin-world.minutely / genshin-world / teyvat.minutely）
+rm -rf "$PAIMON_EXT/teyvat.minutely" 2>/dev/null
+rm -rf "$PAIMON_EXT/teyvat" 2>/dev/null
 rm -rf "$PAIMON_EXT/device" 2>/dev/null
-rsync -rptgo --delete --exclude='.DS_Store' "$IMPL/" "$PAIMON_EXT/paimon-code/" 2>/dev/null || true
-# 部署校验：上面 rsync 的报错被静默（node_modules 里 symlink 跳过的噪音），失败也照样往下走——
-# 曾导致 extensions 静默没同步、线上长期跑旧代码（2026-07-17 hibernate 叠帧事故）。
+# extensions 同步（三次重试防偶发竞态）
+RSYNC_OK=0
+for attempt in 1 2 3; do
+  if rsync -rptgo --delete --exclude='.DS_Store' "$IMPL/" "$PAIMON_EXT/teyvat/" 2>/dev/null; then
+    RSYNC_OK=1; break
+  fi
+  sleep 0.3
+done
+if [ "$RSYNC_OK" = "0" ]; then
+  err "rsync extensions 失败（3次重试均不成功）"
+fi
+
+
 # 这里按内容逐字节校验源码树 vs 线上副本，不一致必须响、必须停。
-_tree_sum() { (cd "$1" && find . -type f -not -path './node_modules/*' -not -name '.DS_Store' -print0 | sort -z | xargs -0 shasum 2>/dev/null | shasum | cut -d' ' -f1); }
+_tree_sum() { (cd "$1" && find . -type f -not -path '*/node_modules/*' -not -name '.DS_Store' -print0 | sort -z | xargs -0 shasum 2>/dev/null | shasum | cut -d' ' -f1); }
 SRC_SUM=$(_tree_sum "$IMPL")
-DST_SUM=$(_tree_sum "$PAIMON_EXT/paimon-code")
+DST_SUM=$(_tree_sum "$PAIMON_EXT/teyvat")
 if [ -z "$SRC_SUM" ] || [ "$SRC_SUM" != "$DST_SUM" ]; then
   err "extensions 部署校验失败：线上副本与源码不一致（rsync 没落地）— 线上是旧代码"
 fi
@@ -327,32 +380,32 @@ fi
 # 顶层 runtime/node_modules 有 pi-coding-agent 本身和 @sinclair/typebox。
 # 合并两层到 extensions，避免 pi-tui 双实例（双实例 = kitty protocol 状态不共享 = 乱码）。
 [ -d "$RUNTIME/node_modules/@sinclair/typebox" ] || ( cd "$RUNTIME" && npm install @sinclair/typebox --silent 2>&1 | tail -1 )
-rm -rf "$PAIMON_EXT/paimon-code/node_modules" 2>/dev/null
-mkdir -p "$PAIMON_EXT/paimon-code/node_modules"
+rm -rf "$PAIMON_EXT/teyvat/node_modules" 2>/dev/null
+mkdir -p "$PAIMON_EXT/teyvat/node_modules"
 # 先链顶层（pi-coding-agent, @sinclair/typebox, @mariozechner 等）
 for d in "$RUNTIME/node_modules/@earendil-works" "$RUNTIME/node_modules/@mariozechner" "$RUNTIME/node_modules/@sinclair"; do
-  [ -d "$d" ] && ln -s "$d" "$PAIMON_EXT/paimon-code/node_modules/$(basename "$d")" 2>/dev/null
+  [ -d "$d" ] && ln -s "$d" "$PAIMON_EXT/teyvat/node_modules/$(basename "$d")" 2>/dev/null
 done
 # 再用嵌套的 pi-tui/pi-ai 覆盖顶层的（保证和 pi-coding-agent 用同一份）
 PI_NESTED="$PI_PKG/node_modules/@earendil-works"
 if [ -d "$PI_NESTED/pi-tui" ]; then
-  ln -sfn "$PI_NESTED/pi-tui" "$PAIMON_EXT/paimon-code/node_modules/@earendil-works/pi-tui" 2>/dev/null
+  ln -sfn "$PI_NESTED/pi-tui" "$PAIMON_EXT/teyvat/node_modules/@earendil-works/pi-tui" 2>/dev/null
 fi
 if [ -d "$PI_NESTED/pi-ai" ]; then
-  ln -sfn "$PI_NESTED/pi-ai" "$PAIMON_EXT/paimon-code/node_modules/@earendil-works/pi-ai" 2>/dev/null
+  ln -sfn "$PI_NESTED/pi-ai" "$PAIMON_EXT/teyvat/node_modules/@earendil-works/pi-ai" 2>/dev/null
 fi
 # 打构建标记：部署副本标记为 deployed（源码保持 dev 不动）
-sed -i.bak 's/BUILD_MODE: "dev" | "release" = "dev"/BUILD_MODE: "dev" | "release" = "release"/' "$PAIMON_EXT/paimon-code/paths.ts" 2>/dev/null && rm -f "$PAIMON_EXT/paimon-code/paths.ts.bak"
+sed -i.bak 's/BUILD_MODE: "dev" | "release" = "dev"/BUILD_MODE: "dev" | "release" = "release"/' "$PAIMON_EXT/teyvat/paths.ts" 2>/dev/null && rm -f "$PAIMON_EXT/teyvat/paths.ts.bak"
 # view-mode 扩展已退役（2026-07-16）：功能内化到渲染组件（__piViewMode 默认 full），launcher 不再加载
 # 生成 mobile apps manifest（build + MD5）
-if [ -f "$IMPL/technology.local.mobile/apps.build.sh" ]; then
-  bash "$IMPL/technology.local.mobile/apps.build.sh" "$IMPL/technology.local.mobile" 2>/dev/null
+if [ -f "$IMPL/universe.infotech/local.mobile/apps.build.sh" ]; then
+  bash "$IMPL/universe.infotech/local.mobile/apps.build.sh" "$IMPL/universe.infotech/local.mobile" 2>/dev/null
 fi
 ok "extensions"
 
 # ── 4b. mobile apps → ProgramFiles/Mobile (symlink) ──
-PF_MOBILE="$HOME/.paimon/ProgramFiles/Mobile"
-DEPLOYED_APPS="$PAIMON_EXT/paimon-code/technology.local.mobile/apps"
+PF_MOBILE="$HOME/.teyvat/ProgramFiles/Mobile"
+DEPLOYED_APPS="$PAIMON_EXT/teyvat/universe.infotech/local.mobile/apps"
 mkdir -p "$PF_MOBILE"
 if [ -d "$DEPLOYED_APPS" ]; then
   for app_dir in "$DEPLOYED_APPS"/*/; do
@@ -366,28 +419,35 @@ fi
 
 # ── 5. launcher ──
 mkdir -p "$HOME/.local/bin"
-LAUNCHER_SRC="$IMPL/god.cli/launcher.sh"
+LAUNCHER_SRC="$IMPL/god.frontend.cli/launcher.sh"
 if [ -f "$LAUNCHER_SRC" ]; then
-  cp "$LAUNCHER_SRC" "$HOME/.local/bin/paimon"
-  chmod +x "$HOME/.local/bin/paimon"
+  cp "$LAUNCHER_SRC" "$HOME/.local/bin/genshin"
+  chmod +x "$HOME/.local/bin/genshin"
 fi
 ok "launcher"
 
 # ── 5b. mobile CLI ──
-MOBILE_CLI_DIR="$IMPL/world.accessibility/claudecode"
+# 源码 2026-07-29 已移至 teyvat-sides/F.experimental/teyvat.accessibility/claudecode/
+# （F.experimental = 尝试过但目前不用）。不再从 A.core 安装；~/.local/bin/mobile 若已存在则保持旧版。
+MOBILE_CLI_DIR="$IMPL/universe.accessibility/claudecode"
 if [ -f "$MOBILE_CLI_DIR/mobile-cli.sh" ]; then
   cp "$MOBILE_CLI_DIR/mobile-cli.sh" "$HOME/.local/bin/mobile"
   cp "$MOBILE_CLI_DIR/mobile-runner.mjs" "$HOME/.local/bin/mobile-runner.mjs"
   chmod +x "$HOME/.local/bin/mobile"
   ok "mobile cli"
+else
+  warn "mobile cli 源码不在 A.core（已移入 F.experimental），跳过安装"
 fi
 
 # ── 5c. identity CLI ──
-IDENTITY_CLI="$IMPL/individual.abio.identity/identity-cli.sh"
+# 源码已不在 A.core（仅存于 R.release/prerelease 与 historical）。
+IDENTITY_CLI="$IMPL/spirit.abio.identity/identity-cli.sh"
 if [ -f "$IDENTITY_CLI" ]; then
   cp "$IDENTITY_CLI" "$HOME/.local/bin/identity"
   chmod +x "$HOME/.local/bin/identity"
   ok "identity cli"
+else
+  warn "identity cli 源码缺失: ${IDENTITY_CLI#$IMPL/}，跳过安装"
 fi
 
 # ── 5d. npm dependencies: 自动安装 extensions package.json 中新增的依赖 ──
@@ -397,16 +457,44 @@ if [ -f "$EXT_DIR/package.json" ]; then
 fi
 
 # ── 6. shell completion ──
-COMPL_DIR="$HOME/.paimon/agent/config"
-mkdir -p "$COMPL_DIR"
-COMPL_SRC="$IMPL/god.cli/paimon-completion.zsh"
-if [ -f "$COMPL_SRC" ]; then cp "$COMPL_SRC" "$COMPL_DIR/paimon-completion.zsh"; fi
-SRC_LINE='source "$HOME/.paimon/agent/config/paimon-completion.zsh" 2>/dev/null'
-for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
-  [ -f "$rc" ] || continue
-  grep -qF '.paimon/agent/config/paimon-completion.zsh' "$rc" || printf '\n# paimon shell completion\n%s\n' "$SRC_LINE" >> "$rc"
-done
-ok "completion"
+# 源文件不存在时【不得】往 rc 追加 source 行——否则 .zshrc 会一代代堆积指向空气的行
+# （历史上已积压 .pi / .pim / .paimon ×2 / .genshin 五代死链）。
+COMPL_SRC="$IMPL/god.frontend.cli/genshin-completion.zsh"
+if [ -f "$COMPL_SRC" ]; then
+  COMPL_DIR="$HOME/.teyvat/agent/config"
+  mkdir -p "$COMPL_DIR"
+  cp "$COMPL_SRC" "$COMPL_DIR/genshin-completion.zsh"
+  SRC_LINE='source "$HOME/.teyvat/agent/config/genshin-completion.zsh" 2>/dev/null'
+  for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
+    [ -f "$rc" ] || continue
+    grep -qF '.teyvat/agent/config/genshin-completion.zsh' "$rc" || printf '\n# teyvat shell completion\n%s\n' "$SRC_LINE" >> "$rc"
+  done
+  ok "completion"
+else
+  warn "completion 源文件缺失: ${COMPL_SRC#$IMPL/}，跳过（未改动 shell rc）"
+fi
+
+# ── 6b. terminal scrollback → unlimited ──
+if [ "$(uname)" = "Darwin" ]; then
+  # iTerm2
+  ITERM_PLIST="$HOME/Library/Preferences/com.googlecode.iterm2.plist"
+  if [ -f "$ITERM_PLIST" ]; then
+    ITERM_CHANGED=0
+    ITERM_IDX=0
+    while /usr/libexec/PlistBuddy -c "Print ':New Bookmarks:$ITERM_IDX:Name'" "$ITERM_PLIST" >/dev/null 2>&1; do
+      CURRENT=$(/usr/libexec/PlistBuddy -c "Print ':New Bookmarks:$ITERM_IDX:Unlimited Scrollback'" "$ITERM_PLIST" 2>/dev/null)
+      if [ "$CURRENT" != "true" ]; then
+        /usr/libexec/PlistBuddy -c "Set ':New Bookmarks:$ITERM_IDX:Unlimited Scrollback' true" "$ITERM_PLIST" 2>/dev/null && ITERM_CHANGED=1
+      fi
+      ITERM_IDX=$((ITERM_IDX + 1))
+    done
+    if [ "$ITERM_CHANGED" = "1" ]; then
+      ok "iTerm2 scrollback → unlimited ($ITERM_IDX profiles, restart iTerm2 to apply)"
+    else
+      ok "iTerm2 scrollback: unlimited ($ITERM_IDX profiles)"
+    fi
+  fi
+fi
 
 # ── 7. migration (one-time, silent unless triggered) ──
 GLOBAL_PI_DIST=""
@@ -433,12 +521,12 @@ fi
 
 # ── 7. version ──
 if [ -n "$PAIMON_VER" ]; then
-  mkdir -p "$HOME/.paimon/agent"
+  mkdir -p "$HOME/.teyvat/agent"
   CHANNEL="${PAIMON_CHANNEL:-minutely}"
-  echo "{\"paimon\":\"$PAIMON_VER\",\"pi\":\"$PIN\",\"channel\":\"$CHANNEL\"}" > "$HOME/.paimon/agent/version.json"
-  # dev-stable: also save a separate version file for paimon -v listing
+  echo "{\"genshin\":\"$PAIMON_VER\",\"pi\":\"$PIN\",\"channel\":\"$CHANNEL\"}" > "$HOME/.teyvat/agent/version.json"
+  # dev-stable: also save a separate version file for genshin -v listing
   if [ "$PAIMON_CHANNEL" = "dev-stable" ]; then
-    echo "{\"paimon\":\"$PAIMON_VER\",\"pi\":\"$PIN\"}" > "$HOME/.paimon/agent/version-stable.json"
+    echo "{\"genshin\":\"$PAIMON_VER\",\"pi\":\"$PIN\"}" > "$HOME/.teyvat/agent/version-stable.json"
   fi
   ok "version $PAIMON_VER ($CHANNEL, pi@$PIN)"
 fi
@@ -447,10 +535,12 @@ fi
 # 不靠 quiet_cp 的返回值——直接检查目标文件是否存在
 DEPLOY_ERRORS=0
 _deployed() {
-  if [ ! -e "$1" ]; then
-    echo -e "  ${RED}MISSING${R}  $1"
-    DEPLOY_ERRORS=1
-  fi
+  if [ -e "$1" ]; then return; fi
+  # 偶发 rsync 竞态：等 0.5s 再试一次
+  sleep 0.2
+  if [ -e "$1" ]; then return; fi
+  echo -e "  ${RED}MISSING${R}  $1"
+  DEPLOY_ERRORS=1
 }
 
 echo ""
@@ -462,27 +552,27 @@ _deployed "$PI_DIST/core/tools/bash.js"
 
 # overrides（interactive-mode.js + 它 require 的所有文件）
 _deployed "$PI_DIST/modes/interactive/interactive-mode.js"
-_deployed "$PI_DIST/modes/interactive/components/blockrender.js"
+_deployed "$PI_DIST/modes/interactive/components/blocks_nongod.js"
 _deployed "$PI_DIST/modes/interactive/components/footer.js"
 _deployed "$PI_DIST/modes/interactive/components/status-indicator.js"
-_deployed "$PI_DIST/modes/interactive/components/spinner.js"
+# spinner.js 验证已移除：源文件 73029b86 (2026-07-28) 随重构删除，dist 内无任何 import 引用它
 
 # 扩展核心文件
-EXT="$PAIMON_EXT/paimon-code"
+EXT="$PAIMON_EXT/teyvat"
 _deployed "$EXT/paths.ts"
 _deployed "$EXT/index.ts"
 _deployed "$EXT/package.json"
-_deployed "$EXT/individual.bio.organs/kernel.core/core.ts"
-_deployed "$EXT/individual.bio.organs/kernel.heart/heart.ts"
-_deployed "$EXT/individual.bio.organs/hands.execute/execute.ts"
-_deployed "$EXT/individual.bio.organs/mouth.speak/speak.ts"
-_deployed "$EXT/individual.bio.organs/ears.listen/listen.ts"
-_deployed "$EXT/individual.bio.organs/brain.metaconsciousness/metaconsciousness.ts"
-_deployed "$EXT/individual.bio.organs/brain.hippocampus/hippocampus-sleep.ts"
-_deployed "$EXT/individual.bio.gene/rna.json"
-_deployed "$EXT/god.cli/launcher.sh"
-_deployed "$EXT/technology.cloud.servers/browser-service.cjs"
-_deployed "$EXT/technology.local.mobile/system.kernel/kernel.ts"
+_deployed "$EXT/spirit.bio.organs/kernel.core/core.ts"
+_deployed "$EXT/spirit.bio.organs/kernel.heart/heart.ts"
+_deployed "$EXT/spirit.bio.organs/hands.executes/executes.ts"
+_deployed "$EXT/spirit.bio.organs/head.mouth/mouth.ts"
+_deployed "$EXT/spirit.bio.organs/head.ears/ears.ts"
+_deployed "$EXT/spirit.bio.organs/brain.metaconsciousness/metaconsciousness.ts"
+_deployed "$EXT/spirit.bio.organs/brain.hippocampus/hippocampus-sleep.ts"
+_deployed "$EXT/spirit.bio.gene/rna.json"
+_deployed "$EXT/god.frontend.cli/launcher.sh"
+_deployed "$EXT/universe.infotech/cloud.servers/browser_service.cjs"
+_deployed "$EXT/universe.infotech/local.mobile/system.kernel/kernel.ts"
 
 # release 标记
 if grep -q '"release"' "$EXT/paths.ts" 2>/dev/null; then
@@ -492,7 +582,7 @@ else
 fi
 
 # launcher
-_deployed "$HOME/.local/bin/paimon"
+_deployed "$HOME/.local/bin/genshin"
 
 # require 路径验证：interactive-mode.js 引用的 components 必须存在
 if [ -f "$PI_DIST/modes/interactive/interactive-mode.js" ]; then
@@ -521,6 +611,7 @@ for f in $(find "$PI_DIST" "$PI_TUI_DIST" -name '*.js' -not -name '*.map' 2>/dev
 done
 
   # read/write/edit TUI: silent() → 显示 ⎿ 摘要（末尾执行，确保不被覆盖）
+TE="$PI_DIST/modes/interactive/components/tool-execution.js"
 if [ -f "$TE" ]; then
   _patch_read="$PI_DIST/modes/interactive/components/.patch-read.cjs"
   cat > "$_patch_read" <<'ENDPATCH'
@@ -549,7 +640,36 @@ console.log('patch-tui-ok');
 ENDPATCH
     node "$_patch_tui" "$_tui_js" && rm -f "$_patch_tui"
   fi
+
+  # patch runtime package.json: add #gene_riboswitch import (inline, no temp file)
+  node -e "
+    const fs=require('fs');
+    const p='$PI_PKG/package.json';
+    const pkg=JSON.parse(fs.readFileSync(p,'utf8'));
+    pkg.imports=pkg.imports||{};
+    if(!pkg.imports['#gene_riboswitch']){pkg.imports['#gene_riboswitch']='./dist/debug.js';fs.writeFileSync(p,JSON.stringify(pkg,null,2));}
+  " 2>/dev/null
+  # create stub debug.js
+  mkdir -p "$PI_PKG/dist"
+  if [ ! -f "$PI_PKG/dist/debug.js" ]; then
+    echo 'export const debug = () => {};' > "$PI_PKG/dist/debug.js"
+  fi
+
+  # patch runtime package.json: add #gene_riboswitch import (inline, no temp file)
+  node -e "
+    const fs=require('fs');
+    const p='$PI_PKG/package.json';
+    const pkg=JSON.parse(fs.readFileSync(p,'utf8'));
+    pkg.imports=pkg.imports||{};
+    if(!pkg.imports['#gene_riboswitch']){pkg.imports['#gene_riboswitch']='./dist/debug.js';fs.writeFileSync(p,JSON.stringify(pkg,null,2));}
+  " 2>/dev/null
+  # create stub debug.js
+  mkdir -p "$PI_PKG/dist"
+  if [ ! -f "$PI_PKG/dist/debug.js" ]; then
+    echo 'export const debug = () => {};' > "$PI_PKG/dist/debug.js"
+  fi
 fi
 
-echo -e "  ${GRN}done${R}  Paimon Code@$PIN"
+echo -e "  ${GRN}done${R}""  Teyvat@$PIN"
+echo -e "  ${YEL}WARN 程序没有热加载，需要重启后检查变更${R}"
 echo ""

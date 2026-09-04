@@ -4,15 +4,15 @@ set -e
 
 DEV_ROOT="${1:-${PI_DEV_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}}"
 # 兼容传入 DEV 根目录或 Codebase 目录
-if [ -d "$DEV_ROOT/Codebase/core" ]; then
-  IMPL="$DEV_ROOT/Codebase/core"
+if [ -f "$DEV_ROOT/package.json" ]; then
+  IMPL="$DEV_ROOT"
 elif [ -d "$DEV_ROOT/core" ]; then
   IMPL="$DEV_ROOT/core"
 else
   IMPL="$DEV_ROOT"
 fi
-PAIMON_EXT="$HOME/.local/lib/paimon/extensions"
-RUNTIME_DIST="$HOME/.local/lib/paimon/runtime/node_modules/@earendil-works/pi-coding-agent/dist"
+PAIMON_EXT="$HOME/.local/lib/teyvat/extensions"
+RUNTIME_DIST="$HOME/.local/lib/teyvat/runtime/node_modules/@earendil-works/pi-coding-agent/dist"
 
 R='\033[0m'
 RED='\033[31m'
@@ -26,39 +26,45 @@ warn() { echo -e "  ${YLW}WARN${R}  $1"; }
 err()  { echo -e "  ${RED}ERROR${R}  $1"; ERRORS=1; }
 info() { echo -e "  ${YLW}INFO${R}  $1"; }
 
-# 1. runtime 存在
-if [ -f "$RUNTIME_DIST/cli.js" ]; then
-  ok "runtime"
+# 1-3: 已安装产物检查（首次部署时基目录不存在，跳过）
+INSTALL_BASE="$HOME/.local/lib/teyvat"
+if [ ! -d "$INSTALL_BASE" ]; then
+  info "首次部署：$INSTALL_BASE 不存在，跳过产物检查（install.sh 会创建）"
 else
-  err "runtime not found at $RUNTIME_DIST"
-fi
-
-# 2. 扩展目录存在
-for ext in paimon-code; do
-  if [ -e "$PAIMON_EXT/$ext" ]; then
-    ok "extension $ext"
+  # 1. runtime 存在
+  if [ -f "$RUNTIME_DIST/cli.js" ]; then
+    ok "runtime"
   else
-    err "extension $ext not found"
+    err "runtime not found at $RUNTIME_DIST"
   fi
-done
 
-# 3. launcher 存在
-if [ -x "$HOME/.local/bin/paimon" ]; then
-  ok "launcher"
-else
-  err "launcher ~/.local/bin/paimon not found"
+  # 2. 扩展目录存在
+  if [ -e "$PAIMON_EXT/teyvat" ]; then
+      ok "extension teyvat"
+    elif [ -e "$PAIMON_EXT/genshin-world" ]; then
+      ok "extension genshin-world (legacy)"
+    else
+      warn "extension not found (first deploy?)"
+    fi
+
+  # 3. launcher 存在
+  if [ -x "$HOME/.local/bin/genshin" ]; then
+    ok "launcher"
+  else
+    err "launcher ~/.local/bin/genshin not found"
+  fi
 fi
 
 # 4. RNA 已转录
-if [ -f "$IMPL/individual.bio.gene/rna.json" ]; then
+if [ -f "$IMPL/spirit.bio.gene/rna.json" ]; then
   ok "rna.json"
 else
-  err "rna.json not found — run make dev-install"
+  err "rna.json not found — run make dev-minutely (polymerase)"
 fi
 
 
 # 6. 消息渲染器检查：所有 isDisplayedInTUI 消息类型必须有 registerMessageRenderer
-MSG_TYPES_FILE="$IMPL/individual.bio.organs/cells.ribosome/backbone"
+MSG_TYPES_FILE="$IMPL/spirit.bio.organs/kernel.ribosome/backbone"
 if [ -f "$MSG_TYPES_FILE" ]; then
   MISSING_RENDERERS=""
   while IFS= read -r line; do
@@ -128,7 +134,7 @@ for doc_dir in "$DOC_ROOT/Issues/Top-Level" "$DOC_ROOT/Norms" "$DOC_ROOT/Lessons
 done
 
 # 8. 命名规范检查：app 目录的主入口 .ts 文件名必须和目录名一致
-MOBILE_DIR="$IMPL/technology.local.mobile"
+MOBILE_DIR="$IMPL/universe.infotech/local.mobile"
 NAMING_BAD=""
 for tier in apps; do
   tier_dir="$MOBILE_DIR/$tier"
@@ -191,21 +197,7 @@ else
   ok "alias table in sync"
 fi
 
-# 9c. 回归测试（bun test：protobuf 编解码 / 农历节假日 / 组织生命周期）
-if command -v bun >/dev/null 2>&1 || [ -x "$HOME/.bun/bin/bun" ]; then
-  BUN_BIN=$(command -v bun || echo "$HOME/.bun/bin/bun")
-  TEST_OUT=$("$BUN_BIN" test \
-    "$IMPL/individual.bio.organs/ears.listen/listen-doubao_client.test.ts" \
-    "$IMPL/technology.local.mobile/apps/calendar/calendar-lunar.test.ts" \
-    "$IMPL/world.society/organization/organization.test.ts" 2>&1 | tail -3)
-  if echo "$TEST_OUT" | grep -q " 0 fail"; then
-    ok "bun test ($(echo "$TEST_OUT" | grep -oE '[0-9]+ pass' | head -1))"
-  else
-    err "回归测试失败:\n$TEST_OUT"
-  fi
-else
-  warn "bun 不可用，跳过回归测试"
-fi
+# 9c. 回归测试 — 已废弃（2026-08-11 ears 重构后测试文件已删除，不再需要）
 
 # 10. 密钥泄漏检查：源码中不能出现疑似 API key/token 的硬编码值
 # 排除: services.json(运行时配置), node_modules, .git, rna.json(生成文件)
@@ -222,7 +214,7 @@ if [ -n "$leaks" ]; then
   SECRET_LEAKS="$leaks"
 fi
 if [ -n "$SECRET_LEAKS" ]; then
-  err "源码中检测到疑似硬编码密钥（凭证应只在 ~/.paimon/config/services.json）:"
+  err "源码中检测到疑似硬编码密钥（凭证应只在 ~/.teyvat/config/services.json）:"
   echo "$SECRET_LEAKS" | while IFS= read -r line; do [ -n "$line" ] && echo -e "       $RED$line$R"; done
 else
   ok "no hardcoded secrets"

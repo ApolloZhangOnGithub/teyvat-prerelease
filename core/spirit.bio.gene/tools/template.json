@@ -1,0 +1,6 @@
+{
+  "//": "每模型工具覆盖清单。出生时克隆标准版（本文件模板）。只列出与 tools.manifest.json 不同的项：",
+  "//2": "{\"overrides\": {\"toolName\": true/false}}  — true=启用 false=禁用（会话级覆盖基础 default）",
+  "//3": "新模型出生时: cp tools-template.json tools/<model-id>.json",
+  "overrides": {}
+}

@@ -1,0 +1,167 @@
+{
+  "generated": "2026-09-04T16:13:27.839Z",
+  "apps": [
+    {
+      "name": "amap",
+      "dir": "amap",
+      "tier": "apps",
+      "build": 2,
+      "md5": "e5bebda3cbc3d8a4897b38bdd0a0151f",
+      "file": "amap.ts",
+      "handler": "code"
+    },
+    {
+      "name": "appstore",
+      "dir": "appstore",
+      "tier": "apps",
+      "build": 1,
+      "md5": "af92a76eb63e28d19965f06b6b1fc80e",
+      "file": "appstore.ts",
+      "handler": "code"
+    },
+    {
+      "name": "arxiv",
+      "dir": "arxiv",
+      "tier": "apps",
+      "build": 4,
+      "md5": "aba8eb5c79431aeb31f5de4499a80f76",
+      "file": "arxiv.ts",
+      "handler": "code"
+    },
+    {
+      "name": "bilibili",
+      "dir": "bilibili",
+      "tier": "apps",
+      "build": 16,
+      "md5": "ebf5238e0d83ceacf92f3c79f5913683",
+      "file": "bilibili.ts",
+      "handler": "code"
+    },
+    {
+      "name": "calendar",
+      "dir": "calendar",
+      "tier": "apps",
+      "build": 4,
+      "md5": "1dba02b9d8131319807950f4063f2d0b",
+      "file": "calendar.ts",
+      "handler": "code"
+    },
+    {
+      "name": "clock",
+      "dir": "clock",
+      "tier": "apps",
+      "build": 5,
+      "md5": "a8cd4dfdfac40ec985afc374d2bb0f03",
+      "file": "clock.ts",
+      "handler": "code"
+    },
+    {
+      "name": "doubao",
+      "dir": "doubao",
+      "tier": "apps",
+      "build": 6,
+      "md5": "69606e18ea4c44737e798a5f0b305001",
+      "file": "doubao.ts",
+      "handler": "code"
+    },
+    {
+      "name": "ipod",
+      "dir": "ipod",
+      "tier": "apps",
+      "build": 10,
+      "md5": "f8b04d47be70e6d1f03bf34ded1de92e",
+      "file": "ipod.ts",
+      "handler": "code"
+    },
+    {
+      "name": "notes",
+      "dir": "notes",
+      "tier": "apps",
+      "build": 2,
+      "md5": "f9e0d2e46b36d7e988061dbce253df0f",
+      "file": "notes.ts",
+      "handler": "code"
+    },
+    {
+      "name": "photos",
+      "dir": "photos",
+      "tier": "apps",
+      "build": 6,
+      "md5": "3d493083b87bd6739f1631bcf7da7b31",
+      "file": "photos.ts",
+      "handler": "code"
+    },
+    {
+      "name": "reminder",
+      "dir": "reminder",
+      "tier": "apps",
+      "build": 2,
+      "md5": "9070f00afe5cc902e8978025cb5d1a5f",
+      "file": "reminder.ts",
+      "handler": "code"
+    },
+    {
+      "name": "safari",
+      "dir": "safari",
+      "tier": "apps",
+      "build": 22,
+      "md5": "6b59d700aa246b414458700a9a7c93ca",
+      "file": "safari.ts",
+      "handler": "code"
+    },
+    {
+      "name": "settings",
+      "dir": "settings",
+      "tier": "apps",
+      "build": 6,
+      "md5": "6e8d4cbcddac83e44a863342b73857bf",
+      "file": "settings.ts",
+      "handler": "code"
+    },
+    {
+      "name": "steam",
+      "dir": "steam",
+      "tier": "apps",
+      "build": 5,
+      "md5": "59626c89bf2aa4823fade542b511f294",
+      "file": "steam.ts",
+      "handler": "code"
+    },
+    {
+      "name": "tips",
+      "dir": "tips",
+      "tier": "apps",
+      "build": 2,
+      "md5": "e17c5d6d2b531dc704bf2b1a8a36e03a",
+      "file": "tips.ts",
+      "handler": "code"
+    },
+    {
+      "name": "weather",
+      "dir": "weather",
+      "tier": "apps",
+      "build": 5,
+      "md5": "ae9f769bffdef5c02cb2b424cfeeb6c5",
+      "file": "weather.ts",
+      "handler": "code"
+    },
+    {
+      "name": "wechat",
+      "dir": "wechat",
+      "tier": "apps",
+      "build": 21,
+      "md5": "f6fe073784e3ba16712d93ecd0052a91",
+      "file": "wechat.ts",
+      "handler": "code"
+    },
+    {
+      "name": "wechatread",
+      "dir": "wechatread",
+      "tier": "apps",
+      "build": 13,
+      "md5": "704fc21f96ec5e5063bea0b94d7dba9c",
+      "file": "wechatread.ts",
+      "handler": "code"
+    }
+  ]
+}

@@ -1,12 +1,12 @@
 #!/bin/bash
-# paimon-code uninstaller
+# teyvat uninstaller
 # Reverse dist patches + remove dist-overrides to restore stock pi.
 set -e
-echo "── paimon-code uninstaller ──"
+echo "── teyvat uninstaller ──"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DEV="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-PATCHES_DIR="$DEV/Codebase/core/individual.bio.organs/heart.interrupt"
+PATCHES_DIR="$DEV/spirit.bio.organs/heart.interrupt"
 
 PI_DIST=""
 for c in \

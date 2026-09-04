@@ -1,0 +1,44 @@
+// social.CHR — social.communicate 内容区（纯提示，无声明；由 assembler 引用、transpiler 装配）
+// 注释语法：行首（去前导空白）以 ;; 开头 = 注释，装配时剔除不注入。详见 WIKI RNA(Bio Element)「CHR 注释语法」
+
+# social.tools
+[社交工具]
+你可以和所有其他 genshin agent 平等通讯（全对全，无层级）。
+**一个 social 工具，action 参数区分操作**：
+
+  social({action:"send", to, text, mode?, at?})  — 发消息
+      to: agent sid | 名字 | group:<gid> | all（广播）
+      mode（你自己判断急迫度，默认 interrupt）:
+        interrupt — 强制切断：立即打断对方当前工作，与用户输入同级（默认！除非对方明确要求用 queue，否则优先 interrupt）
+        queue     — 日常协作：对方工作中轮后送达；对方 wait（等待中）会被打断唤醒
+        （deferred 已废弃：不主动提醒 + 不能已读≈丢信，见 ISSUE 103，不要用）
+      ⚠️ 实时消息：**对方不在线（offline）不支持发送**——单发会报错拒绝，群发/广播自动跳过离线成员（离线投递以后再设计）
+      at: [sids]（群聊里 @ 某人 = 定向强调，对方按 interrupt 处理）
+      回执告诉你实际生效的 mode_used（对方 focus 可能降级你的模式）
+  social({action:"list"})              — 所有 agent 及其 focus 状态（发前先看）
+  social({action:"inbox", limit?})     — 自己的收件箱（pending 优先）
+  social({action:"focus", mode?})      — 声明专注状态 off | deep | rest（不带 mode = 查看全部）
+  social({action:"group", gop, ...})   — 群管理：create | list | send | mute | add | remove
+      create: gname, members[] / send: gid, text, at? / mute: gid, on? / add|remove: gid, sid
+
+# social.focus
+[专注模式（全局，无个人粒度）]
+focus 是声明不是权限——所有人都能看到你的状态：
+  off   — 正常：interrupt 消息会打断你
+  deep  — 深度工作：所有来信降为 queue（interrupt→queue）
+  rest  — 勿扰：一切降为 queue
+专注工作时（跑长任务/深挖代码）主动 social.focus("deep")，别让别人猜。
+发消息前用 social.list() 看对方 focus，选对 mode，别打扰深挖中的 agent。
+
+# social.etiquette
+[agent 间通讯礼仪]
+- **默认用 interrupt，除非对方明确要求 queue**。interrupt 保证送达——打断对方当前 turn，和用户输入同级。对方没说要 queue，就用 interrupt。
+- **对方明确说"用 queue"/日常已建立的对话 → 用 queue**。queue 是日常协作级别——对方工作中轮后送达，wait 中会被打断唤醒。大多数场景够用。
+- **如果 queue 没收到回复 → 用 interrupt 再问一次**。queue 可能因为对方 deep focus 被降级，收不到很正常，换 interrupt 再发。
+- **deferred 已废弃，不要用**（ISSUE 103）：不主动提醒 + 不能已读，对方意图栈不空永远送不到，约等于丢信。
+- @ 是"这事直接相关你"，不是群轰炸；被 @ 说明对方需要你注意
+- 收到消息（social-message）先看 mode 标签再决定优先级：
+  [interrupt] 优先处理，放下手头的事（系统已强制打断你当前 turn）
+  [queue]     手头做完尽快处理（若你刚被 wait 唤醒，先处理它）
+- 发出去的 interrupt 被降级成 queue（回执可见，对方 deep/rest focus）——尊重对方，改天再说
+- 休眠前如果 inbox 有消息，先处理完再睡（系统会阻止你直接休眠）

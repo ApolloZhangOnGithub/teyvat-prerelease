@@ -7,8 +7,8 @@
 #   bash Codebase/deploy/scripts/build-github.sh 0.2.8 stable   # 只发 stable
 #
 # 目录结构:
-#   paimon-code.DEV/              ← 开发（无版本号）
-#   paimon-code.RELEASE/
+#   A.core/              ← 开发（无版本号）
+#   R.release/
 #     v0.2.8-dev/                      ← 全量快照 → push github-dev
 #     v0.2.8-stable/                   ← 精简包 → npm publish
 #     prerelease/                      ← 精简包 minutely → push github-prerelease
@@ -16,9 +16,9 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-DEV="$(cd "$SCRIPT_DIR/../.." && pwd)"
+DEV="$(cd "$SCRIPT_DIR/../A.core" && pwd)"
 PARENT="$(dirname "$DEV")"
-RELEASE_DIR="$PARENT/paimon-code.RELEASE"
+RELEASE_DIR="$PARENT/../teyvat-sides/R.release"
 
 VER="${1:-}"
 TARGET="${2:-all}"
@@ -50,7 +50,7 @@ CLEAN_EXCLUDES=(
   --exclude='*.crt'
   --exclude='data/cookies/'
   --exclude='authorize.TRUST'
-  --exclude='ears.listen/listen-config.json'
+  --exclude='head.ears/ears-config.json'
   --exclude='*ABANDONED*'
   --exclude='*REMOVED*'
   --exclude='*FUTURE*'
@@ -86,17 +86,17 @@ build_dev() {
 
   mkdir -p "$DEV_DIR"
 
-  # Codebase
+  # A.core (全量代码)
   rsync -a --delete "${CLEAN_EXCLUDES[@]}" --exclude='debug/logs/' \
-    "$DEV/Codebase/" "$DEV_DIR/Codebase/"
+    "$DEV/" "$DEV_DIR/"
 
-  # Docs（排除所有 Paper）
+  # Docs
   rsync -a --delete "${CLEAN_EXCLUDES[@]}" \
     --exclude='Paper/' \
     --filter='- *Paper*/' \
     --exclude='*.aux' --exclude='*.out' --exclude='*.synctex.gz' --exclude='.!*' \
     --exclude='Readme/' \
-    "$DEV/Docs/" "$DEV_DIR/Docs/"
+    "$DEV/../B.docs/" "$DEV_DIR/Docs/"
 
   # .gitignore
   [ -f "$DEV/.gitignore" ] && cp "$DEV/.gitignore" "$DEV_DIR/.gitignore"
@@ -105,16 +105,16 @@ build_dev() {
   if [ -f "$DEV_DIR/README.md" ]; then
     echo "  ERROR: $DEV_DIR/README.md already exists"; return 1
   fi
-  [ -f "$DEV/Docs/Dev.Common/README_dev.md" ] && cp "$DEV/Docs/Dev.Common/README_dev.md" "$DEV_DIR/README.md"
+  [ -f "$DEV/../B.docs/Cook.Human/README_dev.md" ] && cp "$DEV/../B.docs/Cook.Human/README_dev.md" "$DEV_DIR/README.md"
 
   echo "  OK 打包完成"
-  security_check "$DEV_DIR/Codebase/" "dev" || return 1
+  security_check "$DEV_DIR/" "dev" || return 1
 
   # git init + push
   if [ ! -d "$DEV_DIR/.git" ]; then
     cd "$DEV_DIR"
     git init -b main
-    git remote add origin https://github.com/ApolloZhangOnGithub/paimon-code-dev.git 2>/dev/null || echo "remote exists" >&2
+    git remote add origin https://github.com/ApolloZhangOnGithub/teyvat-dev.git 2>/dev/null || echo "remote exists" >&2
   fi
 
   cd "$DEV_DIR"
@@ -139,16 +139,16 @@ build_minutely() {
 
   # core（精简，无 debug）
   rsync -a --delete "${CLEAN_EXCLUDES[@]}" --exclude='debug/' \
-    "$DEV/Codebase/core/" "$PRERELEASE_DIR/core/"
+    "$DEV/" "$PRERELEASE_DIR/core/"
 
   # deploy
   rsync -a --delete "${CLEAN_EXCLUDES[@]}" \
-    "$DEV/Codebase/deploy/" "$PRERELEASE_DIR/deploy/"
+    "$DEV/../C.deploy/" "$PRERELEASE_DIR/deploy/"
 
   # package.json（写入 dev 版本号）
   cat > "$PRERELEASE_DIR/package.json" << PKGEOF
 {
-  "name": "paimon-code",
+  "name": "teyvat",
   "version": "$VER",
   "description": "Living AI agent extension for pi-coding-agent",
   "license": "MIT",
@@ -165,7 +165,7 @@ build_minutely() {
 PKGEOF
 
   # README（每次覆盖）
-  [ -f "$DEV/Docs/Cook.Human/README_release.md" ] && cp "$DEV/Docs/Cook.Human/README_release.md" "$PRERELEASE_DIR/README.md"
+  [ -f "$DEV/../B.docs/Cook.Human/README_release.md" ] && cp "$DEV/../B.docs/Cook.Human/README_release.md" "$PRERELEASE_DIR/README.md"
 
   # .gitignore
   cat > "$PRERELEASE_DIR/.gitignore" << 'GITEOF'
@@ -178,7 +178,7 @@ data/cookies/
 *.pem
 *.key
 authorize.TRUST
-ears.listen/listen-config.json
+head.ears/ears-config.json
 *ABANDONED*
 *REMOVED*
 *FUTURE*
@@ -191,7 +191,7 @@ GITEOF
   if [ ! -d "$PRERELEASE_DIR/.git" ]; then
     cd "$PRERELEASE_DIR"
     git init -b main
-    git remote add origin https://github.com/ApolloZhangOnGithub/paimon-code-prerelease.git 2>/dev/null || echo "remote exists" >&2
+    git remote add origin https://github.com/ApolloZhangOnGithub/teyvat-prerelease.git 2>/dev/null || echo "remote exists" >&2
   fi
 
   cd "$PRERELEASE_DIR"
@@ -216,24 +216,24 @@ build_stable() {
 
   # runtime（pi + deps）
   rsync -a --delete "${CLEAN_EXCLUDES[@]}" \
-    "$HOME/.local/lib/paimon/runtime/" "$STABLE_DIR/runtime/"
+    "$HOME/.local/lib/teyvat/runtime/" "$STABLE_DIR/runtime/"
 
-  # extensions（paimon-code live copy）
+  # extensions（teyvat live copy）
   rsync -a --delete "${CLEAN_EXCLUDES[@]}" \
-    "$HOME/.local/lib/paimon/extensions/paimon-code/" "$STABLE_DIR/extensions/paimon-code/"
+    "$HOME/.local/lib/teyvat/extensions/teyvat/" "$STABLE_DIR/extensions/teyvat/"
 
   # launcher
   mkdir -p "$STABLE_DIR/bin"
-  cp "$HOME/.local/bin/paimon" "$STABLE_DIR/bin/paimon" 2>/dev/null || true
+  cp "$HOME/.local/bin/genshin" "$STABLE_DIR/bin/genshin" 2>/dev/null || true
 
   # install.sh from live extensions
-  if [ -f "$HOME/.local/lib/paimon/extensions/paimon-code/deploy/install.sh" ]; then
-    cp "$HOME/.local/lib/paimon/extensions/paimon-code/deploy/install.sh" "$STABLE_DIR/install.sh"
+  if [ -f "$HOME/.local/lib/teyvat/extensions/teyvat/deploy/install.sh" ]; then
+    cp "$HOME/.local/lib/teyvat/extensions/teyvat/deploy/install.sh" "$STABLE_DIR/install.sh"
   fi
 
   cat > "$STABLE_DIR/package.json" << PKGEOF
 {
-  "name": "paimon-code",
+  "name": "teyvat",
   "version": "$VER",
   "description": "Living AI agent extension for pi-coding-agent",
   "license": "MIT",
@@ -246,17 +246,17 @@ PKGEOF
 
   # README
   cat > "$STABLE_DIR/README.md" << 'EOFREADME'
-# Paimon Code v0.2.9
+# Teyvat v0.2.9
 
 Living AI agent extension for pi-coding-agent.
 
 ## 安装
 
 ```bash
-cp -a runtime/ ~/.local/lib/paimon/runtime/
-cp -a extensions/paimon-code/ ~/.local/lib/paimon/extensions/paimon-code/
-cp bin/paimon ~/.local/bin/paimon
-chmod +x ~/.local/bin/paimon
+cp -a runtime/ ~/.local/lib/teyvat/runtime/
+cp -a extensions/teyvat/ ~/.local/lib/teyvat/extensions/teyvat/
+cp bin/genshin ~/.local/bin/genshin
+chmod +x ~/.local/bin/genshin
 ```
 
 ## 依赖
@@ -268,7 +268,7 @@ chmod +x ~/.local/bin/paimon
 ## 启动
 
 ```bash
-paimon <agent-name>
+genshin <agent-name>
 ```
 EOFREADME
 
@@ -278,19 +278,19 @@ EOFREADME
   cp -a "$STABLE_DIR" "$RELEASE_PKG"
   echo "  saved to $RELEASE_PKG"
 
-  # GitHub Release → paimon-code-prerelease
+  # GitHub Release → teyvat-prerelease
   cd "$RELEASE_PKG"
-  local TGZ="paimon-code-${VER}.tgz"
+  local TGZ="teyvat-${VER}.tgz"
   tar czf "$TGZ" --exclude='.DS_Store' --exclude='node_modules/.cache' .
   if command -v gh &>/dev/null && gh auth status &>/dev/null 2>&1; then
-    if gh release view "v${VER}" --repo ApolloZhangOnGithub/paimon-code-prerelease &>/dev/null 2>&1; then
-      gh release upload "v${VER}" "$TGZ" --clobber --repo ApolloZhangOnGithub/paimon-code-prerelease 2>/dev/null \
+    if gh release view "v${VER}" --repo ApolloZhangOnGithub/teyvat-prerelease &>/dev/null 2>&1; then
+      gh release upload "v${VER}" "$TGZ" --clobber --repo ApolloZhangOnGithub/teyvat-prerelease 2>/dev/null \
         && echo "  GitHub Release v${VER} asset updated" \
         || echo "  WARN: GitHub Release upload failed"
     else
       gh release create "v${VER}" "$TGZ" \
-        --repo ApolloZhangOnGithub/paimon-code-prerelease \
-        --title "Paimon Code v${VER}" \
+        --repo ApolloZhangOnGithub/teyvat-prerelease \
+        --title "Teyvat v${VER}" \
         --notes "Live release from dev-stable. Runtime + extensions + launcher." \
         && echo "  GitHub Release v${VER} created" \
         || echo "  WARN: GitHub Release create failed"
@@ -301,11 +301,11 @@ EOFREADME
 
   # Push code to prerelease repo (same as minutely: core + deploy + tarball)
   mkdir -p "$PRERELEASE_DIR"
-  rsync -a --delete "${CLEAN_EXCLUDES[@]}" --exclude='debug/' "$DEV/Codebase/core/" "$PRERELEASE_DIR/core/"
-  rsync -a --delete "${CLEAN_EXCLUDES[@]}" "$DEV/Codebase/deploy/" "$PRERELEASE_DIR/deploy/"
+  rsync -a --delete "${CLEAN_EXCLUDES[@]}" --exclude='debug/' "$DEV/" "$PRERELEASE_DIR/core/"
+  rsync -a --delete "${CLEAN_EXCLUDES[@]}" "$DEV/../C.deploy/" "$PRERELEASE_DIR/deploy/"
   cat > "$PRERELEASE_DIR/package.json" << PKGEOF
 {
-  "name": "paimon-code",
+  "name": "teyvat",
   "version": "$VER",
   "description": "Living AI agent extension for pi-coding-agent",
   "license": "MIT",
@@ -319,7 +319,7 @@ PKGEOF
   if [ ! -d "$PRERELEASE_DIR/.git" ]; then
     cd "$PRERELEASE_DIR"
     git init -b main
-    git remote add origin https://github.com/ApolloZhangOnGithub/paimon-code-prerelease.git 2>/dev/null || echo "remote exists" >&2
+    git remote add origin https://github.com/ApolloZhangOnGithub/teyvat-prerelease.git 2>/dev/null || echo "remote exists" >&2
   fi
   cd "$PRERELEASE_DIR"
   git add -A
@@ -328,12 +328,12 @@ PKGEOF
   else
     git commit -m "${VER} $(date '+%Y-%m-%d %H:%M')"
     git push origin main --force
-    echo "  OK pushed paimon-code-prerelease"
+    echo "  OK pushed teyvat-prerelease"
   fi
 
   cd "$STABLE_DIR"
   local npm_ver
-  npm_ver=$(npm view paimon-code version 2>/dev/null || echo "")
+  npm_ver=$(npm view teyvat version 2>/dev/null || echo "")
   if [ "$npm_ver" != "$VER" ]; then
     echo "  npm publish ${VER}..."
     npm publish || echo "  WARN: npm publish 失败（可能需要 --otp）"
@@ -345,12 +345,12 @@ PKGEOF
 # ── VERSION.INDEX ──
 update_index() {
   local dev_ok="-" prerelease_ok="-" npm_ok="-"
-  [ -d "$DEV_DIR/Codebase" ] && dev_ok="github-dev"
+  [ -f "$DEV_DIR/package.json" ] && dev_ok="github-dev"
   [ -d "$PRERELEASE_DIR/core" ] && prerelease_ok="prerelease"
   [ -d "$STABLE_DIR/core" ] && prerelease_ok="stable"
 
   local npm_ver
-  npm_ver=$(npm view paimon-code version 2>/dev/null || echo "")
+  npm_ver=$(npm view teyvat version 2>/dev/null || echo "")
   [ "$npm_ver" = "$VER" ] && npm_ok="npm@${VER}"
 
   local line

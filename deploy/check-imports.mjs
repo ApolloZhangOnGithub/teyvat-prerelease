@@ -1,11 +1,11 @@
 // check-imports.mjs — verify ESM import/export compatibility between override files
-// Only checks imports where BOTH the importer and the target are overridden by paimon.
+// Only checks imports where BOTH the importer and the target are overridden by genshin.
 // Upstream-to-upstream imports are not our problem.
 import { readFileSync, existsSync } from "node:fs";
 import { join, dirname, relative, resolve } from "node:path";
 import { homedir } from "node:os";
 
-const PI_DIST = join(homedir(), ".local/lib/paimon/runtime/node_modules/@earendil-works/pi-coding-agent/dist");
+const PI_DIST = join(homedir(), ".local/lib/teyvat/runtime/node_modules/@earendil-works/pi-coding-agent/dist"); // 2026-08-13 修正：曾指向旧 genshin 树（残留目录导致假通过）
 if (!existsSync(PI_DIST)) { console.error("  ERROR  runtime dist not found"); process.exit(1); }
 
 const OVERRIDES = new Set([

@@ -1,0 +1,205 @@
+vir .heart //心脏
+vir .kernel //内核
+func kernel.help //按需查询工具用法（help 列表 / help <name> 详情）
+    session main
+    mode:abled any
+    tools help
+
+func kernel.heart //主意识心脏（生命周期、Esc停、unstop命令、用户交互）
+    session main
+    mode:abled any
+    belong infra
+    tools wait,hibernate,status,intentions
+    coded:heart.continuous
+    coded:heart.commands
+    coded:heart.deepseek
+    coded:heart.state.paused
+    coded:heart.state.main-hibernate
+    coded:assets.mobile
+    coded:core.typeRef
+    coded:identity
+    coded:tools.status
+
+promotor.dna
+    引导区，声明功能、开关和调控，为 fun 类编程语言，不包含任何具体提示，提示的内容为声明项对应的 CHRs/*.CHR 文件
+    新增工具必须在此文件加 func 声明！否则 RNA 不装载 → 运行时 K020 炸（NORM-013, LESSON 055）
+    四步：1) registerPaimonTool 2) tools.manifest.json 3) 本文件 func 声明 4) make
+    Wiki: Func(Bio Mechanism).WIKI
+    （.dna 小写 = 代码；.CHR 大写 = 内容件）
+
+CHRs/*.CHR 内容继承自原 prompts.md，只包含可被引用的分区纯具体提示，不包含任何声明和调控内容，一个区一个文件（对应 .ts 文件名）
+ribosome.ts 直接设计统一的方法来获取合理的东西，然后其他地方使用这个方法函数
+
+vir .hands //手
+vir .hands.file //文件系统（hands.fileacts 前缀）
+func hands.executes //命令执行（execute tool，快命令同步/慢命令自动后台）
+    session main
+    mode:abled DWN
+    tools execute
+func hands.fileacts //文件编辑操作拦截/授权 + GitHub 敏感操作拦截
+    session main
+    mode:abled DWN
+    coded:fileactions.wise
+    coded:fileactions.rules
+    coded:fileread.wise // read 工具：office 格式自动分发（docx/pptx/xlsx/pdf）
+    //原属已废弃的 hands.permissions；拦截规则已并入本 func 的 FILE_RULES，prompt 随之接管
+    coded:sensitiveactions.wise
+func hands.fileacts-read //read 工具覆盖：office 格式自动分发 + pi 原逻辑回退
+    path: spirit.bio.organs/hands.fileacts // 2026-08-18 显式声明：入口在 hands.fileacts/ 目录（fileacts-read.ts），默认推导 spirit.bio.organs/hands.fileacts-read 不存在
+    session main
+    mode:abled DWN
+    coded:fileread.wise
+func hands.webacts //网络（web tool：fetch URL 正文过滤 + search 搜索）
+    session main
+    mode:abled DWN
+    tools web
+
+vir .head //头
+vir .ears //耳
+func head.ears
+    session main
+    mode:abled DWN
+    belong infra
+    coded:ear.listen
+    tools ear
+
+vir .mouth //嘴
+func head.mouth //语音输出(TTS)，豆包 vivi 2.0 流式合成，和ear协调防反馈环
+    session main
+    mode:abled DWN
+    belong infra
+    coded:head.mouth
+    tools mouth
+
+vir .eyes //眼睛
+
+func head.eyes //眼睛：VL视觉能力，通过Qwen VL API查看图片
+    session main
+    mode:abled DWN
+    tools eyes
+
+vir .brain //大脑
+    contain lobes,cortex
+vir .brain.prefrontal //前额叶
+vir .brain.senses //大脑内生感觉
+vir .technology //科技设备
+vir .technology.devices //设备（mobile）
+
+func brain.memory //记忆：主意识的记忆注入与工具（快照/增量/amem/nap/editcontext）
+    //原属 brain.hippocampus，2026-07-29 独立成器官。它与海马体无代码耦合，
+    //之前借道 hippocampus.ts 再导出，导致 session 门控无法启用（主意识会丢记忆注入）。
+    session all
+    mode:abled any
+    module workmem
+    module cortexmem
+    module deepcortexmem
+    belong memory
+    belong lobes.temporal,lobes.limbic
+    coded:memory.amem
+    tools amem,editcontext,nap,sleep
+
+//海马体本体（hc- 后台编码进程）。core.ts 的 TRADITIONAL_HIPPOCAMPUS=false 已停用其 spawn，
+//REGISTRY 无登记。2026-08-20 用户定稿：@FUTURE 预留声明本身是技术债——改标 @ABANDONED（
+//废弃用标签标记，不用注释删除——注释删除会留孤儿 coded 引用且丢失恢复指引）。
+@ABANDONED @FUTURE func brain.hippocampus //海马体（废弃：无实现/不装配）
+    session hippocampus
+    mode:abled any
+    alias memory.hippocampus
+    in DWN
+        duty gen_work_mem
+            把context的内容总结到work_mem
+            coded:hippocampus.gen_work_mem
+    in sleep.night
+        //深睡：把 work_mem 1% 分块编码进 cortex
+        duty deep_encode
+            coded:hippocampus.sleep
+    in sleep.nap
+        //小睡=再反思，复用清醒期的编码 prompt
+        duty gen_work_mem
+            coded:hippocampus.gen_work_mem
+    belong lobes.temporal,lobes.limbic
+
+//目录与 REGISTRY 均未实现，标 @FUTURE：声明与 prompt 保留，不参与装载、不再告警
+
+func brain.bioclock //生物钟
+    session all
+    mode:abled DWN
+
+func brain.intentions //意图栈（前瞻性记忆，agent 编排下一步计划）
+    session main
+    mode:abled any
+
+
+// 2026-07-31：permissions.ts 已删除，拦截规则并入 hands.fileacts 的 FILE_RULES
+// （fileacts.ts:153 匹配 gh repo create|delete / git push --force / reset --hard / clean -f）。
+// 保留声明会让 rna 出现无实现的 func，每次启动告警一次 —— 常驻告警会训练人忽略告警。
+@ABANDONED func hands.permissions //敏感操作拦截(GitHub repo创建/删除, force push)
+    session main
+    mode:abled DWN
+    coded:sensitiveactions.wise
+
+// 2026-08-20：元意识 REGISTRY 行已注释（core.ts:91，rna.json 无注册不装配）——下条注释已过时删除
+@ABANDONED @FUTURE func brain.prefrontal.drafting //草稿区/边写边想（前额叶）（废弃：预留无实现）
+    session main
+    mode:abled DWN
+    belong lobes.frontal.prefrontal
+// 不依赖 RNA func 装载。此处 @ABANDONED 只是废弃 RNA 声明路径（避免双重装载/告警）。
+@ABANDONED func brain.metaconsciousness //元意识
+    session metaconsciousness
+    mode:abled DWN
+    coded:metaconsciousness.observe
+
+@ABANDONED func brain.amygdala
+    session main
+    mode:abled any
+    belong emotion
+    belong lobes.temporal
+
+
+
+vir .universe
+vir .universe.infotech/local
+func universe.infotech/local.mobile //手机（aPhone 模拟 + app 生态 + 通知 + 浏览器）
+    path: universe.infotech/local.mobile // 2026-08-18 显式声明：入口在 A.core 顶层 universe.infotech/local.mobile/（不在 spirit.bio.organs 下）
+    session main
+    mode:abled any
+    tools mobile
+
+vir .social //社交
+func social.communicate //agent间对等通讯（全对全，无层级；focus + @ + 群）
+    session main
+    mode:abled any
+    tools social
+    coded:social.tools
+    coded:social.focus
+    coded:social.etiquette
+
+
+session main //主意识进程
+session metaconsciousness //元意识独立用的进程
+session hippocampus //海马体独立用的进程
+
+
+mode DWN //默认模式网络/清醒
+    alias wake
+    abled 
+mode sleep.night
+    alias sleep
+mode sleep.nap
+
+tag cortex //新皮层
+tag emotion //情绪
+tag infra //基础设施
+    contain kernel.heart,head.ears,head.mouth
+tag lobes //脑叶
+    belong brain
+tag lobes.frontal //额叶
+tag lobes.frontal.prefrontal //额叶
+tag lobes.parietal //
+tag lobes.occipital
+tag lobes.temporal
+tag lobes.limbic
+tag memory //记忆
+    //记录用于实现记忆的模块
+    contain hippocampus
+

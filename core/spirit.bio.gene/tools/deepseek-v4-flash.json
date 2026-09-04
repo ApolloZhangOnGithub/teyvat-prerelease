@@ -1,0 +1,13 @@
+{
+  "//": "每模型工具覆盖清单。deepseek-v4-flash（快速模型）：关闭重量级/非必要工具，省 token 提速",
+  "overrides": {
+    "amem": true,
+    "nap": false,
+    "sleep": false,
+    "eyes": false,
+    "ear": false,
+    "mouth": false,
+    "mobile": false,
+    "social": true
+  }
+}

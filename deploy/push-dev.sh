@@ -13,7 +13,7 @@ cd "$DEV"
 # 确保有 git
 if [ ! -d .git ]; then
   git init -b main
-  git remote add origin https://github.com/ApolloZhangOnGithub/paimon-code-dev.git 2>/dev/null || echo "remote already exists" >&2
+  git remote add origin https://github.com/ApolloZhangOnGithub/teyvat-dev.git 2>/dev/null || echo "remote already exists" >&2
   echo "  OK git init"
 fi
 
@@ -32,7 +32,7 @@ node_modules/
 *.crt
 data/cookies/
 authorize.TRUST
-ears.listen/listen-config.json
+head.ears/ears-config.json
 *ABANDONED*
 *REMOVED*
 debug/debug.data.logs/
@@ -52,5 +52,5 @@ git push origin main --force
 echo "  OK pushed → github-dev"
 echo ""
 echo "  另一台机器:"
-echo "    git clone https://github.com/ApolloZhangOnGithub/paimon-code-dev.git"
-echo "    cd paimon-code-dev && bash Codebase/deploy/install.sh"
+echo "    git clone https://github.com/ApolloZhangOnGithub/teyvat-dev.git"
+echo "    cd teyvat-dev && bash Codebase/deploy/install.sh"

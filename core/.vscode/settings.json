@@ -1,0 +1,18 @@
+{
+  "files.associations": {
+    "*.SPEC": "markdown",
+    "*.README": "markdown",
+    "*.CHANGELOG": "markdown",
+    "*.LESSON": "markdown",
+    "*.ISSUE": "markdown",
+    "*.NORM": "markdown",
+    "*.VERSION": "markdown",
+    "*.BLUEPRINT": "markdown",
+    "*.INDEX": "markdown",
+    "*.PAPER": "markdown",
+    "*.PAPER.HumaN": "markdown",
+    "*.TRUST": "markdown",
+    "*.LOCATIONTRACE": "plaintext",
+    "*.NAMETRACE": "plaintext"
+  }
+}

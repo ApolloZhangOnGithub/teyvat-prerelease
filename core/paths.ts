@@ -18,18 +18,18 @@ export const DIRS = {
   root: ROOT,
   core: CORE,
 
-  organs: resolve(CORE, "individual.bio.organs"),
-  gene: resolve(CORE, "individual.bio.gene"),
-  genePromotor: resolve(CORE, "individual.bio.gene/promotor.dna"),
-  geneCoded: resolve(CORE, "individual.bio.gene/coded.dna"),
-  geneCore: resolve(CORE, "individual.bio.gene/core.dna"),
-  geneTranspiler: resolve(CORE, "individual.bio.gene/transpiler.ts"),
-  geneRna: resolve(CORE, "individual.bio.gene/rna.json"),
+  organs: resolve(CORE, "spirit.bio.organs"),
+  gene: resolve(CORE, "spirit.bio.gene"),
+  genePromotor: resolve(CORE, "spirit.bio.gene/promotor.dna"),
+  geneCoded: resolve(CORE, "spirit.bio.gene/coded.dna"),
+  geneCore: resolve(CORE, "spirit.bio.gene/core.dna"),
+  geneTranspiler: resolve(CORE, "spirit.bio.gene/transpiler.ts"),
+  geneRna: resolve(CORE, "spirit.bio.gene/_built-rna.json"),
 
-  tuiCommands: resolve(CORE, "god.tui/commands"),
-  tuiUi: resolve(CORE, "god.tui/ui"),
-  tuiOverrides: resolve(CORE, "god.tui/overrides"),
-  cli: resolve(CORE, "god.cli"),
+  tuiCommands: resolve(CORE, "god.frontend.tui/commands"),
+  tuiUi: resolve(CORE, "god.frontend.tui/ui"),
+  tuiOverrides: resolve(CORE, "god.frontend.tui/overrides"),
+  cli: resolve(CORE, "god.frontend.cli"),
 
   // dev-only 路径（release 模式下不存在，用 IS_DEV 门控访问）
   ...(BUILD_MODE === "dev" ? {
@@ -43,15 +43,15 @@ export const DIRS = {
     deploy: resolve(ROOT, "Codebase/deploy"),
   } : {}),
 
-  mobile: resolve(CORE, "technology.local.mobile"),
-  mobileApps: resolve(CORE, "technology.local.mobile/apps"),
-  server: resolve(CORE, "technology.cloud.servers"),
+  mobile: resolve(CORE, "universe.infotech/local.mobile"),
+  mobileApps: resolve(CORE, "universe.infotech/local.mobile/apps"),
+  server: resolve(CORE, "universe.infotech/cloud.servers"),
   browserService: process.env.PI_BROWSER || "http://localhost:9222",
-  accessibility: resolve(CORE, "world.accessibility"),
+  accessibility: resolve(CORE, "universe.accessibility"),
 } as const;
 
 // ── 目录结构 ──
-export const PAIMON = join(homedir(), ".paimon");
+export const PAIMON = join(homedir(), ".teyvat");
 export const PROGRAM_FILES_MOBILE = join(PAIMON, "ProgramFiles/Mobile");
 const MEMORY_DATA = join(PAIMON, "MemoryData");
 const SESSION_DATA = join(PAIMON, "SessionData");
@@ -60,8 +60,9 @@ const RUNTIME_CACHE = join(PAIMON, "RuntimeCache");
 const IDENTITY_DATA = join(PAIMON, "IdentityData");
 const APP_DATA = join(PAIMON, "AppData");
 const BLACKBOX_DATA = join(PAIMON, "BlackboxData");
+const SOCIAL_DATA = join(PAIMON, "SocialData");
 const CONFIG_DIR = join(PAIMON, "config");
-const ID_RE = /(?:\.paimon\/SessionData\/|\.paimon\/sessions\/|\.pi\/memory\/)([a-f0-9]+)\//;
+const ID_RE = /(?:\.teyvat\/SessionData\/|\.teyvat\/sessions\/|\.pi\/memory\/)([a-f0-9]+)\//;
 
 export function configDir(): string { return CONFIG_DIR; }
 export function memoryDataDir(): string { return MEMORY_DATA; }
@@ -90,11 +91,12 @@ export function monitorDir(id: string): string { return join(RUNTIME_CACHE, id);
 export function runtimeCacheDir(id: string): string { return join(RUNTIME_CACHE, id); }
 export function identityDir(id: string): string { return join(IDENTITY_DATA, id); }
 export function blackboxDir(id: string): string { return join(BLACKBOX_DATA, id); }
+export function socialDataDir(): string { return SOCIAL_DATA; }
 
 // ── 回忆录 ──
 export function memoirDir(id: string): string {
   const dir = join(PAIMON, "MemoirData");
-  try { mkdirSync(dir, { recursive: true }); } catch {}
+  try { mkdirSync(dir, { recursive: true }); } catch (e) { console.error("[paths.ts] " + ((e as any)?.message || e)); }
   return join(dir, id + ".MEMOIR");
 }
 
@@ -107,18 +109,18 @@ export function logerr(code: string, e: unknown, ctx?: string) {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     appendFileSync(file, msg);
   } catch {
-    try { appendFileSync('/tmp/paimon-catch-errors.log', msg); } catch {}
+    try { const fallback = join(homedir(), '.teyvat/LogData/unknown/catch-errors.log'); mkdirSync(dirname(fallback), { recursive: true }); appendFileSync(fallback, msg); } catch (e) { console.error("[paths.ts] " + ((e as any)?.message || e)); }
   }
 }
 export function appSharedDir(appName: string): string {
   const dir = join(APP_DATA, "shared", appName);
-  try { mkdirSync(dir, { recursive: true }); } catch {}
+  try { mkdirSync(dir, { recursive: true }); } catch (e) { console.error("[paths.ts] " + ((e as any)?.message || e)); }
   return dir;
 }
 
 export function appPersonDir(personId: string, appName: string): string {
   const dir = join(APP_DATA, personId, appName);
-  try { mkdirSync(dir, { recursive: true }); } catch {}
+  try { mkdirSync(dir, { recursive: true }); } catch (e) { console.error("[paths.ts] " + ((e as any)?.message || e)); }
   return dir;
 }
 
@@ -135,22 +137,22 @@ export function userFile(name: string): string {
 }
 
 // ── 域名 ──
-export const PAIMON_DOMAIN = "paimon.beer";
+export const PAIMON_DOMAIN = "spirit.beer";
 export const WIKI_ENDPOINT_DEFAULT = `https://wiki.${PAIMON_DOMAIN}`;
-export const SYNC_ENDPOINT_DEFAULT = `${WIKI_ENDPOINT_DEFAULT}/api`;
+export const SYNC_ENDPOINT_DEFAULT = `https://sync.${PAIMON_DOMAIN}`;
 
 const SYNC_TUNNEL = "http://localhost:13456";
 let _syncEndpointCache: string | null = null;
 export function syncEndpoint(): string {
   if (_syncEndpointCache) return _syncEndpointCache;
   const svc = loadServices();
-  if (svc["paimon-sync"]?.endpoint) { _syncEndpointCache = svc["paimon-sync"].endpoint as string; return _syncEndpointCache; }
-  try { execSync("curl -sf --connect-timeout 1 " + SYNC_TUNNEL + "/health", { stdio: "ignore" }); _syncEndpointCache = SYNC_TUNNEL; return SYNC_TUNNEL; } catch {}
+  if (svc["genshin-sync"]?.endpoint) { _syncEndpointCache = svc["genshin-sync"].endpoint as string; return _syncEndpointCache; }
+  try { execSync("curl -sf --connect-timeout 1 " + SYNC_TUNNEL + "/health", { stdio: "ignore" }); _syncEndpointCache = SYNC_TUNNEL; return SYNC_TUNNEL; } catch (e) { console.error("[paths.ts] " + ((e as any)?.message || e)); }
   _syncEndpointCache = SYNC_ENDPOINT_DEFAULT;
   return SYNC_ENDPOINT_DEFAULT;
 }
 
-// ── 第三方服务配置（~/.paimon/UserAccount/services.json，兼容旧 config/）──
+// ── 第三方服务配置（~/.teyvat/UserAccount/services.json，兼容旧 config/）──
 let _servicesCache: Record<string, any> | null = null;
 function loadServices(): Record<string, any> {
   if (_servicesCache) return _servicesCache;
@@ -183,7 +185,7 @@ function writeApiLog(entry: Record<string, any>) {
     const dir = USER_ACCOUNT;
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     appendFileSync(join(dir, "api.log"), JSON.stringify(entry) + "\n");
-  } catch {}
+  } catch (e) { console.error("[paths.ts] " + ((e as any)?.message || e)); }
 }
 
 export async function apiFetch(

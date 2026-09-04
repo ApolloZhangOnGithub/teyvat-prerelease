@@ -1,0 +1,19 @@
+---
+name: access apple ireminders
+description: 用 AppleScript (osascript) 访问 Mac 提醒事项 (Reminders.app)
+---
+
+用 osascript 控制 Reminders.app，不要直读 SQLite（被 TCC 拦截）。
+
+```bash
+# 列列表
+osascript -e 'tell application "Reminders" to get name of every list'
+
+# 读某列表的提醒项（标题）
+osascript -e 'tell application "Reminders" to tell list "提醒" to get name of every reminder'
+
+# 字段：name / body / due date / completed / completion date
+```
+
+首次执行需在系统设置 → 隐私与安全性 → 自动化 授权。
+可写：`make new reminder at list "xxx" with properties {name:"..."}`

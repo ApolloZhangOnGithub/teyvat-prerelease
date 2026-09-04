@@ -1,14 +1,14 @@
-// paimon naming → pi naming compatibility layer
-// Ambient module declarations allow paimon naming conventions (messageDescription,
-// messageType, label) to coexist alongside pi types. The paimon codebase was
+// naming → pi naming compatibility layer
+// Ambient module declarations allow naming conventions (messageDescription,
+// messageType, label) to coexist alongside pi types. The codebase was
 // written with these conventions and is NOT expected to match the pi SDK
 // types exactly at compile time — runtime mapping handles the translation.
 
 // =========================================================================
-// @mariozechner/pi-coding-agent — ambient module with paimon extensions
+// @mariozechner/pi-coding-agent — ambient module with extensions
 // =========================================================================
 declare module "@mariozechner/pi-coding-agent" {
-  // Re-export all the types actually imported by paimon source code
+  // Re-export all the types actually imported by source code
   export type ExtensionAPI = any;
   export type ExtensionContext = any;
   export type ExtensionContextActions = any;
@@ -19,7 +19,7 @@ declare module "@mariozechner/pi-coding-agent" {
   export type MessageRenderer = any;
   export type MessageRenderOptions = any;
 
-  // Tool definitions — accept paimon naming (messageDescription, label)
+  // Tool definitions — accept naming (messageDescription, label)
   // alongside standard pi naming (description)
   export interface ToolDefinition<
     TSchema = any,
@@ -31,9 +31,9 @@ declare module "@mariozechner/pi-coding-agent" {
   > {
     name: string;
     description?: string;
-    /** paimon convention: same as description */
+    /** convention: same as description */
     messageDescription?: string;
-    /** paimon convention: unique label identifier */
+    /** convention: unique label identifier */
     label?: string;
     promptSnippet?: string;
     parameters: TSchema;
@@ -75,12 +75,12 @@ declare module "@mariozechner/pi-coding-agent" {
     role: "custom";
     /** pi convention: custom message type */
     customType: string;
-    /** paimon convention: same as customType */
+    /** convention: same as customType */
     messageType?: string;
     content: string | { type: string; text?: string; [key: string]: any }[];
     /** pi convention: whether to display in TUI */
     display: boolean;
-    /** paimon convention: same as display */
+    /** convention: same as display */
     isDisplayedInTUI?: boolean;
     details?: T;
     timestamp: number;
@@ -89,29 +89,29 @@ declare module "@mariozechner/pi-coding-agent" {
   export interface SendMessageOptions {
     /** pi convention: whether to trigger a new turn */
     triggerTurn?: boolean;
-    /** paimon convention: same as triggerTurn */
+    /** convention: same as triggerTurn */
     isTriggerNewTurn?: boolean;
   }
 
-  // Functions imported by paimon
+  // Functions imported by
   export function getMarkdownTheme(): any;
   export function isBashToolResult(event: any): boolean;
   export function isToolCallEventType(toolName: string, event: any): boolean;
 }
 
 // =========================================================================
-// paimon global runtime variables (augment globalThis)
+// global runtime variables (augment globalThis)
 // =========================================================================
 declare global {
-  var __paimonPersonId: string;
-  var __paimonPersonName: string;
-  var __paimonPersonDir: string;
-  var __paimonRuntimeDir: string;
-  var __paimonChannelDir: string;
-  var __paimonSessionDir: string;
-  var __paimonAgentFileDir: string;
+  var __PersonId: string;
+  var __PersonName: string;
+  var __PersonDir: string;
+  var __RuntimeDir: string;
+  var __ChannelDir: string;
+  var __SessionDir: string;
+  var __AgentFileDir: string;
   var __ls_dir: string;
-  // pi-runtime globals set by paimon
+  // pi-runtime globals set by
   var __piAbort: (() => void) | undefined;
   var __piRecapPending: boolean | undefined;
   var __piWatcher: any;

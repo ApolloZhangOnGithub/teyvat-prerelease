@@ -1,0 +1,210 @@
+// outbox.ts — kernel.backbone/outbox — 后台推送的持久化发件箱（at-least-once）
+// SPEC: ./outbox.ts.SPEC
+//
+// ISSUE 119 P1（2026-08-18，qwen-3-8-27b-infer-test-01）：
+// 框架盲区（ISSUE 119 取证）：agent loop 被 wait/terminate 停掉期间发出的
+// continuous-cmd-done 推送会被 SDK 吞掉（steer 孤儿 / batch 路径 unhandled rejection），
+// 结果永远无人收到。outbox 把"推送产生"与"投递窗口"解耦：
+//   1. outboxSend：先落盘 pending.json 再发送（正常路径与旧行为完全一致）
+//   2. heart 转 working（wait 恢复/用户消息/hibernate 唤醒）时 outboxFlush：
+//      ack 检查（acked.log + 最近 session jsonl）+ 未送达重发 + 超限进 failed.json
+// 语义：at-least-once——可能重复送达，不会丢失。
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, statSync, renameSync } from "node:fs";
+import { join } from "node:path";
+import { runtimeCacheDir, sessionDirFor } from "#paths";
+import { sendCustomMessage } from "./backbone.ts";
+import { debug } from "#gene_riboswitch";
+
+const MAX_AGE_MS = 30 * 60 * 1000; // 超过 30 分钟的消息不再重发（进 failed.json）
+const GRACE_MS = 5000;             // ISSUE 121：发送后 5 秒内不重发（避开「已投递未落盘 session」的误判窗口）
+const MAX_ATTEMPTS = 5;            // 最多重发次数（含首次）
+const ACK_KEY_LEN = 80;            // matchKey = 消息开头 80 字（重发时稳定不变）
+const ACKED_LOG_CAP = 2000;        // acked.log 行数封顶（只保留最近）
+
+export interface OutboxOverrides {
+  deliverAs?: string;
+  isTriggerNewTurn?: boolean;
+  isDisplayedInTUI?: boolean;
+}
+
+interface OutboxEntry {
+  id: string;
+  type: string;
+  content: string;
+  details?: unknown;
+  overrides?: OutboxOverrides;
+  sentAt: number;
+  attempts: number;
+}
+
+function dlog(msg: string): void {
+  // 复用 D0001（Heart 段，PI_DEBUG=D0001）——outbox flush 挂在 heart 状态机上，语义同段；
+  // gene 的 REGISTRY 受 make 保护不可直接加新码（D0005 留待 gene 管线登记）
+  try { debug.log("D0001", `outbox ${msg}`); } catch (e) { console.error("[spirit.bio.organs/kernel.backbone/outbox.ts] " + ((e as any)?.message || e)); }
+}
+
+function pid(): string {
+  return process.env.PAIMON_AGENT_ID || String((globalThis as any).__genshinPersonId || "unknown");
+}
+
+function outboxDir(): string {
+  const d = join(runtimeCacheDir(pid()), "outbox");
+  try { mkdirSync(d, { recursive: true }); } catch (e) { console.error("[spirit.bio.organs/kernel.backbone/outbox.ts] " + ((e as any)?.message || e)); }
+  return d;
+}
+function pendingFile(): string { return join(outboxDir(), "pending.json"); }
+function ackedFile(): string { return join(outboxDir(), "acked.log"); }
+function failedFile(): string { return join(outboxDir(), "failed.json"); }
+
+function readPending(): OutboxEntry[] {
+  try {
+    const arr = JSON.parse(readFileSync(pendingFile(), "utf8"));
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePending(entries: OutboxEntry[]): void {
+  const tmp = pendingFile() + ".tmp";
+  writeFileSync(tmp, JSON.stringify(entries), "utf8");
+  renameSync(tmp, pendingFile());
+}
+
+function ackedIds(): Set<string> {
+  try {
+    const lines = readFileSync(ackedFile(), "utf8").split("\n").filter(Boolean);
+    return new Set(lines.map(l => l.split("\t")[0]));
+  } catch {
+    return new Set();
+  }
+}
+
+function markAcked(e: OutboxEntry): void {
+  try {
+    appendFileSync(ackedFile(), `${e.id}\t${e.type}\t${Date.now()}\n`, "utf8");
+    const lines = readFileSync(ackedFile(), "utf8").split("\n").filter(Boolean);
+    if (lines.length > ACKED_LOG_CAP) {
+      writeFileSync(ackedFile(), lines.slice(lines.length - ACKED_LOG_CAP).join("\n") + "\n", "utf8");
+    }
+  } catch (e) { console.error("[spirit.bio.organs/kernel.backbone/outbox.ts] " + ((e as any)?.message || e)); }
+}
+
+function matchKey(content: string): string {
+  // session jsonl 里的 content 是 JSON 转义字符串——匹配键必须用转义形态
+  return JSON.stringify(content.slice(0, ACK_KEY_LEN)).slice(1, -1);
+}
+
+function recentSessionBlobs(): string[] {
+  // 最近 2 个 session jsonl（当前 + 重启前上一个）——覆盖"上个 session 已送达但没来得及 ack"的重启场景
+  try {
+    const dir = sessionDirFor(pid());
+    const files = readdirSync(dir)
+      .filter(f => f.endsWith(".jsonl"))
+      .map(f => {
+        try { return { f, m: statSync(join(dir, f)).mtimeMs }; } catch { return null; }
+      })
+      .filter((x): x is { f: string; m: number } => x !== null)
+      .sort((a, b) => b.m - a.m)
+      .slice(0, 2);
+    return files.map(({ f }) => {
+      try { return readFileSync(join(dir, f), "utf8"); } catch { return ""; }
+    });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * outbox 发送：先落盘再发送。正常路径与旧 sendCustomMessage 行为一致；
+ * 若发送被框架吞掉（wait 窗口等），outboxFlush 会在唤醒后重发。
+ */
+export function outboxSend(
+  pi: ExtensionAPI,
+  messageType: string,
+  content: string,
+  details?: unknown,
+  overrides?: OutboxOverrides,
+): void {
+  const entry: OutboxEntry = {
+    id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    type: messageType,
+    content,
+    details,
+    overrides,
+    sentAt: Date.now(),
+    attempts: 1,
+  };
+  try {
+    const entries = readPending();
+    entries.push(entry);
+    writePending(entries);
+  } catch (e: any) {
+    // 落盘失败不阻塞发送（降级为旧行为），但记日志——此时若推送被吞将无兜底
+    dlog(`outboxSend persist failed (${e?.message ?? e}) — 降级为直接发送`);
+  }
+  try {
+    sendCustomMessage(pi, messageType, content, details, overrides);
+  } catch (e: any) {
+    // 发送层抛错（类型未注册等）：条目留在 pending，flush 时重试/超限时进 failed
+    dlog(`outboxSend send threw: ${e?.message ?? e}`);
+  }
+}
+
+/**
+ * outbox flush：ack 检查 + 未送达重发。
+ * 由 heart.ts 的 onHeartStateChange 在状态转 working 时调用。
+ * 全程同步（同步 fs + 同步 sendCustomMessage），与 transition 同 tick 完成——
+ * 重发消息与唤醒消息（continuous-resume 等）进同一批 batch pipeline，同一个 run 送达。
+ */
+export function outboxFlush(pi: ExtensionAPI): void {
+  const entries = readPending();
+  if (entries.length === 0) return;
+
+  const acked = ackedIds();
+  const sessionBlobs = recentSessionBlobs();
+  const remaining: OutboxEntry[] = [];
+  let ackedNow = 0, resent = 0, gaveUp = 0;
+
+  for (const e of entries) {
+    if (acked.has(e.id)) { ackedNow++; continue; }
+    if (sessionBlobs.some(b => b.includes(matchKey(e.content)))) {
+      markAcked(e);
+      ackedNow++;
+      continue;
+    }
+    const age = Date.now() - e.sentAt;
+    if (age < GRACE_MS) { remaining.push(e); continue; } // ISSUE 121：保护期，刚发送的保留不重发（避开 batch 缓冲未落盘窗口）
+    if (age > MAX_AGE_MS || e.attempts >= MAX_ATTEMPTS) {
+      try {
+        let cur: OutboxEntry[] = [];
+        try { cur = JSON.parse(readFileSync(failedFile(), "utf8")); if (!Array.isArray(cur)) cur = []; } catch (e) { console.error("[spirit.bio.organs/kernel.backbone/outbox.ts] " + ((e as any)?.message || e)); }
+        cur.push(e);
+        writeFileSync(failedFile(), JSON.stringify(cur, null, 1), "utf8");
+      } catch (e) { console.error("[spirit.bio.organs/kernel.backbone/outbox.ts] " + ((e as any)?.message || e)); }
+      dlog(`outbox: give up ${e.id} (${e.type}, age=${Math.round(age / 1000)}s, attempts=${e.attempts}) → failed.json`);
+      gaveUp++;
+      continue;
+    }
+    try {
+      sendCustomMessage(pi, e.type, e.content, e.details, e.overrides);
+      e.attempts++;
+      resent++;
+    } catch (err: any) {
+      dlog(`outbox resend threw: ${err?.message ?? err}`);
+    }
+    remaining.push(e);
+  }
+
+  // BUGFIX（2026-08-18，qwen-3-8-27b-infer-test-01，实测发现）：旧条件
+  // `remaining.length !== entries.length` 在"只发生 resend"时（数量不变、仅 attempts++）
+  // 不触发写回——attempts 永不持久化，MAX_ATTEMPTS=5 上限失效（只剩 30min 龄期兑底）。
+  // 现在只要发生任何状态变化（ack/resend/放弃）就写回。
+  if (ackedNow || resent || gaveUp) {
+    try { writePending(remaining); } catch (e) { console.error("[spirit.bio.organs/kernel.backbone/outbox.ts] " + ((e as any)?.message || e)); }
+  }
+  if (ackedNow || resent || gaveUp) {
+    dlog(`outbox flush: ${entries.length} pending → acked ${ackedNow}, resent ${resent}, gave up ${gaveUp}, still pending ${remaining.length}`);
+  }
+}

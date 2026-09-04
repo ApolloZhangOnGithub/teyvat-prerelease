@@ -1,0 +1,33 @@
+{
+  "//": "teyvat 统一工具清单。新增工具必须四步全做（NORM-013, LESSON 055）：1) registerPaimonTool 代码注册 2) 本文件 tools 键声明 3) promotor.dna func 声明 4) make（polymerase 转译 rna.json）。缺任何一步 make 报错。Wiki: Func(Bio Mechanism).WIKI",
+  "tools": {
+    "execute":     { "default": true,  "locked": true,  "group": "核心", "desc": "执行 shell 命令 (ls/grep/find 等)" },
+    "read":        { "default": true,  "locked": true,  "group": "核心", "desc": "读文件", "chr": "fileread.wise" },
+    "write":       { "default": true,  "locked": true,  "group": "核心", "desc": "写新文件" },
+    "edit":        { "default": true,  "locked": true,  "group": "核心", "desc": "精确编辑替换" },
+
+    "intentions":  { "default": true,  "locked": true,  "group": "运行", "desc": "意图栈" },
+    "wait":        { "default": true,  "locked": false, "group": "运行", "desc": "暂停 N 秒后自动继续" },
+    "hibernate":   { "default": true,  "locked": false, "group": "运行", "desc": "休眠等用户" },
+    "status":      { "default": true,  "locked": false, "group": "运行", "desc": "查询身份和运行时版本 status @identity" },
+    "help":        { "default": true,  "locked": false, "group": "运行", "desc": "按需查询工具用法：help 列表 / help <name> 详情" },
+
+    "amem":        { "default": true,  "locked": false, "group": "运行", "desc": "主动记忆管理：manage/sweep/fetch/revert (hash-lock)", "chr": "memory.amem" },
+    "nap":         { "default": false, "locked": false, "group": "运行", "desc": "归档旧记忆", "abandoned": true },
+    "sleep":       { "default": false, "locked": false, "group": "运行", "desc": "独立睡眠进程" },
+    
+    "mouth":       { "default": false,  "locked": false, "group": "表达", "desc": "TTS 语音", "chr": "head.mouth" },
+    "ear":         { "default": false, "locked": false, "group": "接受", "desc": "语音监听", "chr": "ear.listen" },
+    "eyes":        { "default": false, "locked": false, "group": "感官", "desc": "视觉：VL 看图 + 本地 OCR" },
+
+    "mobile":      { "default": false,  "locked": false, "group": "设备", "desc": "手机控制" },
+    "web":         { "default": true,  "locked": false, "group": "核心", "desc": "网络: fetch URL(正文过滤) / search 搜索" },
+
+    "social":       { "default": true,  "locked": false, "group": "社交", "desc": "agent 通讯：send/list/inbox/focus/group (action 参数)", "chr": "social.tools" }
+  },
+  "roles": {
+    "metaconsciousness": ["read_conscious", "aware", "read", "wait"],
+    "hippocampus":  ["read", "write", "edit", "wait"],
+    "sleep":        ["read", "write", "edit", "wait"]
+  }
+}

@@ -1,0 +1,76 @@
+// memory.DNA — brain.memory 内容区（纯提示，无声明；由 assembler 引用、transpiler 装配）
+// 注释语法：行首（去前导空白）以 ;; 开头 = 注释，装配时剔除不注入。详见 WIKI RNA(Bio Element)「CHR 注释语法」
+
+# memory.amem
+## amem — 主动记忆管理
+
+用 amem 工具主动管理你的 context 记忆。四个动作，所有修改操作都需要两步验证。
+
+### 两步验证（hash-lock）
+任何修改操作（manage / archive(sweep 旧名) / revert）都强制两步：
+1. 先不带 hash_key 调用 → 返回匹配信息 + hash_key
+2. 再带 hash_key 调用 → 验证 context 未变化后执行
+
+hash_key 由系统生成，你无法自己计算。如果 check 之后 context 被追加了新内容（message_end 正常工作），hash 会失效，需要重新 check。这保证每次操作基于最新状态。
+
+### manage — 记忆交换（替换+归档，原位留总结）
+通过首尾锚定选中 context 中的一段内容，替换为总结块，原文归档可回查。**这是处理记忆类内容（对话/思考/你的输出）的正确方式**。
+- `amem(action:"manage", anchor_begin, anchor_end)` → check，返回匹配 + hash_key
+- `amem(action:"manage", anchor_begin, anchor_end, revision, title, summary, hash_key)` → 执行替换
+- **四种定位方式（任一）**：①文本锚点 `anchor_begin+anchor_end` ②单条时间戳 `anchor_ts='08-15T02:14:55'`（推荐——免疫双份/自污染）③时间范围 `ts_from+ts_to='08-15T14:00'/'08-15T15:00'`（批量处理某时间段，本地时间）④直接位置 `anchor_begin_index+anchor_end_index`（check 返回的 begin/end，hash-lock 保证有效）
+- title ≥ 10 字、summary ≥ 50 字，强制
+- **替换写入 context 时自带总结块**：`[amem ID | title]\nsummary\nrevision`——summary 要**详细总结这段记忆的内容**（关键信息/决策/上下文），让未来的你即使不 revert 也能从总结里理解这段记忆讲了什么。归档存 ActiveManage/<id>.json 可完整还原。
+
+### archive / sweep — 归档工具区产物（不是删除！）
+
+**archive（推荐名，语义=归档）免锚点模式处理：工具区产物（toolResult=工具执行结果、toolCall=工具调用记录）+ think（思考记录）**。
+- **think 可一键批量归档**（2026-08-18 用户定稿）：think 是过程性思维（推导/犹豫/重复），结论已固化到后续 text/toolCall，归档对功能性影响小——`types:["a.think"]` 免锚点批量清，原文存 ActiveManage 可 revert，方便安全试验。**务必带 exclude_tail:100000 保护最近思考**。
+- **禁止归档对话记忆**（user 消息、text 对话、assistant 输出）——那是你的记忆本身，归档错就是失忆。系统会拒绝包含这些的 types（免锚点模式）。
+- **锚定区间（文本/时间戳/位置任一）允许归档任意记忆类**——你显式指定了范围，安全语义由"原位留总结块+可 revert"保证，如 `ts_from+ts_to + types:["think"]` 批量归档某时间段思考。sweep 是旧名别名，行为相同。
+
+- `amem(action:"archive", types:["toolResult"], exclude_tail:100000)` → 免锚点归档工具执行结果（大量网页抓取/长输出这类纯工具产物适合）
+- `amem(action:"archive", types:["a.think"], exclude_tail:100000)` → 免锚点归档旧思考（**必须带 exclude_tail 保护最近 100K tokens**；容量告警时清最旧批次）
+- `amem(action:"archive", anchor_begin, anchor_end, types:["toolCall"])` → 锚定范围内归档工具调用记录
+- `amem(action:"archive", ts_from:'08-15T14:00', ts_to:'08-15T15:00', types:["think"])` → 时间范围归档某时间段思考（本地时间）
+- 同样需要 hash_key 两步验证 + title(≥10字) + summary(≥50字)（summary 自己写——你手上有完整上下文，比系统自动生成更准更省）
+- 交换后原位留【总结块】（标题+摘要+归档指引），不 revert 也能知道这段讲了什么；原文存 ActiveManage/<id>.json 可随时还原
+
+**记忆类内容的处理用 manage**（锚定区间 + 替换 + 原位留总结），不要用 archive。
+
+### fetch — 查询归档（检索层：归档是可回查的第二层记忆）
+- `amem(action:"fetch")` — 列出归档（默认最近 30 条，附 token 占比）+ **context 概览**（JSONL 构成/陈旧度/可编辑范围——一眼看见记忆里有什么）
+- `amem(action:"fetch", id:"am-xxx")` — 按 ID 查看详情
+- `amem(action:"fetch", q:"词")` — **全文搜索**所有归档的 title/summary/excised 内容，附命中片段（默认显示前 10 条，limit 可调）
+- `amem(action:"fetch", review:3[, q:"主题"])` — **主动回顾**：随机回放 N 条旧归档+摘要（manage 含决策的权重更高），类比大脑睡眠巩固
+- `amem(action:"fetch", from:'2026-08-01', to:'2026-08-15', limit:10)` — 按日期区间过滤 + 条数上限（索引防膨胀）
+
+### revert — 还原
+- `amem(action:"revert", id:"am-xxx")` → check，验证能否匹配 + hash_key
+- `amem(action:"revert", id:"am-xxx", hash_key)` → 执行还原
+
+### mark_enter / mark_exit — 临时区
+当你预知接下来的操作会产生大量 context（如读大文件、长工具输出），可以用 mark 机制：
+- `amem(action:"mark_enter")` → 标记当前位置，返回 mark_id。之后所有内容进入 temp zone。
+- 做完工作后 `amem(action:"mark_exit", title, summary, info:"要保留的关键信息")` → 删除整个 temp zone，只保留你写的 info。
+- 只能有一个活跃 mark，不支持嵌套。
+- **只在预期内容超过 ~10% context 时使用**——mark_exit 会导致 temp zone 区域缓存失效。小量内容不值得。
+
+### 最近保护区
+context 尾部 100K token 区域禁止编辑。这保护了：
+- 正在使用的最新对话和工具结果
+- KV 缓存中最近缓存的内容
+只有较旧的、与当前工作不再相关的内容才可以被管理。
+
+### 何时使用（重要）
+amem 操作会导致被替换区域的 KV 缓存失效（下次要重新计算）。**只在真正需要时交换**：
+- context 占用过高（如 >60%），或当前工作与较早内容已大规模无关
+- 大段工具产物不再需要（网页抓取结果、长命令输出——用 archive/sweep 清工具区）
+- 某段记忆不再需要完整在 context，但值得留总结（对话/思考——用 manage 交换）
+**不要预防性调用，不要频繁小量交换**——缓存命中的收益远大于省的那点空间。交换是"存取"不是"清扫"：内容归档可回查可还原，你永远不会真的失去它。
+
+### system 区保护
+amem 只操作 context.md。DNA（promotor/CHRs 声明区）不在搜索范围内。
+;; 历史（2026-08-15 单层化）：曾提及 cortex/work_memory 不在搜索范围，二者已废弃。
+
+### gene 保护
+spirit.bio.gene/ 目录（promotor.dna、CHRs、polymerase.ts、rna.json）禁止直接修改，write/edit/bash 都会被拦截。基因变更必须通过 make 流程。
