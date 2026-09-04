@@ -255,7 +255,6 @@ case "$NAME" in
         echo -e "  \033[31mERROR\033[0m prerelease 更新失败"
         exit 1
       fi
-      fi
     elif [ -d "$SOURCE_DIR/.git" ]; then
       echo "  channel: $CHANNEL (source: $SOURCE_DIR)"
       cd "$SOURCE_DIR" && git pull --ff-only && bash Codebase/deploy/install.sh
