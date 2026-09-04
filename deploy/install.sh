@@ -174,7 +174,8 @@ if [ -f "$MANIFEST" ] && [ -z "$PAIMON_VER" ]; then
 fi
 
 # ── 3. restore stock dist before overrides ──
-STOCK_BACKUP="$(dirname "$IMPL")/C.deploy/pi-image-source/v${PIN}"
+# 用 $DEPLOY（已按布局推导：dev=C.deploy，prerelease=deploy）替代硬编码 C.deploy——2026-09-05 prerelease 验证暴露
+STOCK_BACKUP="$(dirname "$IMPL")/$(basename "$DEPLOY")/pi-image-source/v${PIN}"
 # 缺失即报错：没有原版镜像就无法把 dist 复位，后续 overrides 会叠加在上一次的产物上，
 # 表现为「改了源码但行为不变」或残留旧补丁 —— 静默跳过时这种退化极难发现。
 [ -d "$STOCK_BACKUP" ] || err "原版镜像缺失: $STOCK_BACKUP（应随 C.deploy 一起版本控制）"

@@ -869,7 +869,8 @@ function registerTmuxRestore(pi: ExtensionAPI): void {
         let exists = false;
         for (const [, rc] of running) { if (rc.tmuxSession === n) { exists = true; break; } }
         if (exists) continue;
-        const id = nextExecId++;
+        // 2026-09-05：恢复条目的 id 自找空闲（不依赖主函数内的 nextExecId——本函数在模块级定义）
+        let id = 1; while (running.has(id)) id++;
         const title = n.slice(scope.length);
         const startTime = Date.now();
         const cmdDisp = title || `terminal`;
@@ -911,7 +912,7 @@ function registerTmuxRestore(pi: ExtensionAPI): void {
           } catch { running.delete(id); updateBgCount(); }
         })();
       }
-      if (recovered > 0) { updateBgCount(); dlog(`restoreTmux: recovered ${recovered} tmux session(s) after restart`); }
-    } catch (e) { dlog(`restoreTmux failed: ${(e as any)?.message ?? e}`); }
+      if (recovered > 0) { updateBgCount(); console.error("[spirit.bio.organs/hands.executes/executes.ts] restoreTmux: recovered " + recovered + " tmux session(s)"); }
+    } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] restoreTmux failed: " + ((e as any)?.message ?? e)); }
   });
 }

@@ -166,7 +166,7 @@ while [ $# -gt 0 ]; do
                 else {rows.push(['dev-stable', N, ''])}
               } catch {rows.push(['dev-stable', N, ''])}
             }
-            // release: npm + GitHub
+            // release: npm + GitHub  ⚠️ npm 分发已废弃（2026-09-05 用户定稿，见 Versioning WIKI）——优先 git 源
             let relVer = '';
             try{relVer=require('child_process').execSync('npm view teyvat version 2>/dev/null',{encoding:'utf8',timeout:3000}).trim()}catch{}
             if(!relVer) try{relVer=require('child_process').execSync('npm view pi-coding-master version 2>/dev/null',{encoding:'utf8',timeout:3000}).trim()}catch{}
@@ -226,24 +226,35 @@ case "$NAME" in
     CHANNEL="minutely"
     [ -f "$VER_JSON" ] && CHANNEL=$(node -e "try{console.log(JSON.parse(require('fs').readFileSync('$VER_JSON','utf8')).channel)}catch{console.log('minutely')}" 2>/dev/null)
     if [ "$CHANNEL" = "release" ]; then
-      echo "  channel: release (npm)"
-      npm update -g teyvat && echo -e "  \033[32mOK\033[0m updated via npm"
+      # ⚠️ npm 分发已废弃（2026-09-05 用户定稿）——release 改走 git tag（teyvat-release 仓库）
+      echo "  channel: release (git tag)"
+      UP_DIR="$HOME/.local/lib/teyvat/update-release"
+      mkdir -p "$UP_DIR"
+      if [ ! -d "$UP_DIR/.git" ]; then
+        git clone https://github.com/ApolloZhangOnGithub/teyvat-release.git "$UP_DIR" 2>&1 | tail -2
+      else
+        ( cd "$UP_DIR" && git pull --ff-only 2>&1 | tail -2 )
+      fi
+      echo -e "  \033[32mOK\033[0m release 源已更新（$UP_DIR）——运行其中的 deploy/install.sh 完成部署"
     elif [ "$CHANNEL" = "prerelease" ] || [ "$CHANNEL" = "beta" ]; then
-      # prerelease/beta 通道：从 teyvat-prerelease 拉精简包，postinstall 自动重部署
-      # 安装位置与 dev 源隔离（source 目录仅 dev 用），这里装到 npm 标准的 teyvat 包位
-      echo "  channel: $CHANNEL (teyvat-prerelease)"
+      # prerelease/beta 通道（2026-09-05 起纯 git，不走 npm）：拉 paimon-code-prerelease → 手动 install.sh
+      # （install.sh 已支持 core/ 包结构：PKG_ROOT 检测到 core/ 即按 prerelease 布局部署）
+      echo "  channel: $CHANNEL (paimon-code-prerelease, git)"
       UP_DIR="$HOME/.local/lib/teyvat/update-prerelease"
       mkdir -p "$UP_DIR"
-      cd "$UP_DIR"
-      # 包目录不含 package.json 时初始化（首次），否则直接更新依赖
-      if [ ! -f package.json ]; then
-        echo '{"private":true}' > package.json
+      if [ ! -d "$UP_DIR/.git" ]; then
+        git clone https://github.com/ApolloZhangOnGithub/paimon-code-prerelease.git "$UP_DIR" 2>&1 | tail -2
+      else
+        ( cd "$UP_DIR" && git pull --ff-only 2>&1 | tail -2 )
       fi
-      if npm install "github:ApolloZhangOnGithub/teyvat-prerelease" 2>&1 | tail -5; then
-        echo -e "  \033[32mOK\033[0m prerelease 已更新 (postinstall 自动部署)"
+      # 触发部署（postinstall 语义等价物）：显式跑包内 install.sh。install.sh 防裸跑要求 make 环境
+      # （PAIMON_VIA_MAKE=1 + MAKELEVEL）——prerelease 消费方无 make，这里显式伪装
+      if ( cd "$UP_DIR" && PAIMON_VIA_MAKE=1 MAKELEVEL=1 PAIMON_CHANNEL=prerelease bash deploy/install.sh 2>&1 | tail -5 ); then
+        echo -e "  \033[32mOK\033[0m prerelease 已更新并部署"
       else
         echo -e "  \033[31mERROR\033[0m prerelease 更新失败"
         exit 1
+      fi
       fi
     elif [ -d "$SOURCE_DIR/.git" ]; then
       echo "  channel: $CHANNEL (source: $SOURCE_DIR)"
