@@ -251,13 +251,16 @@ case "$NAME" in
       # （PAIMON_VIA_MAKE=1 + MAKELEVEL）——prerelease 消费方无 make，这里显式伪装
       # PAIMON_VER 从包内 package.json 读（version.json 只有 PAIMON_VER 非空才更新）
       PKG_VER=$(node -e "console.log(require('$UP_DIR/package.json').version)" 2>/dev/null)
-      # 版本对比：本地已是最新则跳过部署（2026-09-05：解决 up-to-date 仍重复全量部署）
-      LOCAL_VER=$(node -e "try{console.log(JSON.parse(require('fs').readFileSync('$HOME/.teyvat/agent/version.json','utf8')).genshin)}catch{}" 2>/dev/null)
-      if [ -n "$PKG_VER" ] && [ "$PKG_VER" = "$LOCAL_VER" ]; then
-        echo -e "  \033[32mOK\033[0m 已是最新 ($PKG_VER)，跳过部署"
+      # 部署判断用 git HEAD 而非版本号（同版本号重发合法——prerelease 是 dev 滚动；HEAD 变化=有新提交才部署）
+      NEW_HEAD=$(git -C "$UP_DIR" rev-parse HEAD 2>/dev/null)
+      OLD_HEAD=""
+      [ -f "$UP_DIR/.last-deployed-head" ] && OLD_HEAD=$(cat "$UP_DIR/.last-deployed-head" 2>/dev/null)
+      if [ -n "$NEW_HEAD" ] && [ "$NEW_HEAD" = "$OLD_HEAD" ]; then
+        echo -e "  \033[32mOK\033[0m 无新提交 ($PKG_VER)，跳过部署"
         exit 0
       fi
       if ( cd "$UP_DIR" && PAIMON_VIA_MAKE=1 MAKELEVEL=1 PAIMON_CHANNEL=prerelease PAIMON_VER="$PKG_VER" bash deploy/install.sh 2>&1 | tail -5 ); then
+        echo "$NEW_HEAD" > "$UP_DIR/.last-deployed-head"
         echo -e "  \033[32mOK\033[0m prerelease $PKG_VER 已更新并部署"
       else
         echo -e "  \033[31mERROR\033[0m prerelease 更新失败"
