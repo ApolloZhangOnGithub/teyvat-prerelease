@@ -249,8 +249,10 @@ case "$NAME" in
       fi
       # 触发部署（postinstall 语义等价物）：显式跑包内 install.sh。install.sh 防裸跑要求 make 环境
       # （PAIMON_VIA_MAKE=1 + MAKELEVEL）——prerelease 消费方无 make，这里显式伪装
-      if ( cd "$UP_DIR" && PAIMON_VIA_MAKE=1 MAKELEVEL=1 PAIMON_CHANNEL=prerelease bash deploy/install.sh 2>&1 | tail -5 ); then
-        echo -e "  \033[32mOK\033[0m prerelease 已更新并部署"
+      # PAIMON_VER 从包内 package.json 读（version.json 只有 PAIMON_VER 非空才更新）
+      PKG_VER=$(node -e "console.log(require('$UP_DIR/package.json').version)" 2>/dev/null)
+      if ( cd "$UP_DIR" && PAIMON_VIA_MAKE=1 MAKELEVEL=1 PAIMON_CHANNEL=prerelease PAIMON_VER="$PKG_VER" bash deploy/install.sh 2>&1 | tail -5 ); then
+        echo -e "  \033[32mOK\033[0m prerelease $PKG_VER 已更新并部署"
       else
         echo -e "  \033[31mERROR\033[0m prerelease 更新失败"
         exit 1
