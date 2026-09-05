@@ -2,7 +2,7 @@
 // devices.cjs — genshin d 设备管理（2026-09-05 抽离 launcher 内联，launcher d 分支调用）
 // 用法: node devices.cjs                  → 列表
 //       node devices.cjs rn <id> <名>     → 改名
-//       node devices.cjs <name|编号|id> [cmd...]  → 请求设备执行 genshin 命令（默认 version）
+//       node devices.cjs <name|编号|id>  → 查看该设备的 genshin 快照（server 已存各设备上传状态，不做远程执行）
 const fs = require("fs");
 const os = require("os");
 const h = os.homedir();
@@ -17,7 +17,7 @@ function endpoint() {
   return e;
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const fmt = (s) => { if (!s) return ""; const dt = new Date(String(s).replace(" ", "T") + (String(s).includes("Z") ? "" : "Z")); if (isNaN(dt)) return String(s); return dt.toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).replace(/\//g, "-"); };
+const fmt = (s) => { if (!s) return ""; const dt = new Date(String(s).replace(" ", "T") + (String(s).includes("Z") ? "" : "Z")); if (isNaN(dt)) return String(s); return dt.toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).replace(/\//g, "-"); };
 
 async function main() {
   const b = readBinding();
@@ -26,7 +26,9 @@ async function main() {
   const cmd = process.argv[2] || "";
   const curId = b.deviceId;
 
-  // 拉设备列表（auth 自动更新真实 hostname）
+  // 触发本机 genshin 结果上传（独立进程 spawn detached——父进程不等，查看不拖慢；2026-09-05）
+  try { require("child_process").spawn(process.execPath, [__dirname + "/upload-state.cjs"], { detached: true, stdio: "ignore" }).unref(); } catch { /* 上传失败静默 */ }
+  // 拉设备列表（快——秒回显示）
   const lr = await fetch(ep + "/auth/devices", { headers: H({ "X-Device-Name": os.hostname() }) });
   if (!lr.ok) { console.log("server 查询失败: HTTP " + lr.status); process.exit(1); }
   const ds = (await lr.json()).devices || [];
@@ -75,31 +77,21 @@ async function main() {
     return;
   }
 
-  // 请求设备执行 genshin 命令（无命令 = genshin 主列表——2026-09-05 用户定稿默认；此前 genshin-v0.3.2-dev-01 乱写默认 "version" 被用户怒批纠正：默认就该是 genshin 本体）
+  // 查看某设备的 genshin（agent 清单）——server 已存各设备上传状态，直接拉 0.3s（不做远程执行）
   const target = cmd;
-  const execCmd = (process.argv.slice(4).join(" ") || "").trim();
   let hit = devs.find((x) => x.id === target) || (target && devs.find((x) => x.name === target)) || null;
   if (!hit && /^\d+$/.test(target)) {
     const n = parseInt(target, 10);
     hit = devs.find((x) => x.num === n && x.on) || devs.find((x) => x.num === n && !x.on) || devs.find((x) => x.num === n);
   }
   if (!hit) { console.log("找不到设备: " + target + "（用名称/编号/ID，列表看 genshin d）"); process.exit(1); }
-  console.log("请求 " + hit.name + " (" + hit.id + ") 执行: genshin " + (execCmd || ""));
-  const rr = await fetch(ep + "/cmd/request", { method: "POST", headers: H({ "Content-Type": "application/json" }), body: JSON.stringify({ device_id: hit.id, cmd: execCmd }) });
-  const rj = await rr.json().catch(() => ({}));
-  if (!rr.ok) { console.log("请求失败: " + (rj.error || rr.status)); process.exit(1); }
-  for (let i = 0; i < 30; i++) {
-    await sleep(1000);
-    const gr = await fetch(ep + "/cmd/result/" + rj.id, { headers: H() });
-    const gj = await gr.json().catch(() => ({}));
-    const st = gj.cmd && gj.cmd.status;
-    if (st === "done" || st === "failed") {
-      console.log("── " + hit.name + " · genshin " + execCmd + " (" + st + "): ──");
-      console.log(gj.cmd.result || "(无输出)");
-      return;
-    }
-  }
-  console.log("等待超时（30s）——设备可能离线（genshin d 看状态）");
+  // 显示该设备上传的 genshin 结果（跑 genshin 的实际输出——用户定稿语义）
+  const raw = hit.d.agents;
+  const txt = typeof raw === "string" && raw ? raw : (Array.isArray(raw) ? raw.map((a) => (a && a.name) || "?").join("\n") : "");
+  const snap = hit.d.synced_at ? fmt(hit.d.synced_at) : "";
+  if (!txt) { console.log("── " + (hit.name || hit.id) + " 的 genshin" + (snap ? " (快照 " + snap + ")" : "") + ": (该设备还没上传 genshin 结果——设备活跃同步后自动上传)"); return; }
+  console.log("── " + (hit.name || hit.id) + " 的 genshin" + (snap ? " (快照 " + snap + ")" : "") + ": ──");
+  console.log(txt);
 }
 
 main().catch((e) => console.error("devices: " + (e && e.message || e)));

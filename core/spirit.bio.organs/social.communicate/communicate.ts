@@ -626,7 +626,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
       "Messages auto-inject: interrupt immediately, queue at turn end (hibernate blocked while pending).",
     promptSnippet: "social(action, ...) — send|list|inbox|focus|group",
     parameters: Type.Object({
-      action: Type.String({ messageDescription: "send | list | inbox | focus | group" }),
+      action: Type.String({ messageDescription: "send | list | inbox | focus | group | global（跨设备 agents 发现：global=device 设备列表 / global+device=某设备 agents）" }),
       to: Type.Optional(Type.String({ messageDescription: "Target (send): sid | agent name | group:<gid> | all" })),
       text: Type.Optional(Type.String({ messageDescription: "Message content (send)" })),
       mode: Type.Optional(Type.Union([
@@ -641,6 +641,9 @@ function registerSocialTools(pi: ExtensionAPI): void {
       members: Type.Optional(Type.Array(Type.String(), { messageDescription: "Member sids/names (group create)" })),
       gid: Type.Optional(Type.String({ messageDescription: "Group id (group send/mute)" })),
       on: Type.Optional(Type.Boolean({ messageDescription: "Mute on/off (group mute, default true)" })),
+      // global 跨设备视图参数（2026-09-05 用户定稿：social global [device | <device_id>]）
+      view: Type.Optional(Type.String({ messageDescription: "global: 'device'=设备列表（默认跨设备 agents 概览）；具体 device_id=该设备 agents" })),
+      device: Type.Optional(Type.String({ messageDescription: "global: 指定设备 id → 显示该设备 genshin（agent 列表）" })),
       remote: Type.Optional(Type.Boolean({ messageDescription: "list: include remote-machine agents (default false — local only)" })),
     }),
     renderCall(args: any, theme: any) {
@@ -755,6 +758,48 @@ function registerSocialTools(pi: ExtensionAPI): void {
             return `${a.name} (${a.sid})${mark}  focus:${a.focus}  ${state}  ${a.version} ${a.model}`;
           }).concat(remoteLines.length ? [`-- remote (${remoteLines.length}) --`].concat(remoteLines) : []);
           return { content: [{ type: "text", text: `Agents (${allCount}):\n${lines.map(l => "  " + l).join("\n")}` }], details: { social: true, action: "list", count: allCount, lines } };
+        }
+        case "global": {
+          // 跨设备 agents 发现（2026-09-05 用户定稿）：拉 /auth/devices（设备+各设备上传的 genshin 结果）
+          // 视图：默认=跨设备 agents 概览；view="device"=设备列表；device=<id>=该设备 genshin 输出
+          let b: any = null;
+          try { b = JSON.parse(readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8")); } catch { /* 未绑定/损坏 → 下方提示 login */ }
+          if (!b?.token || !b?.deviceId) return { content: [{ type: "text", text: "(未绑定——先 genshin login)" }], details: { social: true, action: "global", count: 0, lines: [] } };
+          const H = { Authorization: "Bearer " + b.token, "X-Device-Id": b.deviceId, "X-Device-Name": require("os").hostname() };
+          const res = await fetch(syncEndpoint() + "/auth/devices", { headers: H });
+          if (!res.ok) return { content: [{ type: "text", text: "(server 查询失败: HTTP " + res.status + ")" }], details: { social: true, action: "global", count: 0, lines: [] } };
+          const j: any = await res.json();
+          const ds = (j?.devices ?? []).filter((d: any) => d.device_id === b.deviceId || (d.agents && String(d.agents).length > 2) || !d.archived);
+          const fmtTs = (s: string) => { if (!s) return ""; try { return new Date(String(s).replace(" ", "T") + "Z").toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }); } catch { return s; } };
+          // 视图 2：device=<id> → 该设备 genshin 输出全文
+          if (p.device) {
+            const hit = ds.find((d: any) => String(d.device_id) === String(p.device));
+            if (!hit) return { content: [{ type: "text", text: "(找不到设备 " + p.device + ")" }], details: { social: true, action: "global", count: 0, lines: [] } };
+            const name = hit.device_name && hit.device_name !== hit.device_id ? hit.device_name : hit.device_id;
+            const raw = hit.agents;
+            const txt = typeof raw === "string" ? raw : "(该设备还没上传 genshin 结果)";
+            return { content: [{ type: "text", text: "── " + name + " 的 genshin" + (hit.synced_at ? " (快照 " + fmtTs(hit.synced_at) + ")" : "") + ": ──\n" + txt }], details: { social: true, action: "global", view: p.device, count: 1, lines: [] } };
+          }
+          // 视图 1：view="device" → 设备列表
+          if (p.view === "device") {
+            const lines: string[] = [];
+            for (const d of ds) {
+              const name = d.device_name && d.device_name !== d.device_id ? d.device_name : d.device_id;
+              const nAgents = typeof d.agents === "string" && d.agents ? (String(d.agents).match(/·\s*(\d+)\s*agents/) || [])[1] || "?" : "0";
+              lines.push("  " + name + " (" + d.device_id + ")  agents:" + nAgents + (d.synced_at ? "  同步:" + fmtTs(d.synced_at) : "") + (String(d.device_id) === b.deviceId ? "  [本机]" : ""));
+            }
+            return { content: [{ type: "text", text: "设备 (" + ds.length + "):\n" + lines.join("\n") }], details: { social: true, action: "global", view: "device", count: ds.length, lines } };
+          }
+          // 默认：跨设备 agents 概览——每设备一行（agent 数从 genshin 输出 "· N agents" 提取）
+          const lines: string[] = [];
+          for (const d of ds) {
+            const name = d.device_name && d.device_name !== d.device_id ? d.device_name : d.device_id;
+            const raw = typeof d.agents === "string" ? d.agents : "";
+            const nAgents = (String(raw).match(/·\s*(\d+)\s*agents/) || [])[1] || "0";
+            lines.push("  " + name + " (" + d.device_id + ")" + (String(d.device_id) === b.deviceId ? "  [本机]" : "") + "  · " + nAgents + " agents" + (d.synced_at ? "  同步:" + fmtTs(d.synced_at) : ""));
+          }
+          if (!lines.length) return { content: [{ type: "text", text: "(无设备——多设备跑过 genshin d 后可见)" }], details: { social: true, action: "global", count: 0, lines: [] } };
+          return { content: [{ type: "text", text: "跨设备 (" + ds.length + " 设备):\n" + lines.join("\n") + "\n\n细节: social({action:'global',view:'device'}) 设备列表；social({action:'global',device:'<id>'}) 看设备 agents" }], details: { social: true, action: "global", count: ds.length, lines } };
         }
         case "inbox": {
           const limit = Math.min(50, Math.max(1, p.limit ?? 20));

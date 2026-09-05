@@ -56,6 +56,22 @@ export function authMiddleware() {
 
 export const authRouter = new Hono();
 
+// 设备上传 genshin 结果（POST body——header 限长/字符限制，2026-09-05 改）
+authRouter.post("/device-state", async (c) => {
+  const auth = c.req.header("Authorization");
+  const deviceId = c.req.header("X-Device-Id");
+  if (!auth?.startsWith("Bearer ") || !deviceId) return c.json({ error: "unauthorized" }, 401);
+  const deviceName = c.req.header("X-Device-Name");
+  const user = await resolveUser(auth.slice(7), deviceId, deviceName);
+  if (!user) return c.json({ error: "invalid token" }, 401);
+  const { agents } = await c.req.json<{ agents?: string }>().catch(() => ({}));
+  if (typeof agents !== "string") return c.json({ error: "agents required" }, 400);
+  stmt.upsertDeviceState.run(deviceId, user.githubId, JSON.stringify(agents), "");
+  stmt.logSync.run(deviceId, user.githubId);
+  stmt.pruneSyncLog.run(user.githubId, user.githubId);
+  return c.json({ ok: true });
+});
+
 authRouter.get("/devices", async (c) => {
   const auth = c.req.header("Authorization");
   const deviceId = c.req.header("X-Device-Id");
@@ -64,8 +80,19 @@ authRouter.get("/devices", async (c) => {
   const deviceName = c.req.header("X-Device-Name");
   const user = await resolveUser(auth.slice(7), deviceId, deviceName);
   if (!user) return c.json({ error: "invalid token" }, 401);
+  // 活跃同步：设备带 X-Device-Agents（本机 genshin agent 清单）→ 存 device_states（2026-09-05：本地上传→拉取 0.3s）
+  const agentsRaw = c.req.header("X-Device-Agents");
+  if (agentsRaw && agentsRaw.length > 4 && agentsRaw.length < 20000) {
+    try { JSON.parse(agentsRaw); stmt.upsertDeviceState.run(deviceId, user.githubId, agentsRaw, ""); stmt.logSync.run(deviceId, user.githubId); stmt.pruneSyncLog.run(user.githubId, user.githubId); } catch { /* 非法 JSON 忽略 */ }
+  }
   const devices = stmt.listDevices.all(user.githubId);
-  return c.json({ devices });
+  // 合并每设备的 genshin 状态（agents 清单 + 最后同步时间）
+  const states = new Map((stmt.getDeviceStates.all(user.githubId) as any[]).map((s: any) => [s.device_id, s]));
+  const out = devices.map((d: any) => {
+    const st = states.get(d.device_id);
+    return { ...d, agents: st ? JSON.parse(st.agents_json || "[]") : [], synced_at: st ? st.synced_at : null };
+  });
+  return c.json({ devices: out });
 });
 
 authRouter.put("/devices/:deviceId", async (c) => {

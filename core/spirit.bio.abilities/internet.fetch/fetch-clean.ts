@@ -86,6 +86,14 @@ function extractWithTrafilatura(html: string, timeoutMs = 8000): Promise<string 
       resolve(null);
       return;
     }
+    // EPIPE 防线（2026-09-05，cross-device-communication-testor-01 定位 web fetch 闪退根因）：
+    // 本机无 trafilatura 时 python3 秒退（import 失败 exit 1），随后向已关闭的 stdin 管道
+    // 写入 html → 异步 write EPIPE。若 stdin 无 'error' 监听，stream 错误会抛成
+    // uncaughtException → SDK uncaughtCrash → process.exit(1) → 进程闪退（web fetch 必现）。
+    // 全管道挂 error 吞 EPIPE——让 close 分支正常走 finish(null) → fallback 内置提取。
+    for (const s of [py.stdin, py.stdout, py.stderr]) {
+      s?.on("error", () => { /* 吞：管道对端已关，静默走 close 兜底即可 */ });
+    }
     let out = "";
     let settled = false;
     const finish = (v: string | null) => {

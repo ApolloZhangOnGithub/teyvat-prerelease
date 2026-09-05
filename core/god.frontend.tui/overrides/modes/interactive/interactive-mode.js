@@ -485,7 +485,34 @@ export class InteractiveMode {
         // Register themes from resource loader and initialize
         setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
         if (!this.ui.onTerminalColorSchemeChange) this.ui.onTerminalColorSchemeChange = () => () => {};
-        this.themeController = new InteractiveThemeController(this.ui, this.settingsManager, (message) => this.showError(message), () => this.updateEditorBorderColor());
+        this.themeController = new InteractiveThemeController(this.ui, this.settingsManager, (message) => this.showError(message), () => { this.updateEditorBorderColor(); this._genshinSyncTerminalColors(); });
+        // ISSUE 131 v1：非 iTerm2 终端启动即同步主题配色到终端默认 fg/bg（Linux dark=黑底浅字 / light=白底深字）
+        this._genshinSyncTerminalColors();
+    }
+    /**
+     * genshin 2026-09-05（ISSUE 131 v1）：Linux 终端背景色跟随 theme。
+     * 根因：pi setTheme 只改组件前景色/内联背景块，从不发 OSC 10/11 设置终端默认配色——
+     * 界面背景透出终端 profile 自己的颜色（Linux 默认紫红 vs Mac iTerm2 用户自配深色）。
+     * v1：按 settings theme 发 OSC 10(fg)/11(bg) 写终端配色（dark=黑底浅字 / light=白底深字）。
+     * 非 iTerm2 才生效（TERM_PROGRAM !== iTerm.app——iTerm2 用户自管配色，保住现观感）。
+     * OSC 10/11 是 xterm 标准（ESC ] Ps ; Pt BEL），gnome-terminal/Windows Terminal/kitty 等普遍支持。
+     * 退出恢复原背景（OSC 11 查询 + querier 框架）留 v2。
+     */
+    _genshinSyncTerminalColors() {
+        try {
+            if (process.env.TERM_PROGRAM === "iTerm.app") return; // iTerm2 用户自管配色
+            const term = this.ui?.terminal;
+            if (!term || typeof term.write !== "function") return;
+            const theme = (this.settingsManager?.getThemeSetting?.() ?? "dark") + "";
+            const dark = theme !== "light"; // dark/auto/undefined → 深色黑底
+            const bg = dark ? "0000/0000/0000" : "ffff/ffff/ffff";
+            const fg = dark ? "d4d4/d4d4/d4d4" : "1a1a/1a1a/1a1a";
+            term.write(`\x1b]11;rgb:${bg}\x07`);
+            term.write(`\x1b]10;rgb:${fg}\x07`);
+        }
+        catch (e) {
+            console.error("[god.frontend.tui/overrides/modes/interactive/interactive-mode.js] _genshinSyncTerminalColors: " + (e?.message || e));
+        }
     }
     getAutocompleteSourceTag(sourceInfo) {
         if (!sourceInfo) {

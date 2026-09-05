@@ -61,19 +61,23 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_messages_to ON messages(github_id, to_person, delivered);
   CREATE INDEX IF NOT EXISTS idx_locks_heartbeat ON locks(heartbeat);
 
-  -- 跨设备 genshin 命令执行队列（2026-09-05：genshin d <设备> <cmd> → 请求设备跑一次 → 结果回 server）
-  CREATE TABLE IF NOT EXISTS device_cmds (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  -- 设备主动上传的 genshin 状态（2026-09-05：本地上传→服务器拉，查看 0.3s 内；不做远程执行）
+  CREATE TABLE IF NOT EXISTS device_states (
+    device_id   TEXT PRIMARY KEY,
     github_id   INTEGER NOT NULL,
-    device_id   TEXT NOT NULL,
-    cmd         TEXT NOT NULL,
-    status      TEXT NOT NULL DEFAULT 'pending',  -- pending / running / done / failed
-    result      TEXT,
-    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at  TEXT
+    agents_json TEXT NOT NULL DEFAULT '[]',   -- 设备上 genshin agent 清单（plist 内容）
+    version     TEXT NOT NULL DEFAULT '',
+    synced_at   TEXT NOT NULL DEFAULT (datetime('now'))
   );
-  CREATE INDEX IF NOT EXISTS idx_cmds_poll ON device_cmds(device_id, status);
-  CREATE INDEX IF NOT EXISTS idx_cmds_created ON device_cmds(github_id, id);
+
+  -- 设备同步日志（2026-09-05：每次上传记一条；保留“活跃 30 天”=有同步记录的最近 30 个活跃日，非自然 30 天——用户定稿）
+  CREATE TABLE IF NOT EXISTS device_sync_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id   TEXT NOT NULL,
+    github_id   INTEGER NOT NULL,
+    synced_at   TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_sync_log ON device_sync_log(github_id, device_id, synced_at);
 
   -- agent presence（2026-09-05 AgentTableSync：跨设备 agent 索引表——轻量状态，非完整数据）
   CREATE TABLE IF NOT EXISTS agent_presence (
@@ -201,32 +205,34 @@ export const stmt = {
     DELETE FROM messages WHERE created_at < datetime('now', '-7 days')
   `),
 
-  // 跨设备命令队列（2026-09-05）
-  requestCmd: db.prepare(`
-    INSERT INTO device_cmds (github_id, device_id, cmd) VALUES (?, ?, ?)
+  // 设备状态主动上传/拉取（2026-09-05）
+  upsertDeviceState: db.prepare(`
+    INSERT INTO device_states (device_id, github_id, agents_json, version, synced_at)
+    VALUES (?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(device_id) DO UPDATE SET
+      agents_json = excluded.agents_json,
+      version = excluded.version,
+      synced_at = datetime('now')
   `),
-  pollPendingCmd: db.prepare(`
-    SELECT id, github_id, device_id, cmd, status, result, created_at
-    FROM device_cmds
-    WHERE device_id = ? AND status = 'pending'
-    ORDER BY id
-    LIMIT 1
+  getDeviceStates: db.prepare(`
+    SELECT device_id, agents_json, version, synced_at FROM device_states WHERE github_id = ?
   `),
-  claimCmd: db.prepare(`
-    UPDATE device_cmds SET status = 'running', updated_at = datetime('now')
-    WHERE id = ? AND status = 'pending'
+
+  // 同步日志（2026-09-05：记每次活跃同步；保留最近 30 个活跃日）
+  logSync: db.prepare(`
+    INSERT INTO device_sync_log (device_id, github_id) VALUES (?, ?)
   `),
-  completeCmd: db.prepare(`
-    UPDATE device_cmds SET status = ?, result = ?, updated_at = datetime('now')
-    WHERE id = ?
+  pruneSyncLog: db.prepare(`
+    DELETE FROM device_sync_log
+    WHERE github_id = ? AND DATE(synced_at) NOT IN (
+      SELECT DISTINCT DATE(synced_at) FROM device_sync_log WHERE github_id = ?
+      ORDER BY DATE(synced_at) DESC LIMIT 30
+    )
   `),
-  getCmd: db.prepare(`
-    SELECT id, github_id, device_id, cmd, status, result, created_at, updated_at
-    FROM device_cmds WHERE id = ? AND github_id = ?
-  `),
-  listMyCmds: db.prepare(`
-    SELECT id, device_id, cmd, status, result, created_at FROM device_cmds
-    WHERE github_id = ? ORDER BY id DESC LIMIT 20
+  getSyncLog: db.prepare(`
+    SELECT device_id, synced_at FROM device_sync_log
+    WHERE github_id = ? AND device_id = ?
+    ORDER BY synced_at DESC
   `),
 
   // agent presence（AgentTableSync 2026-09-05：跨设备 agent 索引表）

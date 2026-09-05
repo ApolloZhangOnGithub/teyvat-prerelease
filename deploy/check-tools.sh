@@ -11,7 +11,7 @@ grep -rl "registerPaimonTool({" "$CORE" --include="*.ts" 2>/dev/null | grep -v n
   grep -n "registerPaimonTool({" "$f" | while IFS=: read -r ln rest; do
     name=$(sed -n "$((ln+1))p" "$f" | grep -o '"[^"]*"' | head -1 | tr -d '"')
     [ -z "$name" ] && name="(unknown)"
-    block=$(sed -n "${ln},$((ln+60))p" "$f")
+    block=$(sed -n "${ln},$((ln+200))p" "$f")
     # 只匹配非注释行的 renderCall/renderResult（排除 // 开头的行）
     rc=$(echo "$block" | grep -v "^\s*//" | grep -c "renderCall")
     rr=$(echo "$block" | grep -v "^\s*//" | grep -c "renderResult")
