@@ -43,8 +43,12 @@ export function authMiddleware() {
     }
     const user = await resolveUser(auth.slice(7), deviceId, deviceName);
     if (!user) return c.json({ error: "invalid token" }, 401);
-    // 每次请求带 X-Device-Name 时更新设备名（hostname 注册）；无则不动（避免覆盖用户备注名）——2026-09-05
-    if (deviceName?.trim()) stmt.upsertDevice.run(deviceId, user.githubId, deviceName.trim());
+    // 设备名策略（2026-09-05）：带 X-Device-Name 时——若设备未命名(name=id 或不存在)用 hostname 注册；已有备注名只 touch 活跃不覆盖
+    if (deviceName?.trim()) {
+      const cur = stmt.getDeviceName.get(user.githubId, deviceId) as any;
+      if (!cur || !cur.device_name || cur.device_name === deviceId) stmt.upsertDevice.run(deviceId, user.githubId, deviceName.trim());
+      else stmt.touchDevice.run(user.githubId, deviceId);
+    }
     c.set("user", user);
     await next();
   };
@@ -56,7 +60,9 @@ authRouter.get("/devices", async (c) => {
   const auth = c.req.header("Authorization");
   const deviceId = c.req.header("X-Device-Id");
   if (!auth?.startsWith("Bearer ") || !deviceId) return c.json({ error: "unauthorized" }, 401);
-  const user = await resolveUser(auth.slice(7), deviceId);
+  // 自动更新：查询时带 X-Device-Name（真实 hostname）→ resolveUser 存 device_name（2026-09-05：设备名要自动真实非手动）
+  const deviceName = c.req.header("X-Device-Name");
+  const user = await resolveUser(auth.slice(7), deviceId, deviceName);
   if (!user) return c.json({ error: "invalid token" }, 401);
   const devices = stmt.listDevices.all(user.githubId);
   return c.json({ devices });
@@ -66,7 +72,8 @@ authRouter.put("/devices/:deviceId", async (c) => {
   const auth = c.req.header("Authorization");
   const deviceId = c.req.header("X-Device-Id");
   if (!auth?.startsWith("Bearer ") || !deviceId) return c.json({ error: "unauthorized" }, 401);
-  const user = await resolveUser(auth.slice(7), deviceId);
+  const deviceName = c.req.header("X-Device-Name");
+  const user = await resolveUser(auth.slice(7), deviceId, deviceName);
   if (!user) return c.json({ error: "invalid token" }, 401);
   const target = c.req.param("deviceId");
   const body = await c.req.json().catch(() => ({}));

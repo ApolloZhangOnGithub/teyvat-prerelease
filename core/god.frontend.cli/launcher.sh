@@ -32,6 +32,10 @@ RUNTIME_CLI="$PAIMON_RUNTIME/node_modules/@earendil-works/pi-coding-agent/dist/c
 _snap="$PAIMON_HOME/RuntimeCache/genshin-launcher.snapshot.sh"
 if [ -z "$PAIMON_LAUNCHER_SNAPSHOT" ] && [ -f "$0" ]; then
   mkdir -p "$(dirname "$_snap")" 2>/dev/null
+  # 快照复用优化（2026-09-05）：源文件未变时跳过重建——每次 genshin 启动省 cat+bash-n 开销（~1-2s）
+  if [ -f "$_snap" ] && [ "$_snap" -nt "$0" ] && bash -n "$_snap" 2>/dev/null; then
+    PAIMON_LAUNCHER_SNAPSHOT=1 exec bash "$_snap" "$@"
+  fi
   _snaptmp="${_snap}.tmp.$$"
   # 必须原子替换（temp+mv）：cat 直写 $_snap 会在同一 inode 上截断重写——其他正在跑的
   # 会话的 bash 还在按 fd 读这个文件，读到新写入的半截内容（源文件被 edit 工具就地改写时
@@ -277,7 +281,9 @@ console.log('当前绑定: '+b.githubLogin);
     // 颜色：实时活跃(5min)绿 / 否则黄；当前设备粗体高亮（2026-09-05 用户）
     const G='\x1b[32m',Y='\x1b[33m',B='\x1b[1m',R='\x1b[0m';
     const isActive=(s)=>{ if(!s) return false; const dt=new Date(String(s).replace(' ','T')+(String(s).includes('Z')?'':'Z')); return !isNaN(dt)&&(Date.now()-dt.getTime())<5*60*1000; };
-    console.log('  '+pad(H1,wNm)+'  '+pad(H2,wId)+'  '+pad(H3,19)+'  '+H4);
+    console.log('    '+pad(H1,wNm)+'  '+pad(H2,wId)+'  '+pad(H3,19)+'  '+H4);
+    // 编号：在线/离线分组独立编号（2026-09-05 用户：和 agent 一样）——在线组绿、离线组黄
+    let nOn=0, nOff=0;
     for(const d of ds2){
       // 首绑/最后活跃：UTC → 本地时区显示
       const fmt=(s)=>{ if(!s) return ''; const dt=new Date(String(s).replace(' ','T')+(String(s).includes('Z')?'':'Z')); if(isNaN(dt)) return String(s); return dt.toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).replace(/\//g,'-'); };
@@ -290,7 +296,8 @@ console.log('当前绑定: '+b.githubLogin);
       const c=online?G:Y;
       const mark=online?'[在线]':'[离线]'; // 文字状态标记（agent 可读，颜色不可见——2026-09-05 用户）
       const cur=isCur?' ◀':'';
-      console.log('  '+c+pad(nm,wNm)+'  '+pad(String(d.device_id),wId)+'  '+pad(String(first),19)+'  '+fmt(d.last_seen_at)+'  '+mark+cur+R);
+      const num=String(online?(++nOn):(++nOff));
+      console.log(c+pad(num+'·',3)+' '+pad(nm,wNm)+'  '+pad(String(d.device_id),wId)+'  '+pad(String(first),19)+'  '+fmt(d.last_seen_at)+'  '+mark+cur+R);
     }
   }catch(e){console.log('server 不可达: '+e.message);}
 })();
