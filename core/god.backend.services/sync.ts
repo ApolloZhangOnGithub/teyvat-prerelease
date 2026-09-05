@@ -148,6 +148,31 @@ syncRouter.get("/presence", (c) => {
   });
 });
 
+// ── agent presence（AgentTableSync 2026-09-05：跨设备 agent 索引表）──
+syncRouter.post("/agent-presence", async (c) => {
+  const user = c.get("user") as AuthUser;
+  try {
+    const b = await c.req.json();
+    const { sid, name, focus, version, model } = b || {};
+    if (!sid || typeof sid !== "string") return c.json({ error: "sid required" }, 400);
+    stmt.upsertPresence.run(user.githubId, sid, name || "", focus || "off", version || "", model || "", user.deviceId);
+    return c.json({ ok: true });
+  } catch (e) { return c.json({ error: "bad json" }, 400); }
+});
+
+syncRouter.get("/agent-presence", (c) => {
+  const user = c.get("user") as AuthUser;
+  stmt.expirePresence.run();
+  const rows = stmt.queryPresence.all(user.githubId) as any[];
+  return c.json({ agents: rows });
+});
+
+syncRouter.delete("/agent-presence/:sid", (c) => {
+  const user = c.get("user") as AuthUser;
+  stmt.clearPresence.run(user.githubId, c.req.param("sid"));
+  return c.json({ ok: true });
+});
+
 syncRouter.post("/lock/:personId", (c) => {
   const user = c.get("user") as AuthUser;
   const personId = c.req.param("personId");

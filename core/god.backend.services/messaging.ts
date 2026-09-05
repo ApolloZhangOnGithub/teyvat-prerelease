@@ -33,17 +33,6 @@ export function routeMessage(githubId: number, toPerson: string, msg: any) {
   return false;
 }
 
-export function broadcastToUser(githubId: number, msg: any) {
-  const payload = JSON.stringify(msg);
-  for (const [key, conns] of wsConnections) {
-    if (key.startsWith(`${githubId}:`)) {
-      for (const ws of conns) {
-        try { ws.send(payload); } catch (e) { console.error("[god.backend.services/messaging.ts] " + ((e as any)?.message || e)); }
-      }
-    }
-  }
-}
-
 export function registerWs(githubId: number, personId: string, ws: any) {
   const key = wsKey(githubId, personId);
   if (!wsConnections.has(key)) wsConnections.set(key, new Set());

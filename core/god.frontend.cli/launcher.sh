@@ -231,6 +231,52 @@ case "$NAME" in
   login|logout|unbind|whoami)
     cd "$PAIMON_EXT/.." && bun "$PAIMON_CLI_TS" "$NAME" "$@"
     exit $?;;
+  d|devices)
+    # [2026-09-05] 设备管理：无参=列表；`genshin d <id> <名称>`=给设备备注名
+    if [ -n "$2" ]; then
+      node --input-type=commonjs -e "
+const fs=require('fs'),h=require('os').homedir();
+const b=JSON.parse(fs.readFileSync(h+'/.teyvat/UserAccount/binding.json','utf8'));
+let endpoint='https://sync.paimon.beer';
+try{const s=JSON.parse(fs.readFileSync(h+'/.teyvat/UserAccount/services.json','utf8'));if(s.services&&s.services['genshin-sync']&&s.services['genshin-sync'].endpoint)endpoint=s.services['genshin-sync'].endpoint;}catch{}
+(async()=>{
+  const res=await fetch(endpoint+'/auth/devices/'+process.argv[1],{method:'PUT',headers:{Authorization:'Bearer '+b.token,'X-Device-Id':b.deviceId,'Content-Type':'application/json'},body:JSON.stringify({name:process.argv[2]})});
+  const j=await res.json().catch(()=>({}));
+  if(res.ok) console.log('设备 '+process.argv[1]+' 已命名为: '+process.argv[2]);
+  else console.log('改名失败: '+(j.error||res.status));
+})();
+" "$1" "$2"
+      exit $?
+    fi
+    node --input-type=commonjs -e "
+const fs=require('fs'),h=require('os').homedir();
+const b=JSON.parse(fs.readFileSync(h+'/.teyvat/UserAccount/binding.json','utf8'));
+let endpoint='https://sync.paimon.beer';
+try{const s=JSON.parse(fs.readFileSync(h+'/.teyvat/UserAccount/services.json','utf8'));if(s.services&&s.services['genshin-sync']&&s.services['genshin-sync'].endpoint)endpoint=s.services['genshin-sync'].endpoint;}catch{}
+console.log('当前绑定: '+b.githubLogin+(b.boundAt?(' (绑定于 '+b.boundAt+')'):''));
+(async()=>{
+  try{
+    const res=await fetch(endpoint+'/auth/devices',{headers:{Authorization:'Bearer '+b.token,'X-Device-Id':b.deviceId,'X-Device-Name':require('os').hostname()}});
+    if(!res.ok){console.log('server 查询失败: HTTP '+res.status);return;}
+    const j=await res.json();
+    const ds=j.devices||[];
+    console.log('账号绑定设备 ('+ds.length+'):');
+    // 表格列对齐（2026-09-05 用户：设备列表要表格不要散排；当前设备 ◀ 标注不重复写）
+    const pad=(s,n)=>s+' '.repeat(Math.max(1,n-s.length));
+    const wId=Math.max(8,...ds.map(d=>String(d.device_id).length));
+    const wNm=Math.max(4,...ds.map(d=>String(d.device_name||d.device_id).length));
+    console.log('  '+pad('名称',wNm)+'  '+pad('设备 ID',wId)+'  '+pad('首绑',19)+'  最后活跃');
+    for(const d of ds){
+      // 首绑：created_at 为 null 时用完整 last_seen_at（精确，不用 ~ 近似）——2026-09-05 用户
+      const first=d.created_at||d.last_seen_at||'';
+      const cur=(String(d.device_id)===b.deviceId)?' ◀':'';
+      // ◀ 对齐最右：活跃列定宽(19)后放 ◀
+      console.log('  '+pad(String(d.device_name||d.device_id),wNm)+'  '+pad(String(d.device_id),wId)+'  '+pad(String(first),19)+'  '+String(d.last_seen_at||'')+cur);
+    }
+  }catch(e){console.log('server 不可达: '+e.message);}
+})();
+"
+    exit $?;;
   sync)
     # [云同步已废弃 2026-09-05，PROPOSAL 036 替代] agent 单机存活，不做跨机状态同步；代码保留不删。
     echo "$(_l "  云同步已废弃（agent 单机存活，机间走 social 通讯）。" "  Cloud sync deprecated (agents live per-machine; cross-device via social).")"

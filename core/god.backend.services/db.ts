@@ -60,6 +60,20 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_messages_to ON messages(github_id, to_person, delivered);
   CREATE INDEX IF NOT EXISTS idx_locks_heartbeat ON locks(heartbeat);
+
+  -- agent presence（2026-09-05 AgentTableSync：跨设备 agent 索引表——轻量状态，非完整数据）
+  CREATE TABLE IF NOT EXISTS agent_presence (
+    github_id   INTEGER NOT NULL,
+    sid         TEXT NOT NULL,
+    name        TEXT NOT NULL DEFAULT '',
+    focus       TEXT NOT NULL DEFAULT 'off',
+    version     TEXT NOT NULL DEFAULT '',
+    model       TEXT NOT NULL DEFAULT '',
+    device_id   TEXT NOT NULL DEFAULT '',
+    last_seen   TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (github_id, sid)
+  );
+  CREATE INDEX IF NOT EXISTS idx_presence_lastseen ON agent_presence(last_seen);
 `);
 
 // 迁移（2026-09-05）：devices 表补 created_at（首次绑定时间——存量设备此前未记录，置 NULL 用 last_seen 近似）
@@ -90,6 +104,9 @@ export const stmt = {
     SELECT device_id, device_name, created_at, last_seen_at
     FROM devices WHERE github_id = ?
     ORDER BY COALESCE(created_at, last_seen_at) DESC
+  `),
+  renameDevice: db.prepare(`
+    UPDATE devices SET device_name = ? WHERE github_id = ? AND device_id = ?
   `),
 
   getManifest: db.prepare(`
@@ -161,5 +178,28 @@ export const stmt = {
 
   expireMessages: db.prepare(`
     DELETE FROM messages WHERE created_at < datetime('now', '-7 days')
+  `),
+
+  // agent presence（AgentTableSync 2026-09-05：跨设备 agent 索引表）
+  upsertPresence: db.prepare(`
+    INSERT INTO agent_presence (github_id, sid, name, focus, version, model, device_id, last_seen)
+    VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(github_id, sid) DO UPDATE SET
+      name = excluded.name,
+      focus = excluded.focus,
+      version = excluded.version,
+      model = excluded.model,
+      device_id = excluded.device_id,
+      last_seen = datetime('now')
+  `),
+  queryPresence: db.prepare(`
+    SELECT sid, name, focus, version, model, device_id, last_seen
+    FROM agent_presence WHERE github_id = ?
+  `),
+  clearPresence: db.prepare(`
+    DELETE FROM agent_presence WHERE github_id = ? AND sid = ?
+  `),
+  expirePresence: db.prepare(`
+    DELETE FROM agent_presence WHERE last_seen < datetime('now', '-5 minutes')
   `),
 };

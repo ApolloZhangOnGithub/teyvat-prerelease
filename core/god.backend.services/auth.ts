@@ -14,7 +14,7 @@ export interface AuthUser {
 
 const tokenCache = new Map<string, AuthUser>();
 
-export async function resolveUser(token: string, deviceId: string): Promise<AuthUser | null> {
+export async function resolveUser(token: string, deviceId: string, deviceName?: string): Promise<AuthUser | null> {
   const cached = tokenCache.get(token);
   if (cached && cached.deviceId === deviceId) return cached;
 
@@ -27,7 +27,8 @@ export async function resolveUser(token: string, deviceId: string): Promise<Auth
   const user: AuthUser = { githubId: gh.id, login: gh.login, avatarUrl: gh.avatar_url, deviceId };
 
   stmt.upsertUser.run(gh.id, gh.login, gh.avatar_url);
-  stmt.upsertDevice.run(deviceId, gh.id, deviceId);
+  // device_name 优先用 client 上报的 hostname（X-Device-Name），无则回落 deviceId（2026-09-05：设备要可识别名称）
+  stmt.upsertDevice.run(deviceId, gh.id, deviceName?.trim() || deviceId);
   tokenCache.set(token, user);
   return user;
 }
@@ -56,6 +57,23 @@ authRouter.get("/devices", async (c) => {
   if (!user) return c.json({ error: "invalid token" }, 401);
   const devices = stmt.listDevices.all(user.githubId);
   return c.json({ devices });
+});
+
+authRouter.put("/devices/:deviceId", async (c) => {
+  const auth = c.req.header("Authorization");
+  const deviceId = c.req.header("X-Device-Id");
+  if (!auth?.startsWith("Bearer ") || !deviceId) return c.json({ error: "unauthorized" }, 401);
+  const user = await resolveUser(auth.slice(7), deviceId);
+  if (!user) return c.json({ error: "invalid token" }, 401);
+  const target = c.req.param("deviceId");
+  const body = await c.req.json().catch(() => ({}));
+  const name = String(body?.name || "").trim();
+  if (!name) return c.json({ error: "name required" }, 400);
+  // 只允许改自己账号下的设备
+  const owned = stmt.listDevices.all(user.githubId).some((d: any) => d.device_id === target);
+  if (!owned) return c.json({ error: "device not found" }, 404);
+  stmt.renameDevice.run(name, user.githubId, target);
+  return c.json({ ok: true });
 });
 
 authRouter.post("/github", async (c) => {

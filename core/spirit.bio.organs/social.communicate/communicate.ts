@@ -23,7 +23,7 @@ const require = createRequire(import.meta.url);
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
-import { socialDataDir, logerr, runtimeCacheDir } from "#paths";
+import { socialDataDir, logerr, runtimeCacheDir, syncEndpoint } from "#paths";
 // heart-state：interrupt 唤醒 hibernated 用（communicate → heart-state 无环；heart.ts 反向 import communicate）
 import { transition, heartState } from "../kernel.heart/heart-state.ts";
 
@@ -134,7 +134,37 @@ function touchPresence(): void {
   reg[sid].model = sys.model;
   reg[sid].version = sys.version;
   writeJson(REGISTRY_FILE, reg);
+  // AgentTableSync（2026-09-05）：心跳同时上报远端 server（有 binding 时）——跨设备可见
+  reportPresence("up").catch(() => {});
 }
+
+// ── 跨设备 presence 上报（AgentTableSync 2026-09-05）────────────────────
+// 有 GitHub binding 时，把本 agent 轻量状态上报 sync server（/sync/agent-presence）——
+// 别的机器 social.list({remote:true}) 能看到本机 agent。上报失败不阻塞本地（纯增量）。
+let _reportInFlight = false;
+async function reportPresence(kind: "up" | "down"): Promise<void> {
+  if (_reportInFlight) return;
+  try {
+    let b: any = null;
+    try { b = JSON.parse(readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8")); } catch { return; }
+    if (!b?.token || !b?.deviceId) return;
+    const sid = getMySid();
+    if (!/^[a-f0-9]{8}$/.test(sid)) return;
+    _reportInFlight = true;
+    const ep = syncEndpoint();
+    if (kind === "up") {
+      const sys = getSysInfo();
+      const body = { sid, name: getMyName(), focus: getFocus(), version: sys.version, model: sys.model };
+      await fetch(ep + "/sync/agent-presence", { method: "POST", headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    } else {
+      await fetch(`${ep}/sync/agent-presence/${sid}`, { method: "DELETE", headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId } });
+    }
+  } catch (e) { logerr("reportPresence(" + kind + "): " + ((e as any)?.message || e)); }
+  finally { _reportInFlight = false; }
+}
+
+export async function reportOffline(): Promise<void> { await reportPresence("down"); } // 优雅退出上报 offline（heart 退出钩子调）
+
 
 function getSysInfo(): { version: string; model: string } {
   let version = "?";
@@ -611,6 +641,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
       members: Type.Optional(Type.Array(Type.String(), { messageDescription: "Member sids/names (group create)" })),
       gid: Type.Optional(Type.String({ messageDescription: "Group id (group send/mute)" })),
       on: Type.Optional(Type.Boolean({ messageDescription: "Mute on/off (group mute, default true)" })),
+      remote: Type.Optional(Type.Boolean({ messageDescription: "list: include remote-machine agents (default false — local only)" })),
     }),
     renderCall(args: any, theme: any) {
       // 2026-08-15 统一：与 amem 一致——工具名 + action 参数，不用 "Social.Inbox" 这种分层名（用户：全是点垃圾）
@@ -693,16 +724,37 @@ function registerSocialTools(pi: ExtensionAPI): void {
           touchPresence();
           const agents = listAgents();
           const me = getMySid();
-          if (!agents.length) return { content: [{ type: "text", text: "(no agents registered)" }], details: { social: true, action: "list", count: 0, lines: [] } };
           const now = Date.now();
+          // AgentTableSync：remote=true 时拉 server presence 合并（远端 agent = 别的机器，标 remote）
+          const remoteLines: string[] = [];
+          if (p.remote === true) {
+            try {
+              const rb = JSON.parse(readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8"));
+              if (rb?.token && rb?.deviceId) {
+                const res = await fetch(syncEndpoint() + "/sync/agent-presence", { headers: { "Authorization": `Bearer ${rb.token}`, "X-Device-Id": rb.deviceId } });
+                const body: any = await res.json();
+                const localIds = new Set(agents.map(a => a.sid));
+                for (const ra of (body?.agents ?? [])) {
+                  if (localIds.has(ra.sid)) continue; // 本机 agent 已在本地列表
+                  const lastTs = Date.parse(String(ra.last_seen).replace(" ", "T") + "Z") || 0;
+                  const ago = lastTs ? Math.max(0, Math.floor((now - lastTs) / 1000)) : -1;
+                  const online = ago >= 0 && ago < 300; // server 5min expirePresence 窗口
+                  const state = online ? "online" : ago >= 0 ? `${Math.floor(ago / 60)}m ago` : "unknown";
+                  remoteLines.push(`${ra.name} (${ra.sid})  focus:${ra.focus}  ${state}  remote:${ra.device_id === rb.deviceId ? "?" : "other"}  ${ra.version} ${ra.model}`);
+                }
+              }
+            } catch { /* remote 拉取失败不影响本地列表 */ }
+          }
+          const allCount = agents.length + remoteLines.length;
+          if (!allCount && !remoteLines.length) return { content: [{ type: "text", text: "(no agents registered)" }], details: { social: true, action: "list", count: 0, lines: [] } };
           const lines = agents.map(a => {
             const mark = a.sid === me ? " (me)" : "";
             const ago = a.lastSeen > 0 ? Math.max(0, Math.floor((now - a.lastSeen) / 1000)) : -1;
             const online = ago >= 0 && ago < 600;
             const state = online ? "online" : ago >= 0 ? `${Math.floor(ago / 60)}m ago` : "never";
             return `${a.name} (${a.sid})${mark}  focus:${a.focus}  ${state}  ${a.version} ${a.model}`;
-          });
-          return { content: [{ type: "text", text: `Agents (${agents.length}):\n${lines.map(l => "  " + l).join("\n")}` }], details: { social: true, action: "list", count: agents.length, lines } };
+          }).concat(remoteLines.length ? [`-- remote (${remoteLines.length}) --`].concat(remoteLines) : []);
+          return { content: [{ type: "text", text: `Agents (${allCount}):\n${lines.map(l => "  " + l).join("\n")}` }], details: { social: true, action: "list", count: allCount, lines } };
         }
         case "inbox": {
           const limit = Math.min(50, Math.max(1, p.limit ?? 20));
