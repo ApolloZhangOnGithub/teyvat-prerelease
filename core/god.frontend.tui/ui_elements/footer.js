@@ -332,8 +332,10 @@ export class FooterComponent {
             }
         }
         // Prepend the provider in parentheses if there are multiple providers and there's enough room
+        // ISSUE 129：新 Footer 供应商功能开（默认）时 line1 已显示 hosting 托管商，此处冗余的通道名括号停用；
+        // 仅当用户在 /u 关闭 Footer 供应商（__genshinFooterProvider === false）时保留旧行为。
         let rightSide = rightSideWithoutProvider;
-        if (this.footerData.getAvailableProviderCount() > 1 && state.model) {
+        if (globalThis.__genshinFooterProvider === false && this.footerData.getAvailableProviderCount() > 1 && state.model) {
             rightSide = `(${state.model.provider}) ${rightSideWithoutProvider}`;
             if (statsLeftWidth + minPadding + visibleWidth(rightSide) > width) {
                 // Too wide, fall back
@@ -371,13 +373,19 @@ export class FooterComponent {
 
         // line1: name(左) + 模型+版本号(右)，followHint 居中
         const modelStr = state.model?.id || "no-model";
-        let modelDisplay = modelStr;
-        // 2026-09-04 用户需求：模型名左侧显示具体 provider（/u 的 Footer Provider 开关，默认开）。
-        // 直连 provider（bigmodel/deepseek 等）用 model.provider；openrouter 用 pi-ai 响应 chunk 捕获的
-        // 路由 provider（globalThis.__genshinRoutedProvider，如 "Claude Platform on AWS"），未知回退 "openrouter"。
+        // 2026-09-05 ISSUE 129：模型 id 去掉开发商命名空间（anthropic/claude-opus-4.6 → claude-opus-4.6），
+        // 避免开发商名（anthropic 等）在显示里抢眼误导。
+        const shortModelId = modelStr.includes("/") ? modelStr.slice(modelStr.indexOf("/") + 1) : modelStr;
+        let modelDisplay = shortModelId;
+        // 2026-09-04/05 用户需求：模型名左侧显示 hosting 托管商（/u 的 Footer 供应商开关，默认开）。
+        // 直连模型（bigmodel/deepseek 等）的 model.provider 即托管平台；openrouter 显示 pi-ai 从
+        // openrouter_metadata 捕获的当次实际路由托管商（如 Claude Platform on AWS / Azure），且仅当捕获
+        // 属于当前模型（__genshinRoutedProviderModel === model.id，防跨模型残留）；未知时不加前缀（宁缺毋滥）。
         if (globalThis.__genshinFooterProvider !== false && state.model) {
-            const prov = state.model.provider === "openrouter"
-                ? (globalThis.__genshinRoutedProvider || "openrouter")
+            const isOpenRouter = state.model.provider === "openrouter";
+            const capturedOk = globalThis.__genshinRoutedProviderModel === state.model.id;
+            const prov = isOpenRouter
+                ? (capturedOk ? globalThis.__genshinRoutedProvider : "")
                 : (state.model.provider || "");
             if (prov) modelDisplay = `${prov}:${modelDisplay}`;
         }

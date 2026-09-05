@@ -32,7 +32,10 @@ function getEntry(path: string, maxBytes?: number): StreamEntry {
   if (entry) return entry;
 
   let currentSize = 0;
-  try { currentSize = statSync(path).size; } catch (e) { console.error("[spirit.bio.organs/kernel.nerves/nerves.ts] " + ((e as any)?.message || e)); }
+  try { currentSize = statSync(path).size; } catch (e) {
+    // 2026-09-05：新日志文件首次 append 时文件尚未创建 → stat ENOENT 是正常场景（size=0），静默；其他错误才打日志
+    if ((e as any)?.code !== "ENOENT") console.error("[spirit.bio.organs/kernel.nerves/nerves.ts] " + ((e as any)?.message || e));
+  }
 
   const stream = openStream(path);
   entry = {

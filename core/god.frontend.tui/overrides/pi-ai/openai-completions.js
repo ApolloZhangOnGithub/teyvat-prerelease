@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { createWriteStream, mkdirSync, readFileSync } from "node:fs";
+import { createWriteStream, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createGzip } from "node:zlib";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -307,12 +307,37 @@ export const stream = (model, context, options) => {
             for await (const chunk of openaiStream) {
                 if (!chunk || typeof chunk !== "object")
                     continue;
-                // teyvat: OpenRouter 路由 provider 捕获（2026-09-04 用户需求：footer 模型名左侧显示具体 provider）。
-                // OpenRouter 每个 SSE chunk 的 JSON 根部带 "provider"（如 "Claude Platform on AWS"）；
-                // 非 OpenRouter 端点无此字段，保持 undefined。存 globalThis 供 god.frontend.tui footer 读取。
-                if (typeof chunk.provider === "string" && chunk.provider.length > 0) {
-                    output.routedProvider = chunk.provider;
-                    globalThis.__genshinRoutedProvider = chunk.provider;
+                // teyvat(2026-09-05 ISSUE 129 修复)：OpenRouter hosting provider 捕获——footer 显示实际托管商。
+                // 数据源 1：个别 chunk 根部带 provider；数据源 2（主）：opt-in 头 X-OpenRouter-Metadata: enabled 后
+                // 流式最后一块带 openrouter_metadata.endpoints.available[].provider + selected:true。
+                // 同时记录 chunk.model（请求的模型 id），footer 切换模型后据此防跨模型残留过期值。
+                let capturedProvider = typeof chunk.provider === "string" && chunk.provider.length > 0
+                    ? chunk.provider
+                    : null;
+                const meta = chunk && typeof chunk === "object" ? chunk.openrouter_metadata : null;
+                if (meta) {
+                    const sel = meta.endpoints?.available?.find((a) => a && a.selected);
+                    if (sel && sel.provider) capturedProvider = sel.provider;
+                    if (!capturedProvider && meta.attempts && meta.attempt > 0 && meta.attempts[meta.attempt - 1]?.provider) {
+                        capturedProvider = meta.attempts[meta.attempt - 1].provider;
+                    }
+                    if (!capturedProvider && typeof meta.summary === "string") {
+                        const m = meta.summary.match(/selected=([^,\s]+)/);
+                        if (m) capturedProvider = m[1];
+                    }
+                }
+                if (capturedProvider) {
+                    output.routedProvider = capturedProvider;
+                    globalThis.__genshinRoutedProvider = capturedProvider;
+                    globalThis.__genshinRoutedProviderModel = (typeof chunk.model === "string" && chunk.model) || model.id;
+                    // ISSUE 129 自验证探针（确认后移除）：记录最近一次捕获的托管商
+                    try {
+                        const probeDir = join(homedir(), ".teyvat", "RuntimeCache", process.env.PAIMON_AGENT_ID || "unknown");
+                        mkdirSync(probeDir, { recursive: true });
+                        writeFileSync(join(probeDir, "routed-provider-probe.json"), JSON.stringify({ ts: Date.now(), model: globalThis.__genshinRoutedProviderModel, provider: capturedProvider }, null, 2), "utf8");
+                    } catch (e) {
+                        console.error("[teyvat routed-provider probe] " + (e?.message || e));
+                    }
                 }
                 // OpenAI documents ChatCompletionChunk.id as the unique chat completion identifier,
                 // and each chunk in a streamed completion carries the same id.
@@ -525,6 +550,13 @@ function createClient(model, context, apiKey, optionsHeaders, sessionId, compat 
     // Merge options headers last so they can override defaults
     if (optionsHeaders) {
         Object.assign(headers, optionsHeaders);
+    }
+    // teyvat(2026-09-05 ISSUE 129)：OpenRouter Router Metadata opt-in——每次响应返回真实路由托管商。
+    // 带 X-OpenRouter-Metadata: enabled 后，流式响应的最后一块（data: [DONE] 前）携带 openrouter_metadata，
+    // 内含 endpoints.available[].provider + selected:true（实际 host，如 Claude Platform on AWS / Azure）。
+    // footer 据此显示 hosting 而非开发商/通道名。非 OpenRouter 端点不发此头（无副作用）。
+    if (typeof model.baseUrl === "string" && model.baseUrl.includes("openrouter.ai")) {
+        headers["X-OpenRouter-Metadata"] = "enabled";
     }
     return new OpenAI({
         apiKey,

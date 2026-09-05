@@ -137,11 +137,20 @@ function isHighlightEnabled() {
   return globalThis.__genshinCodeHighlight === true;
 }
 
+// 2026-09-05 已知语言白名单：highlight.js 对未知语言（如消息里的 ```issue / ```plain）先 console.error
+// （LANGUAGE_NOT_FOUND）再 throw——外层 catch 吞得了 throw 但拦不住已发出的 error 日志，console-error.log 刷屏。
+// 非白名单语言不传 lang → highlight.js autodetect/纯文本，从源头不触发 getLanguage 失败。
+const HIGHLIGHT_LANGS = new Set([
+  "js", "javascript", "ts", "typescript", "bash", "sh", "shell", "zsh",
+  "json", "python", "py", "html", "xml", "css", "markdown", "md", "yaml", "yml",
+  "java", "c", "cpp", "go", "rust", "sql", "diff", "ini", "toml", "graphql", "dockerfile",
+]);
 function highlightCode(code, lang) {
   if (!_highlight) return null;
   if (!isHighlightEnabled()) return null;
   try {
-    return _highlight(code, { language: lang || undefined, theme: MONOKAI_THEME }).split("\n");
+    const safeLang = lang && HIGHLIGHT_LANGS.has(String(lang).toLowerCase()) ? lang : undefined;
+    return _highlight(code, { language: safeLang, theme: MONOKAI_THEME }).split("\n");
   } catch { return null; }
 }
 // 暴露给 tool-execution.js 用

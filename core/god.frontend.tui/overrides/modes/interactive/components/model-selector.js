@@ -8,6 +8,7 @@ import { keyHint } from "./keybinding-hints.js";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+const MAX_VISIBLE = 10; // 2026-09-05（用户）：边缘滚动——可视行数（从 updateList 局部常量提出，handleInput 也要用）
 /**
  * Component that renders a model selector with search
  */
@@ -194,6 +195,8 @@ export class ModelSelectorComponent extends Container {
         const currentIndex = this.filteredModels.findIndex((item) => modelsAreEqual(this.currentModel, item.model));
         this.selectedIndex =
             currentIndex >= 0 ? currentIndex : Math.min(this.selectedIndex, Math.max(0, this.filteredModels.length - 1));
+        // 2026-09-05 边缘滚动：初始让选中项在可视区顶部（不是居中），旧 startIndex=0 导致选中项在可视区外时箭头不可见
+        this.startIndex = Math.max(0, Math.min(this.selectedIndex, Math.max(0, this.filteredModels.length - MAX_VISIBLE)));
     }
     sortModels(models) {
         const sorted = [...models];
@@ -227,6 +230,8 @@ export class ModelSelectorComponent extends Container {
         this.activeModels = this.scope === "scoped" ? this.scopedModelItems : this.allModels;
         const currentIndex = this.activeModels.findIndex((item) => modelsAreEqual(this.currentModel, item.model));
         this.selectedIndex = currentIndex >= 0 ? currentIndex : 0;
+        // 2026-09-05 边缘滚动：切 scope 让选中项在可视区顶部
+        this.startIndex = Math.max(0, Math.min(this.selectedIndex, Math.max(0, this.activeModels.length - MAX_VISIBLE)));
         this.filterModels(this.searchInput.getValue());
         if (this.scopeText) {
             this.scopeText.setText(this.getScopeText());
@@ -237,12 +242,19 @@ export class ModelSelectorComponent extends Container {
             ? fuzzyFilter(this.activeModels, query, ({ id, provider, model }) => getModelSelectorSearchText({ id, provider, name: model.name }))
             : this.activeModels;
         this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.filteredModels.length - 1));
+        // 2026-09-05 边缘滚动：过滤后让选中项在可视区顶部（避免选中项在可视区外箭头不可见）
+        this.startIndex = Math.max(0, Math.min(this.selectedIndex, Math.max(0, this.filteredModels.length - MAX_VISIBLE)));
         this.updateList();
     }
     updateList() {
         this.listContainer.clear();
-        const maxVisible = 10;
-        const startIndex = Math.max(0, Math.min(this.selectedIndex - Math.floor(maxVisible / 2), this.filteredModels.length - maxVisible));
+        const maxVisible = MAX_VISIBLE;
+        // 2026-09-05（用户）：边缘滚动——startIndex 为实例状态，箭头先走到可视区边缘、列表才滚动。
+        // 旧实现从 selectedIndex 居中重算（startIndex = selectedIndex - maxVisible/2），每次按键列表都跟滚，
+        // 箭头永远在中间——用户期望"先移动箭头到边缘再移动列表"。
+        if (typeof this.startIndex !== "number") this.startIndex = 0;
+        this.startIndex = Math.max(0, Math.min(this.startIndex, Math.max(0, this.filteredModels.length - maxVisible)));
+        const startIndex = this.startIndex;
         const endIndex = Math.min(startIndex + maxVisible, this.filteredModels.length);
         // Show visible slice of filtered models
         // 2026-09-04 用户定稿：两栏渲染——provider 对齐栏 + model 栏（去 provider 前缀，不重复）。
@@ -299,18 +311,32 @@ export class ModelSelectorComponent extends Container {
             }
             return;
         }
-        // Up arrow - wrap to bottom when at top
+        // Up arrow - 2026-09-05（用户）：边缘滚动——箭头先走到可视区顶部，列表才上滚；最顶再按 wrap 到底部
         if (kb.matches(keyData, "tui.select.up")) {
             if (this.filteredModels.length === 0)
                 return;
-            this.selectedIndex = this.selectedIndex === 0 ? this.filteredModels.length - 1 : this.selectedIndex - 1;
+            if (this.selectedIndex === 0) {
+                // wrap：跳到底部（startIndex 也跳到底部窗口，避免箭头落在可视区外）
+                this.selectedIndex = this.filteredModels.length - 1;
+                this.startIndex = Math.max(0, this.filteredModels.length - MAX_VISIBLE);
+            } else {
+                this.selectedIndex--;
+                if (this.selectedIndex < this.startIndex) this.startIndex--; // 箭头越过可视区上边缘 → 列表上滚一行（箭头停在上边缘）
+            }
             this.updateList();
         }
-        // Down arrow - wrap to top when at bottom
+        // Down arrow - 边缘滚动：箭头先走到可视区底部，列表才下滚；最底再按 wrap 到顶部
         else if (kb.matches(keyData, "tui.select.down")) {
             if (this.filteredModels.length === 0)
                 return;
-            this.selectedIndex = this.selectedIndex === this.filteredModels.length - 1 ? 0 : this.selectedIndex + 1;
+            if (this.selectedIndex === this.filteredModels.length - 1) {
+                // wrap：跳到顶部
+                this.selectedIndex = 0;
+                this.startIndex = 0;
+            } else {
+                this.selectedIndex++;
+                if (this.selectedIndex >= this.startIndex + MAX_VISIBLE) this.startIndex++; // 箭头越过可视区下边缘 → 列表下滚一行（箭头停在下边缘）
+            }
             this.updateList();
         }
         // Enter

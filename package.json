@@ -1,6 +1,6 @@
 {
   "name": "teyvat",
-  "version": "0.3.2-dev.20260905.3",
+  "version": "0.3.2-dev.20260905.8",
   "description": "Living AI agent extension for pi-coding-agent",
   "license": "MIT",
   "os": ["darwin", "linux"],
@@ -9,7 +9,7 @@
     "@earendil-works/pi-coding-agent": "0.80.7"
   },
   "scripts": {
-    "postinstall": "PAIMON_CHANNEL=prerelease PAIMON_VER=0.3.2-dev.20260905.3 bash deploy/install.sh"
+    "postinstall": "PAIMON_CHANNEL=prerelease PAIMON_VER=0.3.2-dev.20260905.8 bash deploy/install.sh"
   },
   "files": ["core/", "deploy/", "README.md"]
 }

@@ -635,7 +635,10 @@ ENTRY=$(node --input-type=commonjs -e "
     } catch {}
     p._active = active;
     // 2026-08-20 分组：detached 存在 = 后台 headless（_b）——与 list.cjs / archive.cjs 同源（1b/1f 分组路由基础）
-    p._b = fs.existsSync(PAIMON_HOME + '/RuntimeCache/' + p.id + '/detached');
+    // 2026-09-05 修复：必须 active && detached——与 list.cjs 的 _fb 一致（offline 不算 B）。
+    //   否则 offline 但残留 detached 标记的 agent（headless 测试遗留）被标 _b=1 → 排序 F前B后 沉底 →
+    //   组内序号与列表显示错位（genshin 3 的 3o 指向错误 agent）
+    p._b = active && fs.existsSync(PAIMON_HOME + '/RuntimeCache/' + p.id + '/detached');
     p._ago = Math.round((now - new Date(p.lastEnded || p.lastSeen).getTime()) / 60000);
   }
   // 排序与 list.cjs 完全一致（活跃优先 + F 前 B 后 + 最近活跃优先）——保证数字路由的组内序号 = 列表显示序号
