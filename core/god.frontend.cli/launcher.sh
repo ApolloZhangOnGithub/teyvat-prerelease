@@ -8,6 +8,12 @@ export PAIMON_EXT="$HOME/.local/lib/teyvat/extensions/teyvat"
 export PAIMON_CLI="$PAIMON_EXT/god.frontend.cli"
 export PAIMON_CONFIG="$PAIMON_HOME/config"
 
+# ── 运行时自包含（2026-09-05：不依赖用户 shell PATH）──
+# bun/node 的自装路径前置到 PATH——launcher 是唯一入口，应保证 bun/node 可找到，
+# 用户终端 PATH 里没有 ~/.bun/bin 时 genshin 命令（whoami/update/agent 启动）不再报 "bun: not found"。
+[ -d "$HOME/.bun/bin" ] && PATH="$HOME/.bun/bin:$PATH"
+[ -d "$HOME/.local/share/node24/bin" ] && PATH="$HOME/.local/share/node24/bin:$PATH"
+
 RUNTIME_CLI="$PAIMON_RUNTIME/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"
 # ── 启动器快照（防"运行中被就地编辑"竞态）──────────────────────────────
 # agent/edit 工具就地改写 ~/.local/bin/genshin（同 inode）时，正在运行的 bash 在退出
