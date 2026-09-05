@@ -236,70 +236,35 @@ case "$NAME" in
     cd "$PAIMON_EXT/.." && bun "$PAIMON_CLI_TS" "$NAME" "$@"
     exit $?;;
   d|devices)
-    # [2026-09-05] 设备管理：无参=列表；`genshin d <id> <名称>`=给设备备注名
-    if [ -n "$2" ]; then      node --input-type=commonjs -e "
-const fs=require('fs'),h=require('os').homedir();
-const b=JSON.parse(fs.readFileSync(h+'/.teyvat/UserAccount/binding.json','utf8'));
-let endpoint='https://sync.paimon.beer';
-try{const s=JSON.parse(fs.readFileSync(h+'/.teyvat/UserAccount/services.json','utf8'));if(s.services&&s.services['genshin-sync']&&s.services['genshin-sync'].endpoint)endpoint=s.services['genshin-sync'].endpoint;}catch{}
-(async()=>{
-  const res=await fetch(endpoint+'/auth/devices/'+process.argv[1],{method:'PUT',headers:{Authorization:'Bearer '+b.token,'X-Device-Id':b.deviceId,'Content-Type':'application/json'},body:JSON.stringify({name:process.argv[2]})});
-  const j=await res.json().catch(()=>({}));
-  if(res.ok) console.log('设备 '+process.argv[1]+' 已命名为: '+process.argv[2]);
-  else console.log('改名失败: '+(j.error||res.status));
-})();
-" "$1" "$2"
-      exit $?
-    fi
+    # [2026-09-05] 设备管理（devices.cjs）：无参=列表；rn <id> <名>=改名；<name|编号|id> [cmd]=请求设备执行 genshin 命令
+    node "$PAIMON_CLI/devices.cjs" "$@"
+    exit $?;;
+  cmd-poll)
+    # [2026-09-05] 设备命令执行器：拉自己 pending 的跨设备 genshin 命令 → 本机执行 → 回报（systemd timer 每分钟调）
     node --input-type=commonjs -e "
 const fs=require('fs'),h=require('os').homedir();
+const {execFile}=require('child_process');
 const b=JSON.parse(fs.readFileSync(h+'/.teyvat/UserAccount/binding.json','utf8'));
 let endpoint='https://sync.paimon.beer';
 try{const s=JSON.parse(fs.readFileSync(h+'/.teyvat/UserAccount/services.json','utf8'));if(s.services&&s.services['genshin-sync']&&s.services['genshin-sync'].endpoint)endpoint=s.services['genshin-sync'].endpoint;}catch{}
-console.log('当前绑定: '+b.githubLogin);
+const H=()=>({Authorization:'Bearer '+b.token,'X-Device-Id':b.deviceId,'X-Device-Name':require('os').hostname()});
+const gbin=process.env.GENSHIN_BIN||(h+'/.local/bin/genshin');
 (async()=>{
+  if(!b?.token||!b?.deviceId){process.exit(0);}
   try{
-    const res=await fetch(endpoint+'/auth/devices',{headers:{Authorization:'Bearer '+b.token,'X-Device-Id':b.deviceId,'X-Device-Name':require('os').hostname()}});
-    if(!res.ok){console.log('server 查询失败: HTTP '+res.status);return;}
-    const j=await res.json();
-    const ds=j.devices||[];
-    console.log('账号绑定设备 ('+ds.length+'):');
-    // 表格列对齐：用标准 pad.cjs（vw 视觉宽）——2026-09-05 用户要求
-    const {pad,vw}=require(process.env.PAIMON_EXT+'/god.frontend.cli/pad.cjs');
-    const H1='名称',H2='设备 ID',H3='首绑',H4='最后活跃';
-    // 排序：当前设备置顶，其余按最后活跃时间降序（新活跃先）——2026-09-05 用户
-    const curId=b.deviceId;
-    const ds2=[...ds].sort((a,b)=>{
-      const ac=String(a.device_id)===curId, bc=String(b.device_id)===curId;
-      if(ac&&!bc) return -1; if(bc&&!ac) return 1;
-      const ta=Date.parse(String(a.last_seen_at||'').replace(' ','T')+'Z')||0;
-      const tb=Date.parse(String(b.last_seen_at||'').replace(' ','T')+'Z')||0;
-      return tb-ta;
-    });
-    const wNm=Math.max(vw(H1),...ds2.map(d=>vw(String(d.device_name&&d.device_name!==d.device_id?d.device_name:''))));
-    const wId=Math.max(vw(H2),...ds2.map(d=>vw(String(d.device_id))));
-    // 颜色：实时活跃(5min)绿 / 否则黄；当前设备粗体高亮（2026-09-05 用户）
-    const G='\x1b[32m',Y='\x1b[33m',B='\x1b[1m',R='\x1b[0m';
-    const isActive=(s)=>{ if(!s) return false; const dt=new Date(String(s).replace(' ','T')+(String(s).includes('Z')?'':'Z')); return !isNaN(dt)&&(Date.now()-dt.getTime())<5*60*1000; };
-    console.log('    '+pad(H1,wNm)+'  '+pad(H2,wId)+'  '+pad(H3,19)+'  '+H4);
-    // 编号：在线/离线分组独立编号（2026-09-05 用户：和 agent 一样）——在线组绿、离线组黄
-    let nOn=0, nOff=0;
-    for(const d of ds2){
-      // 首绑/最后活跃：UTC → 本地时区显示
-      const fmt=(s)=>{ if(!s) return ''; const dt=new Date(String(s).replace(' ','T')+(String(s).includes('Z')?'':'Z')); if(isNaN(dt)) return String(s); return dt.toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).replace(/\//g,'-'); };
-      const first=fmt(d.created_at)||fmt(d.last_seen_at)||'';
-      const nm=(d.device_name&&d.device_name!==d.device_id)?d.device_name:'';
-      const isCur=String(d.device_id)===curId;
-      const act=isActive(d.last_seen_at);
-      // 当前设备永远绿（正在用=实时活跃）；其他按 last_seen 5min 判活跃绿/不活跃黄（2026-09-05 用户）
-      const online=isCur||act;
-      const c=online?G:Y;
-      const mark=online?'[在线]':'[离线]'; // 文字状态标记（agent 可读，颜色不可见——2026-09-05 用户）
-      const cur=isCur?' ◀':'';
-      const num=String(online?(++nOn):(++nOff));
-      console.log(c+pad(num+'·',3)+' '+pad(nm,wNm)+'  '+pad(String(d.device_id),wId)+'  '+pad(String(first),19)+'  '+fmt(d.last_seen_at)+'  '+mark+cur+R);
-    }
-  }catch(e){console.log('server 不可达: '+e.message);}
+    const pr=await fetch(endpoint+'/cmd/poll',{headers:H()});
+    const pj=await pr.json().catch(()=>({}));
+    const c=pj?.cmd; if(!c||!c.id){process.exit(0);} // 无 pending
+    // 执行 genshin 子命令（execFile 无 shell，防注入；~/.local/bin/genshin 为本机 launcher）
+    const args=String(c.cmd||'').trim().split(/\s+/).filter(Boolean);
+    if(!args.length){await fetch(endpoint+'/cmd/result',{method:'POST',headers:H(),body:JSON.stringify({cmd_id:c.id,ok:false,output:'empty cmd'})}).catch(()=>{});process.exit(0);}
+    let out='',ok=true;
+    try{ out=require('child_process').execFileSync(gbin,args,{encoding:'utf8',timeout:60000,maxBuffer:2*1024*1024}).trim(); }
+    catch(e){ ok=false; out=String(e?.stdout||e?.message||e).trim().slice(0,4000); }
+    if(out.length>8000) out=out.slice(0,8000)+'... [截断]';
+    await fetch(endpoint+'/cmd/result',{method:'POST',headers:H(),body:JSON.stringify({cmd_id:c.id,ok,output:out})}).catch(()=>{});
+  }catch(e){ /* poll 失败静默（timer 下次再试） */ }
+  process.exit(0);
 })();
 "
     exit $?;;

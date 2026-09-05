@@ -6,6 +6,7 @@ import { WebSocketServer } from "ws";
 import { authRouter, authMiddleware, resolveUser } from "./auth.ts";
 import { syncRouter } from "./sync.ts";
 import { messagingRouter, registerWs, routeMessage } from "./messaging.ts";
+import { cmdRouter } from "./cmd.ts";
 import { stmt } from "./db.ts";
 
 const app = new Hono();
@@ -18,6 +19,7 @@ app.route("/sync", syncRouter);
 
 app.use("/messages/*", authMiddleware());
 app.route("/messages", messagingRouter);
+app.route("/cmd", cmdRouter);
 
 app.get("/health", (c) => c.json({ status: "ok", ts: new Date().toISOString() }));
 
