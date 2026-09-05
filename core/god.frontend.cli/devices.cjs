@@ -76,16 +76,16 @@ async function main() {
     return;
   }
 
-  // 请求设备执行 genshin 命令
+  // 请求设备执行 genshin 命令（无命令 = genshin 主列表——2026-09-05 用户定稿默认；此前 genshin-v0.3.2-dev-01 乱写默认 "version" 被用户怒批纠正：默认就该是 genshin 本体）
   const target = cmd;
-  const execCmd = (process.argv.slice(4).join(" ") || "version").trim();
+  const execCmd = (process.argv.slice(4).join(" ") || "").trim();
   let hit = devs.find((x) => x.id === target) || (target && devs.find((x) => x.name === target)) || null;
   if (!hit && /^\d+$/.test(target)) {
     const n = parseInt(target, 10);
     hit = devs.find((x) => x.num === n && x.on) || devs.find((x) => x.num === n && !x.on) || devs.find((x) => x.num === n);
   }
   if (!hit) { console.log("找不到设备: " + target + "（用名称/编号/ID，列表看 genshin d）"); process.exit(1); }
-  console.log("请求 " + hit.name + " (" + hit.id + ") 执行: genshin " + execCmd);
+  console.log("请求 " + hit.name + " (" + hit.id + ") 执行: genshin " + (execCmd || ""));
   const rr = await fetch(ep + "/cmd/request", { method: "POST", headers: H({ "Content-Type": "application/json" }), body: JSON.stringify({ device_id: hit.id, cmd: execCmd }) });
   const rj = await rr.json().catch(() => ({}));
   if (!rr.ok) { console.log("请求失败: " + (rj.error || rr.status)); process.exit(1); }

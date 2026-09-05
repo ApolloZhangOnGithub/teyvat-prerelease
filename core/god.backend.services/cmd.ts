@@ -12,14 +12,14 @@ import type { AuthUser } from "./auth.ts";
 
 export const cmdRouter = new Hono();
 
-// 请求方：请求某设备执行一条 genshin 命令（只能请求自己账号下的设备）
+// 请求方：请求某设备执行一条 genshin 命令（只能请求自己账号下的设备）；cmd 可空 = 设备跑 genshin 主列表（2026-09-05 用户定稿默认）
 cmdRouter.post("/request", async (c) => {
   const user = c.get("user") as AuthUser;
   const { device_id, cmd } = await c.req.json<{ device_id?: string; cmd?: string }>().catch(() => ({}));
-  if (!device_id || !cmd) return c.json({ error: "device_id and cmd required" }, 400);
+  if (!device_id) return c.json({ error: "device_id required" }, 400);
   const own = stmt.listDevices.all(user.githubId).some((d: any) => d.device_id === device_id);
   if (!own) return c.json({ error: "device not found in your account" }, 404);
-  const info = stmt.requestCmd.run(user.githubId, device_id, cmd);
+  const info = stmt.requestCmd.run(user.githubId, device_id, String(cmd || ""));
   const id = Number(info.lastInsertRowid);
   return c.json({ ok: true, id });
 });

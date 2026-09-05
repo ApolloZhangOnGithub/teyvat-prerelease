@@ -257,10 +257,11 @@ const gbin=process.env.GENSHIN_BIN||(h+'/.local/bin/genshin');
     const c=pj?.cmd; if(!c||!c.id){process.exit(0);} // 无 pending
     // 执行 genshin 子命令（execFile 无 shell，防注入；~/.local/bin/genshin 为本机 launcher）
     const args=String(c.cmd||'').trim().split(/\s+/).filter(Boolean);
-    if(!args.length){await fetch(endpoint+'/cmd/result',{method:'POST',headers:H(),body:JSON.stringify({cmd_id:c.id,ok:false,output:'empty cmd'})}).catch(()=>{});process.exit(0);}
+    // 无命令 → 执行 genshin 本体（agent 列表）——用户定稿 genshin d <设备> 默认显示设备 agent 列表
     let out='',ok=true;
-    try{ out=require('child_process').execFileSync(gbin,args,{encoding:'utf8',timeout:60000,maxBuffer:2*1024*1024}).trim(); }
+    try{ out=require('child_process').execFileSync(gbin,args,{encoding:'utf8',timeout:60000,maxBuffer:4*1024*1024}).trim(); }
     catch(e){ ok=false; out=String(e?.stdout||e?.message||e).trim().slice(0,4000); }
+    if(!out) out='(无输出)';
     if(out.length>8000) out=out.slice(0,8000)+'... [截断]';
     await fetch(endpoint+'/cmd/result',{method:'POST',headers:H(),body:JSON.stringify({cmd_id:c.id,ok,output:out})}).catch(()=>{});
   }catch(e){ /* poll 失败静默（timer 下次再试） */ }
