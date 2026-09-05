@@ -37,11 +37,14 @@ export function authMiddleware() {
   return async (c: any, next: () => Promise<void>) => {
     const auth = c.req.header("Authorization");
     const deviceId = c.req.header("X-Device-Id");
+    const deviceName = c.req.header("X-Device-Name");
     if (!auth?.startsWith("Bearer ") || !deviceId) {
       return c.json({ error: "unauthorized" }, 401);
     }
-    const user = await resolveUser(auth.slice(7), deviceId);
+    const user = await resolveUser(auth.slice(7), deviceId, deviceName);
     if (!user) return c.json({ error: "invalid token" }, 401);
+    // 每次请求带 X-Device-Name 时更新设备名（hostname 注册）；无则不动（避免覆盖用户备注名）——2026-09-05
+    if (deviceName?.trim()) stmt.upsertDevice.run(deviceId, user.githubId, deviceName.trim());
     c.set("user", user);
     await next();
   };

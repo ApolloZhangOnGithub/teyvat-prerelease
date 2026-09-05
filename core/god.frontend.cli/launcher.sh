@@ -261,17 +261,20 @@ console.log('当前绑定: '+b.githubLogin+(b.boundAt?(' (绑定于 '+b.boundAt+
     const j=await res.json();
     const ds=j.devices||[];
     console.log('账号绑定设备 ('+ds.length+'):');
-    // 表格列对齐（2026-09-05 用户：设备列表要表格不要散排；当前设备 ◀ 标注不重复写）
-    const pad=(s,n)=>s+' '.repeat(Math.max(1,n-s.length));
-    const wId=Math.max(8,...ds.map(d=>String(d.device_id).length));
-    const wNm=Math.max(4,...ds.map(d=>String(d.device_name||d.device_id).length));
-    console.log('  '+pad('名称',wNm)+'  '+pad('设备 ID',wId)+'  '+pad('首绑',19)+'  最后活跃');
+    // 表格列对齐（2026-09-05 用户：表头左对齐、中文视觉宽、未命名设备不重复显示 id）
+    const vw=(s)=>[...String(s)].reduce((w,ch)=>w+(/\u3000-\u9fff|\uff00-\uffef/.test(ch)?2:1),0);
+    const pad=(s,n)=>String(s)+' '.repeat(Math.max(1,n-vw(s)));
+    const H1='名称',H2='设备 ID',H3='首绑',H4='最后活跃';
+    const wNm=Math.max(vw(H1),...ds.map(d=>vw(String(d.device_name&&d.device_name!==d.device_id?d.device_name:''))));
+    const wId=Math.max(vw(H2),...ds.map(d=>vw(String(d.device_id))));
+    console.log('  '+pad(H1,wNm)+'  '+pad(H2,wId)+'  '+pad(H3,19)+'  '+H4);
     for(const d of ds){
-      // 首绑：created_at 为 null 时用完整 last_seen_at（精确，不用 ~ 近似）——2026-09-05 用户
+      // 首绑：created_at 为 null 用完整 last_seen_at（精确）——2026-09-05
       const first=d.created_at||d.last_seen_at||'';
+      // 未命名（name===id）显示空——用户备注后才有意义，不重复 id
+      const nm=(d.device_name&&d.device_name!==d.device_id)?d.device_name:'';
       const cur=(String(d.device_id)===b.deviceId)?' ◀':'';
-      // ◀ 对齐最右：活跃列定宽(19)后放 ◀
-      console.log('  '+pad(String(d.device_name||d.device_id),wNm)+'  '+pad(String(d.device_id),wId)+'  '+pad(String(first),19)+'  '+String(d.last_seen_at||'')+cur);
+      console.log('  '+pad(nm,wNm)+'  '+pad(String(d.device_id),wId)+'  '+pad(String(first),19)+'  '+String(d.last_seen_at||'')+cur);
     }
   }catch(e){console.log('server 不可达: '+e.message);}
 })();

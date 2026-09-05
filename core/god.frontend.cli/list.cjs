@@ -346,20 +346,7 @@ for (let i = 0; i < rows1.length; i++) {
     process.stdout.write('\r' + ' '.repeat(50) + '\r');
   }
 }
-// sync 状态
-try {
-  const syncStatusPath = path.join(PAIMON_HOME, 'LogData', 'sync-status.json');
-  if (fs.existsSync(syncStatusPath)) {
-    const ss = JSON.parse(fs.readFileSync(syncStatusPath, 'utf8'));
-    if (ss.lastAt) {
-      const ago = Math.round((Date.now() - new Date(ss.lastAt).getTime()) / 60000);
-      const agoStr = ago < 1 ? '<1m' : ago < 60 ? ago + 'm' : Math.round(ago/60) + 'h';
-      const detail = ss.count > 0 ? ` (${ss.lastAction} ${ss.count})` : '';
-      console.log();
-      console.log(D + '  Synced ' + agoStr + ' ago' + detail + R);
-    }
-  }
-} catch (e) { console.error("[god.frontend.cli/list.cjs] " + (e?.message || e)); }
+// sync 状态底行（2026-09-05 移除：sync 已废弃 AgentInstanceSync 停用——旧记录无意义，显示过时同步时间误导）
 } // end if (filter !== 'help')
 
 if (filter === 'help') {
