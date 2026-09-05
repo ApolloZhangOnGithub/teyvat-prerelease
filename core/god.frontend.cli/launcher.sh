@@ -8,11 +8,18 @@ export PAIMON_EXT="$HOME/.local/lib/teyvat/extensions/teyvat"
 export PAIMON_CLI="$PAIMON_EXT/god.frontend.cli"
 export PAIMON_CONFIG="$PAIMON_HOME/config"
 
-# ── 运行时自包含（2026-09-05：不依赖用户 shell PATH）──
+# ── 运行时自包含（2026-09-05：不依赖用户 shell PATH / 网络配置）──
 # bun/node 的自装路径前置到 PATH——launcher 是唯一入口，应保证 bun/node 可找到，
 # 用户终端 PATH 里没有 ~/.bun/bin 时 genshin 命令（whoami/update/agent 启动）不再报 "bun: not found"。
 [ -d "$HOME/.bun/bin" ] && PATH="$HOME/.bun/bin:$PATH"
 [ -d "$HOME/.local/share/node24/bin" ] && PATH="$HOME/.local/share/node24/bin:$PATH"
+
+# git 访问 GitHub 的代理自包含：本机 Clash 等代理端口在监听时自动 export（Linux 无代理直连 GitHub 被墙）
+_proxy_port=""
+for _p in 7897 7890; do (exec 3<>/dev/tcp/127.0.0.1/$_p) 2>/dev/null && { exec 3>&- 3<&-; _proxy_port=$_p; break; }; done
+if [ -z "${https_proxy:-}" ] && [ -n "$_proxy_port" ]; then
+  export https_proxy="http://127.0.0.1:$_proxy_port" http_proxy="http://127.0.0.1:$_proxy_port"
+fi
 
 RUNTIME_CLI="$PAIMON_RUNTIME/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"
 # ── 启动器快照（防"运行中被就地编辑"竞态）──────────────────────────────
@@ -219,9 +226,14 @@ case "$NAME" in
     cd "$PAIMON_EXT/.." && bun "$PAIMON_CLI_TS" "$NAME" "$@"
     exit $?;;
   sync)
-    # [云同步已禁用 2026-08-18] 无法正常工作，暂时停用；以后研究支持。
-    # cd "$PAIMON_EXT/.." && bun "$PAIMON_CLI/autosync.ts" "${1:-status}" "$@"
-    echo "$(_l "  云同步已禁用（功能暂不可用）。" "  Cloud sync is disabled (feature temporarily unavailable).")"
+    # [云同步统一开关 2026-09-05] settings.json syncEnabled 控制（默认 false=禁用；多电脑暂不需要同步 agent）。
+    # 代码保留不删：syncEnabled=true 时恢复 autosync 调用。
+    SYNC_ENABLED=$(python3 -c "import json;s=json.load(open('$PAIMON_CONFIG/settings.json'));print('true' if s.get('syncEnabled') else 'false')" 2>/dev/null || echo "false")
+    if [ "$SYNC_ENABLED" = "true" ]; then
+      cd "$PAIMON_EXT/.." && bun "$PAIMON_CLI/autosync.ts" "${1:-status}" "$@"
+    else
+      echo "$(_l "  云同步已禁用（settings.json syncEnabled=false）。恢复: 设 \"syncEnabled\": true" "  Cloud sync disabled (settings.json syncEnabled=false). Enable: set \"syncEnabled\": true")"
+    fi
     exit $?;;
   update)
     echo ""
@@ -249,9 +261,15 @@ case "$NAME" in
       UP_DIR="$HOME/.local/lib/teyvat/update-prerelease"
       mkdir -p "$UP_DIR"
       if [ ! -d "$UP_DIR/.git" ]; then
-        git clone https://github.com/ApolloZhangOnGithub/paimon-code-prerelease.git "$UP_DIR" 2>&1 | tail -2
+        if ! git clone https://github.com/ApolloZhangOnGithub/paimon-code-prerelease.git "$UP_DIR"; then
+          echo -e "  \033[31mERROR\033[0m prerelease clone 失败（网络/代理问题？）"
+          exit 1
+        fi
       else
-        ( cd "$UP_DIR" && git pull --ff-only 2>&1 | tail -2 )
+        if ! ( cd "$UP_DIR" && git pull --ff-only ); then
+          echo -e "  \033[31mERROR\033[0m prerelease pull 失败（网络/代理问题？）"
+          exit 1
+        fi
       fi
       # 触发部署（postinstall 语义等价物）：显式跑包内 install.sh。install.sh 防裸跑要求 make 环境
       # （PAIMON_VIA_MAKE=1 + MAKELEVEL）——prerelease 消费方无 make，这里显式伪装
@@ -891,7 +909,8 @@ case "$MODE" in
     # setsid: 在新 session 运行 bun，彻底断开控制终端（/dev/tty 不可达）
     # nohup+</dev/null 只断 fd 0/1/2，bun 仍可 open("/dev/tty") 干扰 kitty protocol
     _bun_detached() { perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' -- bun "$@"; }
-    # [云同步已禁用 2026-08-18] 无法正常工作，暂时停用；以下 lock/push/pull/heartbeat 全部注释，以后研究支持。
+    # [云同步统一开关 2026-09-05] settings.json syncEnabled 控制（默认 false=禁用）。
+    # 本段（agent 启动抢锁，多设备防并发）与下方 lock 注释块：恢复同步时 syncEnabled=true + 取消 915-935 注释。
     PAIMON_SYNC="$PAIMON_CLI/autosync.ts"
     if [ -f "$PAIMON_SYNC" ]; then
       # -- 云同步 lock 段已禁用（2026-08-18，无法正常工作，保留代码待研究）--
@@ -938,15 +957,17 @@ case "$MODE" in
         echo "$(_l "  有新版本 (remote: $RH, local: $LH) — genshin update 更新" "  new version available (remote: $RH, local: $LH) — run genshin update")"
       fi
       rm -f "$VER_CHECK_FILE"
-      # -- 云同步 push/pull/心跳段已禁用（2026-08-18，无法正常工作，保留代码待研究）--
-      # # 3. 先推后拉（后台，不阻塞启动）
-      # SYNC_STARTUP_LOG="$RUNTIME_DIR/sync-startup.log"
-      # ( _bun_detached "$PAIMON_SYNC" push 2>&1; _bun_detached "$PAIMON_SYNC" pull 2>&1 ) </dev/null > "$SYNC_STARTUP_LOG" 2>&1 &
-      # echo "$(_l "  同步中（后台），tail -f $SYNC_STARTUP_LOG 查看" "  syncing (background), tail -f $SYNC_STARTUP_LOG")"
-      # # 4. 每5分钟：心跳保活 + 推 + 拉（后台静默）
-      # ( while true; do sleep 300; _bun_detached "$PAIMON_SYNC" heartbeat "$ID" --quiet </dev/null >/dev/null 2>&1; _bun_detached "$PAIMON_SYNC" push --quiet </dev/null >/dev/null 2>&1; _bun_detached "$PAIMON_SYNC" pull --quiet </dev/null >/dev/null 2>&1; done ) </dev/null >/dev/null 2>&1 &
-      # SYNC_LOOP_PID=$!
-    fi
+      fi
+      # -- 云同步（统一开关 settings.json syncEnabled 控制，2026-09-05；代码保留不删，默认 false=禁用）--
+      if [ "$(python3 -c "import json;s=json.load(open('$PAIMON_CONFIG/settings.json'));print('true' if s.get('syncEnabled') else 'false')" 2>/dev/null || echo "false")" = "true" ]; then
+        # 3. 先推后拉（后台，不阻塞启动）
+        SYNC_STARTUP_LOG="$RUNTIME_DIR/sync-startup.log"
+        ( _bun_detached "$PAIMON_SYNC" push 2>&1; _bun_detached "$PAIMON_SYNC" pull 2>&1 ) </dev/null > "$SYNC_STARTUP_LOG" 2>&1 &
+        echo "$(_l "  同步中（后台），tail -f $SYNC_STARTUP_LOG 查看" "  syncing (background), tail -f $SYNC_STARTUP_LOG")"
+        # 4. 每5分钟：心跳保活 + 推 + 拉（后台静默）
+        ( while true; do sleep 300; _bun_detached "$PAIMON_SYNC" heartbeat "$ID" --quiet </dev/null >/dev/null 2>&1; _bun_detached "$PAIMON_SYNC" push --quiet </dev/null >/dev/null 2>&1; _bun_detached "$PAIMON_SYNC" pull --quiet </dev/null >/dev/null 2>&1; done ) </dev/null >/dev/null 2>&1 &
+        SYNC_LOOP_PID=$!
+      fi
     # 清屏到最上方，再启动 pi
     printf '\033[2J\033[H'
     # 迭代计数（2026-08-20）：第一次迭代 = 用户新启动（遇 detached → attach 转 TUI）；
@@ -1061,11 +1082,13 @@ case "$MODE" in
       fi
       break
     done
-    # 退出后：后台快速同步（5s超时，不阻塞退出）—— [云同步已禁用 2026-08-18] 以下注释
-    # kill $SYNC_LOOP_PID 2>/dev/null; wait $SYNC_LOOP_PID 2>/dev/null
-    # if [ -f "$PAIMON_SYNC" ]; then
-    #   ( _bun_detached "$PAIMON_SYNC" unlock "$ID" --quiet 2>&1; _bun_detached "$PAIMON_SYNC" push --quiet 2>&1; _bun_detached "$PAIMON_SYNC" pull --quiet 2>&1 ) </dev/null >/dev/null 2>&1 &
-    #   SPID=$!; ( sleep 5; kill $SPID 2>/dev/null ) </dev/null >/dev/null 2>&1 &
-    # fi
+    # 退出后：后台快速同步（5s超时，不阻塞退出）—— [云同步统一开关 2026-09-05] settings.json syncEnabled 控制
+    if [ "$(python3 -c "import json;s=json.load(open('$PAIMON_CONFIG/settings.json'));print('true' if s.get('syncEnabled') else 'false')" 2>/dev/null || echo "false")" = "true" ]; then
+      kill $SYNC_LOOP_PID 2>/dev/null; wait $SYNC_LOOP_PID 2>/dev/null
+      if [ -f "$PAIMON_SYNC" ]; then
+        ( _bun_detached "$PAIMON_SYNC" unlock "$ID" --quiet 2>&1; _bun_detached "$PAIMON_SYNC" push --quiet 2>&1; _bun_detached "$PAIMON_SYNC" pull --quiet 2>&1 ) </dev/null >/dev/null 2>&1 &
+        SPID=$!; ( sleep 5; kill $SPID 2>/dev/null ) </dev/null >/dev/null 2>&1 &
+      fi
+    fi
     ;;
 esac

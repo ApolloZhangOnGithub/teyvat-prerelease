@@ -1,11 +1,13 @@
 // autosync.ts — 自动同步入口，launcher 在启动前/退出后调用
 // 用法: bun autosync.ts pull|push|lock|unlock|presence|devices|status [--quiet] [agentId]
-// ===== [云同步已禁用 2026-08-18] =====
-// 云端同步机制无法正常工作，暂时停用；以下为拦截入口，保留全部代码待以后研究支持。
-// launcher.sh 已注释所有 lock/push/pull/heartbeat/unlock 调用，这里兜底直接退出。
-console.error("  [sync] Cloud sync is disabled (temporarily unavailable).");
-process.exit(0);
-
+// ===== [云同步统一开关管理 2026-09-05] =====
+// 多电脑暂时不需要同步 agent（原禁用 2026-08-18 云端机制无法正常工作）。
+// 全部 sync 代码保留（不删除），由 ~/.teyvat/config/settings.json 的 syncEnabled 统一开关控制：
+//   false（默认）= 禁用（本入口提示后退出）；true = 恢复完整同步逻辑。
+// launcher.sh 的调用点（genshin sync 命令 + 启动钩子 push/pull/heartbeat）同样读此开关。
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
 import { getBinding } from "../god.backend.services/binding.ts";
 import { pull, push, scanSyncFiles, acquireLock, releaseLock, getPresence, subscribePresence } from "../god.backend.services/client.ts";
 
@@ -15,7 +17,19 @@ const agentId = process.argv.find(a => !a.startsWith("--") && a !== cmd && a !==
 
 function log(msg: string) { if (!quiet) console.error(`  [sync] ${msg}`); }
 
+// 统一开关：~/.teyvat/config/settings.json 的 syncEnabled（true 才启用云同步）
+function cloudSyncEnabled(): boolean {
+  try {
+    const s = JSON.parse(readFileSync(join(homedir(), ".teyvat/config/settings.json"), "utf8"));
+    return s.syncEnabled === true;
+  } catch { return false; }
+}
+
 async function main() {
+  if (!cloudSyncEnabled()) {
+    console.error("  [sync] Cloud sync disabled (settings.json syncEnabled=false). 恢复: ~/.teyvat/config/settings.json 设 \"syncEnabled\": true");
+    process.exit(0);
+  }
   const binding = getBinding();
   if (!binding?.token) {
     if (cmd === "lock" || cmd === "unlock") { console.error("未登录"); process.exit(1); }

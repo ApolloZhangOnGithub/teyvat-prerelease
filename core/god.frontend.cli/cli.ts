@@ -753,6 +753,26 @@ function cmdDoctor() {
   const archived=list.filter((p:any)=>p.archived);
   const NAME_RE=/^[a-zA-Z][a-zA-Z0-9_.\-]*$/;
 
+  // doctorIgnore 白名单（2026-09-05）：settings.json 的已知问题豁免，命中不计 failed/warned
+  let doctorIgnore: Array<{ check: string; match?: string }> = [];
+  try {
+    const s = JSON.parse(fs.readFileSync(path.join(PAIMON, 'config', 'settings.json'), 'utf8'));
+    doctorIgnore = Array.isArray(s.doctorIgnore) ? s.doctorIgnore : [];
+  } catch (e) { /* settings 缺失/格式错 → 无豁免 */ }
+  let ignoredCount = 0;
+  const isIgnored = (check: string, content?: string): boolean => {
+    for (const r of doctorIgnore) {
+      if (r.check !== check) continue;
+      if (r.match === undefined || r.match === '') return true; // 无 match = 整项豁免
+      if (content !== undefined && new RegExp(r.match).test(content)) return true;
+    }
+    return false;
+  };
+  const skipIgnored = (check: string, content?: string): boolean => {
+    if (isIgnored(check, content)) { ignoredCount++; skip(check, `已豁免${content?` (${content.slice(0,40)})`:''}`); return true; }
+    return false;
+  };
+
   // version
   {
     try{
@@ -791,7 +811,12 @@ function cmdDoctor() {
         if(id.kind && id.kind !== p.kind) { mismatch++; mismatched.push(`${p.name}.kind`); }
       }catch{ missing++ }
     }
-    if(mismatch) fail('plist-identity',`${mismatch} 不一致: ${mismatched.slice(0,3).join(', ')}${mismatched.length>3?'...':''}`);
+    if(mismatch) {
+      const shown = mismatched.filter(m => !isIgnored('plist-identity', m));
+      if (shown.length) fail('plist-identity',`${shown.length} 不一致: ${shown.slice(0,3).join(', ')}${shown.length>3?'...':''}`);
+      if (shown.length < mismatch) skipIgnored('plist-identity');
+      else if (!shown.length) { skipIgnored('plist-identity'); }
+    }
     else if(missing>0) warn('plist-identity',`一致，但 ${missing} 个 agent 无 identity.json`);
     else ok('plist-identity',`${list.length} 个 agent 数据一致`);
   }
@@ -830,14 +855,15 @@ function cmdDoctor() {
     else ok('plist-orphan','全部有对应目录');
   }
 
-  // dir-orphan: MemoryData dir but no plist entry
+  // dir-orphan: MemoryData dir but no plist entry（只算 8 位 hex id 的 agent 目录——MonitorData/工具目录等非 agent 不算）
   {
     const mdRoot=path.join(PAIMON,'MemoryData');
     const ids=new Set(list.map((p:any)=>p.id));
     const orphanList:string[]=[];
     try{
       for(const d of fs.readdirSync(mdRoot,{withFileTypes:true})){
-        if(d.isDirectory()&&!ids.has(d.name)&&d.name!=='.DS_Store') orphanList.push(d.name);
+        if(!d.isDirectory()||ids.has(d.name)||d.name==='.DS_Store') continue;
+        if(/^[0-9a-f]{8}$/.test(d.name)) orphanList.push(d.name); // 仅 hex id 形态的 agent 数据目录
       }
     }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); }
     if(orphanList.length) warn('dir-orphan',`${orphanList.length} 个孤儿目录（无 plist 条目）`);
@@ -852,19 +878,30 @@ function cmdDoctor() {
     ok('process',`${running.length} 个 agent 正在运行`);
   }
 
-  // pid-stale (informational, not a failure)
+  // pid-stale: 只检查近期活跃（90s 内触碰）的 pid——历史残留（agent 休眠/退出后 pid 文件保留）是常态
   {
-    let stale=0, total=0;
+    const WINDOW_MS = 90 * 1000;
+    let stale=0, recent=0, historical=0, nofile=0;
+    const now = Date.now();
     for(const p of list){
       const pidFile=path.join(PAIMON,'MemoryData',p.id,'main.pid');
       try{
+        const st = fs.statSync(pidFile);
+        if (now - st.mtimeMs > WINDOW_MS) { historical++; continue; } // 历史残留：休眠/退出已久，正常
+        recent++;
         const pid=parseInt(fs.readFileSync(pidFile,'utf8').trim());
-        total++;
-        try{ process.kill(pid,0) }catch{ stale++ }
-      }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); }
+        try{ process.kill(pid,0) }catch{ stale++ } // 近期活跃但进程已死 = 真 stale（崩溃残留）
+      }catch (e) {
+        if ((e as any)?.code === 'ENOENT') { nofile++; } // 从未运行，正常
+        else console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e));
+      }
     }
-    if(stale) warn('pid-stale',`${stale}/${total} 个 PID 文件对应进程已退出`);
-    else ok('pid-stale',total>0?`${total} 个 PID 文件均有效`:'无 PID 文件');
+    const extra = `${historical?`，历史残留 ${historical}`:''}${nofile?`，未运行 ${nofile}`:''}`;
+    if(stale) {
+      if (!skipIgnored('pid-stale', `${stale} 个近期活跃 agent 的 PID 已死`)) warn('pid-stale',`${stale} 个近期活跃 PID 已死${extra}`);
+    }
+    else if(recent>0) ok('pid-stale',`${recent} 个近期活跃 PID 均有效${extra}`);
+    else ok('pid-stale',`无近期活跃 agent${extra}`);
   }
 
   // org: organization health
