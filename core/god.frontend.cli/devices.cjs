@@ -48,8 +48,7 @@ async function main() {
 
   // 列表
   if (!cmd) {
-    const vw = (s) => [...String(s)].reduce((w, ch) => w + (/[\u3000-\u9fff\uff00-\uffef]/.test(ch) ? 2 : 1), 0);
-    const pad = (s, n) => String(s) + " ".repeat(Math.max(1, n - vw(s)));
+    const { pad, vw } = require('./pad.cjs'); // 标准 pad（2026-09-05 用户：统一 pad.cjs，勿自写）
     const H1 = "名称", H2 = "设备 ID", H3 = "首绑", H4 = "最后活跃";
     const G = "\x1b[32m", Y = "\x1b[33m", R = "\x1b[0m";
     console.log("当前绑定: " + b.githubLogin + (b.boundAt ? (" (绑定于 " + fmt(b.boundAt) + ")") : ""));
