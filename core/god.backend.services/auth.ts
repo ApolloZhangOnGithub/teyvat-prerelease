@@ -48,10 +48,19 @@ export function authMiddleware() {
 
 export const authRouter = new Hono();
 
+authRouter.get("/devices", async (c) => {
+  const auth = c.req.header("Authorization");
+  const deviceId = c.req.header("X-Device-Id");
+  if (!auth?.startsWith("Bearer ") || !deviceId) return c.json({ error: "unauthorized" }, 401);
+  const user = await resolveUser(auth.slice(7), deviceId);
+  if (!user) return c.json({ error: "invalid token" }, 401);
+  const devices = stmt.listDevices.all(user.githubId);
+  return c.json({ devices });
+});
+
 authRouter.post("/github", async (c) => {
   const { code } = await c.req.json<{ code: string }>();
   if (!code) return c.json({ error: "code required" }, 400);
-
   const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },

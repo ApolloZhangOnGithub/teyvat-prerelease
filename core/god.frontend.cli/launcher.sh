@@ -179,6 +179,12 @@ while [ $# -gt 0 ]; do
                 else {rows.push(['dev-stable', N, ''])}
               } catch {rows.push(['dev-stable', N, ''])}
             }
+            // prerelease: 本地 update-prerelease 目录（若 update 过）——2026-09-05 加
+            try {
+              const pp = h + '/.local/lib/teyvat/update-prerelease/package.json';
+              if (fs.existsSync(pp)) { rows.push(['prerelease', JSON.parse(fs.readFileSync(pp,'utf8')).version, isCur('prerelease')]); }
+              else { rows.push(['prerelease', N, '']) }
+            } catch { rows.push(['prerelease', N, '']) }
             // release: npm + GitHub  ⚠️ npm 分发已废弃（2026-09-05 用户定稿，见 Versioning WIKI）——优先 git 源
             let relVer = '';
             try{relVer=require('child_process').execSync('npm view teyvat version 2>/dev/null',{encoding:'utf8',timeout:3000}).trim()}catch{}
@@ -226,14 +232,8 @@ case "$NAME" in
     cd "$PAIMON_EXT/.." && bun "$PAIMON_CLI_TS" "$NAME" "$@"
     exit $?;;
   sync)
-    # [云同步统一开关 2026-09-05] settings.json syncEnabled 控制（默认 false=禁用；多电脑暂不需要同步 agent）。
-    # 代码保留不删：syncEnabled=true 时恢复 autosync 调用。
-    SYNC_ENABLED=$(python3 -c "import json;s=json.load(open('$PAIMON_CONFIG/settings.json'));print('true' if s.get('syncEnabled') else 'false')" 2>/dev/null || echo "false")
-    if [ "$SYNC_ENABLED" = "true" ]; then
-      cd "$PAIMON_EXT/.." && bun "$PAIMON_CLI/autosync.ts" "${1:-status}" "$@"
-    else
-      echo "$(_l "  云同步已禁用（settings.json syncEnabled=false）。恢复: 设 \"syncEnabled\": true" "  Cloud sync disabled (settings.json syncEnabled=false). Enable: set \"syncEnabled\": true")"
-    fi
+    # [云同步已废弃 2026-09-05，PROPOSAL 036 替代] agent 单机存活，不做跨机状态同步；代码保留不删。
+    echo "$(_l "  云同步已废弃（agent 单机存活，机间走 social 通讯）。" "  Cloud sync deprecated (agents live per-machine; cross-device via social).")"
     exit $?;;
   update)
     echo ""
@@ -909,8 +909,8 @@ case "$MODE" in
     # setsid: 在新 session 运行 bun，彻底断开控制终端（/dev/tty 不可达）
     # nohup+</dev/null 只断 fd 0/1/2，bun 仍可 open("/dev/tty") 干扰 kitty protocol
     _bun_detached() { perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' -- bun "$@"; }
-    # [云同步统一开关 2026-09-05] settings.json syncEnabled 控制（默认 false=禁用）。
-    # 本段（agent 启动抢锁，多设备防并发）与下方 lock 注释块：恢复同步时 syncEnabled=true + 取消 915-935 注释。
+    # [云同步已废弃 2026-09-05，PROPOSAL 036 替代] agent 单机存活，不做跨机状态同步。
+    # 本段（agent 启动抢锁）与 lock 注释块代码保留不删，恢复参考 036（publish/install + 跨设备 social）。
     PAIMON_SYNC="$PAIMON_CLI/autosync.ts"
     if [ -f "$PAIMON_SYNC" ]; then
       # -- 云同步 lock 段已禁用（2026-08-18，无法正常工作，保留代码待研究）--
@@ -958,16 +958,14 @@ case "$MODE" in
       fi
       rm -f "$VER_CHECK_FILE"
       fi
-      # -- 云同步（统一开关 settings.json syncEnabled 控制，2026-09-05；代码保留不删，默认 false=禁用）--
-      if [ "$(python3 -c "import json;s=json.load(open('$PAIMON_CONFIG/settings.json'));print('true' if s.get('syncEnabled') else 'false')" 2>/dev/null || echo "false")" = "true" ]; then
-        # 3. 先推后拉（后台，不阻塞启动）
-        SYNC_STARTUP_LOG="$RUNTIME_DIR/sync-startup.log"
-        ( _bun_detached "$PAIMON_SYNC" push 2>&1; _bun_detached "$PAIMON_SYNC" pull 2>&1 ) </dev/null > "$SYNC_STARTUP_LOG" 2>&1 &
-        echo "$(_l "  同步中（后台），tail -f $SYNC_STARTUP_LOG 查看" "  syncing (background), tail -f $SYNC_STARTUP_LOG")"
-        # 4. 每5分钟：心跳保活 + 推 + 拉（后台静默）
-        ( while true; do sleep 300; _bun_detached "$PAIMON_SYNC" heartbeat "$ID" --quiet </dev/null >/dev/null 2>&1; _bun_detached "$PAIMON_SYNC" push --quiet </dev/null >/dev/null 2>&1; _bun_detached "$PAIMON_SYNC" pull --quiet </dev/null >/dev/null 2>&1; done ) </dev/null >/dev/null 2>&1 &
-        SYNC_LOOP_PID=$!
-      fi
+      # -- 云同步 push/pull/心跳段已废弃（2026-09-05，PROPOSAL 036：agent 单机存活 + 机间 social；代码保留不删）--
+      # # 3. 先推后拉（后台，不阻塞启动）
+      # SYNC_STARTUP_LOG="$RUNTIME_DIR/sync-startup.log"
+      # ( _bun_detached "$PAIMON_SYNC" push 2>&1; _bun_detached "$PAIMON_SYNC" pull 2>&1 ) </dev/null > "$SYNC_STARTUP_LOG" 2>&1 &
+      # echo "$(_l "  同步中（后台），tail -f $SYNC_STARTUP_LOG 查看" "  syncing (background), tail -f $SYNC_STARTUP_LOG")"
+      # # 4. 每5分钟：心跳保活 + 推 + 拉（后台静默）
+      # ( while true; do sleep 300; _bun_detached "$PAIMON_SYNC" heartbeat "$ID" --quiet </dev/null >/dev/null 2>&1; _bun_detached "$PAIMON_SYNC" push --quiet </dev/null >/dev/null 2>&1; _bun_detached "$PAIMON_SYNC" pull --quiet </dev/null >/dev/null 2>&1; done ) </dev/null >/dev/null 2>&1 &
+      # SYNC_LOOP_PID=$!
     # 清屏到最上方，再启动 pi
     printf '\033[2J\033[H'
     # 迭代计数（2026-08-20）：第一次迭代 = 用户新启动（遇 detached → attach 转 TUI）；
@@ -1082,13 +1080,11 @@ case "$MODE" in
       fi
       break
     done
-    # 退出后：后台快速同步（5s超时，不阻塞退出）—— [云同步统一开关 2026-09-05] settings.json syncEnabled 控制
-    if [ "$(python3 -c "import json;s=json.load(open('$PAIMON_CONFIG/settings.json'));print('true' if s.get('syncEnabled') else 'false')" 2>/dev/null || echo "false")" = "true" ]; then
-      kill $SYNC_LOOP_PID 2>/dev/null; wait $SYNC_LOOP_PID 2>/dev/null
-      if [ -f "$PAIMON_SYNC" ]; then
-        ( _bun_detached "$PAIMON_SYNC" unlock "$ID" --quiet 2>&1; _bun_detached "$PAIMON_SYNC" push --quiet 2>&1; _bun_detached "$PAIMON_SYNC" pull --quiet 2>&1 ) </dev/null >/dev/null 2>&1 &
-        SPID=$!; ( sleep 5; kill $SPID 2>/dev/null ) </dev/null >/dev/null 2>&1 &
-      fi
-    fi
+    # 退出后同步段已废弃（2026-09-05，PROPOSAL 036：agent 单机存活；代码保留不删）——以下注释
+    # kill $SYNC_LOOP_PID 2>/dev/null; wait $SYNC_LOOP_PID 2>/dev/null
+    # if [ -f "$PAIMON_SYNC" ]; then
+    #   ( _bun_detached "$PAIMON_SYNC" unlock "$ID" --quiet 2>&1; _bun_detached "$PAIMON_SYNC" push --quiet 2>&1; _bun_detached "$PAIMON_SYNC" pull --quiet 2>&1 ) </dev/null >/dev/null 2>&1 &
+    #   SPID=$!; ( sleep 5; kill $SPID 2>/dev/null ) </dev/null >/dev/null 2>&1 &
+    # fi
     ;;
 esac

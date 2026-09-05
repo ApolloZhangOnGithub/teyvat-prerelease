@@ -1,10 +1,8 @@
-// autosync.ts — 自动同步入口，launcher 在启动前/退出后调用
+// autosync.ts — 同步入口（已废弃，保留代码不删）
 // 用法: bun autosync.ts pull|push|lock|unlock|presence|devices|status [--quiet] [agentId]
-// ===== [云同步统一开关管理 2026-09-05] =====
-// 多电脑暂时不需要同步 agent（原禁用 2026-08-18 云端机制无法正常工作）。
-// 全部 sync 代码保留（不删除），由 ~/.teyvat/config/settings.json 的 syncEnabled 统一开关控制：
-//   false（默认）= 禁用（本入口提示后退出）；true = 恢复完整同步逻辑。
-// launcher.sh 的调用点（genshin sync 命令 + 启动钩子 push/pull/heartbeat）同样读此开关。
+// ===== [云同步已废弃 2026-09-05，PROPOSAL 036 替代] =====
+// 用户定稿：agent 单机存活（不做跨机状态同步），多机协作 = 各机自管 agent + 跨设备 social 通讯/发现。
+// sync 文件同步概念退出，不提供启用路径——下方 main() 恒拒绝（import 与全部逻辑保留作参考）。
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -17,21 +15,18 @@ const agentId = process.argv.find(a => !a.startsWith("--") && a !== cmd && a !==
 
 function log(msg: string) { if (!quiet) console.error(`  [sync] ${msg}`); }
 
-// 统一开关：~/.teyvat/config/settings.json 的 syncEnabled（true 才启用云同步）
-function cloudSyncEnabled(): boolean {
-  try {
-    const s = JSON.parse(readFileSync(join(homedir(), ".teyvat/config/settings.json"), "utf8"));
-    return s.syncEnabled === true;
-  } catch { return false; }
+// ══ 已废弃入口（2026-09-05，PROPOSAL 036）：agent 单机存活，跨机走 social——sync 恒拒绝 ══
+async function main() {
+  console.error("  [sync] Cloud sync deprecated (PROPOSAL 036: agents live per-machine, cross-device via social). Code kept as reference, not enabled.");
+  process.exit(0);
 }
 
-async function main() {
-  if (!cloudSyncEnabled()) {
-    console.error("  [sync] Cloud sync disabled (settings.json syncEnabled=false). 恢复: ~/.teyvat/config/settings.json 设 \"syncEnabled\": true");
-    process.exit(0);
-  }
+// 原同步逻辑保留为独立参考函数（main 不调用；独立函数避免 unreachable 区破坏类型检查）。
+// 不再建议恢复：036 已定 agent 单机存活架构，恢复 sync 需整体重构（publish/install + social 替代）。
+async function originalSyncMain() {
   const binding = getBinding();
-  if (!binding?.token) {
+  if (!binding) { console.error("未绑定"); process.exit(1); }
+  if (!binding.token) {
     if (cmd === "lock" || cmd === "unlock") { console.error("未登录"); process.exit(1); }
     if (!quiet) log("未登录，跳过同步"); process.exit(0);
   }

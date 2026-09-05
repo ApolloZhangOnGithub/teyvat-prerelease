@@ -380,7 +380,7 @@ if (filter === 'active' || filter === 'help') {
 if (filter === 'archived') {
   console.log('  genshin unarchive <' + (zh ? 'agent name/id/index' : 'agent') + '>  ' + (zh ? '恢复归档' : 'restore'));
 } else {
-  const W = 30;
+  const W = 40;  // 列宽需容纳最长命令（unarchive/rename 行 ~38 字符），2026-09-05 从 30 调大——W<cmd 宽时描述不齐
   const row = (cmd, desc) => console.log('    ' + cmd + ' '.repeat(Math.max(1, W - vw(cmd))) + desc);
   const hdr = (s) => { console.log(''); console.log('  ' + BOLD + s + R); };
 
@@ -404,9 +404,10 @@ if (filter === 'archived') {
     row('',                               'agent 可用名称、ID 或序号 (1a/1o)');
 
     hdr('调试');
-    row('meta, mc <agent>',              '连接到 agent 的元意识 tmux session');
-    row('hippo, hc <agent>',             '连接到 agent 的海马体 tmux session');
-    row('mobile, m <agent name/id/index>',         '查看 agent 的手机屏幕输出');
+    // ⚠️ 以下调试入口已废弃（2026-09-05 用户定稿）：mc/hc 的 tmux 会话连接与 mobile 手机屏调试不再维护——相关器官已停用或移出主链
+    // row('meta, mc <agent>',              '连接到 agent 的元意识 tmux session');
+    // row('hippo, hc <agent>',             '连接到 agent 的海马体 tmux session');
+    // row('mobile, m <agent name/id/index>',         '查看 agent 的手机屏幕输出');
 
     row('version, v',            '显示当前版本号和可用通道');
 

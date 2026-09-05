@@ -23,6 +23,7 @@ db.exec(`
     device_id    TEXT PRIMARY KEY,
     github_id    INTEGER NOT NULL REFERENCES users(github_id),
     device_name  TEXT,
+    created_at   TEXT,
     last_seen_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -61,6 +62,9 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_locks_heartbeat ON locks(heartbeat);
 `);
 
+// 迁移（2026-09-05）：devices 表补 created_at（首次绑定时间——存量设备此前未记录，置 NULL 用 last_seen 近似）
+try { db.exec("ALTER TABLE devices ADD COLUMN created_at TEXT"); } catch { /* 列已存在 = 迁移已做过 */ }
+
 export default db;
 
 export const stmt = {
@@ -74,11 +78,18 @@ export const stmt = {
   `),
 
   upsertDevice: db.prepare(`
-    INSERT INTO devices (device_id, github_id, device_name)
-    VALUES (?, ?, ?)
+    INSERT INTO devices (device_id, github_id, device_name, created_at)
+    VALUES (?, ?, ?, datetime('now'))
     ON CONFLICT(device_id) DO UPDATE SET
       last_seen_at = datetime('now'),
       device_name = excluded.device_name
+  `),
+
+  // 2026-09-05：该 GitHub 账号下的所有绑定设备（含首绑时间 created_at——存量设备为 NULL，显示用 COALESCE 近似 last_seen）
+  listDevices: db.prepare(`
+    SELECT device_id, device_name, created_at, last_seen_at
+    FROM devices WHERE github_id = ?
+    ORDER BY COALESCE(created_at, last_seen_at) DESC
   `),
 
   getManifest: db.prepare(`
