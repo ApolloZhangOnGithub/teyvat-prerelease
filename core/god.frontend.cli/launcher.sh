@@ -233,8 +233,7 @@ case "$NAME" in
     exit $?;;
   d|devices)
     # [2026-09-05] 设备管理：无参=列表；`genshin d <id> <名称>`=给设备备注名
-    if [ -n "$2" ]; then
-      node --input-type=commonjs -e "
+    if [ -n "$2" ]; then      node --input-type=commonjs -e "
 const fs=require('fs'),h=require('os').homedir();
 const b=JSON.parse(fs.readFileSync(h+'/.teyvat/UserAccount/binding.json','utf8'));
 let endpoint='https://sync.paimon.beer';
@@ -253,7 +252,7 @@ const fs=require('fs'),h=require('os').homedir();
 const b=JSON.parse(fs.readFileSync(h+'/.teyvat/UserAccount/binding.json','utf8'));
 let endpoint='https://sync.paimon.beer';
 try{const s=JSON.parse(fs.readFileSync(h+'/.teyvat/UserAccount/services.json','utf8'));if(s.services&&s.services['genshin-sync']&&s.services['genshin-sync'].endpoint)endpoint=s.services['genshin-sync'].endpoint;}catch{}
-console.log('当前绑定: '+b.githubLogin+(b.boundAt?(' (绑定于 '+b.boundAt+')'):''));
+console.log('当前绑定: '+b.githubLogin);
 (async()=>{
   try{
     const res=await fetch(endpoint+'/auth/devices',{headers:{Authorization:'Bearer '+b.token,'X-Device-Id':b.deviceId,'X-Device-Name':require('os').hostname()}});
@@ -261,20 +260,37 @@ console.log('当前绑定: '+b.githubLogin+(b.boundAt?(' (绑定于 '+b.boundAt+
     const j=await res.json();
     const ds=j.devices||[];
     console.log('账号绑定设备 ('+ds.length+'):');
-    // 表格列对齐（2026-09-05 用户：表头左对齐、中文视觉宽、未命名设备不重复显示 id）
-    const vw=(s)=>[...String(s)].reduce((w,ch)=>w+(/\u3000-\u9fff|\uff00-\uffef/.test(ch)?2:1),0);
-    const pad=(s,n)=>String(s)+' '.repeat(Math.max(1,n-vw(s)));
+    // 表格列对齐：用标准 pad.cjs（vw 视觉宽）——2026-09-05 用户要求
+    const {pad,vw}=require(process.env.PAIMON_EXT+'/god.frontend.cli/pad.cjs');
     const H1='名称',H2='设备 ID',H3='首绑',H4='最后活跃';
-    const wNm=Math.max(vw(H1),...ds.map(d=>vw(String(d.device_name&&d.device_name!==d.device_id?d.device_name:''))));
-    const wId=Math.max(vw(H2),...ds.map(d=>vw(String(d.device_id))));
+    // 排序：当前设备置顶，其余按最后活跃时间降序（新活跃先）——2026-09-05 用户
+    const curId=b.deviceId;
+    const ds2=[...ds].sort((a,b)=>{
+      const ac=String(a.device_id)===curId, bc=String(b.device_id)===curId;
+      if(ac&&!bc) return -1; if(bc&&!ac) return 1;
+      const ta=Date.parse(String(a.last_seen_at||'').replace(' ','T')+'Z')||0;
+      const tb=Date.parse(String(b.last_seen_at||'').replace(' ','T')+'Z')||0;
+      return tb-ta;
+    });
+    const wNm=Math.max(vw(H1),...ds2.map(d=>vw(String(d.device_name&&d.device_name!==d.device_id?d.device_name:''))));
+    const wId=Math.max(vw(H2),...ds2.map(d=>vw(String(d.device_id))));
+    // 颜色：实时活跃(5min)绿 / 否则黄；当前设备粗体高亮（2026-09-05 用户）
+    const G='\x1b[32m',Y='\x1b[33m',B='\x1b[1m',R='\x1b[0m';
+    const isActive=(s)=>{ if(!s) return false; const dt=new Date(String(s).replace(' ','T')+(String(s).includes('Z')?'':'Z')); return !isNaN(dt)&&(Date.now()-dt.getTime())<5*60*1000; };
     console.log('  '+pad(H1,wNm)+'  '+pad(H2,wId)+'  '+pad(H3,19)+'  '+H4);
-    for(const d of ds){
-      // 首绑：created_at 为 null 用完整 last_seen_at（精确）——2026-09-05
-      const first=d.created_at||d.last_seen_at||'';
-      // 未命名（name===id）显示空——用户备注后才有意义，不重复 id
+    for(const d of ds2){
+      // 首绑/最后活跃：UTC → 本地时区显示
+      const fmt=(s)=>{ if(!s) return ''; const dt=new Date(String(s).replace(' ','T')+(String(s).includes('Z')?'':'Z')); if(isNaN(dt)) return String(s); return dt.toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).replace(/\//g,'-'); };
+      const first=fmt(d.created_at)||fmt(d.last_seen_at)||'';
       const nm=(d.device_name&&d.device_name!==d.device_id)?d.device_name:'';
-      const cur=(String(d.device_id)===b.deviceId)?' ◀':'';
-      console.log('  '+pad(nm,wNm)+'  '+pad(String(d.device_id),wId)+'  '+pad(String(first),19)+'  '+String(d.last_seen_at||'')+cur);
+      const isCur=String(d.device_id)===curId;
+      const act=isActive(d.last_seen_at);
+      // 当前设备永远绿（正在用=实时活跃）；其他按 last_seen 5min 判活跃绿/不活跃黄（2026-09-05 用户）
+      const online=isCur||act;
+      const c=online?G:Y;
+      const mark=online?'[在线]':'[离线]'; // 文字状态标记（agent 可读，颜色不可见——2026-09-05 用户）
+      const cur=isCur?' ◀':'';
+      console.log('  '+c+pad(nm,wNm)+'  '+pad(String(d.device_id),wId)+'  '+pad(String(first),19)+'  '+fmt(d.last_seen_at)+'  '+mark+cur+R);
     }
   }catch(e){console.log('server 不可达: '+e.message);}
 })();
