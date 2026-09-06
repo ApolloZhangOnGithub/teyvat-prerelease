@@ -1,3 +1,4 @@
+import { execSync, spawn } from "node:child_process"; // ISSUE 132 (2026-09-06 teyvat): 选中复制系统剪贴板工具 fallback
 import { AltScreenFlashContainer } from "./components/alt-screen-flash.js";
 import { ScrollView } from "./components/scroll-view.js";
 import { getKeybindings } from "./keybindings.js";
@@ -786,7 +787,43 @@ export class TuiAltScreen extends TuiBase {
         const text = lines.join("\n");
         if (text.length === 0)
             return;
-        this.terminal.write(`\x1b]52;c;${Buffer.from(text).toString("base64")}\x07`);
+        // ISSUE 132 (2026-09-06 teyvat patch)：OSC 52 前优先系统剪贴板工具。原实现仅发 OSC 52——
+        // macOS iTerm2 支持且默认放行，但多数 Linux 终端（gnome-terminal/konsole 等）不支持或默认禁
+        // OSC 52 剪贴板写 → 选中复制静默失败。fallback 链参考 utils/clipboard.js：
+        // pbcopy(mac) / wl-copy(wayland) / xclip→xsel(X11) → OSC 52（失败或远程 SSH/MOSH 会话兜底）
+        const fallbackOsc52 = () => this.terminal.write(`\x1b]52;c;${Buffer.from(text).toString("base64")}\x07`);
+        let sysCopied = false;
+        try {
+            const remote = Boolean(process.env.SSH_CONNECTION || process.env.SSH_CLIENT || process.env.MOSH_CONNECTION);
+            if (!remote) {
+                const opts = { input: text, timeout: 5000, stdio: ["pipe", "ignore", "ignore"] };
+                const p = process.platform;
+                if (p === "darwin") {
+                    execSync("pbcopy", opts);
+                    sysCopied = true;
+                }
+                else if (p === "linux") {
+                    if (process.env.WAYLAND_DISPLAY) {
+                        // wl-copy 用 execSync 会因 fork 行为挂起（同 clipboard.js 注释），spawn 非阻塞写
+                        const wl = spawn("wl-copy", [], { stdio: ["pipe", "ignore", "ignore"] });
+                        wl.stdin.on("error", () => { });
+                        wl.stdin.write(text);
+                        wl.stdin.end();
+                        wl.unref();
+                        sysCopied = true;
+                    }
+                    else if (process.env.DISPLAY) {
+                        try { execSync("xclip -selection clipboard", opts); }
+                        catch { execSync("xsel --clipboard --input", opts); }
+                        sysCopied = true;
+                    }
+                }
+            }
+        }
+        catch {
+            // fall through to OSC 52
+        }
+        if (!sysCopied) fallbackOsc52();
         this.flash("Copied!");
     }
     applySelectionHighlight(text) {
