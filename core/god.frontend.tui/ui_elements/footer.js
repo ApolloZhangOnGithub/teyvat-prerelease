@@ -421,7 +421,7 @@ export class FooterComponent {
         if (sessionHash) idParts.push(`@${sessionHash}`);
         const idStr = theme.fg("dim", idParts.join(" "));
         const idW = visibleWidth(idStr);
-        // 2026-09-04 用户需求：footer 年龄/tokenmaxxed 可在 /u 分别关闭（默认显示；持久化 settingsManager.globalSettings.footerAge/footerTokenmaxxed）
+        // 2026-09-04 用户需求：footer 年龄/tokenmaxxed 可在 /u 分别开关；2026-09-06 定稿默认隐藏（持久化 settingsManager.globalSettings.footerAge/footerTokenmaxxed，interactive-mode 初始化默认 false）
         const showAge = globalThis.__genshinFooterAge !== false;
         const ageStr = showAge ? formatAge(getBirthTs(fullId)) : "";
         // tokenmaxxed tokens（RSI-001 社会资历）

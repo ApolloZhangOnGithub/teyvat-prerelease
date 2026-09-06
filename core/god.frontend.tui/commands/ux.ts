@@ -13,9 +13,9 @@ export async function viewHandler(_args: any, ctx: any) {
     const readExpanded = (globalThis as any).__genshinReadExpanded ?? false;
     const tokenmaxxedColorful = (globalThis as any).__genshinTokenmaxxedColorful ?? false;
     const ctrlCToBg = (globalThis as any).__genshinCtrlCToBg ?? true;  // 2026-08-20：Ctrl+C 默认转后台（headless）
-    const footerAge = (globalThis as any).__genshinFooterAge ?? true;  // 2026-09-04：footer 显示年龄（2.8w，默认开）
-    const footerTokenmaxxed = (globalThis as any).__genshinFooterTokenmaxxed ?? true;  // footer 显示 tokenmaxxed（默认开）
-    const footerProvider = (globalThis as any).__genshinFooterProvider ?? true;  // 2026-09-04：footer 模型名左侧显示具体 provider（默认开）
+    const footerAge = (globalThis as any).__genshinFooterAge ?? false;  // footer 年龄显示，2026-09-06 起默认隐藏（/u 开）
+    const footerTokenmaxxed = (globalThis as any).__genshinFooterTokenmaxxed ?? false;  // footer tokenmaxxed 默认隐藏（/u 开）
+    const footerProvider = (globalThis as any).__genshinFooterProvider ?? false;  // footer provider 默认隐藏（/u 开）
 
     // pad CJK: 2-col per char, ASCII: 1-col. target 12 visual cols
     const pad = (s: string, w: number) => { let c = 0; for (const ch of s) c += ch.charCodeAt(0) > 127 ? 2 : 1; return s + " ".repeat(Math.max(1, w - c)); };

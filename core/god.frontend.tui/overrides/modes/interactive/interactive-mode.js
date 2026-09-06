@@ -458,11 +458,11 @@ export class InteractiveMode {
             { provider: "openrouter", id: "moonshotai/kimi-k2.6" },
             { provider: "bigmodel", id: "glm-5.3-flash" },
         ];
-        // 2026-09-04：footer 显示偏好恢复（/u 的 Footer 年龄/Footer 履历开关，默认 true）
-        globalThis.__genshinFooterAge = this.settingsManager?.globalSettings?.footerAge ?? true;
-        globalThis.__genshinFooterTokenmaxxed = this.settingsManager?.globalSettings?.footerTokenmaxxed ?? true;
-        // 2026-09-04：footer 模型名左侧具体 provider 显示（/u 的 Footer 供应商开关，默认 true）
-        globalThis.__genshinFooterProvider = this.settingsManager?.globalSettings?.footerProvider ?? true;
+        // 2026-09-04：footer 显示偏好恢复（/u 的 Footer 年龄/Footer 履历开关，默认 true）；2026-09-06 用户定稿默认隐藏（改 false）
+        globalThis.__genshinFooterAge = this.settingsManager?.globalSettings?.footerAge ?? false;
+        globalThis.__genshinFooterTokenmaxxed = this.settingsManager?.globalSettings?.footerTokenmaxxed ?? false;
+        // 2026-09-04：footer 模型名左侧具体 provider 显示（/u 的 Footer 供应商开关，默认 true）；2026-09-06 默认隐藏
+        globalThis.__genshinFooterProvider = this.settingsManager?.globalSettings?.footerProvider ?? false;
         // Expose session for /m /e commands
         globalThis.__genshinSetModel = (model) => this.session.setModel(model);
         globalThis.__genshinSetThinkingLevel = (level) => this.session.setThinkingLevel(level);
