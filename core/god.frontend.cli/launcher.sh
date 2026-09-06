@@ -853,7 +853,24 @@ case "$MODE" in
     if ! mkdir "$LOCKDIR" 2>/dev/null; then
       # 锁已存在，检查持有者是否还活着
       OLD_PID=$(cat "$PIDFILE" 2>/dev/null)
+      PROC_ALIVE=0
       if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+        # 2026-09-07（ISSUE 133）：kill -0 只查进程存在性——Ctrl+C/Ctrl+Z 遗留的 stopped(T)/僵死(Z)
+        # 进程也返回成功 → 误报"已在前台运行中"（用户实测：Linux 上 agent 被挂起后 genshin 1o 进不去）。
+        # 查真实状态：T/Z 视为异常残留 → 终止后清锁重新启动（agent 状态在磁盘，新实例正常恢复）。
+        PSTAT=$(ps -o stat= -p "$OLD_PID" 2>/dev/null | tr -d ' ')
+        case "$PSTAT" in
+          *Z*)
+            echo "  $(date '+%H:%M:%S') 检测到僵死进程 (PID $OLD_PID, zombie)，清理后重新启动…"
+            kill -9 "$OLD_PID" 2>/dev/null; PSTAT="" ;;
+          *T*)
+            echo "  $(date '+%H:%M:%S') 检测到挂起残留进程 (PID $OLD_PID, stopped——可能 Ctrl+C/Ctrl+Z 遗留)。"
+            echo "  终止残留进程后重新启动（agent 运行状态在磁盘，不受影响）…"
+            kill -TERM "$OLD_PID" 2>/dev/null; sleep 0.4; kill -KILL "$OLD_PID" 2>/dev/null; PSTAT="" ;;
+        esac
+        [ -n "$PSTAT" ] && PROC_ALIVE=1
+      fi
+      if [ "$PROC_ALIVE" = "1" ]; then
         # ── attach 分支（2026-08-20，PROPOSAL 034 阶段 4）：agent 在后台 headless 运行（/h 后）──
         # 用户重新 genshin xxx → 恢复到前台 TUI（清 detached 标记 + 杀 headless 进程 + 重新启动）：
         # 同一 SESSION_DIR，session/记忆/意图栈延续，TUI 渲染完整历史——"重新进入前台看到"。
@@ -878,7 +895,7 @@ case "$MODE" in
         echo "$(_l "$NAME 已在前台运行中（PID $OLD_PID，session ${SESSION_ID:-?}）。如需重启: genshin kill $NAME 后重新启动。" "$NAME is already running in foreground (PID $OLD_PID, session ${SESSION_ID:-?}). To restart: genshin kill $NAME then start again.")"
         exit 1
       fi
-      # 僵尸锁：旧进程已死，拿走锁
+      # 僵尸锁/异常残留已清：旧进程已死或已终止，拿走锁
       rm -rf "$LOCKDIR" 2>/dev/null
       mkdir "$LOCKDIR" 2>/dev/null || { echo "$(_l "ERROR: 无法获取锁" "ERROR: cannot acquire lock")"; exit 1; }
     fi
