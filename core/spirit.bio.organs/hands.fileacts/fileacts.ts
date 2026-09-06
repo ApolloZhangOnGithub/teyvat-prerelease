@@ -256,13 +256,15 @@ function parseMv(cmd: string): { src: string; dst: string; isRename: boolean } |
 
 // ── Execute 命令校验（由 kernel.heart/process.ts 调用）──
 export function validateExecute(cmd: string, selfId?: string): { blocked: boolean; message?: string } {
+  // make 命令豁免（2026-09-07 用户：make 部署时不要误判拦截）——提前到内容词检查之前：
+  // make 的 msg/detail 参数是部署描述数据（可能含 rm/kill/路径等词），不是要执行的命令，不应触发内容词拦截。
+  // cd 路径可能带空格（引号包裹，如 cd "/Users/.../Agent Intelligence/...")——正则需支持引号路径。
+  if (/^\s*(?:cd\s+("[^"]*"|\S+)\s*&&\s*)?make\s/i.test(cmd)) return { blocked: false };
   if (/\brm\b/i.test(cmd)) return { blocked: true, message: i18n("请使用 Execute 工具执行 trash 命令来将文件移入回收站。", "Use the Execute tool with the trash command to move files to the recycle bin.") };
   if (/\bsed\b/i.test(cmd)) return { blocked: true, message: i18n("请勿使用 sed 命令。你可使用 Read 命令读取文件。", "Do not use the sed command. Use the Read command to read files.") };
   if (/^\s*python[23]?\s+-c\b/.test(cmd) || /^\s*bash\s+-c\b/.test(cmd)) return { blocked: true, message: i18n("禁止直接执行 python/bash 内联代码。请在工作目录下创建脚本文件再运行。", "Inline python/bash code is forbidden. Create a script file in the workdir and run it.") };
   if (/\bpython[23]?\s*<</.test(cmd) || /\bpython[23]?\s+-\s*$/.test(cmd)) return { blocked: true, message: i18n("禁止直接执行 python 内联代码。请在工作目录下创建 .py 文件，然后用 python <文件名>.py 运行。", "Inline python code is forbidden. Create a .py file in the workdir, then run it with python <filename>.py.") };
   if (/(kill|pkill|killall)\s.*genshin/i.test(cmd)) return { blocked: true, message: i18n("禁止杀掉 genshin 进程。用 genshin -k <序号> 或 /stop 正常终止。", "Killing the genshin process is forbidden. Use genshin -k <index> or /stop to terminate normally.") };
-  // make 命令豁免：make 参数(msg/detail)中可能包含路径引用，不应触发拦截
-  if (/^\s*(?:cd\s+\S+\s*&&\s*)?make\s/i.test(cmd)) return { blocked: false };
   // 禁止访问其他人数据目录；自己 ID 的 MemoryData/AgentFileData/ExecuteData 等放行
   if (/(?:~\/\.local\/lib\/genshin\/|~\/\.teyvat\/|\$HOME\/\.teyvat\/)(?:extensions|extensions-stable|MemoryData|SessionData|RuntimeCache|BlackboxData|IdentityData|AgentFileData|AppData|ExecuteData|LogData|config|UserAccount)/i.test(cmd)) {
     if (selfId && new RegExp(String.raw`(?:MemoryData|AgentFileData|SessionData|RuntimeCache|BlackboxData|IdentityData|AppData|ExecuteData|LogData)/${selfId}`).test(cmd)) {
