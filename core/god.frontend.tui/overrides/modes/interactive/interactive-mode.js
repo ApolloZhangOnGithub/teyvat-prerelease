@@ -310,7 +310,7 @@ export class InteractiveMode {
     streamingComponent = undefined;
     streamingMessage = undefined;
     // Render mode: "streaming" (token-by-token) or "line" (line-by-line)
-    renderMode = globalThis.__piRenderMode || "streaming";
+    renderMode = globalThis.__piRenderMode || "line";  // 2026-09-06 默认 line-by-line（用户定稿，可 /u 切换，settings.renderMode 持久化覆盖）
     // Tool execution tracking: toolCallId -> component
     pendingTools = new Map();
     // Tool output expansion state

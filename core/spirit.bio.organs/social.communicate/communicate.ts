@@ -766,7 +766,12 @@ function registerSocialTools(pi: ExtensionAPI): void {
           try { b = JSON.parse(readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8")); } catch { /* 未绑定/损坏 → 下方提示 login */ }
           if (!b?.token || !b?.deviceId) return { content: [{ type: "text", text: "(未绑定——先 genshin login)" }], details: { social: true, action: "global", count: 0, lines: [] } };
           const H = { Authorization: "Bearer " + b.token, "X-Device-Id": b.deviceId, "X-Device-Name": require("os").hostname() };
-          const res = await fetch(syncEndpoint() + "/auth/devices", { headers: H });
+          const _url = syncEndpoint() + "/auth/devices";
+          let res: Response;
+          try { res = await fetch(_url, { headers: H }); } catch (e: any) {
+            // 2026-09-05 诊断：fetch 网络层异常 → 返回真实信息（含 URL/cause）定位
+            return { content: [{ type: "text", text: "(global 网络错误: " + (e?.message || e) + (e?.cause?.message ? " | cause: " + e.cause.message : "") + " | url=" + _url + ")" }], details: { social: true, action: "global", count: 0, lines: [] } };
+          }
           if (!res.ok) return { content: [{ type: "text", text: "(server 查询失败: HTTP " + res.status + ")" }], details: { social: true, action: "global", count: 0, lines: [] } };
           const j: any = await res.json();
           const ds = (j?.devices ?? []).filter((d: any) => d.device_id === b.deviceId || (d.agents && String(d.agents).length > 2) || !d.archived);

@@ -3,7 +3,7 @@ const T = (zh: string, en: string) => i18n(zh, en);
 
 export async function viewHandler(_args: any, ctx: any) {
   while (true) {
-    const renderMode = (globalThis as any).__piRenderMode || "streaming";
+    const renderMode = (globalThis as any).__piRenderMode || "line";  // 2026-09-06 默认 line-by-line（用户定稿）
     const thinkHidden = (globalThis as any).__genshinGetThinkingHidden?.() ?? false;
     const toolExpanded = (globalThis as any).__genshinGetToolExpanded?.() ?? false;
     const compactExecute = (globalThis as any).__genshinCompactExecute ?? false;
@@ -40,8 +40,8 @@ export async function viewHandler(_args: any, ctx: any) {
 
     if (pick.startsWith(T("渲染模式", "Render Mode"))) {
       const options = [
-        `streaming  ${renderMode === "streaming" ? "●" : "○"}  ${T("逐 token 渲染（默认）", "per-token render (default)")}`,
-        `line       ${renderMode === "line" ? "●" : "○"}  ${T("逐行渲染", "per-line render")}`,
+        `streaming  ${renderMode === "streaming" ? "●" : "○"}  ${T("逐 token 渲染", "per-token render")}`,
+        `line       ${renderMode === "line" ? "●" : "○"}  ${T("逐行渲染（默认）", "per-line render (default)")}`,
       ];
       const choice = await ctx.ui.select(T("渲染模式", "Render Mode"), options);
       if (!choice) continue;

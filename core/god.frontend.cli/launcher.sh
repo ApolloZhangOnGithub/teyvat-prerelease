@@ -236,38 +236,8 @@ case "$NAME" in
     cd "$PAIMON_EXT/.." && bun "$PAIMON_CLI_TS" "$NAME" "$@"
     exit $?;;
   d|devices)
-    # [2026-09-05] 设备管理（devices.cjs）：无参=列表；rn <id> <名>=改名；<name|编号|id> [cmd]=请求设备执行 genshin 命令
+    # [2026-09-05] 设备管理（devices.cjs）：无参=列表；rn <id> <名>=改名；<name|编号|id>=查看该设备 genshin 快照（不做远程执行）
     node "$PAIMON_CLI/devices.cjs" "$@"
-    exit $?;;
-  cmd-poll)
-    # [2026-09-05] 设备命令执行器：拉自己 pending 的跨设备 genshin 命令 → 本机执行 → 回报（systemd timer 每分钟调）
-    node --input-type=commonjs -e "
-const fs=require('fs'),h=require('os').homedir();
-const {execFile}=require('child_process');
-const b=JSON.parse(fs.readFileSync(h+'/.teyvat/UserAccount/binding.json','utf8'));
-let endpoint='https://sync.paimon.beer';
-try{const s=JSON.parse(fs.readFileSync(h+'/.teyvat/UserAccount/services.json','utf8'));if(s.services&&s.services['genshin-sync']&&s.services['genshin-sync'].endpoint)endpoint=s.services['genshin-sync'].endpoint;}catch{}
-const H=()=>({Authorization:'Bearer '+b.token,'X-Device-Id':b.deviceId,'X-Device-Name':require('os').hostname()});
-const gbin=process.env.GENSHIN_BIN||(h+'/.local/bin/genshin');
-(async()=>{
-  if(!b?.token||!b?.deviceId){process.exit(0);}
-  try{
-    const pr=await fetch(endpoint+'/cmd/poll',{headers:H()});
-    const pj=await pr.json().catch(()=>({}));
-    const c=pj?.cmd; if(!c||!c.id){process.exit(0);} // 无 pending
-    // 执行 genshin 子命令（execFile 无 shell，防注入；~/.local/bin/genshin 为本机 launcher）
-    const args=String(c.cmd||'').trim().split(/\s+/).filter(Boolean);
-    // 无命令 → 执行 genshin 本体（agent 列表）——用户定稿 genshin d <设备> 默认显示设备 agent 列表
-    let out='',ok=true;
-    try{ out=require('child_process').execFileSync(gbin,args,{encoding:'utf8',timeout:60000,maxBuffer:4*1024*1024}).trim(); }
-    catch(e){ ok=false; out=String(e?.stdout||e?.message||e).trim().slice(0,4000); }
-    if(!out) out='(无输出)';
-    if(out.length>8000) out=out.slice(0,8000)+'... [截断]';
-    await fetch(endpoint+'/cmd/result',{method:'POST',headers:H(),body:JSON.stringify({cmd_id:c.id,ok,output:out})}).catch(()=>{});
-  }catch(e){ /* poll 失败静默（timer 下次再试） */ }
-  process.exit(0);
-})();
-"
     exit $?;;
   sync)
     # [云同步已废弃 2026-09-05，PROPOSAL 036 替代] agent 单机存活，不做跨机状态同步；代码保留不删。
