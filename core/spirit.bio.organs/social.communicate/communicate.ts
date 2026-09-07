@@ -709,20 +709,28 @@ function watchInterruptTriggers(pi: ExtensionAPI): void {
             } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); }
           }
           const text = formatPendingMsgs(toInject);
-          markInjected(mySid, toInject.map((m: SocialMsg) => m.id));
-          sendCustomMessage(
-            pi, "social-message", text,
-            {
-              from: toInject[0].from, from_name: toInject[0].from_name,
-              mode: toInject[0].mode, mode_used: toInject[0].mode_used, ts: toInject[0].ts,
-              ...(toInject[0].at?.length ? { at: toInject[0].at } : {}),
-              interrupt: true,
-            },
-            { deliverAs: "interrupt" }, // agent-session.js override：abort 当前 run + 立即注入
-          );
+          // 2026-09-08（testor 03:13 实证 + 推断确认）：markInjected 必须在 sendCustomMessage 成功之后——
+          // 原顺序 markInjected 先执行，sendCustomMessage 抛错被外层 catch 吞（注释称"消息留在 inbox injected:false"与实际矛盾）
+          // → 消息已 injected:true 不再兑底 → interrupt 打断丢失（wait 中无感知，只能查 history）。
+          // 现：注入成功才标记；抛错时消息保持 injected:false → agent_end/下次 trigger 仍能兑底补注。
+          try {
+            sendCustomMessage(
+              pi, "social-message", text,
+              {
+                from: toInject[0].from, from_name: toInject[0].from_name,
+                mode: toInject[0].mode, mode_used: toInject[0].mode_used, ts: toInject[0].ts,
+                ...(toInject[0].at?.length ? { at: toInject[0].at } : {}),
+                interrupt: true,
+              },
+              { deliverAs: "interrupt" }, // agent-session.js override：abort 当前 run + 立即注入
+            );
+            markInjected(mySid, toInject.map((m: SocialMsg) => m.id));
+          } catch (e2) {
+            console.error("[spirit.bio.organs/social.communicate/communicate.ts] sendCustomMessage(interrupt) 注入失败——消息未标记 injected（agent_end 兑底将补注）: " + ((e2 as any)?.message || e2));
+          }
         }
         // queue 且非 resting → 留给 agent_end 轮后注入（不打断进行中的工作）
-      } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* 注入异常 → 消息留在 inbox（injected:false），agent_end 轮询仍能兑底 */ }
+      } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* 注入异常 → 消息留在 inbox（injected:false——2026-09-08 已改为注入成功才标记），agent_end 轮询仍能兑底 */ }
     };
     const watcher = require("fs").watch(TRIGGERS_DIR, (_evt: string, filename: string | null) => {
       if (!filename || !filename.endsWith(".json")) return;
