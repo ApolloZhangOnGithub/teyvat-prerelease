@@ -233,13 +233,13 @@ export function isAgentActive(sid: string): boolean {
       const pid = parseInt(readFileSync(pf, "utf8").trim(), 10);
       if (pid) { process.kill(pid, 0); return true; }
     }
-  } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* 无 pid 文件 / 进程不存在 / 心跳超时 */ }
+  } catch { /* 无 pid 文件 / 进程不存在 / 心跳超时 = 离线——正常判定，不刷日志（2026-09-07 纪律③：高频判定 stat ENOENT 刷屏 5MB） */ }
   // bridge 心跳 fallback（外部 agent）
   try {
     const hb = join(HEARTBEAT_DIR, sid);
     const hst = require("fs").statSync(hb);
     if (Date.now() - hst.mtimeMs <= 90_000) return true;
-  } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* 无心跳文件 */ }
+  } catch { /* 无心跳文件 = 非 bridge agent——静默 */ }
   return false;
 }
 
@@ -665,8 +665,8 @@ function watchInterruptTriggers(pi: ExtensionAPI): void {
       const mySid = getMySid();
       if (!/^[a-f0-9]{8}$/.test(mySid)) return;
       let trig: any = null;
-      try { trig = JSON.parse(readFileSync(f, "utf8")); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return; }
-      try { unlinkSync(f); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return; } // 拿所有权失败 → 已由 watch/interval 另一方处理，放弃
+      try { trig = JSON.parse(readFileSync(f, "utf8")); } catch (e: any) { if ((e as any)?.code !== "ENOENT") console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return; } // ENOENT=已被 watch/interval 另一方消费（竞态）——静默
+      try { unlinkSync(f); } catch (e: any) { if ((e as any)?.code !== "ENOENT") console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return; } // 拿所有权失败 → 已由 watch/interval 另一方处理，放弃
       try {
         const msgs = readInbox(mySid, 50).filter((m: SocialMsg) => !m.injected);
         // 立即注入范围：interrupt 全部（强制切断）；queue 仅在 resting（wait 中）时注入（打断 wait）
@@ -864,6 +864,13 @@ function registerSocialTools(pi: ExtensionAPI): void {
               if (rb?.token && rb?.deviceId) {
                 const res = await fetch(syncEndpoint() + "/sync/agent-presence", { headers: { "Authorization": `Bearer ${rb.token}`, "X-Device-Id": rb.deviceId, "User-Agent": SYNC_UA } });
                 const body: any = await res.json();
+                // 2026-09-07（用户：remote agent 没显示具体设备——垃圾）：presence 只有 device_id 无设备名——补拉 auth/devices 拿 device_id→device_name 映射
+                const devNames: Record<string, string> = {};
+                try {
+                  const dr = await fetch(syncEndpoint() + "/auth/devices", { headers: { "Authorization": `Bearer ${rb.token}`, "X-Device-Id": rb.deviceId, "User-Agent": SYNC_UA } });
+                  const dj: any = await dr.json();
+                  for (const dv of (dj?.devices ?? [])) devNames[String(dv.device_id)] = dv.device_name && dv.device_name !== dv.device_id ? dv.device_name : dv.device_id;
+                } catch { /* 设备名拉取失败 → remote 行只显示 device_id */ }
                 const localIds = new Set(agents.map(a => a.sid));
                 for (const ra of (body?.agents ?? [])) {
                   if (localIds.has(ra.sid)) continue; // 本机 agent 已在本地列表
@@ -871,7 +878,8 @@ function registerSocialTools(pi: ExtensionAPI): void {
                   const ago = lastTs ? Math.max(0, Math.floor((now - lastTs) / 1000)) : -1;
                   const online = ago >= 0 && ago < 300; // server 5min expirePresence 窗口
                   const state = online ? "online" : ago >= 0 ? `${Math.floor(ago / 60)}m ago` : "unknown";
-                  remoteLines.push(`${ra.name} (${ra.sid})  focus:${ra.focus}  ${state}  remote:${ra.device_id === rb.deviceId ? "?" : "other"}  ${ra.version} ${ra.model}`);
+                  const devName = devNames[String(ra.device_id)] || String(ra.device_id || "?");
+                  remoteLines.push(`${ra.name} (${ra.sid})  focus:${ra.focus}  ${state}  设备:${devName}  ${ra.version} ${ra.model}`);
                 }
               }
             } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* remote 拉取失败不影响本地列表 */ }
@@ -941,6 +949,12 @@ function registerSocialTools(pi: ExtensionAPI): void {
             const name = d.device_name && d.device_name !== d.device_id ? d.device_name : d.device_id;
             const nAgents = agentCount(d);
             lines.push("  " + name + " (" + d.device_id + ")" + (String(d.device_id) === b.deviceId ? "  [本机]" : "") + "  · " + nAgents + " agents" + (d.synced_at ? "  同步:" + fmtTs(d.synced_at) : ""));
+            // 2026-09-07（用户：agent 没显示具体设备——垃圾）：设备行下缩进列 agent（跨设备 agent 带设备一目了然）
+            if (Array.isArray(d.agents) && d.agents.length) {
+              for (const ag of d.agents) {
+                lines.push("      " + (ag.name || ag.sid) + (ag.sid && ag.sid !== ag.name ? " (" + ag.sid + ")" : "") + (ag.version ? "  v" + ag.version : "") + (ag.model ? "  " + ag.model : ""));
+              }
+            }
           }
           if (!lines.length) return { content: [{ type: "text", text: "(无设备——多设备跑过 genshin d 后可见)" }], details: { social: true, action: "global", count: 0, lines: [] } };
           return { content: [{ type: "text", text: "跨设备 (" + ds.length + " 设备):\n" + lines.join("\n") + "\n\n细节: social({action:'global',view:'device'}) 设备列表；social({action:'global',device:'<id>'}) 看设备 agents" }], details: { social: true, action: "global", count: ds.length, lines } };

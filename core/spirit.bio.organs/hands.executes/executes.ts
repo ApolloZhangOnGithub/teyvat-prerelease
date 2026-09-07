@@ -379,7 +379,7 @@ let _lastBgHash = ""; // @ 缓存：避免相同输出重复占用 context
       const rc = rc0.map((x: any) => {
         if (x.type !== "text" || typeof x.text !== "string") return x;
         const cleaned = x.text
-          .replace(/\n\[background: [^\]]*running[^\]]*\](\n\[id: [^\]]*\])?$/, "")
+          .replace(/\n\[background: [^\]]*running[^\]]*\]/g, "") // 2026-09-07 22:20（用户样例 [background: 1 running xxx]——可能非尾部）：任意位置的 background 行都剥（原尾部锚定漏剥非尾部场景）
           .replace(/\n\[id: [^\]]*\]$/, "")
           .replace(/\n\[remaining: \d+\]$/, "");
         return cleaned === x.text ? x : { ...x, text: cleaned };

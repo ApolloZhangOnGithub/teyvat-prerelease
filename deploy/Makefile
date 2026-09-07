@@ -250,7 +250,8 @@ _release: _integrity
 
 # ── docs / wiki ──
 
-SERVER := root@47.106.190.199
+# 2026-09-07（安全：公开仓库不写真实服务器——deploy 目标用环境变量 SYNC_SERVER 或占位；本机内部部署见 teyvat-sides deploy.sh）
+SERVER := $(if $(SYNC_SERVER),$(SYNC_SERVER),root@<your-sync-server>)
 
 wiki-deploy: _ecosystem
 	@bash "$(ECOSYSTEM)/wiki.paimon.beer/deploy.sh"

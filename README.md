@@ -92,7 +92,8 @@ To set up sync on a new device, the bootstrap script handles it. Manual setup:
 
 ```bash
 # Add your SSH key to the server
-ssh-copy-id root@47.106.190.199
+# (替换为你的 sync 服务器——不要提交真实 IP 到公开仓库)
+ssh-copy-id root@<your-sync-server>
 
 # The LaunchAgent (macOS) keeps the tunnel alive
 # It's created automatically by bootstrap.sh
