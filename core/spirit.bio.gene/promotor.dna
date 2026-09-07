@@ -76,6 +76,7 @@ vir .eyes //眼睛
 func head.eyes //眼睛：VL视觉能力，通过Qwen VL API查看图片
     session main
     mode:abled DWN
+    coded:head.eyes
     tools eyes
 
 vir .brain //大脑

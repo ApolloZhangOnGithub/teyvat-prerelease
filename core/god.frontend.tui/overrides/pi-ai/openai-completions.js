@@ -1038,6 +1038,15 @@ export function convertMessages(model, context, compat) {
         }
         lastRole = msg.role;
     }
+    // 2026-09-07（ISSUE 136）：非 vision 模型下 toolResult 的 image 被替换为 [image] 文本后，
+    // tool 消息可能直接跟在 user 消息前（缺少 assistant 桥接）→ OpenAI 400: tool must be a response to tool_calls。
+    // 遍历 params，在 tool→user 直接相连处插入合成 assistant 桥接。
+    for (let i = 0; i < params.length - 1; i++) {
+        if (params[i].role === "tool" && params[i + 1].role === "user") {
+            params.splice(i + 1, 0, { role: "assistant", content: "I have processed the tool results." });
+            i++;
+        }
+    }
     return params;
 }
 function convertTools(tools, compat) {

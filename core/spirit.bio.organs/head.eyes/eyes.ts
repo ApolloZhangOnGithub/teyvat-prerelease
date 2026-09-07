@@ -7,6 +7,7 @@
 // 文档: B.docs/Dev.Common/Wiki/Dependents(Bio Service Support).WIKI
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { readFile } from "node:fs/promises";
 import { Type } from "@sinclair/typebox";
 import { registerPaimonTool, resultContent } from "#kernel_backbone";
 import { renderToolCall, renderMessage } from "#tui_blockrender";
@@ -20,6 +21,19 @@ const DEFAULT_MODEL = "qwen3-vl-plus";
 const DEFAULT_PROMPT = i18n("请用中文简洁描述这张图片/截图的内容。", "Please briefly describe this image/screenshot in English.");
 const vlm = createVlmBackend("qwen")!;
 const ocr = createOcrBackend("vision")!;
+
+// 2026-09-07 用户定稿：图片可由当前（视觉）模型直接看——图作为 image 块注入上下文（非 VL/OCR 外部通道）。
+// 检测当前模型是否支持图片：模型配置 input 含 "image"（如 deepseek-v4-flash-vision-exp）；否则提示切换视觉模型。
+const IMAGE_MIME: Record<string, string> = {
+  ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp",
+};
+function isVisionModel(model: any): boolean {
+  const inp = model?.input ?? model?.capabilities ?? [];
+  return Array.isArray(inp) ? inp.includes("image") : false;
+}
+function currentModel(ctx: any): any {
+  return ctx?.model ?? (globalThis as any).__genshinGetModel?.() ?? ctx?.session?.model;
+}
 
 // ── 格式化：能力结果 → 工具结果（execute 只做取参/调用/格式化）─────────
 function formatLook(r: any, model: string): { content: any[]; details: any; isError: boolean } {
@@ -51,14 +65,15 @@ export default function (pi: ExtensionAPI) {
     name: "eyes",
     label: "Eyes",
     messageDescription:
-      "看图：VL 视觉 + 本地 OCR。一个工具，action 参数选择操作：\n" +
+      "看图：VL 视觉 + 本地 OCR + 图片注入。一个工具，action 参数选择操作：\n" +
       "  action:\"look\"  path, model?, prompt?  — 用 VL 模型描述图片内容\n" +
       "      model 默认 qwen3-vl-plus；prompt 缺省为「请用中文简洁描述这张图片/截图的内容。」\n" +
       "  action:\"ocr\"   path, mode?           — 本地 macOS Vision OCR（免配置、离线、中英混排）\n" +
-      "      mode: text=纯文本（默认）| structure=带坐标行 + 区域分类（menubar/sidebar/content/button/statusbar）",
-    promptSnippet: "Eyes({action, path, ...}) — vlm=VL 描述图片 | ocr=本地提取文字（text/structure）",
+      "      mode: text=纯文本（默认）| structure=带坐标行 + 区域分类（menubar/sidebar/content/button/statusbar）\n" +
+      "  action:\"native\" path                   — 把图片作为 image 块注入当前模型（模型看原图；需当前为视觉模型，否则提示切换）",
+    promptSnippet: "Eyes({action, path, ...}) — vlm=VL 描述图片 | ocr=本地提取文字 | native=注入图给当前模型看",
     parameters: Type.Object({
-      action: Type.String({ messageDescription: "vlm | ocr" }),
+      action: Type.String({ messageDescription: "vlm | ocr | native" }),
       path: Type.String({ messageDescription: i18n("图片文件路径", "Image file path") }),
       model: Type.Optional(Type.String({ messageDescription: i18n("VL 模型（action=look，默认 qwen3-vl-plus）", "VL model (action=look, default qwen3-vl-plus)") })),
       prompt: Type.Optional(Type.String({ messageDescription: i18n("自定义提问（action=look）", "Custom question (action=look)") })),
@@ -94,6 +109,25 @@ export default function (pi: ExtensionAPI) {
             return formatOcrStructure(r);
           }
           return formatOcrText(await ocr.readText(p.path));
+        }
+        case "native": {
+          // 2026-09-07 用户定稿：图片作为 image 块注入当前模型（模型看原图）。需当前为视觉模型，否则提示切换。/m
+          const model = currentModel(_ctx);
+          if (!isVisionModel(model)) {
+            const mid = model?.id ?? model?.model ?? "?";
+            return { content: [{ type: "text", text: i18n(`当前模型 ${mid} 不支持看图（非视觉模型）。请先用 /m 切换到视觉模型（如 deepseek-v4-flash-vision-exp），再用 Eyes(action:'native') 注入图片。`, `Current model ${mid} does not support images (not a vision model). Switch to a vision model via /m (e.g. deepseek-v4-flash-vision-exp) first, then Eyes(action:'native') to embed the image.`) }], details: {}, isError: true };
+          }
+          try {
+            const ext = p.path.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
+            const mime = IMAGE_MIME["." + ext] || "image/png";
+            const buf = await readFile(p.path);
+            return { content: [
+              { type: "text", text: i18n(`图片 [${p.path}]（注入当前模型，模型可见原图）`, `Image [${p.path}] (injected to current model, model sees original)`) },
+              { type: "image", data: buf.toString("base64"), mimeType: mime },
+            ], details: {}, isError: false };
+          } catch (e: any) {
+            return { content: [{ type: "text", text: i18n(`Eyes native 失败: ${e?.message || e}`, `Eyes native failed: ${e?.message || e}`) }], details: {}, isError: true };
+          }
         }
         default:
           return { content: [{ type: "text", text: i18n(`未知 action: ${action}。用 vlm（VL 描述图片）或 ocr（本地 OCR）。`, `Unknown action: ${action}. Use vlm (VL image description) or ocr (local OCR).`) }], details: {}, isError: true };

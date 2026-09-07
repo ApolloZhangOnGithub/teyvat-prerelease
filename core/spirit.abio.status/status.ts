@@ -41,10 +41,10 @@ export function registerStatusTool(_pi: ExtensionAPI) {
   registerPaimonTool({
     name: "status",
     label: "Status",
-    messageDescription: "Query yourself. Usage: status @identity | status @history [N] | status @nickname <name>",
-    promptSnippet: "status @identity — query identity | status @history [N] — session 存续时期 | status @nickname <name> — set nickname",
+    messageDescription: "Query yourself. Usage: status @identity | status @history [N] | status @nickname <name> | status @model | status switch-model <id>",
+    promptSnippet: "status @identity — query identity | status @history [N] — session 存续时期 | status @nickname <name> — set nickname | status @model — list models | status switch-model <id> — switch model (needs /a model auth)",
     parameters: Type.Object({
-      instruction: Type.String({ messageDescription: i18n("指令：@identity | @history [N 最近几个 session] | @nickname <名字>", "Instruction: @identity | @history [N recent sessions] | @nickname <name>") }),
+      instruction: Type.String({ messageDescription: i18n("指令：@identity | @history [N 最近几个 session] | @nickname <名字> | @model（可用模型列表）| switch-model <模型id>（切换模型，需 /a model 授权）", "Instruction: @identity | @history [N recent sessions] | @nickname <name> | @model (available models) | switch-model <id> (switch model, needs /a model auth)") }),
     }),
     renderCall(args: any, theme: any) {
       return renderToolCall.label(theme, "status", args?.instruction || "");
@@ -111,9 +111,9 @@ export function registerStatusTool(_pi: ExtensionAPI) {
               if (pre.length) {
                 histNote = pre.length > 0 ? T(`（含 ${pre.length} 条旧记录：管线启用前，无真实结束/原因）`, ` (incl. ${pre.length} legacy records: before the pipeline, no real end/reason)`) : "";
                 for (let i = 0; i < pre.length; i++) {
-                  const r = pre[i];
+                  const r = pre[i]!;
                   const startTs = new Date(r.ts).getTime();
-                  const endTs = i + 1 < pre.length ? new Date(pre[i + 1].ts).getTime() : (firstSessTs || now);
+                  const endTs = i + 1 < pre.length ? new Date(pre[i + 1]!.ts).getTime() : (firstSessTs || now);
                   hist.push({ startTs, endTs, endReason: "unknown", ver: r.v });
                 }
               }
@@ -162,6 +162,58 @@ export function registerStatusTool(_pi: ExtensionAPI) {
           writeFileSync(idPath, JSON.stringify(idData, null, 2));
           return { content: [{ type: "text", text: T(`昵称已设为: ${nick}`, `Nickname set to: ${nick}`) }] };
         } catch (e: any) { return { content: [{ type: "text", text: T(`设置昵称失败: ${e?.message}`, `Failed to set nickname: ${e?.message}`) }], isError: true }; }
+      }
+      if (params.instruction !== "@identity") {
+        // 2026-09-07 用户定稿：status @model — 列出可用模型（读 models.json），标注视觉模型 + 当前模型 ★
+        if (params.instruction.startsWith("@model")) {
+          try {
+            const models = JSON.parse(readFileSync(join(homedir(), ".teyvat/config/models.json"), "utf8"));
+            const cur = (globalThis as any).__genshinGetModel?.();
+            const curId = cur?.id ?? cur?.model ?? "";
+            const lines: string[] = [`${T("可用模型", "Available models")} (${T("★=当前", "★=current")}, ${T("screenshot=视觉模型", "screenshot=vision model")}):`];
+            for (const [prov, p] of Object.entries(models.providers || {})) {
+              const provName = String(prov);
+              for (const m of ((p as any).models || [])) {
+                const isVision = Array.isArray(m.input) && m.input.includes("image");
+                const star = m.id === curId ? "★ " : "      ";
+                const vis = isVision ? " [视觉]" : "";
+                lines.push(`${star}${m.id}${vis}  (${provName})`);
+              }
+            }
+            return { content: [{ type: "text", text: lines.join("\n") }] };
+          } catch (e: any) {
+            return { content: [{ type: "text", text: T(`读取 models.json 失败: ${e?.message || e}`, `Failed to read models.json: ${e?.message || e}`) }], isError: true };
+          }
+        }
+      }
+      // 2026-09-07 用户定稿：Status switch-model -- 切换模型（默认禁止，需用户 /a model <id>|all 授权）
+      if (params.instruction.startsWith("switch-model ")) {
+        const target = params.instruction.replace(/^switch-model\s*/, "").trim();
+        if (!target) return { content: [{ type: "text", text: T("用法: status switch-model <模型id>", "Usage: status switch-model <model id>") }], isError: true };
+        try {
+          // 读授权
+          const authPath = join(homedir(), ".teyvat/RuntimeCache", pid, "model-switch-auth.json");
+          let allowed = false;
+          try {
+            const auth = JSON.parse(readFileSync(authPath, "utf8"));
+            allowed = auth?.authorized && (auth?.all === true || (auth?.models || []).includes(target));
+          } catch (e) { /* 无授权文件 => 默认禁止 */ }
+          if (!allowed) return { content: [{ type: "text", text: T(`切换模型 ${target} 未授权。请用户执行 /a model ${target}（或 /a model all 授权任意）后重试。`, `Switching to ${target} not authorized. Ask the user to run /a model ${target} (or /a model all to authorize any), then retry.`) }], isError: true };
+          // 从 models.json 构造 model 对象（setModel 需要 {provider, id, ...}）
+          const models = JSON.parse(readFileSync(join(homedir(), ".teyvat/config/models.json"), "utf8"));
+          let sel: any = null;
+          for (const [prov, p] of Object.entries(models.providers || {})) {
+            const found = ((p as any).models || []).find((m: any) => m.id === target);
+            if (found) { sel = { ...found, provider: prov }; break; }
+          }
+          if (!sel) return { content: [{ type: "text", text: T(`模型 ${target} 未在 models.json 中找到`, `Model ${target} not found in models.json`) }], isError: true };
+          const setModel = (globalThis as any).__genshinSetModel;
+          if (typeof setModel !== "function") return { content: [{ type: "text", text: T("当前环境不支持模型切换", "Model switching not supported in this context") }], isError: true };
+          await setModel(sel);
+          return { content: [{ type: "text", text: T(`已切换模型: ${target}`, `Switched to model: ${target}`) }] };
+        } catch (e: any) {
+          return { content: [{ type: "text", text: T(`切换失败: ${e?.message || e}`, `Switch failed: ${e?.message || e}`) }], isError: true };
+        }
       }
       if (params.instruction !== "@identity") return { content: [{ type: "text", text: T(`未知指令: ${params.instruction}`, `Unknown instruction: ${params.instruction}`) }], isError: true };
 

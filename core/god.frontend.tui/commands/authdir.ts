@@ -46,7 +46,7 @@ export async function authdirCompletions(prefix: string) {
     }
     return items.length ? items : null;
   }
-  const subs: [string, string][] = [["all", T("全量白名单（系统黑名单仍生效）", "Full whitelist (system blacklist still applies)")], ["self-reboot", T("授权模型自主重启", "Authorize model self-reboot")], ["remove ", T("撤销授权", "Revoke authorization")], ["list", T("查看状态", "View status")]];
+  const subs: [string, string][] = [["all", T("全量白名单（系统黑名单仍生效）", "Full whitelist (system blacklist still applies)")], ["self-reboot", T("授权模型自主重启", "Authorize model self-reboot")], ["model ", T("授权模型切换（status switch-model，<id>|all）", "Authorize model switch (status switch-model, <id>|all)")], ["remove ", T("撤销授权", "Revoke authorization")], ["list", T("查看状态", "View status")]];
   for (const [s, desc] of subs) {
     if (s.startsWith(prefix)) items.push({ value: s, label: s.trim(), description: desc });
   }
@@ -115,6 +115,27 @@ export async function authdirHandler(args: string, ctx: any, tools?: { getActive
     const p = resolve(rest.replace(/^~(?=\/|$)/, homedir()));
     e.trusted = e.trusted.filter(t => t.path !== p);
     await saveTrust(); ctx.ui.notify(T(`已撤销: ${p}`, `Revoked: ${p}`), "info");
+    return;
+  }
+  // 2026-09-07 用户定稿：/a model 授权——status switch-model 切换模型（默认禁止，需授权 specific 或 all）
+  if (a === "model" || a.startsWith("model ") || a === "m" || a.startsWith("m ")) {
+    const rest = unquote(a.replace(/^(m|model)\s*/, "").trim());
+    const pid = (globalThis as any).__genshinPersonId || process.env.PAIMON_AGENT_ID || "";
+    if (!pid) { ctx.ui.notify(T("无法确定 agent ID", "Cannot determine agent ID"), "warning"); return; }
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { homedir: home2 } = await import("node:os");
+    const flagDir = join(home2(), ".teyvat/RuntimeCache", pid);
+    mkdirSync(flagDir, { recursive: true });
+    const all = rest === "all";
+    const auth = { authorized: true, all, models: all ? [] : (rest ? [rest] : []), ts: Date.now(), by: "user" };
+    writeFileSync(join(flagDir, "model-switch-auth.json"), JSON.stringify(auth));
+    ctx.ui.notify(T(
+      all ? `已授权 ${pid} 切换任意模型（/a model all 全量）。agent 可 Status switch-model。` :
+        `已授权 ${pid} 切换到模型 ${rest}。agent 可 Status switch-model。`,
+      all ? `${pid} authorized to switch any model (/a model all). Agent can use Status switch-model.` :
+        `${pid} authorized to switch to model ${rest}. Agent can use Status switch-model.`
+    ), "info");
     return;
   }
   // ── 工具持久授权：/a enable-<tool> | /a disable-<tool> ──
