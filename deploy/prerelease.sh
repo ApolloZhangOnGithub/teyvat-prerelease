@@ -18,7 +18,9 @@ if [ -n "$DEV_ARG" ]; then
   PINNED_DEV="$DEV_ARG"
 else
   if [ ! -f "$DEV_COUNTER" ]; then echo "  ERROR: 无 dev 构建记录，先 make dev-minutely"; exit 1; fi
-  read DEV_DATE DEV_COUNT < "$DEV_COUNTER"
+  # .build-counter 三段格式: "日期 计数 版本线"（与 .alpha-counter 同构）；三变量 read 防 bash 把第三段吞进 DEV_COUNT
+  # （曾两变量 read → DEV_COUNT="49 0.3.3-dev" 带尾巴 → PINNED_DEV 拼出 "...49 0.3.3-dev" 错值，2026-09-07 修复）
+  read DEV_DATE DEV_COUNT DEV_REL_VER < "$DEV_COUNTER"
   if [ "$DEV_DATE" != "$TODAY" ]; then
     echo "  ERROR: 今天无 dev-minutely 构建（.build-counter 是 $DEV_DATE），先 make dev-minutely 再发 prerelease"; exit 1
   fi

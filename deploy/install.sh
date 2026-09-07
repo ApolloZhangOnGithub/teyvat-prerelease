@@ -655,7 +655,28 @@ ENDPATCH
     node "$_patch_tui" "$_tui_js" && rm -f "$_patch_tui"
   fi
 
-  # patch read.js: getNonVisionImageNote 的 model.input.includes 缺 Array.isArray 防御（2026-09-07 用户/我定稿：models.dev 合成/第三方模型缺 input 字段 → Undefined reading 'includes'）。debug-01 只修了 pi-ai 5 处，漏了 pi-coding-agent read.js 这处。\n  _read_js=\"$PI_DIST/core/tools/read.js\"\n  if [ -f \"$_read_js\" ]; then\n    _patch_readimg=\"$PI_DIST/core/tools/.patch-readimg.cjs\"\n    cat > \"$_patch_readimg\" <<'ENDPATCH'\nconst fs = require('fs');\nlet src = fs.readFileSync(process.argv[2], 'utf8');\nconst oldLine = 'if (!model || model.input.includes(\"image\")) {';\nconst newLine = 'if (!model || !Array.isArray(model.input) || model.input.includes(\"image\")) {';\nif (src.includes(oldLine)) {\n  src = src.split(oldLine).join(newLine);\n  fs.writeFileSync(process.argv[2], src);\n  console.log('patch-read-image-input-ok');\n} else {\n  console.log('patch-read-image-input-skip (pattern not found, already patched or version drift)');\n}\nENDPATCH\n    node \"$_patch_readimg\" \"$_read_js\" && rm -f \"$_patch_readimg\"\n  fi\n\n  # patch model-resolver.js: deepseek provider 首次安装默认模型 pro → flash（2026-09-07 用户定稿：首次装 teyvat 默认 deepseek-v4-flash）\n  _mr_js=\"$PI_DIST/core/model-resolver.js\""
+  # patch read.js: getNonVisionImageNote 的 model.input.includes 缺 Array.isArray 防御（2026-09-07：models.dev 合成/第三方模型缺 input 字段 → Undefined reading 'includes'）。debug-01 只修了 pi-ai 5 处，漏了 pi-coding-agent read.js 这处。
+  _read_js="$PI_DIST/core/tools/read.js"
+  if [ -f "$_read_js" ]; then
+    _patch_readimg="$PI_DIST/core/tools/.patch-readimg.cjs"
+    cat > "$_patch_readimg" <<'ENDPATCH'
+const fs = require('fs');
+let src = fs.readFileSync(process.argv[2], 'utf8');
+const oldLine = 'if (!model || model.input.includes("image")) {';
+const newLine = 'if (!model || !Array.isArray(model.input) || model.input.includes("image")) {';
+if (src.includes(oldLine)) {
+  src = src.split(oldLine).join(newLine);
+  fs.writeFileSync(process.argv[2], src);
+  console.log('patch-read-image-input-ok');
+} else {
+  console.log('patch-read-image-input-skip (pattern not found, already patched or version drift)');
+}
+ENDPATCH
+    node "$_patch_readimg" "$_read_js" && rm -f "$_patch_readimg"
+  fi
+
+  # patch model-resolver.js: deepseek provider 首次安装默认模型 pro → flash（2026-09-07 用户定稿：首次装 teyvat 默认 deepseek-v4-flash）
+  _mr_js="$PI_DIST/core/model-resolver.js"
   if [ -f "$_mr_js" ]; then
     _patch_mr="$PI_DIST/core/.patch-model-resolver.cjs"
     cat > "$_patch_mr" <<'ENDPATCH'
