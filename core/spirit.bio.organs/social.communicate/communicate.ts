@@ -546,13 +546,19 @@ export async function pullRemoteMessages(): Promise<number> {
       if (readInbox(sid, 500).some((x: SocialMsg) => x.id === p.id)) continue; // 去重（server 标记延迟防重复注入）
       appendInbox(sid, p as SocialMsg);
       added++;
+      // 2026-09-08（testor 复测实证：injected 但 handleTrigger 零打点 = trigger 未写入/未消费）诊断打点：定位拉到消息后写 trigger 环节
+      console.error("[social-pull] got msg " + p.id + " mode=" + p.mode + " mode_used=" + p.mode_used + " added=" + added + " sid=" + sid);
       // ISSUE 125 跨设备扩展：写 trigger 文件让 handleTrigger 走打断路径（resting→working→inject）
       // 没有 trigger 时跨设备消息只能等 agent_end drain，wait 中不被打断
       if (p.mode_used === "interrupt" || p.mode_used === "queue") {
         try {
           mkdirSync(TRIGGERS_DIR, { recursive: true });
-          writeFileSync(join(TRIGGERS_DIR, `${sid}.json`), JSON.stringify({ msgId: p.id, ts: p.ts }), "utf8");
-        } catch { /* trigger 写入失败 → 降级为 agent_end drain */ }
+          const tf = join(TRIGGERS_DIR, `${sid}.json`);
+          writeFileSync(tf, JSON.stringify({ msgId: p.id, ts: p.ts }), "utf8");
+          console.error("[social-pull] trigger written " + tf + " for " + p.id);
+        } catch (e2) { console.error("[social-pull] trigger write FAILED: " + ((e2 as any)?.message || e2) + " dir=" + TRIGGERS_DIR); /* trigger 写入失败 → 降级为 agent_end drain */ }
+      } else {
+        console.error("[social-pull] no-trigger mode_used=" + p.mode_used + "（非 interrupt/queue——等 agent_end drain）");
       }
     }
     return added;
