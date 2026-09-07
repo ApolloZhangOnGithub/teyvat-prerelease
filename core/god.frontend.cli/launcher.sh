@@ -291,7 +291,8 @@ case "$NAME" in
         echo -e "  \033[32mOK\033[0m 无新提交 ($PKG_VER)，跳过部署"
         exit 0
       fi
-      if ( cd "$UP_DIR" && PAIMON_VIA_MAKE=1 MAKELEVEL=1 PAIMON_CHANNEL=prerelease PAIMON_VER="$PKG_VER" bash deploy/install.sh 2>&1 | tail -5 ); then
+      PKG_PINNED=$(node -e "console.log(require('$UP_DIR/package.json').pinnedDev||'')" 2>/dev/null)
+      if ( cd "$UP_DIR" && PAIMON_VIA_MAKE=1 MAKELEVEL=1 PAIMON_CHANNEL=prerelease PAIMON_VER="$PKG_VER" PAIMON_PINNED_DEV="$PKG_PINNED" bash deploy/install.sh 2>&1 | tail -5 ); then
         echo "$NEW_HEAD" > "$UP_DIR/.last-deployed-head"
         echo -e "  \033[32mOK\033[0m prerelease $PKG_VER 已更新并部署"
       else
@@ -926,7 +927,9 @@ case "$MODE" in
       rm -rf "$LOCKDIR" 2>/dev/null
       rm -f "$PIDFILE"
       _pim_count=$(ps aux 2>/dev/null | grep '[p]im:' | wc -l | tr -d ' ')
-      if [ "${_pim_count:-0}" -le 1 ] 2>/dev/null; then lsof -t -i :19223 | xargs kill 2>/dev/null; fi
+      # 2026-09-07（cross-device-communication-testor-01 报告）：精简 Linux server（容器/minimal）无 lsof → 此处 command not found 污染所有 agent 退出路径。
+      # 守卫静默跳过：19223 端口清理是 best-effort（缺 lsof 时跳过不影响退出），报错绝不能泄漏到退出输出。
+      if [ "${_pim_count:-0}" -le 1 ] 2>/dev/null && command -v lsof >/dev/null 2>&1; then lsof -t -i :19223 | xargs kill 2>/dev/null; fi
       printf '\x1b[<u' 2>/dev/null
       # 排空 tty 输入队列里残留的 kitty 编码按键（用户在 TUI 还活着时按的键，
       # 协议已开 → 终端编码成 ^[[99;5:3u 之类排在队列里，agent 退出后会被父 shell

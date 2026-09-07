@@ -16,6 +16,7 @@ export async function viewHandler(_args: any, ctx: any) {
     const footerAge = (globalThis as any).__genshinFooterAge ?? false;  // footer 年龄显示，2026-09-06 起默认隐藏（/u 开）
     const footerTokenmaxxed = (globalThis as any).__genshinFooterTokenmaxxed ?? false;  // footer tokenmaxxed 默认隐藏（/u 开）
     const footerProvider = (globalThis as any).__genshinFooterProvider ?? false;  // footer provider 默认隐藏（/u 开）
+    const showPinDev = (globalThis as any).__genshinShowPinDev ?? false;  // alpha 版本号后显示 pin dev（2026-09-07 用户需求：默认隐藏，/u 开——bump 后 alpha 号从 .1 重开，看 pin 才能对应 dev）
 
     // pad CJK: 2-col per char, ASCII: 1-col. target 12 visual cols
     const pad = (s: string, w: number) => { let c = 0; for (const ch of s) c += ch.charCodeAt(0) > 127 ? 2 : 1; return s + " ".repeat(Math.max(1, w - c)); };
@@ -34,6 +35,7 @@ export async function viewHandler(_args: any, ctx: any) {
       pad(T("Footer 年龄", "Footer Age"), 12) + (footerAge ? T("显示", "Show") : T("隐藏", "Hide")),
       pad(T("Footer 履历", "Footer Tokens"), 12) + (footerTokenmaxxed ? T("显示", "Show") : T("隐藏", "Hide")),
       pad(T("Footer 供应商", "Footer Provider"), 12) + (footerProvider ? T("显示", "Show") : T("隐藏", "Hide")),
+      pad(T("Pin dev 显示", "Pin Dev"), 12) + (showPinDev ? T("显示", "Show") : T("隐藏", "Hide")),
     ];
     const pick = await ctx.ui.select(T("显示设置", "Display Settings"), menu);
     if (!pick) break;
@@ -108,6 +110,13 @@ export async function viewHandler(_args: any, ctx: any) {
       try {
         const sm = (globalThis as any).__genshinSettingsManager;
         if (sm) { sm.globalSettings.footerProvider = (globalThis as any).__genshinFooterProvider; sm.markModified("footerProvider"); sm.save(); }
+      } catch (e) { console.error("[god.frontend.tui/commands/ux.ts] " + ((e as any)?.message || e)); }
+    } else if (pick.startsWith(T("Pin dev", "Pin Dev"))) {
+      // 2026-09-07 用户需求：alpha 版本号后的 pin dev 显示开关（默认隐藏——bump 后 alpha 号从 .1 重开历史不连续，看 pin 才能对应 dev）
+      (globalThis as any).__genshinShowPinDev = !showPinDev;
+      try {
+        const sm = (globalThis as any).__genshinSettingsManager;
+        if (sm) { sm.globalSettings.showPinDev = (globalThis as any).__genshinShowPinDev; sm.markModified("showPinDev"); sm.save(); }
       } catch (e) { console.error("[god.frontend.tui/commands/ux.ts] " + ((e as any)?.message || e)); }
     }
   }

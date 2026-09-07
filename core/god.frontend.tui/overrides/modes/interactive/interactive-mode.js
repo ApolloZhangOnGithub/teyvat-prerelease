@@ -454,6 +454,7 @@ export class InteractiveMode {
         globalThis.__genshinFooterTokenmaxxed = this.settingsManager?.globalSettings?.footerTokenmaxxed ?? false;
         // 2026-09-04：footer 模型名左侧具体 provider 显示（/u 的 Footer 供应商开关，默认 true）；2026-09-06 默认隐藏
         globalThis.__genshinFooterProvider = this.settingsManager?.globalSettings?.footerProvider ?? false;
+        // __genshinShowPinDev 开关已废弃：prerelease 直接显示 dev 号（alpha 号对用户无意义）
         // Expose session for /m /e commands
         globalThis.__genshinSetModel = (model) => this.session.setModel(model);
         globalThis.__genshinSetThinkingLevel = (level) => this.session.setThinkingLevel(level);
@@ -690,8 +691,9 @@ export class InteractiveMode {
                 const v = JSON.parse(fs.readFileSync(os.homedir() + '/.teyvat/agent/version.json', 'utf8'));
                 genshinVer = v.genshin || VERSION; piVer = v.pi || ''; channel = v.channel || ''; pinnedDev = v.pinnedDev || '';
             } catch(e) { try { fs.appendFileSync((process.env.HOME||"")+"/.teyvat/LogData/genshin-catch-errors.log", "[??] " + (e?.stack||e) + "\n"); } catch (e) { console.error("[god.frontend.tui/overrides/modes/interactive/interactive-mode.js] " + (e?.message || e)); } }
-            const pinStr = (channel === 'prerelease' && pinnedDev && pinnedDev !== genshinVer) ? `, pin ${pinnedDev}` : '';
-            const logo = theme.bold(theme.fg("text", "Teyvat")) + theme.fg("dim", ` v${genshinVer}`) + (piVer ? theme.fg("dim", ` (${channel ? channel + pinStr + ', ' : ''}@pi v${piVer})`) : '');
+            // prerelease 显示实际 dev 号（alpha 号是发布管道内部的，用户不需要看）
+            const displayVer = (channel === 'prerelease' && pinnedDev) ? pinnedDev : genshinVer;
+            const logo = theme.bold(theme.fg("text", "Teyvat")) + theme.fg("dim", ` v${displayVer}`) + (piVer ? theme.fg("dim", ` (${channel ? channel + ', ' : ''}@pi v${piVer})`) : '');
             this.builtInHeader = new Text(logo, 1, 0);
             this.headerContainer.addChild(new Spacer(1));
             this.headerContainer.addChild(this.builtInHeader);
@@ -760,8 +762,8 @@ export class InteractiveMode {
                     const v = JSON.parse(fs.readFileSync(os.homedir() + '/.teyvat/agent/version.json', 'utf8'));
                     genshinVer = v.genshin || VERSION; piVer = v.pi || ''; channel = v.channel || ''; pinnedDev = v.pinnedDev || '';
                 } catch (e) { console.error("[god.frontend.tui/overrides/modes/interactive/interactive-mode.js] " + (e?.message || e)); }
-                const pinStr = (channel === 'prerelease' && pinnedDev && pinnedDev !== genshinVer) ? `, pin ${pinnedDev}` : '';
-                const logo = theme.bold(theme.fg("text", "Teyvat")) + theme.fg("dim", ` v${genshinVer}`) + (piVer ? theme.fg("dim", ` (${channel ? channel + pinStr + ', ' : ''}@pi v${piVer})`) : '');
+                const displayVer = (channel === 'prerelease' && pinnedDev) ? pinnedDev : genshinVer;
+                const logo = theme.bold(theme.fg("text", "Teyvat")) + theme.fg("dim", ` v${displayVer}`) + (piVer ? theme.fg("dim", ` (${channel ? channel + ', ' : ''}@pi v${piVer})`) : '');
                 this.builtInHeader.setText(logo);
             }
             this.ui.requestRender();

@@ -222,7 +222,7 @@ const title = filter === 'help'
   : filter === 'archived'
   ? '  ' + LOGO + 'Teyvat' + R + D + ' · ' + list.length + (zh ? ' 已归档' : ' archived') + R
   : '  ' + LOGO + 'Teyvat' + R + D + ' · ' + list.length + ' agent' + (list.length === 1 ? '' : 's') + R
-    + (() => { try { const v = JSON.parse(fs.readFileSync(PAIMON_HOME + '/agent/version.json', 'utf8')); const pin = (v.channel === 'prerelease' && v.pinnedDev && v.pinnedDev !== v.genshin) ? '  pin ' + v.pinnedDev : ''; return D + '  v' + v.genshin + ' (' + v.channel + ')' + (pin ? D + pin : '') + R; } catch(e) { try { fs.mkdirSync(PAIMON_HOME + '/LogData', { recursive: true }); fs.appendFileSync(PAIMON_HOME + '/LogData/genshin-list-error.log', 'version display: ' + (e?.message||e) + '\n'); } catch(_) { /* 日志写入失败不阻塞列表 */ } return ''; } })();
+    + (() => { try { const v = JSON.parse(fs.readFileSync(PAIMON_HOME + '/agent/version.json', 'utf8')); const dv = (v.channel === 'prerelease' && v.pinnedDev) ? v.pinnedDev : v.genshin; return D + '  v' + dv + ' (' + v.channel + ')' + R; } catch(e) { try { fs.mkdirSync(PAIMON_HOME + '/LogData', { recursive: true }); fs.appendFileSync(PAIMON_HOME + '/LogData/genshin-list-error.log', 'version display: ' + (e?.message||e) + '\n'); } catch(_) { /* 日志写入失败不阻塞列表 */ } return ''; } })();
 
 const statusStrs = list.map(p => {
   let tag = '', time = '';

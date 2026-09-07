@@ -141,7 +141,7 @@ function cmdList(filter='list') {
   }
 
   let devVer='';
-  try{ const v=JSON.parse(fs.readFileSync(path.join(PAIMON,'version.json'),'utf8')); devVer=D+'  v'+v.genshin+' ('+v.channel+')'+R }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); }
+  try{ const v=JSON.parse(fs.readFileSync(path.join(PAIMON,'version.json'),'utf8')); const dv=(v.channel==='prerelease'&&v.pinnedDev)?v.pinnedDev:v.genshin; devVer=D+'  v'+dv+' ('+v.channel+')'+R }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); }
 
   let orgMap: Record<string,string> = {};
   try { const orgs=JSON.parse(fs.readFileSync(path.join(PAIMON,'AgentWorkDir','Organizational','orgs.json'),'utf8')); for(const o of orgs) orgMap[o.id]=o.name; } catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); }
@@ -527,7 +527,9 @@ function cmdArchive(targets: string[], doArchive: boolean) {
 function cmdVersion() {
   try {
     const v=JSON.parse(fs.readFileSync(path.join(PAIMON,'version.json'),'utf8'));
-    console.log(`${v.genshin} (${v.channel})`);
+    // prerelease 显示实际 dev 号
+    const displayVer = (v.channel === 'prerelease' && v.pinnedDev) ? v.pinnedDev : v.genshin;
+    console.log(`${displayVer} (${v.channel})`);
   } catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e));
     console.log('unknown');
   }
@@ -777,8 +779,9 @@ function cmdDoctor() {
   {
     try{
       const v=JSON.parse(fs.readFileSync(path.join(PAIMON,'agent','version.json'),'utf8'));
-      const pin=(v.channel==='prerelease' && v.pinnedDev && v.pinnedDev!==v.genshin) ? `, pin ${v.pinnedDev}` : '';
-      ok('version',`${v.genshin} (${v.channel}${pin}, pi@${v.pi})`);
+      // prerelease 显示实际 dev 号（用户关心的是内容对应哪个 dev 版本，alpha 号是发布管道内部的）
+      const displayVer = (v.channel === 'prerelease' && v.pinnedDev) ? v.pinnedDev : v.genshin;
+      ok('version',`${displayVer} (${v.channel}, pi@${v.pi})`);
     }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e));
       try{
         const v=JSON.parse(fs.readFileSync(path.join(PAIMON,'version.json'),'utf8'));

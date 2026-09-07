@@ -460,6 +460,25 @@ function loadBinding(): { token: string; deviceId: string } | null {
 }
 
 /** 远端投递：POST /messages/send（type=agent-social，payload=完整 social 消息）。server 落库/ws 推送，不要求对方在线。 */
+// 2026-09-07 Bug1（cross-device-communication-testor-01 报告）：远程 agent 名字路由——resolveSid 只查本地 registry，
+// 远程 agent 名字只在 server presence（/sync/agent-presence）。单发分支本地解析失败时查远端 presence 补名字→sid。
+async function findRemoteAgent(key: string): Promise<{ sid: string; name: string } | null> {
+  try {
+    let b: any = null;
+    try { b = JSON.parse(readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8")); } catch { return null; }
+    if (!b?.token || !b?.deviceId) return null;
+    const res = await fetch(syncEndpoint() + "/sync/agent-presence", { headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "User-Agent": SYNC_UA } });
+    if (!res.ok) return null;
+    const j = await res.json().catch(() => ({}));
+    const agents = (j.agents || []) as any[];
+    const localReg = readJson<Record<string, unknown>>(REGISTRY_FILE, {});
+    for (const a of agents) {
+      if ((a.sid === key || a.name === key) && !localReg[a.sid]) return { sid: a.sid, name: a.name };  // 排除本机 agent（本地 registry 有的走本机逻辑）
+    }
+    return null;
+  } catch { return null; }
+}
+
 async function remoteSendOne(toSid: string, text: string, mode: SocialMode, fromSid: string, fromName: string): Promise<{ to: string; mode_used: SocialMode; status: string }> {
   const b = loadBinding();
   if (!b) throw new Error(`social.send: ${toSid} 不在本机且未绑定 GitHub 账号——跨设备投递需要 binding`);
@@ -599,7 +618,12 @@ async function sendMessage(opts: { to: string; text: string; mode?: SocialMode; 
   }
 
   // 单发
-  const toSid = resolveSid(target);
+  let toSid = resolveSid(target);
+  if (!toSid) {
+    // 2026-09-07 Bug1：远程 agent 名字本地 registry 解析不到 → 查 server presence 补名字路由（testor-01 报告）
+    const rmt = await findRemoteAgent(target);
+    if (rmt) toSid = rmt.sid;
+  }
   if (!toSid) throw new Error(`social.send: unknown target "${target}" (use sid, agent name, group:<gid>, or all)`);
   if (toSid === fromSid) throw new Error("social.send: cannot message self");
   const r = await sendOne(toSid, text, mode, atList, false, null, fromSid, fromName);
