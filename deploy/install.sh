@@ -265,7 +265,7 @@ AI_APPLIED=0
 for AI_PKG in "$PI_PKG/node_modules/@earendil-works/pi-ai" "$RUNTIME/node_modules/@earendil-works/pi-ai"; do
   AI_VER=$(node -e "try{console.log(require('$AI_PKG/package.json').version)}catch {}" 2>/dev/null)
   [ "$AI_VER" = "$PIN" ] || continue
-  for f in openai-completions.js openai-responses-shared.js transform-messages.js; do
+  for f in openai-completions.js openai-responses-shared.js transform-messages.js google-shared.js mistral-conversations.js; do
     if [ -f "$OVERRIDES/pi-ai/$f" ]; then _override "$OVERRIDES/pi-ai/$f" "$AI_PKG/dist/api/$f" && AI_APPLIED=1; fi
   done
 done

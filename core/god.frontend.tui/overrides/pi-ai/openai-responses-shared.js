@@ -170,7 +170,8 @@ export function convertResponsesMessages(model, context, allowedToolCallProvider
             const hasText = textResult.length > 0;
             const [callId] = msg.toolCallId.split("|");
             let output;
-            if (hasImages && model.input.includes("image")) {
+            // ISSUE 136b：models.dev 合成/custom 模型可能缺 input 字段——防御（与 transform-messages 一致）
+            if (hasImages && Array.isArray(model.input) && model.input.includes("image")) {
                 const contentParts = [];
                 if (hasText) {
                     contentParts.push({

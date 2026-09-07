@@ -998,7 +998,8 @@ export function convertMessages(model, context, compat) {
                     toolResultMsg.name = toolMsg.toolName;
                 }
                 params.push(toolResultMsg);
-                if (hasImages && model.input.includes("image")) {
+                // ISSUE 136b：models.dev 合成/custom 模型可能缺 input 字段——所有 input.includes 调用点都要 Array.isArray 防御（.28 只修了 transform-messages，漏了 4 处）
+                if (hasImages && Array.isArray(model.input) && model.input.includes("image")) {
                     for (const block of toolMsg.content) {
                         if (isImageContentBlock(block)) {
                             imageBlocks.push({
