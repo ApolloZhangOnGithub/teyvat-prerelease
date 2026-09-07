@@ -462,7 +462,12 @@ export class ToolExecutionComponent extends Container {
             const t = (this.result?.content || []).filter((c) => c.type === "text").map((c) => c.text).join("");
             return isToolError(this.toolName, t, { isError: this.result?.isError, toolCallId: this.toolCallId });
         } catch { /* 无文本内容 */ }
-        if ((this.toolName === "wait" || this.toolName === "hibernate") && this.toolCallId && globalThis.__genshinWaitInterruptedId === this.toolCallId) return true;
+        if ((this.toolName === "wait" || this.toolName === "hibernate") && this.toolCallId && globalThis.__genshinWaitInterruptedId === this.toolCallId) {
+            // 2026-09-07（WIKI 规范收敛）：wait_for_user:true 被打断 = 用户来了 = 正常恢复 → 绿点（非 error）；
+            // 只有异常中断（esc/命令等）才红点。旧实现无条件红，与 WIKI 判据不一致。
+            if (globalThis.__genshinWaitInterruptedForUser === true) return false;
+            return true;
+        }
         return false;
     }
     isDotPartial() {
@@ -640,7 +645,8 @@ export class ToolExecutionComponent extends Container {
                 const reasonStr = reason ? ` (interrupted by ${reasonLabel[reason] || reason})` : "";
                 // 2026-08-18 用户定稿：wait for user 被打断 = 用户来了（正常恢复）→ 绿色折线；
                 // 一般 wait 被打断（esc/命令等）→ 红色折线（异常中断）
-                const forUser = globalThis.__genshinWaitForUser === true;
+                // 2026-09-07（修复）：读转存值 __genshinWaitInterruptedForUser（exitState 已清全局 __genshinWaitForUser）
+                const forUser = globalThis.__genshinWaitInterruptedForUser === true;
                 const color = forUser ? "success" : "error";
                 renderContainer.addChild(new Text(" ".repeat(GUTTER) + theme.fg(color, `⎿  Waited ${secs}s${reasonStr}`), 0, 0));
                 hasContent = true;

@@ -793,6 +793,7 @@ export class TuiAltScreen extends TuiBase {
         // pbcopy(mac) / wl-copy(wayland) / xclip→xsel(X11) → OSC 52（失败或远程 SSH/MOSH 会话兜底）
         const fallbackOsc52 = () => this.terminal.write(`\x1b]52;c;${Buffer.from(text).toString("base64")}\x07`);
         let sysCopied = false;
+        let asyncCopy = false; // ISSUE 135：wl-copy 分支异步化（spawn 事件确认），跳过下方同步 fallback
         try {
             const remote = Boolean(process.env.SSH_CONNECTION || process.env.SSH_CLIENT || process.env.MOSH_CONNECTION);
             if (!remote) {
@@ -805,12 +806,23 @@ export class TuiAltScreen extends TuiBase {
                 else if (p === "linux") {
                     if (process.env.WAYLAND_DISPLAY) {
                         // wl-copy 用 execSync 会因 fork 行为挂起（同 clipboard.js 注释），spawn 非阻塞写
+                        // ISSUE 135：wl-copy 未装（ENOENT）时 spawn 是【异步】 error 事件——原实现无 error 监听
+                        //   → uncaughtException → genshin 进程闪退（Linux 连续崩溃根因）。
+                        //   改：'spawn' 成功才写+置位；失败（ENOENT）走下方 OSC 52 兜底，不崩。
+                        asyncCopy = true;
                         const wl = spawn("wl-copy", [], { stdio: ["pipe", "ignore", "ignore"] });
                         wl.stdin.on("error", () => { });
-                        wl.stdin.write(text);
-                        wl.stdin.end();
-                        wl.unref();
-                        sysCopied = true;
+                        wl.on("spawn", () => {
+                            wl.stdin.write(text);
+                            wl.stdin.end();
+                            sysCopied = true;
+                            this.flash("Copied!");
+                            wl.unref();
+                        });
+                        wl.on("error", () => {
+                            fallbackOsc52();
+                            this.flash("Copied!");
+                        });
                     }
                     else if (process.env.DISPLAY) {
                         try { execSync("xclip -selection clipboard", opts); }
@@ -823,8 +835,10 @@ export class TuiAltScreen extends TuiBase {
         catch {
             // fall through to OSC 52
         }
-        if (!sysCopied) fallbackOsc52();
-        this.flash("Copied!");
+        // ISSUE 135：asyncCopy=true（wl-copy 分支）时由 spawn/error 事件自行处理 flash；
+        //   同步路径未复制成功才走 OSC 52 兑底
+        if (!asyncCopy && !sysCopied) fallbackOsc52();
+        if (!asyncCopy) this.flash("Copied!");
     }
     applySelectionHighlight(text) {
         let result = "\x1b[7m";

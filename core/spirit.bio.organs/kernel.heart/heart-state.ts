@@ -113,6 +113,9 @@ function exitState(cur: Heart): void {
           (globalThis as any).__genshinWaitReason = "";
           (globalThis as any).__genshinWaitInterruptedId = cur.toolCallId || ""; // 该 wait 调用行点变红（按 id，不随新 wait 复位）
           (globalThis as any).__genshinWaitInterruptedReason = reason;
+          // 2026-09-07（修复）：转存 forUser——exitState 下方会无条件清 __genshinWaitForUser=false，
+          // 打断折线渲染时就读不到"用户来了"标志 → wait_for_user:true 被打断被画成红（WIKI 规范应绿）。
+          (globalThis as any).__genshinWaitInterruptedForUser = (globalThis as any).__genshinWaitForUser === true;
           // 实际等待秒数（用户要求：折线显示真正等了多少秒，而不是请求的秒数）
           const actualSecs = cur.ts ? Math.max(1, Math.round((Date.now() - cur.ts) / 1000)) : (cur.waitSecs ?? 0);
           (globalThis as any).__genshinWaitInterruptedSecs = actualSecs;

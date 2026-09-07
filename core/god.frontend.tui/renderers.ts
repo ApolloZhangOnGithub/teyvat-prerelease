@@ -77,7 +77,7 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
         // 2026-08-14 用户要求：被打断必须显示折线结果（此前 height:0 隐藏）
         // 2026-08-18 用户定稿：wait for user 被打断 = 用户来了（正常恢复）→ 绿色折线；
         // 一般 wait 被打断（esc/命令等）→ 红色折线（异常中断）
-        const forUser = (globalThis as any).__genshinWaitForUser === true;
+        const forUser = (globalThis as any).__genshinWaitInterruptedForUser === true || (globalThis as any).__genshinWaitForUser === true;
         const reasonStr = intrReason ? ` (${reasonLabel[intrReason] || intrReason})` : "";
         const color = forUser ? "success" : "error";
         const label = resumeType === "wait" ? "Waited" : "Hibernated";

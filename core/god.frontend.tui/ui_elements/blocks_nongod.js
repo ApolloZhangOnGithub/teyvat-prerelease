@@ -66,7 +66,12 @@ export function isToolError(toolName, text, ctx) {
     return true;
   }
   // wait/hibernate 被打断标记（interrupt id 匹配）
-  if ((toolName === "wait" || toolName === "hibernate") && ctx?.toolCallId && globalThis.__genshinWaitInterruptedId === ctx.toolCallId) return true;
+  // 2026-09-07（WIKI 规范收敛）：wait_for_user:true 被打断 = 用户来了 = 正常恢复 → 非 error（绿点）；
+  // 只有异常中断（esc/命令等）才红点。旧实现无条件红，与 WIKI 判据不一致。
+  if ((toolName === "wait" || toolName === "hibernate") && ctx?.toolCallId && globalThis.__genshinWaitInterruptedId === ctx.toolCallId) {
+    if (globalThis.__genshinWaitInterruptedForUser === true) return false;
+    return true;
+  }
   return false;
 }
 
