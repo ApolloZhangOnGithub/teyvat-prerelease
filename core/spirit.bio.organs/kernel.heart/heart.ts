@@ -302,14 +302,14 @@ export default function (pi: ExtensionAPI) {
       }, 60000);
     }
 
-    let personId = "";
+    let sessionPersonId = ""; // 2026-09-07 改名：消除对 import personId()（L21，heart-state 导出）的遮蔽坏味道
     try {
       const sf = ctx.sessionManager.getSessionFile();
       const m = sf?.match(/\/.teyvat\/SessionData\/([a-f0-9]+)\//) || sf?.match(/\.teyvat\/sessions\/([a-f0-9]+)\//);
-      if (m) personId = m[1];
+      if (m) sessionPersonId = m[1];
     } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
-    if (personId && !isWorkerSession(ctx)) {
-      const pidFile = join(memoryDir(personId), "main.pid");
+    if (sessionPersonId && !isWorkerSession(ctx)) {
+      const pidFile = join(memoryDir(sessionPersonId), "main.pid");
       try {
         const oldPid = parseInt(readFileSync(pidFile, "utf8").trim(), 10);
         if (oldPid && oldPid !== process.pid) {
@@ -327,7 +327,7 @@ export default function (pi: ExtensionAPI) {
       const updateListStats = () => {
         try {
           const { computeAgentStats, writeStats } = require("../../god.frontend.cli/agent-stats.cjs");
-          writeStats(homedir() + "/.teyvat", personId, computeAgentStats(homedir() + "/.teyvat", statsDir, personId));
+          writeStats(homedir() + "/.teyvat", sessionPersonId, computeAgentStats(homedir() + "/.teyvat", statsDir, sessionPersonId));
         } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
       };
       let statsTick = 0;
@@ -343,7 +343,7 @@ export default function (pi: ExtensionAPI) {
         // macOS 上受 SIP 保护不可用。现改为心跳 30s 轮询纯时间判断，
         // 不依赖外部调度器（与 wait 的进程内 setTimeout 同源）。
         try {
-          const cacheDir = runtimeCacheDir(personId);
+          const cacheDir = runtimeCacheDir(sessionPersonId);
           // 方案 E 双保险：仅当当前处于 hibernate 状态时才消费 wake-at；
           // 若已被用户打断（working/resting），清掉残留文件、不发唤醒消息——
           // wake 的语义是“从休眠唤醒”，agent 已在工作则 wake 无意义。
@@ -394,7 +394,7 @@ export default function (pi: ExtensionAPI) {
       if (_heartbeatInterval.unref) _heartbeatInterval.unref();
 
       try {
-        const ctxPath = join(memoryDir(personId), "context.md");
+        const ctxPath = join(memoryDir(sessionPersonId), "context.md");
         const { existsSync: ex, statSync: st } = require("fs");
         const ok = ex(ctxPath) && st(ctxPath).size > 100;
         const isReload = _event?.reason === "reload";
@@ -406,7 +406,7 @@ export default function (pi: ExtensionAPI) {
         //       recap 的"回顾全部轮次"引导失去意义，已废弃（用户：禁用/废弃/不删除）。
         // 2026-08-12 改：恢复时注入"用户回来了"通知（带上次退出时间/会话时长/变更检测等有用信息），
         //       不注入回顾引导。
-        dlog(`userback: personId=${personId} ok=${ok} reload=${isReload} resume=${isResume}`);
+        dlog(`userback: personId=${sessionPersonId} ok=${ok} reload=${isReload} resume=${isResume}`);
         if (ok && !isReload) {
           setTimeout(() => {
             // flag 必须在 setTimeout 回调里检查（不是注册时），因为 __genshinSelfRebooted 在 PI_ALIVE_WOKE 区块设置，时序上晚于 userback 注册
@@ -414,7 +414,7 @@ export default function (pi: ExtensionAPI) {
             // attach 回前台：launcher attach 分支写了 attached-back 标记，display-shown 已注入「用户已以前台模式进入」，
             // 这里跳过「用户回来了」（attach 不是离线唤醒，避免重复 + 语义错误，2026-08-20）
             try {
-              const attachMark = join(homedir(), ".teyvat/RuntimeCache", personId, "attached-back");
+              const attachMark = join(homedir(), ".teyvat/RuntimeCache", sessionPersonId, "attached-back");
               if (existsSync(attachMark)) { dlog("userback: skipped (attach-back)"); return; }
             } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
             try {
@@ -425,7 +425,7 @@ export default function (pi: ExtensionAPI) {
               try {
                 const plistPath = join(memoryDataDir(), "plist.json");
                 const list = JSON.parse(readFileSync(plistPath, "utf8"));
-                const p = list.find((x: any) => x.id === personId);
+                const p = list.find((x: any) => x.id === sessionPersonId);
                 if (p?.lastEnded) {
                   lastEnded = new Date(p.lastEnded).toLocaleString(dLocale, { timeZone: "Asia/Shanghai", hour12: false });
                 }
@@ -447,8 +447,8 @@ export default function (pi: ExtensionAPI) {
               try {
                 const plistPath2 = join(memoryDataDir(), "plist.json");
                 const plist2 = JSON.parse(readFileSync(plistPath2, "utf8"));
-                const me = plist2.find((x: any) => x.id === personId);
-                const cacheDir = runtimeCacheDir(personId);
+                const me = plist2.find((x: any) => x.id === sessionPersonId);
+                const cacheDir = runtimeCacheDir(sessionPersonId);
                 try { const { mkdirSync: mk } = require("fs"); mk(cacheDir, { recursive: true }); } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
                 const changes: string[] = [];
 
@@ -482,7 +482,7 @@ export default function (pi: ExtensionAPI) {
                     for (const oid of joined) {
                       const org = allOrgs.find((o: any) => o.id === oid);
                       if (!org) continue;
-                      const others = org.members.filter((mid: string) => mid !== personId);
+                      const others = org.members.filter((mid: string) => mid !== sessionPersonId);
                       let othersDesc = "";
                       if (others.length > 0) {
                         const MAX_SHOW = 5;
@@ -559,7 +559,7 @@ export default function (pi: ExtensionAPI) {
       // self-reboot 检测：在这里做，不在 userback 里做，保证消息先于一切到达
       let selfRebootMsg = "";
       try {
-        const reasonPath = join(runtimeCacheDir(personId), "self-reboot-reason.json");
+        const reasonPath = join(runtimeCacheDir(sessionPersonId), "self-reboot-reason.json");
         if (existsSync(reasonPath)) {
           const rd = JSON.parse(readFileSync(reasonPath, "utf8"));
           selfRebootMsg = rd.reason || "self-reboot";
@@ -576,7 +576,7 @@ export default function (pi: ExtensionAPI) {
         // 2026-08-20 实测 return 会跳出整个 session_start 函数，导致后面的 self-reboot 消息注入被跳过
         // （重启后无 "Life Restarted/重启注入"——用户暴怒）；文件不存在时静默跳过 elapsed 恢复即可
         try {
-          const reasonPath = join(runtimeCacheDir(personId), "self-reboot-reason.json");
+          const reasonPath = join(runtimeCacheDir(sessionPersonId), "self-reboot-reason.json");
           if (existsSync(reasonPath)) {
           const rd = JSON.parse(readFileSync(reasonPath, "utf8"));
           if (rd.elapsed > 0) {

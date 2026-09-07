@@ -39,6 +39,9 @@ const GROUPS_DIR = join(SOCIAL_DIR, "groups");
 const MUTES_DIR = join(SOCIAL_DIR, "mutes");
 // interrupt 跨进程触发文件目录：发送方写 <接收方sid>.json，接收方 fs.watch 即时响应（强制切断）
 const TRIGGERS_DIR = join(SOCIAL_DIR, "triggers");
+// 2026-09-07：外部框架 bridge agent 心跳目录（claude-code-bridge 等——非 teyvat 进程，无 MemoryData/<sid>/main.pid）
+// 外部 agent 周期 touch SocialData/heartbeat/<sid>（内容随意）→ isAgentActive 视为在线（90s 窗口）
+const HEARTBEAT_DIR = join(SOCIAL_DIR, "heartbeat");
 
 const MAX_MSG_CHARS = 16_384;
 
@@ -136,6 +139,9 @@ function touchPresence(): void {
   writeJson(REGISTRY_FILE, reg);
   // AgentTableSync（2026-09-05）：心跳同时上报远端 server（有 binding 时）——跨设备可见
   reportPresence("up").catch(() => {});
+  // 2026-09-07 跨设备接收：心跳节流通过时同时拉 server pending 的 agent-social 消息 → 本地 inbox（复用注入）。
+  // fire-and-forget：拉取失败静默，下次心跳（30s）再拉。PROPOSAL 036 缺口 4。
+  pullRemoteMessages().catch(() => {});
 }
 
 // ── 跨设备 presence 上报（AgentTableSync 2026-09-05）────────────────────
@@ -209,7 +215,8 @@ export function listAgents(): Array<{ sid: string; name: string; focus: SocialFo
     .sort((a, b) => b.lastSeen - a.lastSeen);
 }
 
-/** 运行中判定：MemoryData/<sid>/main.pid 心跳文件 90s 内触碰且进程存活 = active（与 CLI list.cjs 同源逻辑）。 */
+/** 运行中判定：① teyvat 进程 agent：MemoryData/<sid>/main.pid 心跳文件 90s 内触碰且进程存活（与 CLI list.cjs 同源逻辑）；
+ *  ② 外部 bridge agent（2026-09-07）：无 main.pid 时退回检查 SocialData/heartbeat/<sid> 文件 mtime 90s 内 = 在线（claude-code-bridge 等跨框架 agent）。 */
 export function isAgentActive(sid: string): boolean {
   try {
     const pf = join(homedir(), ".teyvat", "MemoryData", sid, "main.pid");
@@ -219,6 +226,12 @@ export function isAgentActive(sid: string): boolean {
       if (pid) { process.kill(pid, 0); return true; }
     }
   } catch { /* 无 pid 文件 / 进程不存在 / 心跳超时 */ }
+  // bridge 心跳 fallback（外部 agent）
+  try {
+    const hb = join(HEARTBEAT_DIR, sid);
+    const hst = require("fs").statSync(hb);
+    if (Date.now() - hst.mtimeMs <= 90_000) return true;
+  } catch { /* 无心跳文件 */ }
   return false;
 }
 
@@ -333,7 +346,7 @@ function readInbox(sid: string, limit = 50): SocialMsg[] {
     if (!existsSync(inboxFile(sid))) return [];
     const lines = readFileSync(inboxFile(sid), "utf8").trim().split("\n").filter(Boolean);
     const msgs: SocialMsg[] = [];
-    for (const l of lines.slice(-limit)) { try { msgs.push(JSON.parse(l)); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); } }
+    for (const l of lines.slice(-limit)) { try { msgs.push(JSON.parse(l)); } catch { /* 2026-09-07：外部写入坏行（如 claude-code-bridge 未转义 JSON）静默跳过——脏数据不是代码错误，不刷日志（纪律③） */ } }
     return msgs;
   } catch { return []; }
 }
@@ -426,8 +439,73 @@ export function drainPendingSocialWithMeta(limit = 10, upto?: SocialMode): { tex
 }
 
 // ── 发送 ──────────────────────────────────────────────────────────────
-function sendOne(to: string, text: string, mode: SocialMode, atList: string[], isGroup: boolean, gid: string | null, fromSid: string, fromName: string): { to: string; mode_used: SocialMode; status: string } {
+// ── 跨设备 helpers（2026-09-07，PROPOSAL 036 缺口 2/3/4）─────────────────────
+// 本机 agent = 本地 registry 有；远端 agent = registry 无 → 经 server messaging 投递（person 级语义，type=agent-social，
+// server 落库 pending → 对方设备周期拉取写本地 inbox。离线投递由 server 兕底（7 天清理）。
+function loadBinding(): { token: string; deviceId: string } | null {
+  try {
+    const b = JSON.parse(readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8"));
+    if (b?.token && b?.deviceId) return { token: b.token, deviceId: b.deviceId };
+  } catch { /* 未绑定 */ }
+  return null;
+}
+
+/** 远端投递：POST /messages/send（type=agent-social，payload=完整 social 消息）。server 落库/ws 推送，不要求对方在线。 */
+async function remoteSendOne(toSid: string, text: string, mode: SocialMode, fromSid: string, fromName: string): Promise<{ to: string; mode_used: SocialMode; status: string }> {
+  const b = loadBinding();
+  if (!b) throw new Error(`social.send: ${toSid} 不在本机且未绑定 GitHub 账号——跨设备投递需要 binding`);
+  const msg: SocialMsg = {
+    id: `msg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+    from: fromSid,
+    from_name: fromName,
+    to: toSid,
+    mode,
+    mode_used: mode,
+    text,
+    ts: Date.now(),
+    injected: false,
+  };
+  const ep = syncEndpoint();
+  let res: Response;
+  try {
+    res = await fetch(ep + "/messages/send", { method: "POST", headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "Content-Type": "application/json" }, body: JSON.stringify({ toPerson: toSid, type: "agent-social", payload: msg }) });
+  } catch (e: any) {
+    throw new Error(`social.send: 跨设备投递网络错误 ${toSid}（${(e?.message || e)} url=${ep}/messages/send）`);
+  }
+  if (!res.ok) throw new Error(`social.send: 跨设备投递失败 ${toSid}（HTTP ${res.status}）`);
+  const j = await res.json().catch(() => ({}));
+  return { to: toSid, mode_used: mode, status: j?.delivered ? "remote-delivered" : "remote-queued" };
+}
+
+/** 拉 server pending 的 agent-social 消息 → 写本地 inbox（复用注入机制）。heart 周期经 touchPresence 节流 fire。 */
+export async function pullRemoteMessages(): Promise<number> {
+  const b = loadBinding();
+  const sid = getMySid();
+  if (!b || !/^[a-f0-9]{8}$/.test(sid)) return 0;
+  try {
+    const res = await fetch(syncEndpoint() + `/messages/pending/${sid}`, { headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId } });
+    if (!res.ok) return 0;
+    const j = await res.json().catch(() => ({ messages: [] }));
+    let added = 0;
+    for (const m of (j?.messages || [])) {
+      if (m?.type !== "agent-social") continue;
+      const p = m?.payload;
+      if (!p || typeof p !== "object" || !p?.id) continue;
+      if (readInbox(sid, 500).some((x: SocialMsg) => x.id === p.id)) continue; // 去重（server 标记延迟防重复注入）
+      appendInbox(sid, p as SocialMsg);
+      added++;
+    }
+    return added;
+  } catch { return 0; } // 拉取失败静默（下次心跳再拉）
+}
+
+async function sendOne(to: string, text: string, mode: SocialMode, atList: string[], isGroup: boolean, gid: string | null, fromSid: string, fromName: string): Promise<{ to: string; mode_used: SocialMode; status: string }> {
   const receiverSid = to;
+  // 跨设备：本机 registry 无此 sid → 远端投递（server messaging；对方设备 agent 拉取）。群/广播暂限本机。
+  const reg = readJson<Record<string, RegistryEntry>>(REGISTRY_FILE, {});
+  if (!reg[receiverSid]) {
+    return remoteSendOne(receiverSid, text, mode, fromSid, fromName);
+  }
   // 2026-08-14 用户定稿：social 是实时消息，对方不在线（offline）目前不支持发送（离线队列以后再设计）。
   if (!isAgentActive(receiverSid)) {
     throw new Error(`social.send: ${receiverSid} 不在线（offline）——实时消息不支持发给离线 agent（离线投递以后再设计）`);
@@ -460,7 +538,7 @@ function sendOne(to: string, text: string, mode: SocialMode, atList: string[], i
   return { to: receiverSid, mode_used: modeUsed, status: modeUsed === "interrupt" ? "alert" : "queued" };
 }
 
-function sendMessage(opts: { to: string; text: string; mode?: SocialMode; at?: string[] }): any {
+async function sendMessage(opts: { to: string; text: string; mode?: SocialMode; at?: string[] }): Promise<any> {
   const text = String(opts.text ?? "").trim();
   if (!text) throw new Error("social.send: message cannot be empty");
   if (text.length > MAX_MSG_CHARS) throw new Error(`social.send: message too long (${text.length} > ${MAX_MSG_CHARS})`);
@@ -486,7 +564,7 @@ function sendMessage(opts: { to: string; text: string; mode?: SocialMode; at?: s
     const onlineMembers = members.filter(m => !offlineMembers.includes(m));
     for (const m of onlineMembers) {
       if (m === fromSid) continue;
-      receipts.push(sendOne(m, text, mode, atList, true, gid, fromSid, fromName));
+      receipts.push(await sendOne(m, text, mode, atList, true, gid, fromSid, fromName));
     }
     if (offlineMembers.length) {
       receipts.push({ to: `(offline: ${offlineMembers.join(",")})`, mode_used: mode, status: "skipped-offline" });
@@ -498,7 +576,7 @@ function sendMessage(opts: { to: string; text: string; mode?: SocialMode; at?: s
   if (target === "all" || target === "*") {
     const agents = listAgents().filter(a => a.sid !== fromSid);
     for (const a of agents) {
-      receipts.push(sendOne(a.sid, text, mode, [], false, null, fromSid, fromName));
+      receipts.push(await sendOne(a.sid, text, mode, [], false, null, fromSid, fromName));
     }
     return { receipts };
   }
@@ -507,7 +585,7 @@ function sendMessage(opts: { to: string; text: string; mode?: SocialMode; at?: s
   const toSid = resolveSid(target);
   if (!toSid) throw new Error(`social.send: unknown target "${target}" (use sid, agent name, group:<gid>, or all)`);
   if (toSid === fromSid) throw new Error("social.send: cannot message self");
-  const r = sendOne(toSid, text, mode, atList, false, null, fromSid, fromName);
+  const r = await sendOne(toSid, text, mode, atList, false, null, fromSid, fromName);
   return { receipts: [r] };
 }
 
@@ -716,7 +794,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
           if (!p.to) throw new Error("social send: to required");
           if (!p.text) throw new Error("social send: text required");
           if (p.mode && !["interrupt", "queue"].includes(p.mode)) throw new Error(`social send: mode must be interrupt|queue (deferred 废弃, ISSUE 103), got "${p.mode}"`);
-          const out = sendMessage({ to: p.to, text: p.text, mode: p.mode ?? "interrupt", at: p.at ?? [] });
+          const out = await sendMessage({ to: p.to, text: p.text, mode: p.mode ?? "interrupt", at: p.at ?? [] });
           const receipts = out.receipts as any[];
           const lines = receipts.map(r => `${displayName(r.to)}: ${r.status} (mode: ${r.mode_used})`);
           const toSid = receipts[0]?.to ?? "";
@@ -867,7 +945,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
               const g = loadGroup(gid);
               if (!g) throw new Error(`social group send: group ${gid} not found`);
               const at = (p.at ?? []).map((a: string) => resolveSid(String(a).trim()) ?? String(a).trim()).filter(Boolean);
-              const out = sendMessage({ to: `group:${gid}`, text, mode: "interrupt", at }); // @DEP deferred→interrupt（ISSUE 103，群发默认 interrupt 保证送达）
+              const out = await sendMessage({ to: `group:${gid}`, text, mode: "interrupt", at }); // @DEP deferred→interrupt（ISSUE 103，群发默认 interrupt 保证送达）
               const receipts = out.receipts as any[];
               const lines = receipts.map(r => `${displayName(r.to)}: ${r.status} (mode: ${r.mode_used})`);
               return { content: [{ type: "text", text: `Group "${g.name}" (${receipts.length} receivers):\n${lines.map(l => "  " + l).join("\n")}` }], details: { social: true, action: "group", gop: "send", count: receipts.length, lines } };

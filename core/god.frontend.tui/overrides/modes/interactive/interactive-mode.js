@@ -685,12 +685,13 @@ export class InteractiveMode {
         this.documentContainer.addChild(this.headerContainer);
         // Teyvat: 统一 header，从 version.json 读取
         {
-            let genshinVer = VERSION, piVer = '', channel = '';
+            let genshinVer = VERSION, piVer = '', channel = '', pinnedDev = '';
             try {
                 const v = JSON.parse(fs.readFileSync(os.homedir() + '/.teyvat/agent/version.json', 'utf8'));
-                genshinVer = v.genshin || VERSION; piVer = v.pi || ''; channel = v.channel || '';
+                genshinVer = v.genshin || VERSION; piVer = v.pi || ''; channel = v.channel || ''; pinnedDev = v.pinnedDev || '';
             } catch(e) { try { fs.appendFileSync((process.env.HOME||"")+"/.teyvat/LogData/genshin-catch-errors.log", "[??] " + (e?.stack||e) + "\n"); } catch (e) { console.error("[god.frontend.tui/overrides/modes/interactive/interactive-mode.js] " + (e?.message || e)); } }
-            const logo = theme.bold(theme.fg("text", "Teyvat")) + theme.fg("dim", ` v${genshinVer}`) + (piVer ? theme.fg("dim", ` (${channel ? channel + ', ' : ''}@pi v${piVer})`) : '');
+            const pinStr = (channel === 'prerelease' && pinnedDev && pinnedDev !== genshinVer) ? `, pin ${pinnedDev}` : '';
+            const logo = theme.bold(theme.fg("text", "Teyvat")) + theme.fg("dim", ` v${genshinVer}`) + (piVer ? theme.fg("dim", ` (${channel ? channel + pinStr + ', ' : ''}@pi v${piVer})`) : '');
             this.builtInHeader = new Text(logo, 1, 0);
             this.headerContainer.addChild(new Spacer(1));
             this.headerContainer.addChild(this.builtInHeader);
@@ -754,12 +755,13 @@ export class InteractiveMode {
             this.ui.invalidate();
             this.updateEditorBorderColor();
             if (this.builtInHeader) {
-                let genshinVer = VERSION, piVer = '', channel = '';
+                let genshinVer = VERSION, piVer = '', channel = '', pinnedDev = '';
                 try {
                     const v = JSON.parse(fs.readFileSync(os.homedir() + '/.teyvat/agent/version.json', 'utf8'));
-                    genshinVer = v.genshin || VERSION; piVer = v.pi || ''; channel = v.channel || '';
+                    genshinVer = v.genshin || VERSION; piVer = v.pi || ''; channel = v.channel || ''; pinnedDev = v.pinnedDev || '';
                 } catch (e) { console.error("[god.frontend.tui/overrides/modes/interactive/interactive-mode.js] " + (e?.message || e)); }
-                const logo = theme.bold(theme.fg("text", "Teyvat")) + theme.fg("dim", ` v${genshinVer}`) + (piVer ? theme.fg("dim", ` (${channel ? channel + ', ' : ''}@pi v${piVer})`) : '');
+                const pinStr = (channel === 'prerelease' && pinnedDev && pinnedDev !== genshinVer) ? `, pin ${pinnedDev}` : '';
+                const logo = theme.bold(theme.fg("text", "Teyvat")) + theme.fg("dim", ` v${genshinVer}`) + (piVer ? theme.fg("dim", ` (${channel ? channel + pinStr + ', ' : ''}@pi v${piVer})`) : '');
                 this.builtInHeader.setText(logo);
             }
             this.ui.requestRender();
@@ -788,9 +790,11 @@ export class InteractiveMode {
      */
     async run() {
         await this.init();
-        // genshin: 恢复 session（--continue）后重放历史消息到 TUI——
-        // pi 的聊天区由事件流驱动，历史 entries 不触发渲染事件 → 界面空白；这里手动重放。
-        this._replaySessionHistory();
+        // 2026-09-07 双份渲染修复：删除 _replaySessionHistory() 调用——
+        // init() 的 renderInitialMessages()（0904 已改走 renderSessionEntries 完整管线）已渲染当前 session 全部历史；
+        // _replaySessionHistory 是 ISSUE 114 时代"pi 原生不渲染历史"的补丁，0904 后成为重复渲染（attach/恢复 session 时
+        // 每条消息渲染两遍 → 屏幕内容翻倍重复、CPU 双倍、滚动区内容翻倍）。renderSessionItems 不清空 chatContainer，
+        // 两次调用直接叠加。保留 _replayPreviousSession()（读 restart-session.json 渲染旧 session 文件，新 session 场景专用）。
         // genshin 2026-09-04：self-reboot 后渲染上一轮 session 历史（用户设计要求：session 保持新建，
         // 但新 session TUI 要重放旧 session 的上文，否则感觉很难受）
         this._replayPreviousSession();

@@ -1039,27 +1039,39 @@ export function convertMessages(model, context, compat) {
         }
         lastRole = msg.role;
     }
-    // 2026-09-07（ISSUE 136 加固）：非 vision 模型下 toolResult 的 image 被替换为 [image] 文本后，
-    // tool 消息可能直接跟在 user 消息前、或消息序列首条就是 tool（历史截断/ctx 重建/切模型后重放）
-    // → OpenAI 400: tool must be a response to tool_calls。
-    // 加固：遍历 params，任何 tool 消息若其前面没有 assistant 带 tool_calls（配对缺失），强制插入合成 assistant。
-    // 这样无论消息序列如何截断/重建都不会再 400（比 ISSUE 136 只处理 tool→user 更完备）。
+    // 2026-09-07（ISSUE 136 加固 v2）：确保 assistant↔tool 严格配对。
+    // v1 的 boolean 标记在每条 tool 后重置，导致多 tool_call 的 assistant 被合成 assistant 拆散 → 400。
+    // v2 用 Set 跟踪每个 assistant 的 tool_call_id，逐条消费；
+    // 孤儿 tool（前无匹配 assistant）补带 tool_calls 的合成 assistant；
+    // 孤儿 tool_call（后无匹配 tool）在遇到下一条非 tool 消息时补合成 tool response。
     {
       const out = [];
-      let lastWasAssistantWithToolCalls = false;
+      const expectedIds = new Set();
       for (const p of params) {
         if (p.role === "tool") {
-          if (!lastWasAssistantWithToolCalls) {
-            out.push({ role: "assistant", content: "I have processed the tool results." });
+          if (expectedIds.has(p.tool_call_id)) {
+            expectedIds.delete(p.tool_call_id);
+          } else {
+            out.push({
+              role: "assistant",
+              content: null,
+              tool_calls: [{ id: p.tool_call_id, type: "function", function: { name: "unknown", arguments: "{}" } }],
+            });
           }
           out.push(p);
-          // 单条 tool 后重置：下一条若还是 tool 且无新 assistant，不再插（同批工具结果共享前置 assistant）
-          lastWasAssistantWithToolCalls = false;
-        }
-        else {
+        } else {
+          for (const id of expectedIds) {
+            out.push({ role: "tool", content: "No result provided", tool_call_id: id });
+          }
+          expectedIds.clear();
           out.push(p);
-          lastWasAssistantWithToolCalls = p.role === "assistant" && (Array.isArray(p.tool_calls) && p.tool_calls.length > 0);
+          if (p.role === "assistant" && Array.isArray(p.tool_calls) && p.tool_calls.length > 0) {
+            for (const tc of p.tool_calls) expectedIds.add(tc.id);
+          }
         }
+      }
+      for (const id of expectedIds) {
+        out.push({ role: "tool", content: "No result provided", tool_call_id: id });
       }
       params.splice(0, params.length, ...out);
     }

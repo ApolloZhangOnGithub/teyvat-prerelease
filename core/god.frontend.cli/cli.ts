@@ -777,7 +777,8 @@ function cmdDoctor() {
   {
     try{
       const v=JSON.parse(fs.readFileSync(path.join(PAIMON,'agent','version.json'),'utf8'));
-      ok('version',`${v.genshin} (${v.channel}, pi@${v.pi})`);
+      const pin=(v.channel==='prerelease' && v.pinnedDev && v.pinnedDev!==v.genshin) ? `, pin ${v.pinnedDev}` : '';
+      ok('version',`${v.genshin} (${v.channel}${pin}, pi@${v.pi})`);
     }catch{
       try{
         const v=JSON.parse(fs.readFileSync(path.join(PAIMON,'version.json'),'utf8'));
