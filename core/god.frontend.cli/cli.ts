@@ -57,6 +57,7 @@ const SUBCOMMANDS: Record<string,string> = {
   'rename':'rename',
   'clone':'clone', 'c':'clone',
   'doctor':'doctor',
+  'config':'config',
   'note':'note', 'n':'note',
 };
 const RESERVED_NAMES = new Set([
@@ -1051,6 +1052,67 @@ function getEndpoint(): string {
   return SYNC_ENDPOINT_DEFAULT;
 }
 
+// ── genshin config provider：自动配置 OpenAI 兼容 provider（2026-09-07 用户：不要每次手改 models.json）──
+// 用法: genshin config provider <name> --base-url <url> [--token <key>] [--context <N>] [--max-tokens <N>]
+// 自动 GET {base-url}/models 拉模型清单 → 写 ~/.teyvat/config/models.json providers[name] → /m 即可切换。
+async function cmdConfigProvider(pName: string, args: string[]): Promise<void> {
+  const flag = (k: string) => { const i = args.indexOf('--' + k); return i >= 0 ? args[i + 1] : undefined; };
+  const baseUrl = (flag('base-url') || flag('base_url') || '').replace(/\/+$/, '');
+  const token = flag('token') || flag('key') || flag('api-key') || flag('apiKey');
+  const ctxW = parseInt(flag('context') || '32768', 10);
+  const maxTok = parseInt(flag('max-tokens') || '16384', 10);
+  const apiType = flag('api') || 'openai-completions';
+  const manualModels = (flag('models') || '').split(',').map((s: string) => s.trim()).filter(Boolean); // 2026-09-07：手动指定模型（跳过自动拉取——端点不支持 /models 或想自选时的 fallback）
+  if (!pName || !baseUrl || !/^https?:\/\//.test(baseUrl)) {
+    console.error('usage: genshin config provider <name> --base-url <url> [--token <key>] [--models id1,id2]');
+    console.error('  例: genshin config provider gpu-5080 --base-url http://host:7143/v1 --token xxxx');
+    console.error('  例(手动模型, 跳过自动拉取): genshin config provider local-llm --base-url http://127.0.0.1:11434/v1 --models qwen3:27b,qwen2.5:3b');
+    process.exit(1);
+  }
+  if (pName === 'deepseek' || pName === 'openrouter' || pName === 'zai' || pName === 'bigmodel' || pName === 'qwen') {
+    console.error('provider 名 ' + pName + ' 是内置保留名——换一个名字');
+    process.exit(1);
+  }
+  // 自动拉模型清单（OpenAI 兼容 GET /models）——除非 --models 手动指定
+  const modelUrl = baseUrl + '/models';
+  let autoModels: string[] = manualModels.length ? manualModels : [];
+  if (!manualModels.length) {
+    try {
+    const h: Record<string, string> = { 'User-Agent': 'genshin-config/1.0' };
+    if (token) h['Authorization'] = 'Bearer ' + token;
+    const res = await fetch(modelUrl, { headers: h });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const j = await res.json();
+    autoModels = (j.data || []).map((m: any) => String(m.id || '').replace(/:latest$/, '')).filter(Boolean);
+    } catch (e) { console.error('✗ 拉取模型清单失败（' + modelUrl + '）：' + ((e as any)?.message || e) + '\n  端点需支持 GET /models，或用 --models id1,id2 手动指定'); process.exit(1); }
+    if (!autoModels.length) { console.error('✗ 模型清单为空——确认端点 /models 返回 data[]，或用 --models id1,id2 手动指定'); process.exit(1); }
+  }
+  // 写 models.json（幂等原子写）
+  const f = path.join(PAIMON, 'config', 'models.json');
+  let m: any = { providers: {} };
+  try { m = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { m = { providers: {} }; }
+  if (!m.providers) m.providers = {};
+  m.providers[pName] = {
+    name: flag('name') || pName,
+    baseUrl,
+    ...(token ? { apiKey: token } : {}),
+    api: apiType,
+    models: autoModels.map((id: string) => ({ id, name: id, contextWindow: ctxW, maxTokens: maxTok, input: ['text'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } })),
+  };
+  const tmp = f + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(m, null, 2));
+  fs.renameSync(tmp, f);
+  console.log('✅ provider ' + pName + ' 已配置（自动发现 ' + autoModels.length + ' 个模型）：');
+  autoModels.forEach((id: string) => console.log('   • ' + id));
+  console.log('   → /m 里即可切换（重启 agent 或新会话生效）');
+}
+
+function cmdConfig(name: string, args: string[]): void {
+  if (name === 'provider') { cmdConfigProvider(args[0] || '', args.slice(1)).then(() => {}, (e) => { console.error('✗ ' + ((e as any)?.message || e)); process.exit(1); }); return; }
+  console.log('genshin config 子命令：');
+  console.log('  genshin config provider <name> --base-url <url> [--token <key>] [--models id1,id2]  配置 OpenAI 兼容 provider（默认自动发现模型，--models 可手动指定）');
+}
+
 async function cmdLogin() {
   const existing = getBinding();
   if (existing?.token && existing?.githubLogin) {
@@ -1204,6 +1266,7 @@ async function main() {
       case 'version': cmdVersion(); return;
       case 'archived': cmdList('archived'); return;
       case 'settings': cmdSettings(); return;
+      case 'config': cmdConfig(name, rest.slice(1)); return;
       case 'help': cmdList('help'); return;
       case 'org': cmdOrg(name, rest[1]); return;
       case 'archive': case 'unarchive':

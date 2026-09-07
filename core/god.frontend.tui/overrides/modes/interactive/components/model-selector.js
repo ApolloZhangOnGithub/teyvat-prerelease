@@ -211,7 +211,9 @@ export class ModelSelectorComponent extends Container {
             const fa = featRank(a);
             const fb = featRank(b);
             if (fa !== fb) return fa - fb;
-            return a.provider.localeCompare(b.provider);
+            // 2026-09-07 用户反馈排序乱：featured 组内 + provider 组内都按模型 id 字典序（原只 provider 字典序，组内保持 registry 原序——观感乱）
+            const pc = a.provider.localeCompare(b.provider);
+            return pc !== 0 ? pc : a.id.localeCompare(b.id);
         });
         return sorted;
     }

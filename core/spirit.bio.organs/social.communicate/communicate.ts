@@ -904,21 +904,33 @@ function registerSocialTools(pi: ExtensionAPI): void {
           const j: any = await res.json();
           const ds = (j?.devices ?? []).filter((d: any) => d.device_id === b.deviceId || (d.agents && String(d.agents).length > 2) || !d.archived);
           const fmtTs = (s: string) => { if (!s) return ""; try { return new Date(String(s).replace(" ", "T") + "Z").toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return s; } };
+          // 2026-09-07（Bug2 联动修复）：agents 现为结构化数组（X-Device-Agents 心跳存 listAgents JSON）——旧版从 genshin d 文本 "· N agents" 提取——兼容两者
+          const agentCount = (d: any): string => {
+            if (Array.isArray(d.agents)) return String(d.agents.length);
+            const raw = typeof d.agents === "string" ? d.agents : "";
+            if (raw) return (raw.match(/·\s*(\d+)\s*agents/) || [])[1] || (raw.includes("agents") ? "?" : "0");
+            return "0";
+          };
+          const agentsToText = (d: any): string => {
+            if (Array.isArray(d.agents) && d.agents.length) {
+              return d.agents.map((a: any) => `  ${a.name || a.sid} (${a.sid})` + (a.version ? "  v" + a.version : "") + (a.model ? "  " + a.model : "")).join("\n");
+            }
+            return typeof d.agents === "string" && d.agents ? d.agents : "(该设备还没上传 agent 清单——跑过 genshin d 或多设备 45s 心跳后可见)";
+          };
           // 视图 2：device=<id> → 该设备 genshin 输出全文
           if (p.device) {
             const hit = ds.find((d: any) => String(d.device_id) === String(p.device));
             if (!hit) return { content: [{ type: "text", text: "(找不到设备 " + p.device + ")" }], details: { social: true, action: "global", count: 0, lines: [] } };
             const name = hit.device_name && hit.device_name !== hit.device_id ? hit.device_name : hit.device_id;
-            const raw = hit.agents;
-            const txt = typeof raw === "string" ? raw : "(该设备还没上传 genshin 结果)";
-            return { content: [{ type: "text", text: "── " + name + " 的 genshin" + (hit.synced_at ? " (快照 " + fmtTs(hit.synced_at) + ")" : "") + ": ──\n" + txt }], details: { social: true, action: "global", view: p.device, count: 1, lines: [] } };
+            const txt = agentsToText(hit);
+            return { content: [{ type: "text", text: "── " + name + " 的 agents" + (hit.synced_at ? " (快照 " + fmtTs(hit.synced_at) + ")" : "") + ": ──\n" + txt }], details: { social: true, action: "global", view: p.device, count: 1, lines: [] } };
           }
           // 视图 1：view="device" → 设备列表
           if (p.view === "device") {
             const lines: string[] = [];
             for (const d of ds) {
               const name = d.device_name && d.device_name !== d.device_id ? d.device_name : d.device_id;
-              const nAgents = typeof d.agents === "string" && d.agents ? (String(d.agents).match(/·\s*(\d+)\s*agents/) || [])[1] || "?" : "0";
+              const nAgents = agentCount(d);
               lines.push("  " + name + " (" + d.device_id + ")  agents:" + nAgents + (d.synced_at ? "  同步:" + fmtTs(d.synced_at) : "") + (String(d.device_id) === b.deviceId ? "  [本机]" : ""));
             }
             return { content: [{ type: "text", text: "设备 (" + ds.length + "):\n" + lines.join("\n") }], details: { social: true, action: "global", view: "device", count: ds.length, lines } };
@@ -927,8 +939,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
           const lines: string[] = [];
           for (const d of ds) {
             const name = d.device_name && d.device_name !== d.device_id ? d.device_name : d.device_id;
-            const raw = typeof d.agents === "string" ? d.agents : "";
-            const nAgents = (String(raw).match(/·\s*(\d+)\s*agents/) || [])[1] || "0";
+            const nAgents = agentCount(d);
             lines.push("  " + name + " (" + d.device_id + ")" + (String(d.device_id) === b.deviceId ? "  [本机]" : "") + "  · " + nAgents + " agents" + (d.synced_at ? "  同步:" + fmtTs(d.synced_at) : ""));
           }
           if (!lines.length) return { content: [{ type: "text", text: "(无设备——多设备跑过 genshin d 后可见)" }], details: { social: true, action: "global", count: 0, lines: [] } };

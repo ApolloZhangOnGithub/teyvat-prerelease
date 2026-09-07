@@ -12,9 +12,12 @@ err()  { echo -e "  ${RED}ERROR${R}  $1"; exit 1; }
 quiet_cp() { cp "$1" "$2" 2>/dev/null; }
 
 # ── 定位源码 ──
+# ⚠️ 2026-09-07 错误警示（LESSON 067）：wsl-compatibility-researcher-01 曾在此新增
+#   "elif [ -d "$PKG_ROOT/deploy" ]" 分支（适配其擅自把 C.deploy 迁到 A.core/deploy/ 的结构）。
+#   该迁移未获用户批准已回滚——**不要加 deploy/ 子目录分支、不要为"deploy 在 A.core 内"的结构服务**。
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PKG_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-if [ -f "$PKG_ROOT/A.core/package.json" ]; then
+if [ -d "$PKG_ROOT/A.core" ] && [ -f "$PKG_ROOT/A.core/package.json" ]; then
   IMPL="$PKG_ROOT/A.core"; DEPLOY="$PKG_ROOT/C.deploy"
 elif [ -d "$PKG_ROOT/Codebase/core" ]; then
   IMPL="$PKG_ROOT/Codebase/core"; DEPLOY="$PKG_ROOT/Codebase/deploy"
@@ -56,6 +59,29 @@ if command -v python3 >/dev/null 2>&1; then
   else
     warn "未找到 trafilatura — web fetch 正文过滤(auto)将 fallback 到内置启发式。安装: pip3 install trafilatura"
     DEP_WARN=1
+  fi
+fi
+
+# ── Linux 剪贴板工具（2026-09-07 用户：TUI 复制需要 wl-copy(Wayland)/xclip(X11)，install 应自动安装；macOS 内置 pbcopy 无需）──
+if [ "$(uname)" != "Darwin" ]; then
+  _CLIP_OK=0
+  command -v wl-copy >/dev/null 2>&1 && _CLIP_OK=1
+  command -v xclip >/dev/null 2>&1 && _CLIP_OK=1
+  if [ "$_CLIP_OK" = "0" ]; then
+    warn "未找到 wl-copy/xclip — TUI 复制到系统剪贴板不可用，尝试自动安装..."
+    _CLIP_PKGS="wl-clipboard xclip"
+    if command -v apt-get >/dev/null 2>&1; then
+      if [ "$(id -u)" = "0" ]; then apt-get install -y $_CLIP_PKGS >/dev/null 2>&1; else sudo apt-get install -y $_CLIP_PKGS >/dev/null 2>&1; fi
+    elif command -v dnf >/dev/null 2>&1; then
+      if [ "$(id -u)" = "0" ]; then dnf install -y $_CLIP_PKGS >/dev/null 2>&1; else sudo dnf install -y $_CLIP_PKGS >/dev/null 2>&1; fi
+    elif command -v pacman >/dev/null 2>&1; then
+      if [ "$(id -u)" = "0" ]; then pacman -Sy --noconfirm $_CLIP_PKGS >/dev/null 2>&1; else sudo pacman -Sy --noconfirm $_CLIP_PKGS >/dev/null 2>&1; fi
+    fi
+    command -v wl-copy >/dev/null 2>&1 && _CLIP_OK=1
+    command -v xclip >/dev/null 2>&1 && _CLIP_OK=1
+    if [ "$_CLIP_OK" = "1" ]; then ok "剪贴板工具已自动安装 (wl-clipboard/xclip)"; else warn "剪贴板工具自动安装失败 — TUI 复制不可用（手动: sudo apt install wl-clipboard xclip）"; DEP_WARN=1; fi
+  else
+    ok "剪贴板工具 (wl-copy/xclip)"
   fi
 fi
 

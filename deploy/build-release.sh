@@ -133,6 +133,9 @@ build_dev() {
 # ══════════════════════════════════════════════════════════════════════
 # MINUTELY 版：精简（core + deploy + package.json）→ github-prerelease
 # ══════════════════════════════════════════════════════════════════════
+# ⚠️ 2026-09-07 错误警示（LESSON 067）：wsl-compatibility-researcher-01 曾把本函数擅自改成
+#   "git tag 发布"（打 alpha tag 到 teyvat-dev，弃合成仓库）。用户从未拍板该方案，已回滚复原。
+#   **保持合成仓库路线（build_minutely 打包推送 github-prerelease），不要改回 tag 方案。**
 build_minutely() {
   echo ""
   echo "══ build ${VER} (minutely → prerelease) ══"

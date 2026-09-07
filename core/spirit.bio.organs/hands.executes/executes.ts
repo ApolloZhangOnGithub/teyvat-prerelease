@@ -371,9 +371,19 @@ let _lastBgHash = ""; // @ 缓存：避免相同输出重复占用 context
         }
         return renderMessage.output(theme, ctx, raw);
       }
-      const rc = result?.details?.renderText != null
+      const rc0 = result?.details?.renderText != null
         ? [{ type: "text", text: result.details.renderText }]
         : resultContent(result);
+      // 2026-09-07（用户：running/@N kill 与尾部 [id] 只在 feed 保留——渲染用户显示过滤）：剥尾部元信息行。
+      // feed content 不动（模型需要 background/id 元信息），这里只对渲染副本剥。
+      const rc = rc0.map((x: any) => {
+        if (x.type !== "text" || typeof x.text !== "string") return x;
+        const cleaned = x.text
+          .replace(/\n\[background: [^\]]*running[^\]]*\](\n\[id: [^\]]*\])?$/, "")
+          .replace(/\n\[id: [^\]]*\]$/, "")
+          .replace(/\n\[remaining: \d+\]$/, "");
+        return cleaned === x.text ? x : { ...x, text: cleaned };
+      });
       return renderMessage.output(theme, ctx, rc);
     },
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {

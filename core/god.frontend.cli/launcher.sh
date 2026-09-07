@@ -220,7 +220,7 @@ while [ $# -gt 0 ]; do
       fi
       # genshin -v dev-stable: use dev-stable channel
       VCHANNEL="$2"; shift; shift;;
-    --*) __sync_dsk; exec node "$RUNTIME_CLI" "${ORIG[@]}";;
+    --*) if [ "${ORIG[0]}" = "config" ]; then POS+=("$1"); shift; else __sync_dsk; exec node "$RUNTIME_CLI" "${ORIG[@]}"; fi;;
     *) POS+=("$1"); shift;;
   esac
 done
@@ -239,6 +239,10 @@ case "$NAME" in
     exec "$0" --version "$@";;
   doctor)
     cd "$PAIMON_EXT/.." && bun "$PAIMON_CLI_TS" doctor
+    exit $?;;
+  config)
+    # 2026-09-07：config 子命令（genshin config provider <name> --base-url <url> [--token <key>]——自动配 OpenAI 兼容 provider）
+    cd "$PAIMON_EXT/.." && bun "$PAIMON_CLI_TS" config "$@"
     exit $?;;
   rename)
     cd "$PAIMON_EXT/.." && bun "$PAIMON_CLI_TS" rename "$@"
@@ -275,10 +279,16 @@ case "$NAME" in
       else
         ( cd "$UP_DIR" && git pull --ff-only 2>&1 | tail -2 )
       fi
-      echo -e "  \033[32mOK\033[0m release 源已更新（$UP_DIR）——运行其中的 deploy/install.sh 完成部署"
+      echo -e "  \033[32mOK\033[0m release 源已更新（$UP_DIR）——运行其中的 C.deploy/install.sh 完成部署"
     elif [ "$CHANNEL" = "prerelease" ] || [ "$CHANNEL" = "beta" ]; then
       # prerelease/beta 通道（2026-09-05 起纯 git，不走 npm）：拉 paimon-code-prerelease → 手动 install.sh
       # （install.sh 已支持 core/ 包结构：PKG_ROOT 检测到 core/ 即按 prerelease 布局部署）
+      #
+      # ⚠️ 2026-09-07 错误警示（LESSON 067）：wsl-compatibility-researcher-01 曾把本分支擅自改成
+      #   "teyvat-dev fetch tags + checkout" 方案（计划 A：C.deploy 并回 dev 仓库 + git tag），
+      #   并物理迁移 C.deploy → A.core/deploy/。用户从未拍板此方案（仅授权"研究实现"），
+      #   且 ISSUE 138（debug-01 实施）已验证合成仓库路线可用。已回滚复原，**不要改回 tag 方案、
+      #   不要物理迁移目录结构**——发布通道改动前必须先经用户确认。详见 LESSON 067。
       echo "  channel: $CHANNEL (paimon-code-prerelease, git)"
       UP_DIR="$HOME/.local/lib/teyvat/update-prerelease"
       mkdir -p "$UP_DIR"
@@ -540,22 +550,55 @@ if [ "$MODE" = "sessions" ]; then
   exit 0
 fi
 
+# 2026-09-07（dev-01 报告 "genshin k 1b 找不到 B 组 agent"）：kill/tmux/mc/hc 的编号解析统一收敛。
+# 修复两处不一致：①只认纯数字 ^[0-9]+$，不支持分组 1f/1b/1a（1b 被当名字 ps 查找必然失败）
+# ②活跃判定用 ps aux 且排序漏 F前B后，与 list.cjs/ENTRY（main.pid + F前B后）不同源 → B 组序号错位。
+# 本函数与 ENTRY 同口径：main.pid 90s 活跃窗口 + _b(active&&detached) + 排序(F前B后+ago) + 分组路由。
+_resolve_active_arg() {
+  node --input-type=commonjs -e "
+    const fs=require('fs');
+    const arg=process.argv[1];
+    const list=JSON.parse(fs.readFileSync('$PLIST','utf8')).filter(p=>!p.archived);
+    const now=Date.now();
+    const PH='$PAIMON_HOME';
+    for(const p of list){
+      let a=false;
+      try{const pf=PH+'/MemoryData/'+p.id+'/main.pid';const st=fs.statSync(pf);if(now-st.mtimeMs<=90000){const pid=parseInt(fs.readFileSync(pf,'utf8').trim(),10);if(pid){process.kill(pid,0);a=true;}}}catch{}
+      p._active=a;
+      p._b=a&&fs.existsSync(PH+'/RuntimeCache/'+p.id+'/detached');
+      p._ago=Math.round((now-new Date(p.lastEnded||p.lastSeen).getTime())/60000);
+    }
+    list.sort((a,b)=>(b._active?1:0)-(a._active?1:0)||((a._b?1:0)-(b._b?1:0))||a._ago-b._ago);
+    const F=list.filter(p=>p._active&&!p._b),B=list.filter(p=>p._active&&p._b),A=list.filter(p=>p._active);
+    let m=arg.match(/^(\d+)([fba])$/),sw=false;
+    if(!m){m=arg.match(/^([fba])(\d+)$/);sw=!!m;}
+    let hit=null;
+    if(m){const n=parseInt(sw?m[2]:m[1],10)-1,g=sw?m[1]:m[2];const pool={f:F,b:B,a:A}[g];hit=pool[n];}
+    else if(/^\d+$/.test(arg)){
+      // 2026-09-07（dev-01 反馈）：纯数字遵循 8/20 分组语义——F/B 两组各取第 N，多候选必须提示歧义（不能静默选 F）
+      const n=parseInt(arg,10)-1;
+      const hits=[];
+      if(F[n])hits.push(['f',F[n]]);
+      if(B[n])hits.push(['b',B[n]]);
+      if(hits.length===1)hit=hits[0][1];
+      else if(hits.length>1)console.log('__AMBIG__'+hits.map(([g,p])=>(n+1)+g+'='+p.name).join('|'));
+    }
+    if(hit)console.log(hit.name);
+  " "$NAME"
+}
+
 # -- kill --
 if [ "$MODE" = "kill" ]; then
   if [ -z "$NAME" ]; then echo "$(_l "用法: genshin -k <名字|ID|序号>" "Usage: genshin -k <name|ID|index>")"; exit 1; fi
-  # 数字 => 第 N 个运行中的 agent
-  if [[ "$NAME" =~ ^[0-9]+$ ]]; then
-    TARGET=$(node --input-type=commonjs -e "
-      const fs=require('fs'),{execSync}=require('child_process');
-      const list=JSON.parse(fs.readFileSync('$PLIST','utf8')).filter(p=>!p.archived);
-      const now=Date.now();
-      let ps='';try{ps=execSync('ps aux',{encoding:'utf8'})}catch{}
-      for(const p of list){p._active=ps.split('\\n').some(l=>l.includes('genshin:')&&l.includes('(main,')&&l.includes(p.id));p._ago=Math.round((now-new Date(p.lastEnded||p.lastSeen).getTime())/60000)}
-      list.sort((a,b)=>(b._active?1:0)-(a._active?1:0)||a._ago-b._ago);
-      const active=list.filter(p=>p._active);
-      const i=parseInt('$NAME')-1;
-      if(active[i])console.log(active[i].name);
-    ")
+  # 数字/分组编号 => 运行中 agent（_resolve_active_arg：1f/1b/1a 分组 + 纯数字 F/B 跨组歧义提示）
+  if [[ "$NAME" =~ ^[0-9]+$ || "$NAME" =~ ^[0-9]+[fba]$ || "$NAME" =~ ^[fba][0-9]+$ ]]; then
+    TARGET=$(_resolve_active_arg "$NAME")
+    if [[ "$TARGET" == __AMBIG__* ]]; then
+      echo "$(_l "序号有歧义（F 组/B 组同号），请用分组编号指定：" "Index ambiguous (front/background), use group-index:")"
+      IFS='|' read -r -a cands <<< "${TARGET#__AMBIG__}"
+      for c in "${cands[@]}"; do g="${c%%=*}"; nm="${c#*=}"; echo "  genshin $g   → $nm"; done
+      exit 1
+    fi
     if [ -z "$TARGET" ]; then echo "$(_l "没有第 $NAME 个运行中的 agent" "No running agent #$NAME")"; exit 1; fi
     NAME="$TARGET"
   fi
@@ -604,19 +647,15 @@ fi
 # -- tmux --
 if [ "$MODE" = "tmux" ]; then
   if [ -z "$NAME" ]; then echo "$(_l "用法: genshin -t <名字|ID|序号>" "Usage: genshin -t <name|ID|index>")"; exit 1; fi
-  # 数字 => 第 N 个运行中的 agent
-  if [[ "$NAME" =~ ^[0-9]+$ ]]; then
-    TARGET=$(node --input-type=commonjs -e "
-      const fs=require('fs'),{execSync}=require('child_process');
-      const list=JSON.parse(fs.readFileSync('$PLIST','utf8')).filter(p=>!p.archived);
-      const now=Date.now();
-      let ps='';try{ps=execSync('ps aux',{encoding:'utf8'})}catch{}
-      for(const p of list){p._active=ps.split('\\n').some(l=>l.includes('genshin:')&&l.includes('(main,')&&l.includes(p.id));p._ago=Math.round((now-new Date(p.lastEnded||p.lastSeen).getTime())/60000)}
-      list.sort((a,b)=>(b._active?1:0)-(a._active?1:0)||a._ago-b._ago);
-      const active=list.filter(p=>p._active);
-      const i=parseInt('$NAME')-1;
-      if(active[i])console.log(active[i].name);
-    ")
+  # 数字/分组编号 => 运行中 agent（_resolve_active_arg：1f/1b/1a 分组 + 纯数字 F/B 跨组歧义提示）
+  if [[ "$NAME" =~ ^[0-9]+$ || "$NAME" =~ ^[0-9]+[fba]$ || "$NAME" =~ ^[fba][0-9]+$ ]]; then
+    TARGET=$(_resolve_active_arg "$NAME")
+    if [[ "$TARGET" == __AMBIG__* ]]; then
+      echo "$(_l "序号有歧义（F 组/B 组同号），请用分组编号指定：" "Index ambiguous (front/background), use group-index:")"
+      IFS='|' read -r -a cands <<< "${TARGET#__AMBIG__}"
+      for c in "${cands[@]}"; do g="${c%%=*}"; nm="${c#*=}"; echo "  genshin $g   → $nm"; done
+      exit 1
+    fi
     if [ -z "$TARGET" ]; then echo "$(_l "没有第 $NAME 个运行中的 agent" "No running agent #$NAME")"; exit 1; fi
     NAME="$TARGET"
   fi
@@ -663,18 +702,15 @@ fi
 
 # mc/tmux: 数字→运行中 agent（在 ENTRY 解析前）
 if [ "$MODE" = "mc" ] || [ "$MODE" = "tmux" ] || [ "$MODE" = "hc" ]; then
-  if [[ "$NAME" =~ ^[0-9]+$ ]]; then
-    TARGET=$(node --input-type=commonjs -e "
-      const fs=require('fs'),{execSync}=require('child_process');
-      const list=JSON.parse(fs.readFileSync('$PLIST','utf8')).filter(p=>!p.archived);
-      const now=Date.now();
-      let ps='';try{ps=execSync('ps aux',{encoding:'utf8'})}catch{}
-      for(const p of list){p._active=ps.split('\\n').some(l=>l.includes('genshin:')&&l.includes('(main,')&&l.includes(p.id));p._ago=Math.round((now-new Date(p.lastEnded||p.lastSeen).getTime())/60000)}
-      list.sort((a,b)=>(b._active?1:0)-(a._active?1:0)||a._ago-b._ago);
-      const active=list.filter(p=>p._active);
-      const i=parseInt('$NAME')-1;
-      if(active[i])console.log(active[i].name);
-    ")
+  # 数字/分组编号 => 运行中 agent（_resolve_active_arg：1f/1b/1a 分组 + 纯数字 F/B 跨组歧义提示）
+  if [[ "$NAME" =~ ^[0-9]+$ || "$NAME" =~ ^[0-9]+[fba]$ || "$NAME" =~ ^[fba][0-9]+$ ]]; then
+    TARGET=$(_resolve_active_arg "$NAME")
+    if [[ "$TARGET" == __AMBIG__* ]]; then
+      echo "$(_l "序号有歧义（F 组/B 组同号），请用分组编号指定：" "Index ambiguous (front/background), use group-index:")"
+      IFS='|' read -r -a cands <<< "${TARGET#__AMBIG__}"
+      for c in "${cands[@]}"; do g="${c%%=*}"; nm="${c#*=}"; echo "  genshin $g   → $nm"; done
+      exit 1
+    fi
     if [ -z "$TARGET" ]; then echo "$(_l "没有第 $NAME 个运行中的 agent" "No running agent #$NAME")"; exit 1; fi
     NAME="$TARGET"
   fi

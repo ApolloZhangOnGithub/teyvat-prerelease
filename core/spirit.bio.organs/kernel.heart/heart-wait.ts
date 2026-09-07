@@ -83,6 +83,9 @@ export function registerWaitTool(pi: ExtensionAPI) {
         return `${fmt(elapsed)}/${fmt(secs)}`;
       };
       (globalThis as any).__genshinWaitForUser = waiting;
+      // 2026-09-07（wait 折线颜色稳定化）：记本次 wait 是否 forUser（不随打断清——ESC/Ctrl+C 打断会清 ForUser，
+      // 导致 wait for user 被 ESC 打断后用户又发消息仍画红——按 wait 属性判定稳定）
+      (globalThis as any).__genshinWaitWasForUser = waiting;
 
       const countdownTimer = setInterval(() => {
         if (heartState() !== "resting") { clearInterval(countdownTimer); return; }

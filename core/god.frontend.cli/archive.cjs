@@ -32,6 +32,11 @@ const pool = MODE === 'archive' ? poolRaw.filter(p => !p._active) : poolRaw;
 const picked = new Set();
 const errs = [];
 
+// 2026-09-07（用户定稿）：运行中归档前置就是 kill——文案按 F/B 区分提示，去掉误导性的"/h 转后台"（转后台≠停止，归档仍拦）。
+function fbState(p) {
+  return fs.existsSync(PAIMON_HOME + '/RuntimeCache/' + p.id + '/detached') ? '后台' : '前台';
+}
+
 // 展开 org ID（6位hex）→ 成员 agent ID 列表
 let orgArchiveName = ''; // 记录被归档的组织名
 const expanded = [];
@@ -88,7 +93,7 @@ for (const arg of expanded) {
     else cands = poolRaw.filter(p => p._active);
     const p = cands[n];
     if (p) {
-      if (MODE === 'archive' && p._active) errs.push(T(`「${p.name}」正在运行中，不能归档（先 kill 停止，或 /h 转后台）`, `"${p.name}" is running; cannot archive (stop it first, or /h to background)`));
+      if (MODE === 'archive' && p._active) errs.push(T(`「${p.name}」正在${fbState(p)}运行中，不能归档（先 kill 停止）`, `"${p.name}" is running in ${fbState(p) === '后台' ? 'background' : 'foreground'}; cannot archive (kill it first)`));
       else picked.add(p);
     } else errs.push(T('序号 ' + arg + ' 超出范围（' + grp + ' 组共 ' + cands.length + ' 个）', 'Index ' + arg + ' out of range (' + grp + ' group, ' + cands.length + ' total)'));
   } else if (/^\d+$/.test(arg)) {
@@ -101,7 +106,7 @@ for (const arg of expanded) {
     else {
       // 2026-08-20 修复：区分"正在运行不能归档"与"真没找到"——原报错误导（运行中的 agent 被 _active 过滤却报"没找到"）
       const running = list.find(x => x.name === arg && x._active);
-      if (running) errs.push(T(`「${arg}」正在运行中，不能归档（先 kill 停止，或 /h 转后台）`, `"${arg}" is running; cannot archive (stop it first, or /h to background)`));
+      if (running) errs.push(T(`「${arg}」正在${fbState(running)}运行中，不能归档（先 kill 停止）`, `"${arg}" is running in ${fbState(running) === '后台' ? 'background' : 'foreground'}; cannot archive (kill it first)`));
       else errs.push(T('没找到 "' + arg + '"', 'Not found: "' + arg + '"'));
     }
   }

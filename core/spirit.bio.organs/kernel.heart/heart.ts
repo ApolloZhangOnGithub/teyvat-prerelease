@@ -279,7 +279,7 @@ export default function (pi: ExtensionAPI) {
       if (!asSrc.includes("result.terminate")) {
         dlog("SELF-CHECK FAIL: agent-session.js missing terminate override — wait/hibernate will break");
         try {
-          sendCustomMessage(pi, "continuous-error-retry", i18n("WARN: runtime agent-session.js 缺少 terminate override（wait/hibernate 会失效）。请重跑 bash C.deploy/install.sh 部署。", "WARN: runtime agent-session.js missing terminate override (wait/hibernate will break). Re-run bash C.deploy/install.sh to deploy."));
+          sendCustomMessage(pi, "continuous-error-retry", i18n("WARN: runtime agent-session.js 缺少 terminate override（wait/hibernate 会失效）。请重跑 C.deploy/install.sh 部署。", "WARN: runtime agent-session.js missing terminate override (wait/hibernate will break). Re-run deploy/install.sh to deploy."));
         } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
       } else {
         dlog("SELF-CHECK OK: agent-session.js terminate override in place");

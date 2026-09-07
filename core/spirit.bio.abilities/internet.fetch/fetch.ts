@@ -4,6 +4,9 @@
 // 供应商实现按名选择：node（内置 fetch）。换/加供应商不改调用方。
 // 安全：URL 校验（032 教训）——只允许 http/https，阻止 localhost/内网。
 import { i18n } from "#tui_localizations";
+import { homedir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 export interface FetchResult {
   status: number;
@@ -121,6 +124,23 @@ export class NodeFetchBackend implements FetchBackend {
       }
 
       const { text: truncatedText, truncated } = truncateText(text, maxChars);
+      // 2026-09-07（用户反馈）：截断时自动把完整内容写 AgentWorkDir 并给出路径——agent 可 read 取全文（不再丢内容）
+      if (truncated) {
+        try {
+          const dir = join(homedir(), ".teyvat", "AgentWorkDir", "web-fetch");
+          mkdirSync(dir, { recursive: true });
+          const fp = join(dir, `fetch-${Date.now()}.txt`);
+          writeFileSync(fp, text);
+          return {
+            status: res.status,
+            contentType,
+            text: truncatedText + `\n… [全文 ${text.length} 字符已存 ${fp}——read 该文件取完整内容]`,
+            truncated,
+            url: res.url || url,
+            mode,
+          };
+        } catch (e) { /* 写文件失败降级为纯截断提示 */ }
+      }
       return {
         status: res.status,
         contentType,

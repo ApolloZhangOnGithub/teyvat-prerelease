@@ -424,6 +424,7 @@ if (filter === 'archived') {
 
     hdr('设置');
     row('settings, s',           '打开交互式设置界面');
+    row('config provider',       '自动配置 OpenAI 兼容 provider（base-url + token，自动发现模型）');
   } else {
     hdr('Manage');
     row('<agent>',                        'Create a new agent or start an existing one');
@@ -466,6 +467,7 @@ if (filter === 'archived') {
 
     hdr('Settings');
     row('settings, s',                   'Open interactive settings interface');
+    row('config provider',               'Auto-configure an OpenAI-compatible provider (base-url + token, auto-discovers models)');
   }
 }
 console.log('');

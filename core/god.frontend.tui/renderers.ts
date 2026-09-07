@@ -75,11 +75,10 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
       const { Text } = require("@earendil-works/pi-tui");
       if (interrupted) {
         // 2026-08-14 用户要求：被打断必须显示折线结果（此前 height:0 隐藏）
-        // 2026-08-18 用户定稿：wait for user 被打断 = 用户来了（正常恢复）→ 绿色折线；
-        // 一般 wait 被打断（esc/命令等）→ 红色折线（异常中断）
-        const forUser = (globalThis as any).__genshinWaitInterruptedForUser === true || (globalThis as any).__genshinWaitForUser === true;
+        // 2026-08-18 用户定稿 + 2026-09-07 纠正：按打断 reason 判色——reason=user（用户消息打断，任何 wait 都算"用户来了"）→ 绿；
+        // esc/command 等（用户主动取消/命令）→ 红。与 wait 是否 forUser 无关。
         const reasonStr = intrReason ? ` (${reasonLabel[intrReason] || intrReason})` : "";
-        const color = forUser ? "success" : "error";
+        const color = intrReason === "user" ? "success" : "error";
         const label = resumeType === "wait" ? "Waited" : "Hibernated";
         return new Text(indent + "⎿  " + theme.fg(color, `${label} ${secs}s (interrupted by ${(reasonLabel[intrReason] || intrReason || "interrupt")})`), 0, 0);
       }

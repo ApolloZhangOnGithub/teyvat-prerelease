@@ -928,7 +928,7 @@ export default function registerMemory(pi: ExtensionAPI) {
       const ei = text.indexOf(e, bi + b.length); if (ei < 0) break;
       const end = ei + e.length;
       // 命中起点属于哪条记录（按行区间）；若在工具区内则跳过继续搜
-      let hit: { label: string; ts: string; isToolZone: boolean } | undefined;
+      let hit: { label: string; ts: string; isToolZone: boolean; start: number; end: number } | undefined;
       for (const row of rows) {
         if (row.start <= bi && bi < row.end) { hit = row; break; }
       }

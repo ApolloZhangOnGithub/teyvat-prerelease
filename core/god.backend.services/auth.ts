@@ -49,6 +49,12 @@ export function authMiddleware() {
       if (!cur || !cur.device_name || cur.device_name === deviceId) stmt.upsertDevice.run(deviceId, user.githubId, deviceName.trim());
       else stmt.touchDevice.run(user.githubId, deviceId);
     }
+    // 2026-09-07（Bug2 真因：X-Device-Agents 只在 /auth/devices handler 读——client 45s 上报 POST /sync/agent-presence 带 header 没人处理 → synced_at 永不刷）。
+    // authMiddleware 是所有 /sync/* 请求前置——任一请求带 X-Device-Agents 即 upsert device_states（agent 清单 + synced_at=now），周期上报自然刷新。
+    const agentsRaw = c.req.header("X-Device-Agents");
+    if (agentsRaw && agentsRaw.length > 4 && agentsRaw.length < 20000) {
+      try { JSON.parse(agentsRaw); stmt.upsertDeviceState.run(deviceId, user.githubId, agentsRaw, ""); stmt.logSync.run(deviceId, user.githubId); stmt.pruneSyncLog.run(user.githubId, user.githubId); } catch (e) { console.error("[god.backend.services/auth.ts] " + ((e as any)?.message || e)); /* 非法 JSON 忽略 */ }
+    }
     c.set("user", user);
     await next();
   };
