@@ -92,6 +92,18 @@ db.exec(`
     PRIMARY KEY (github_id, sid)
   );
   CREATE INDEX IF NOT EXISTS idx_presence_lastseen ON agent_presence(last_seen);
+
+  -- 临时文件分享（2026-09-08 ISSUE 142：网盘式——上传得 url+密码，24h 过期，单文件上限 1MB）
+  CREATE TABLE IF NOT EXISTS share_files (
+    id            TEXT PRIMARY KEY,          -- 随机 id（下载路径 /files/<id>）
+    github_id     INTEGER NOT NULL,          -- 上传者
+    filename      TEXT NOT NULL,             -- 原始文件名（下载 Content-Disposition）
+    size          INTEGER NOT NULL,
+    password_hash TEXT NOT NULL,             -- 访问密码 sha256（hex）
+    expires_at    TEXT NOT NULL,             -- datetime('now', '+24 hours')
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_share_expires ON share_files(expires_at);
 `);
 
 // 迁移（2026-09-05）：devices 表补 created_at（首次绑定时间——存量设备此前未记录，置 NULL 用 last_seen 近似）
@@ -256,5 +268,20 @@ export const stmt = {
   `),
   expirePresence: db.prepare(`
     DELETE FROM agent_presence WHERE last_seen < datetime('now', '-5 minutes')
+  `),
+
+  // 临时文件分享（2026-09-08 ISSUE 142）
+  insertShare: db.prepare(`
+    INSERT INTO share_files (id, github_id, filename, size, password_hash, expires_at)
+    VALUES (?, ?, ?, ?, ?, datetime('now', '+24 hours'))
+  `),
+  getShare: db.prepare(`
+    SELECT id, github_id, filename, size, password_hash, expires_at FROM share_files WHERE id = ?
+  `),
+  deleteShare: db.prepare(`
+    DELETE FROM share_files WHERE id = ?
+  `),
+  cleanupExpiredShares: db.prepare(`
+    DELETE FROM share_files WHERE expires_at < datetime('now')
   `),
 };

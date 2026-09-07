@@ -7,10 +7,16 @@ import { authRouter, authMiddleware, resolveUser } from "./auth.ts";
 import { syncRouter } from "./sync.ts";
 import { messagingRouter, registerWs, routeMessage } from "./messaging.ts";
 import { stmt } from "./db.ts";
+import { uploadFile, downloadFile, cleanupExpiredShares } from "./files.ts";
 
 const app = new Hono();
 
 app.use("*", cors());
+
+// 临时文件分享（2026-09-08 ISSUE 142）：上传挂 authRouter（自行鉴权——必须在 app.route("/auth") 前注册才生效）；下载公开（authMiddleware 前）
+authRouter.post("/files", uploadFile);
+app.get("/files/:id", downloadFile);
+
 app.route("/auth", authRouter);
 
 app.use("/*", authMiddleware());
@@ -48,6 +54,7 @@ app.get("/auth/wiki-cookie", async (c) => {
 setInterval(() => {
   stmt.expireLocks.run();
   stmt.expireMessages.run();
+  cleanupExpiredShares();
 }, 60_000);
 
 const port = parseInt(process.env.PORT || "3456");

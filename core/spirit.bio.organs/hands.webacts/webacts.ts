@@ -99,14 +99,14 @@ export default function (pi: ExtensionAPI) {
     name: "web",
     label: "Web",
     messageDescription:
-      "Web operations: fetch a URL or search the web. " +
+      "Web operations: fetch a URL, search the web, or upload a local file to share (ISSUE 142 网盘式——得链接+密码，24h 过期，单文件≤1MB). " +
       "fetch modes: auto=extract main text from HTML (default, navigation/ads filtered), raw=original content, text=strip tags only. " +
       "URL validation blocks localhost/internal networks. Slow requests run in background and push the result.",
-    promptSnippet: "web - fetch URL (auto/raw/text) or web search",
+    promptSnippet: "web - fetch URL (auto/raw/text) / search / upload <本地文件>",
     renderCall(args: any, theme: any) {
       const op = args?.op || "";
-      const target = op === "search" ? args?.query : args?.url;
-      // 标准调用行管线：意图 = op（fetch/search），载荷 = url/query（与 W 对齐）
+      const target = op === "search" ? args?.query : op === "upload" ? args?.path : args?.url;
+      // 标准调用行管线：意图 = op（fetch/search/upload），载荷 = url/query/path（与 W 对齐）
       return renderToolCall.detail(theme, "Web", op, String(target ?? ""));
     },
     renderResult(result: any, _options: any, theme: any, ctx: any) {
@@ -114,13 +114,14 @@ export default function (pi: ExtensionAPI) {
       return renderMessage.output(theme, ctx, content);
     },
     parameters: Type.Object({
-      op: Type.String({ messageDescription: "'fetch'=get URL content, 'search'=web search" }),
+      op: Type.String({ messageDescription: "'fetch'=get URL content, 'search'=web search, 'upload'=upload local file to share (得链接+密码)" }),
       url: Type.Optional(Type.String({ messageDescription: "URL to fetch (op=fetch)" })),
       mode: Type.Optional(Type.String({ messageDescription: i18n("fetch 过滤模式: auto=正文提取(默认)/raw=原始/text=去标签", "fetch filter mode: auto=extract main text (default)/raw=original/text=strip tags") })),
       headers: Type.Optional(Type.Record(Type.String(), Type.String(), { messageDescription: "Extra HTTP headers (op=fetch)" })),
       query: Type.Optional(Type.String({ messageDescription: "Search query (op=search)" })),
       count: Type.Optional(Type.Number({ messageDescription: "Search result count (op=search, default 8)" })),
       provider: Type.Optional(Type.String({ messageDescription: i18n("search 供应商: brave=快/免费/结构化列表(默认), deepseek=服务端 AI 搜索+整合回答(慢/深度研究)", "search provider: brave=fast/free/structured list (default), deepseek=server-side AI search+integrated answer (slow/deep research)") })),
+      path: Type.Optional(Type.String({ messageDescription: i18n("本地文件路径——上传分享用 (op=upload, 单文件≤1MB, 24h 过期, 返回链接+密码)", "Local file path to upload & share (op=upload, ≤1MB per file, 24h expiry, returns url+password)") })),
       timeout: Type.Optional(Type.Number({ messageDescription: "Timeout in seconds (default 8)" })),
     }),
     async execute(_toolCallId, params: any, _signal, _onUpdate, ctx) {
@@ -165,7 +166,44 @@ export default function (pi: ExtensionAPI) {
         return { content: [{ type: "text", text: i18n(`Web ${label} 进行中…（完成后推送）`, `Web ${label} in progress… (result pushed when done)`) }], details: { background: true } };
       }
 
-      return { content: [{ type: "text", text: i18n(`未知 op: ${op}。用 fetch / search。`, `Unknown op: ${op}. Use fetch / search.`) }], details: {}, isError: true };
+      if (op === "upload") {
+        const path = params.path;
+        if (!path) return { content: [{ type: "text", text: i18n("upload 需要 path（本地文件路径）", "upload requires path (local file path)") }], details: {}, isError: true };
+        // ISSUE 142（2026-09-08 网盘式）：读本地文件 → POST sync /auth/files → 得 {url, password}（24h 过期自动密码）。单文件 ≤1MB（用户定稿）。
+        try {
+          const fs = require("fs");
+          const { join } = require("path");
+          const { homedir } = require("os");
+          const resolved = path.startsWith("/") ? path : join(process.cwd(), path);
+          const data = fs.readFileSync(resolved);
+          const MAX = 1024 * 1024;
+          if (data.length > MAX) {
+            return { content: [{ type: "text", text: i18n(`文件 ${data.length} B 超上限 1MB——需用户处理（截断/压缩后重传，或用户 /a 授权其他通道）`, `file ${data.length}B exceeds 1MB limit — user needed (truncate/compress, or /a authorize another channel)`) }], details: {}, isError: true };
+          }
+          const b = JSON.parse(fs.readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8"));
+          if (!b?.token || !b?.deviceId) return { content: [{ type: "text", text: i18n("未绑定 GitHub——先 genshin login", "not bound — run genshin login first") }], details: {}, isError: true };
+          const filename = String(path.split("/").pop() || "file").replace(/[\\/:*?"<>|]/g, "_").slice(-120);
+          const res = await fetch("https://sync.paimon.beer/auth/files", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId,
+              "Content-Type": "application/octet-stream", "X-File-Name": filename, "User-Agent": "genshin-sync/1.0",
+            },
+            body: data as any,
+          });
+          const j: any = await res.json().catch(() => ({}));
+          if (!res.ok || !j?.url) return { content: [{ type: "text", text: i18n(`上传失败: HTTP ${res.status} ${j?.error || ""}`, `upload failed: HTTP ${res.status} ${j?.error || ""}`) }], details: {}, isError: true };
+          const text = i18n(
+            `📎 分享文件 ${j.filename} (${j.size} B)：\n链接: ${j.url}\n密码: ${j.password}\n过期: 24h（对方下载: ${j.url}?key=${j.password}）`,
+            `📎 shared ${j.filename} (${j.size}B):\nurl: ${j.url}\npassword: ${j.password}\nexpiry: 24h (download: ${j.url}?key=${j.password})`
+          );
+          return { content: [{ type: "text", text }], details: { shareUrl: j.url, sharePassword: j.password, size: j.size }, isError: false };
+        } catch (e: any) {
+          return { content: [{ type: "text", text: i18n(`上传失败: ${e?.message || e}`, `upload failed: ${e?.message || e}`) }], details: {}, isError: true };
+        }
+      }
+
+      return { content: [{ type: "text", text: i18n(`未知 op: ${op}。用 fetch / search / upload。`, `Unknown op: ${op}. Use fetch / search / upload.`) }], details: {}, isError: true };
     },
   });
 }
