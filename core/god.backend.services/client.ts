@@ -191,6 +191,7 @@ async function apiFetch(binding: Binding, path: string, init?: RequestInit) {
       ...(init?.headers || {}),
       Authorization: `Bearer ${binding.token}`,
       "X-Device-Id": binding.deviceId,
+      "User-Agent": "genshin-sync/1.0",
     },
   });
 }

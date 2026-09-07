@@ -147,8 +147,10 @@ _dev-minutely: _integrity
 	TODAY=$$(date +%Y%m%d); \
 	COUNTER_FILE="$(CORE)/.build-counter"; \
 	if [ -f "$$COUNTER_FILE" ]; then \
-		read LAST_DATE LAST_COUNT < "$$COUNTER_FILE"; \
-		if [ "$$LAST_DATE" = "$$TODAY" ]; then \
+		read LAST_DATE LAST_COUNT LAST_REL_VER < "$$COUNTER_FILE"; \
+		# 2026-09-07 修复：同天递增前提是版本号不变——跨天 OR 版本号 bump（如 0.3.2→0.3.3）都重置 COUNT=1。
+		# 旧 2 列格式（无 REL_VER）首次读到时 LAST_REL_VER 空 → 自动触发一次重置并转 3 列。
+		if [ "$$LAST_DATE" = "$$TODAY" ] && [ "$$LAST_REL_VER" = "$$REL_VER" ]; then \
 			COUNT=$$((LAST_COUNT + 1)); \
 		else \
 			COUNT=1; \
@@ -268,8 +270,9 @@ nightly:
 	TODAY=$$(date +%Y%m%d); \
 	COUNTER_FILE="$(CORE)/.build-counter"; \
 	if [ -f "$$COUNTER_FILE" ]; then \
-		read LAST_DATE LAST_COUNT < "$$COUNTER_FILE"; \
-		if [ "$$LAST_DATE" = "$$TODAY" ]; then \
+		read LAST_DATE LAST_COUNT LAST_REL_VER < "$$COUNTER_FILE"; \
+		# 2026-09-07 修复（同 dev-minutely）：跨天 OR 版本号 bump → 重置 COUNT=1（同天递增仅限同版本号）
+		if [ "$$LAST_DATE" = "$$TODAY" ] && [ "$$LAST_REL_VER" = "$$REL_VER" ]; then \
 			COUNT=$$((LAST_COUNT + 1)); \
 		else \
 			COUNT=1; \
@@ -277,7 +280,7 @@ nightly:
 	else \
 		COUNT=1; \
 	fi; \
-	echo "$$TODAY $$COUNT" > "$$COUNTER_FILE"; \
+	echo "$$TODAY $$COUNT $$REL_VER" > "$$COUNTER_FILE"; \
 	PAIMON_VER="$$REL_VER.$$TODAY.$$COUNT"; \
 	echo "teyvat $$PAIMON_VER"; \
 	if [ -n "$$MSG_FILE" ] && [ -f "$$MSG_FILE" ]; then \

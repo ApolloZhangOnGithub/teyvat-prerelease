@@ -108,7 +108,7 @@ export function logerr(code: string, e: unknown, ctx?: string) {
     const file = join(dir, 'catch-errors.log');
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     appendFileSync(file, msg);
-  } catch {
+  } catch (e) { console.error("[paths.ts] " + ((e as any)?.message || e));
     try { const fallback = join(homedir(), '.teyvat/LogData/unknown/catch-errors.log'); mkdirSync(dirname(fallback), { recursive: true }); appendFileSync(fallback, msg); } catch (e) { console.error("[paths.ts] " + ((e as any)?.message || e)); }
   }
 }

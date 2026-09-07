@@ -44,6 +44,8 @@ const TRIGGERS_DIR = join(SOCIAL_DIR, "triggers");
 const HEARTBEAT_DIR = join(SOCIAL_DIR, "heartbeat");
 
 const MAX_MSG_CHARS = 16_384;
+// Cloudflare Bot Management 拦截无/默认 User-Agent（Error 1010）——所有到 sync server 的 fetch 必须带
+const SYNC_UA = "genshin-sync/1.0";
 
 interface SocialMsg {
   id: string;
@@ -161,9 +163,9 @@ async function reportPresence(kind: "up" | "down"): Promise<void> {
     if (kind === "up") {
       const sys = getSysInfo();
       const body = { sid, name: getMyName(), focus: getFocus(), version: sys.version, model: sys.model };
-      await fetch(ep + "/sync/agent-presence", { method: "POST", headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      await fetch(ep + "/sync/agent-presence", { method: "POST", headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "Content-Type": "application/json", "User-Agent": SYNC_UA }, body: JSON.stringify(body) });
     } else {
-      await fetch(`${ep}/sync/agent-presence/${sid}`, { method: "DELETE", headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId } });
+      await fetch(`${ep}/sync/agent-presence/${sid}`, { method: "DELETE", headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "User-Agent": SYNC_UA } });
     }
   } catch (e) { logerr("reportPresence(" + kind + "): " + ((e as any)?.message || e)); }
   finally { _reportInFlight = false; }
@@ -469,7 +471,7 @@ async function remoteSendOne(toSid: string, text: string, mode: SocialMode, from
   const ep = syncEndpoint();
   let res: Response;
   try {
-    res = await fetch(ep + "/messages/send", { method: "POST", headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "Content-Type": "application/json" }, body: JSON.stringify({ toPerson: toSid, type: "agent-social", payload: msg }) });
+    res = await fetch(ep + "/messages/send", { method: "POST", headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "Content-Type": "application/json", "User-Agent": SYNC_UA }, body: JSON.stringify({ toPerson: toSid, type: "agent-social", payload: msg }) });
   } catch (e: any) {
     throw new Error(`social.send: 跨设备投递网络错误 ${toSid}（${(e?.message || e)} url=${ep}/messages/send）`);
   }
@@ -484,7 +486,7 @@ export async function pullRemoteMessages(): Promise<number> {
   const sid = getMySid();
   if (!b || !/^[a-f0-9]{8}$/.test(sid)) return 0;
   try {
-    const res = await fetch(syncEndpoint() + `/messages/pending/${sid}`, { headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId } });
+    const res = await fetch(syncEndpoint() + `/messages/pending/${sid}`, { headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "User-Agent": SYNC_UA } });
     if (!res.ok) return 0;
     const j = await res.json().catch(() => ({ messages: [] }));
     let added = 0;
@@ -813,7 +815,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
             try {
               const rb = JSON.parse(readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8"));
               if (rb?.token && rb?.deviceId) {
-                const res = await fetch(syncEndpoint() + "/sync/agent-presence", { headers: { "Authorization": `Bearer ${rb.token}`, "X-Device-Id": rb.deviceId } });
+                const res = await fetch(syncEndpoint() + "/sync/agent-presence", { headers: { "Authorization": `Bearer ${rb.token}`, "X-Device-Id": rb.deviceId, "User-Agent": SYNC_UA } });
                 const body: any = await res.json();
                 const localIds = new Set(agents.map(a => a.sid));
                 for (const ra of (body?.agents ?? [])) {
@@ -844,7 +846,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
           let b: any = null;
           try { b = JSON.parse(readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8")); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* 未绑定/损坏 → 下方提示 login */ }
           if (!b?.token || !b?.deviceId) return { content: [{ type: "text", text: "(未绑定——先 genshin login)" }], details: { social: true, action: "global", count: 0, lines: [] } };
-          const H = { Authorization: "Bearer " + b.token, "X-Device-Id": b.deviceId, "X-Device-Name": require("os").hostname() };
+          const H = { Authorization: "Bearer " + b.token, "X-Device-Id": b.deviceId, "X-Device-Name": require("os").hostname(), "User-Agent": SYNC_UA };
           const _url = syncEndpoint() + "/auth/devices";
           let res: Response;
           try { res = await fetch(_url, { headers: H }); } catch (e: any) {

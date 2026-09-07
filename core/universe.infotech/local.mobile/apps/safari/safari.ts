@@ -107,7 +107,7 @@ async function bc(action: string, params: Record<string, any> = {}, session = "s
   try {
     const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, session, ...params }), signal: AbortSignal.timeout(30000) });
     return await res.json();
-  } catch {
+  } catch (e) { console.error("[universe.infotech/local.mobile/apps/safari/safari.ts] " + ((e as any)?.message || e));
     if (await ensureSvc()) {
       try {
         const newUrl = getBrowserUrl();

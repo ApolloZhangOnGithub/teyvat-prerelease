@@ -25,10 +25,10 @@ else
   PINNED_DEV="$REL_VER.$TODAY.$DEV_COUNT"
 fi
 
-# ── alpha 独立计数 ──
+# ── alpha 独立计数（2026-09-07 修复：与 dev 同规则——同天递增前提是版本号不变，跨天或版本 bump 均重置 M=1）──
 if [ -f "$ALPHA_COUNTER" ]; then
-  read ALPHA_DATE ALPHA_COUNT < "$ALPHA_COUNTER"
-  if [ "$ALPHA_DATE" = "$TODAY" ]; then M=$((ALPHA_COUNT + 1)); else M=1; fi
+  read ALPHA_DATE ALPHA_COUNT ALPHA_REL_VER < "$ALPHA_COUNTER"
+  if [ "$ALPHA_DATE" = "$TODAY" ] && [ "$ALPHA_REL_VER" = "$REL_VER" ]; then M=$((ALPHA_COUNT + 1)); else M=1; fi
 else
   M=1
 fi
@@ -47,7 +47,7 @@ fi
 # ── alpha 版本号：REL_VER 的 -dev 段 → -alpha ──
 ALPHA_BASE=$(node -e "const v=process.argv[1].replace(/-dev$/,'');console.log(v+'-alpha')" "$REL_VER")
 ALPHA_VER="$ALPHA_BASE.$TODAY.$M"
-echo "$TODAY $M" > "$ALPHA_COUNTER"
+echo "$TODAY $M $REL_VER" > "$ALPHA_COUNTER"
 echo "$CUR_COMMIT" > "$LAST_COMMIT_FILE"
 echo -e "  teyvat $ALPHA_VER (prerelease, pin $PINNED_DEV)"
 

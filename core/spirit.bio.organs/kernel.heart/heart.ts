@@ -469,7 +469,7 @@ export default function (pi: ExtensionAPI) {
                   const curOrgs: string[] = Array.isArray(me?.orgs) ? me.orgs : (me?.org ? [me.org] : []);
                   const orgStateFile = join(cacheDir, "last-orgs");
                   let lastOrgs: string[] = [];
-                  try { lastOrgs = JSON.parse(readFileSync(orgStateFile, "utf8")); } catch {
+                  try { lastOrgs = JSON.parse(readFileSync(orgStateFile, "utf8")); } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e));
                     // 兼容旧 last-org 文件
                     try { const old = readFileSync(join(cacheDir, "last-org"), "utf8").trim(); if (old) lastOrgs = [old]; } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
                   }
