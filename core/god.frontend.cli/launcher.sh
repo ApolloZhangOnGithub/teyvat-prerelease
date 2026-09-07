@@ -1,6 +1,18 @@
 #!/bin/bash
 # 用 runtime 里的 pi 副本，不动用户全局安装的 pi。
 
+# ── HOME 空回退（2026-09-07 alice 阿里云容器发现：shell 未导出 HOME → 下面 PAIMON_* 全错 → "runtime not installed" 误报）──
+# getent passwd（Linux）取真实 home；macOS 无 getent（但几乎总导 HOME）用 /Users/$USER 兜底；最终兜底 /root。
+if [ -z "${HOME:-}" ]; then
+  export HOME="$(getent passwd "$(id -u)" 2>/dev/null | cut -d: -f6)"
+fi
+if [ -z "${HOME:-}" ]; then
+  [ -n "${USER:-}" ] && export HOME="/Users/$USER"
+fi
+if [ -z "${HOME:-}" ]; then
+  export HOME="/root"
+fi
+
 # ── 路径常量（唯一真相源）──
 export PAIMON_HOME="$HOME/.teyvat"
 export PAIMON_RUNTIME="$HOME/.local/lib/teyvat/runtime"

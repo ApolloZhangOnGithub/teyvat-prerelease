@@ -1073,7 +1073,8 @@ function registerSocialRenderer(pi: ExtensionAPI): void {
 
 function fmtTime(ts: number): string {
   const d = new Date(ts);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  // 2026-09-07（用户：跨电脑消息看不到秒级延迟——观测用）加秒
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
 }
 // 标准时间戳（带年/毫秒）：2026-08-14 03:40:09.641
 function fmtStamp(ts: number = Date.now()): string {
