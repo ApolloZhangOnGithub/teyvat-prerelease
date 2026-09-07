@@ -668,19 +668,20 @@ export class InteractiveMode {
         // Both are needed: fd for autocomplete, rg for grep tool and bash commands
         const [fdPath] = await Promise.all([ensureTool("fd"), ensureTool("rg")]);
         this.fdPath = fdPath;
-        if (this.session.scopedModels.length > 0 && (this.options.verbose || !this.settingsManager.getQuietStartup())) {
-            const modelList = this.session.scopedModels
-                .map((sm) => {
-                const thinkingStr = sm.thinkingLevel ? `:${sm.thinkingLevel}` : "";
-                return `${sm.model.id}${thinkingStr}`;
-            })
-                .join(", ");
-            const cycleKeys = this.keybindings.getKeys("app.model.cycleForward");
-            const cycleHint = cycleKeys.length > 0
-                ? theme.fg("muted", ` (${formatKeyText(cycleKeys.join("/"), { capitalize: true })} to cycle)`)
-                : "";
-            console.log(theme.fg("dim", `Model scope: ${modelList}${cycleHint}`));
-        }
+        // 2026-09-08（用户怒批：启动刷 Model scope 全列是垃圾——"一个都不要"。代码不删只注释——若将来要恢复去注释即可）：
+        // if (this.session.scopedModels.length > 0 && (this.options.verbose || !this.settingsManager.getQuietStartup())) {
+        //     const modelList = this.session.scopedModels
+        //         .map((sm) => {
+        //         const thinkingStr = sm.thinkingLevel ? `:${sm.thinkingLevel}` : "";
+        //         return `${sm.model.id}${thinkingStr}`;
+        //     })
+        //         .join(", ");
+        //     const cycleKeys = this.keybindings.getKeys("app.model.cycleForward");
+        //     const cycleHint = cycleKeys.length > 0
+        //         ? theme.fg("muted", ` (${formatKeyText(cycleKeys.join("/"), { capitalize: true })} to cycle)`)
+        //         : "";
+        //     console.log(theme.fg("dim", `Model scope: ${modelList}${cycleHint}`));
+        // }
         // teyvat: 官方 0.84.1 —— documentContainer 包 header+loadedResources+chat（ScrollView 滚动内容）
         this.documentContainer = new Container();
         this.documentContainer.addChild(this.headerContainer);

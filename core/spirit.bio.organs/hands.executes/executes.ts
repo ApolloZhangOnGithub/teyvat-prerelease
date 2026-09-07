@@ -727,7 +727,9 @@ let _lastBgHash = ""; // @ 缓存：避免相同输出重复占用 context
           content: [{ type: "text", text: `${output || "(no output)"}${exitInfo}${bgInfo}${recInfo}` }],
           // 快命令同步执行：execId 用于渲染 Process <id> done in X sec 摘要行；
           // 无 createdInfo（未创建后台进程）
-          details: { exitCode: r.code, execId: recId, elapsedMs: Date.now() - startTime },
+          // 2026-09-08（用户：别用 replace 剥垃圾——信息源头分开）：renderText = 用户显示的干净文本（无 bgInfo/recInfo 元信息行）——
+          // renderResult 已优先读 details.renderText（L374）——有它就不再走 content 剥除 fallback。content 保留元信息（模型 feed 需要 background/id 状态）。
+          details: { exitCode: r.code, execId: recId, elapsedMs: Date.now() - startTime, renderText: `${output || "(no output)"}${exitInfo}` },
         };
       }
 

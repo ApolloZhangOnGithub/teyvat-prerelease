@@ -205,6 +205,8 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
     const idMatch = raw.match(/\[id:\s*([A-Za-z0-9-]+)\]/);
     const idStr = idMatch ? idMatch[1] : "";
     if (idMatch) output = output.replace(/\n*\[id:.*$/, "");
+    // 2026-09-08（用户：cmd-done 还带 [background: N running]——.79 只剥了 execute 同步返回路径，cmd-done 推送没剥）：任意位置剥 background 行
+    output = output.replace(/\n*\[background: [^\]]*running[^\]]*\]/g, "");
     // 用户展示剥离：bioclock 耗时戳 [HH:MM:SS.mmm +Xs]（只对用户隐藏，模型消息里保留）
     output = output.replace(/\n*\[\d{2}:\d{2}:\d{2}\.\d{3}\s*\+\d+(?:\.\d+)?s\]\s*$/, "").trimEnd();
     const exitStr = exitCode !== undefined ? `exit ${exitCode}` : (elapsed === 0 ? "instantly" : `${elapsed}s`);

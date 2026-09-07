@@ -166,7 +166,7 @@ async function reportPresence(kind: "up" | "down"): Promise<void> {
       // 2026-09-07：活跃同步顺带更新 device_states（alice 反馈：agent 清单上传原只靠 genshin d spawn，一次性不可靠）——
       // /sync/* 都走 authMiddleware（server L16），带 X-Device-Agents + X-Device-Name 即存 device_states + 更新真实设备名，随 45s timer 周期刷新。
       let agentsHeader = "";
-      try { agentsHeader = JSON.stringify(listAgents().map((a: any) => ({ sid: a.sid, name: a.name, version: a.version, model: a.model, focus: a.focus }))); } catch { /* 清单构造失败不阻塞 presence 上报 */ }
+      try { agentsHeader = JSON.stringify(listAgents().map((a: any) => ({ sid: a.sid, name: a.name, version: a.version, model: a.model, focus: a.focus, state: agentLocalState(a.sid) }))); } catch { /* 清单构造失败不阻塞 presence 上报 */ }
       const headers: Record<string, string> = { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "Content-Type": "application/json", "User-Agent": SYNC_UA, "X-Device-Name": require("os").hostname() };
       if (agentsHeader) headers["X-Device-Agents"] = agentsHeader;
       await fetch(ep + "/sync/agent-presence", { method: "POST", headers, body: JSON.stringify(body) });
@@ -210,6 +210,21 @@ function getSysInfo(): { version: string; model: string } {
     }
   } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); }
   return { version, model };
+}
+
+// 2026-09-08（用户：状态机 AHW+FBO——自创 [在线] 乱做）：返回本机 agent 状态机态（仿 list.cjs——AHW=运行态 A/P/W/H + FB=位置态 F/B detached）
+// 用于心跳清单上报（device_states agents 带 state）→ 跨设备显示与 CLI 列表状态机一致
+function agentLocalState(sid: string): string {
+  try {
+    const f = require("fs");
+    const rc = join(homedir(), ".teyvat", "RuntimeCache", sid);
+    const mem = join(homedir(), ".teyvat", "MemoryData", sid);
+    const ahw = (f.existsSync(join(mem, "paused")) || f.existsSync(join(rc, "paused"))) ? "P"
+      : f.existsSync(join(rc, "main-resting")) ? "W"
+      : f.existsSync(join(rc, "main-hibernate")) ? "H" : "A";
+    const fb = f.existsSync(join(rc, "detached")) ? "B" : "F";
+    return ahw + fb;
+  } catch { return "AF"; }
 }
 
 export function listAgents(): Array<{ sid: string; name: string; focus: SocialFocus; lastSeen: number; version: string; model: string }> {
@@ -754,7 +769,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
       "Messages auto-inject: interrupt immediately, queue at turn end (hibernate blocked while pending).",
     promptSnippet: "social(action, ...) — send|list|inbox|focus|group",
     parameters: Type.Object({
-      action: Type.String({ messageDescription: "send | list | inbox | focus | group | global（跨设备 agents 发现：global=device 设备列表 / global+device=某设备 agents）" }),
+      action: Type.String({ messageDescription: "send | list | inbox | focus | group | global（global=跨设备查看——兼容别名，等效 list scope:'global'；list 支持 scope:'local'|'remote'|'global' 组合参数）" }),
       to: Type.Optional(Type.String({ messageDescription: "Target (send): sid | agent name | group:<gid> | all" })),
       text: Type.Optional(Type.String({ messageDescription: "Message content (send)" })),
       mode: Type.Optional(Type.Union([
@@ -772,7 +787,8 @@ function registerSocialTools(pi: ExtensionAPI): void {
       // global 跨设备视图参数（2026-09-05 用户定稿：social global [device | <device_id>]）
       view: Type.Optional(Type.String({ messageDescription: "global: 'device'=设备列表（默认跨设备 agents 概览）；具体 device_id=该设备 agents" })),
       device: Type.Optional(Type.String({ messageDescription: "global: 指定设备 id → 显示该设备 genshin（agent 列表）" })),
-      remote: Type.Optional(Type.Boolean({ messageDescription: "list: include remote-machine agents (default false — local only)" })),
+      remote: Type.Optional(Type.Boolean({ messageDescription: "list: include remote-machine agents (default false — local only)；推荐用 scope:'remote' 代替" })),
+      scope: Type.Optional(Type.String({ messageDescription: i18n("list 范围: 'local'(默认本机) | 'remote'(含远程机器 agent) | 'global'(跨设备设备+agents 视图——等效旧 action:'global'；global 另支持 view:'device'=设备列表 / device:'<id>'=某设备 agents)", "list scope: 'local'(default)|'remote'|'global'(cross-device view; global also: view='device'=devices / device='<id>'=agents of that device)") })),
     }),
     renderCall(args: any, theme: any) {
       // 2026-08-15 统一：与 amem 一致——工具名 + action 参数，不用 "Social.Inbox" 这种分层名（用户：全是点垃圾）
@@ -831,6 +847,10 @@ function registerSocialTools(pi: ExtensionAPI): void {
         for (const ln of (skipLines ? [] : (d.lines || []))) {
           c.addChild(new Text(indent + "  " + ln, 0, 0));
         }
+        // 2026-09-08（用户：global 结果只看到 ⎿ global 摘要、内容丢了——垃圾）：global 的设备/agent 详情在 content text（lines 空）——摘要后渲染 content
+        if (a === "global" && text && text !== "(无设备)") {
+          for (const ln of String(text).split("\n")) c.addChild(new Text(indent + "  " + ln, 0, 0));
+        }
         return c;
       }
       if (!text) return renderMessage.silent();
@@ -852,13 +872,20 @@ function registerSocialTools(pi: ExtensionAPI): void {
           return { content: [{ type: "text", text: `Sent to ${receipts.length} receiver(s):\n${lines.map(l => "  " + l).join("\n")}\n\n${p.text}` }], details: { social: true, action: "send", count: receipts.length, target: p.to, targetDisplay: toSid ? displayName(toSid) : p.to, targetName: toSid ? displayNameShort(toSid) : p.to, targetSid: toSid, modeUsed, text: p.text, ts: Date.now(), lines } };
         }
         case "list": {
+          // 2026-09-08（用户：list/global 冗余——组合参数）：list scope: 'local'(默认) | 'remote' | 'global'——scope=global 或带 view/device 参数时走跨设备视图（复用 socialGlobal；老 action:'global' 兼容别名同效果）；scope='remote' 走下方 remote 分支（等效旧 list remote:true）
+          if (p.scope === "global" || p.view === "device" || p.device) {
+            let b: any = null;
+            try { b = JSON.parse(readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8")); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); }
+            if (!b?.token || !b?.deviceId) return { content: [{ type: "text", text: "(未绑定——先 genshin login)" }], details: { social: true, action: "list", count: 0, lines: [] } };
+            return socialGlobal(p, b);
+          }
           touchPresence();
           const agents = listAgents();
           const me = getMySid();
           const now = Date.now();
-          // AgentTableSync：remote=true 时拉 server presence 合并（远端 agent = 别的机器，标 remote）
+          // AgentTableSync：remote=true 或 scope='remote' 时拉 server presence 合并（远端 agent = 别的机器，标 remote）
           const remoteLines: string[] = [];
-          if (p.remote === true) {
+          if (p.remote === true || p.scope === "remote") {
             try {
               const rb = JSON.parse(readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8"));
               if (rb?.token && rb?.deviceId) {
@@ -912,6 +939,21 @@ function registerSocialTools(pi: ExtensionAPI): void {
           const j: any = await res.json();
           const ds = (j?.devices ?? []).filter((d: any) => d.device_id === b.deviceId || (d.agents && String(d.agents).length > 2) || !d.archived);
           const fmtTs = (s: string) => { if (!s) return ""; try { return new Date(String(s).replace(" ", "T") + "Z").toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return s; } };
+          // 2026-09-08（用户怒批：一堆版本号没状态）：拉 presence 拿各 agent 实时在线状态（与 socialGlobal() 同逻辑——两入口待统一去重）
+          let presMap: Record<string, number> = {};
+          try {
+            const pr = await fetch(syncEndpoint() + "/sync/agent-presence", { headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "User-Agent": SYNC_UA } });
+            const pj: any = await pr.json();
+            for (const pa of (pj?.agents ?? [])) presMap[String(pa.sid)] = Date.parse(String(pa.last_seen || "").replace(" ", "T") + "Z") || 0;
+          } catch { /* presence 拉取失败 → 全离线 */ }
+          const agentState = (a: any): string => {
+    // 2026-09-08（用户：对齐 AHW+FBO 状态机——不显示自创 [在线]）：清单上报 state（AHW+FB）优先；presence 过期修正 [O]；无 state 旧数据 presence 兜底
+    const st = typeof a?.state === 'string' && a.state.length === 2 ? a.state : '';
+    const pres = presMap[String(a?.sid ?? '')];
+    if (st) { if (pres && Date.now() - pres > 300000) return ' [O]'; return ' [' + st[0] + '] [' + st[1] + ']'; }
+    if (!pres) return ' [O]';
+    return Date.now() - pres < 300000 ? ' [A]' : ' [O]';
+  };
           // 2026-09-07（Bug2 联动修复）：agents 现为结构化数组（X-Device-Agents 心跳存 listAgents JSON）——旧版从 genshin d 文本 "· N agents" 提取——兼容两者
           const agentCount = (d: any): string => {
             if (Array.isArray(d.agents)) return String(d.agents.length);
@@ -921,7 +963,8 @@ function registerSocialTools(pi: ExtensionAPI): void {
           };
           const agentsToText = (d: any): string => {
             if (Array.isArray(d.agents) && d.agents.length) {
-              return d.agents.map((a: any) => `  ${a.name || a.sid} (${a.sid})` + (a.version ? "  v" + a.version : "") + (a.model ? "  " + a.model : "")).join("\n");
+              // 状态优先——版本号/模型不默认显示
+              return d.agents.map((a: any) => `  ${a.name || a.sid}${a.sid && a.sid !== a.name ? " (" + a.sid + ")" : ""}` + agentState(a)).join("\n");
             }
             return typeof d.agents === "string" && d.agents ? d.agents : "(该设备还没上传 agent 清单——跑过 genshin d 或多设备 45s 心跳后可见)";
           };
@@ -952,7 +995,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
             // 2026-09-07（用户：agent 没显示具体设备——垃圾）：设备行下缩进列 agent（跨设备 agent 带设备一目了然）
             if (Array.isArray(d.agents) && d.agents.length) {
               for (const ag of d.agents) {
-                lines.push("      " + (ag.name || ag.sid) + (ag.sid && ag.sid !== ag.name ? " (" + ag.sid + ")" : "") + (ag.version ? "  v" + ag.version : "") + (ag.model ? "  " + ag.model : ""));
+                lines.push("      " + (ag.name || ag.sid) + (ag.sid && ag.sid !== ag.name ? " (" + ag.sid + ")" : "") + agentState(ag));
               }
             }
           }
@@ -1071,6 +1114,79 @@ function registerSocialTools(pi: ExtensionAPI): void {
 }
 
 // ── 消息渲染器（blockrender 兼容）────────────────────────────────────
+// ── 跨设备 agents 视图（2026-09-08 用户：list/global 应组合参数——提取共享供 list scope=global 与 global 兼容别名调用）──
+// 拉 /auth/devices → 三视图：device=<id> 设备 agents 详情 / view='device' 设备列表 / 默认跨设备概览（每设备+agent 明细）
+async function socialGlobal(p: any, b: any): Promise<any> {
+  if (!b?.token || !b?.deviceId) return { content: [{ type: "text", text: "(未绑定——先 genshin login)" }], details: { social: true, action: "global", count: 0, lines: [] } };
+  const H = { Authorization: "Bearer " + b.token, "X-Device-Id": b.deviceId, "X-Device-Name": require("os").hostname(), "User-Agent": SYNC_UA };
+  const _url = syncEndpoint() + "/auth/devices";
+  let res: Response;
+  try { res = await fetch(_url, { headers: H }); } catch (e: any) {
+    return { content: [{ type: "text", text: "(global 网络错误: " + (e?.message || e) + (e?.cause?.message ? " | cause: " + e.cause.message : "") + " | url=" + _url + ")" }], details: { social: true, action: "global", count: 0, lines: [] } };
+  }
+  if (!res.ok) return { content: [{ type: "text", text: "(server 查询失败: HTTP " + res.status + ")" }], details: { social: true, action: "global", count: 0, lines: [] } };
+  const j: any = await res.json();
+  const ds = (j?.devices ?? []).filter((d: any) => d.device_id === b.deviceId || (d.agents && String(d.agents).length > 2) || !d.archived);
+  const fmtTs = (s: string) => { if (!s) return ""; try { return new Date(String(s).replace(" ", "T") + "Z").toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return s; } };
+  // 2026-09-08（用户怒批：一堆版本号没状态——"最重要的状态默认要显示，版本号用 version 参数看"）：拉 presence 拿各 agent 实时在线状态
+  let presMap: Record<string, number> = {};
+  try {
+    const pr = await fetch(syncEndpoint() + "/sync/agent-presence", { headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "User-Agent": SYNC_UA } });
+    const pj: any = await pr.json();
+    for (const pa of (pj?.agents ?? [])) presMap[String(pa.sid)] = Date.parse(String(pa.last_seen || "").replace(" ", "T") + "Z") || 0;
+  } catch { /* presence 拉取失败 → 全离线显示 */ }
+  const agentState = (a: any): string => {
+    // 2026-09-08（用户：对齐 AHW+FBO 状态机——不显示自创 [在线]）：清单上报 state（AHW+FB）优先；presence 过期修正 [O]；无 state 旧数据 presence 兜底
+    const st = typeof a?.state === 'string' && a.state.length === 2 ? a.state : '';
+    const pres = presMap[String(a?.sid ?? '')];
+    if (st) { if (pres && Date.now() - pres > 300000) return ' [O]'; return ' [' + st[0] + '] [' + st[1] + ']'; }
+    if (!pres) return ' [O]';
+    return Date.now() - pres < 300000 ? ' [A]' : ' [O]';
+  };
+  const agentCount = (d: any): string => {
+    if (Array.isArray(d.agents)) return String(d.agents.length);
+    const raw = typeof d.agents === "string" ? d.agents : "";
+    if (raw) return (raw.match(/·\s*(\d+)\s*agents/) || [])[1] || (raw.includes("agents") ? "?" : "0");
+    return "0";
+  };
+  const agentsToText = (d: any): string => {
+    if (Array.isArray(d.agents) && d.agents.length) {
+      // 状态优先——版本号/模型不默认显示（要看用 version/model 参数）
+      return d.agents.map((a: any) => `  ${a.name || a.sid}${a.sid && a.sid !== a.name ? " (" + a.sid + ")" : ""}` + agentState(a)).join("\n");
+    }
+    return typeof d.agents === "string" && d.agents ? d.agents : "(该设备还没上传 agent 清单——跑过 genshin d 或多设备 45s 心跳后可见)";
+  };
+  if (p.device) {
+    const hit = ds.find((d: any) => String(d.device_id) === String(p.device));
+    if (!hit) return { content: [{ type: "text", text: "(找不到设备 " + p.device + ")" }], details: { social: true, action: "global", count: 0, lines: [] } };
+    const name = hit.device_name && hit.device_name !== hit.device_id ? hit.device_name : hit.device_id;
+    const txt = agentsToText(hit);
+    return { content: [{ type: "text", text: "── " + name + " 的 agents" + (hit.synced_at ? " (快照 " + fmtTs(hit.synced_at) + ")" : "") + ": ──\n" + txt }], details: { social: true, action: "global", view: p.device, count: 1, lines: [] } };
+  }
+  if (p.view === "device") {
+    const lines: string[] = [];
+    for (const d of ds) {
+      const name = d.device_name && d.device_name !== d.device_id ? d.device_name : d.device_id;
+      const nAgents = agentCount(d);
+      lines.push("  " + name + " (" + d.device_id + ")  agents:" + nAgents + (d.synced_at ? "  同步:" + fmtTs(d.synced_at) : "") + (String(d.device_id) === b.deviceId ? "  [本机]" : ""));
+    }
+    return { content: [{ type: "text", text: "设备 (" + ds.length + "):\n" + lines.join("\n") }], details: { social: true, action: "global", view: "device", count: ds.length, lines } };
+  }
+  const lines: string[] = [];
+  for (const d of ds) {
+    const name = d.device_name && d.device_name !== d.device_id ? d.device_name : d.device_id;
+    const nAgents = agentCount(d);
+    lines.push("  " + name + " (" + d.device_id + ")" + (String(d.device_id) === b.deviceId ? "  [本机]" : "") + "  · " + nAgents + " agents" + (d.synced_at ? "  同步:" + fmtTs(d.synced_at) : ""));
+    if (Array.isArray(d.agents) && d.agents.length) {
+      for (const ag of d.agents) {
+        lines.push("      " + (ag.name || ag.sid) + (ag.sid && ag.sid !== ag.name ? " (" + ag.sid + ")" : "") + agentState(ag));
+      }
+    }
+  }
+  if (!lines.length) return { content: [{ type: "text", text: "(无设备——多设备跑过 genshin d 后可见)" }], details: { social: true, action: "global", count: 0, lines: [] } };
+  return { content: [{ type: "text", text: "跨设备 (" + ds.length + " 设备):\n" + lines.join("\n") + "\n\n细节: social({action:'global' 或 list scope:'global', view:'device'}) 设备列表；device:'<id>' 看设备 agents（状态=实时 presence，版本/模型不默认显示）" }], details: { social: true, action: "global", count: ds.length, lines } };
+}
+
 function registerSocialRenderer(pi: ExtensionAPI): void {
   pi.registerMessageRenderer("social-message", (message: any, _opts: any, theme: any) => {
     const { Container, Text } = require("@earendil-works/pi-tui");
