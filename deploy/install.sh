@@ -695,6 +695,34 @@ ENDPATCH
     node "$_patch_mr" "$_mr_js" && rm -f "$_patch_mr"
   fi
 
+  # patch model-registry.js: models.json 只写 id 的自建 provider 模型缺 contextWindow/maxTokens → fallback 128000/16384（pi L508）。
+  # 2026-09-07 alice 报告 + ISSUE 143/144：应继承 built-in catalog 值（deepseek v4 = 1000000/384000），否则 UI 假 128k + 误导 compaction。
+  _mreg_js="$PI_DIST/core/model-registry.js"
+  if [ -f "$_mreg_js" ]; then
+    _patch_mreg="$PI_DIST/core/.patch-model-registry.cjs"
+    cat > "$_patch_mreg" <<'ENDPATCH'
+const fs = require('fs');
+const target = process.argv[2];
+let src = fs.readFileSync(target, 'utf8');
+let changes = 0;
+// 1) getBuiltInDefaults 缓存加 contextWindow/maxTokens（builtIn[0] = 该 provider 首模型，同系列通常同值）
+const o1 = 'const defaults = { api: builtIn[0].api, baseUrl: builtIn[0].baseUrl };';
+const n1 = 'const defaults = { api: builtIn[0].api, baseUrl: builtIn[0].baseUrl, contextWindow: builtIn[0].contextWindow, maxTokens: builtIn[0].maxTokens };';
+if (src.includes(o1)) { src = src.split(o1).join(n1); changes++; }
+// 2) contextWindow fallback 128000 → 先继承 builtInDefaults
+const o2 = 'contextWindow: modelDef.contextWindow ?? 128000,';
+const n2 = 'contextWindow: modelDef.contextWindow ?? builtInDefaults?.contextWindow ?? 128000,';
+if (src.includes(o2)) { src = src.split(o2).join(n2); changes++; }
+// 3) maxTokens fallback 16384 → 先继承 builtInDefaults
+const o3 = 'maxTokens: modelDef.maxTokens ?? 16384,';
+const n3 = 'maxTokens: modelDef.maxTokens ?? builtInDefaults?.maxTokens ?? 16384,';
+if (src.includes(o3)) { src = src.split(o3).join(n3); changes++; }
+fs.writeFileSync(target, src);
+console.log('patch-model-registry:' + changes + ' (期望 3)');
+ENDPATCH
+    node "$_patch_mreg" "$_mreg_js" && rm -f "$_patch_mreg"
+  fi
+
   # patch runtime package.json: add #gene_riboswitch import (inline, no temp file)
   node -e "
     const fs=require('fs');
