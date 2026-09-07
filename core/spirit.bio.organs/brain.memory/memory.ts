@@ -24,7 +24,12 @@ function getPersonDir(sessionFile: string | undefined): string | null {
 }
 
 function readFile(p: string): string {
-  try { return fs.readFileSync(p, "utf-8"); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); return ""; }
+  try { return fs.readFileSync(p, "utf-8"); } catch (e: any) {
+    // 2026-09-08：ENOENT（文件不存在）是预期可缺（work_memory/context/neocortex 等首次未建/可选文件）——静默返回空不打日志（启动早期曾刷屏）；真错误（权限/IO）才打。
+    if (e?.code === "ENOENT") return "";
+    console.error("[spirit.bio.organs/brain.memory/memory.ts] " + (e?.message || e));
+    return "";
+  }
 }
 
 function _errLogPath(p: string): string {

@@ -63,13 +63,13 @@ messagingRouter.post("/send", async (c) => {
     ts: new Date().toISOString(),
   };
 
+  // 2026-09-08（WS 假活丢消息修复——testor 实证：02:52/53 消息没收到直到 interrupt；messages 表 18:57 后全空 = 全走 WS 推送 delivered true 不落库，WS 死连接假活则消息丢失）：
+  // 总是落库（pending）——WS 推送只作即时通知（真活时秒达）；收件人 WS 假活/离线时靠周期拉取（/messages/pending）兜底，client 按 msg id 去重，消息永不丢。
+  stmt.pushMessage.run(
+    user.githubId, msg.fromPerson, msg.fromDevice, toPerson,
+    msg.type, JSON.stringify(payload),
+  );
   const delivered = routeMessage(user.githubId, toPerson, msg);
-  if (!delivered) {
-    stmt.pushMessage.run(
-      user.githubId, msg.fromPerson, msg.fromDevice, toPerson,
-      msg.type, JSON.stringify(payload),
-    );
-  }
   return c.json({ ok: true, delivered });
 });
 

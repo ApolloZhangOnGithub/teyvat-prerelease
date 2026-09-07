@@ -148,7 +148,7 @@ export function syncEndpoint(): string {
   if (_syncEndpointCache) return _syncEndpointCache;
   const svc = loadServices();
   if (svc["genshin-sync"]?.endpoint) { _syncEndpointCache = svc["genshin-sync"].endpoint as string; return _syncEndpointCache; }
-  try { execSync("curl -sf --connect-timeout 1 " + SYNC_TUNNEL + "/health", { stdio: "ignore" }); _syncEndpointCache = SYNC_TUNNEL; return SYNC_TUNNEL; } catch (e) { console.error("[paths.ts] " + ((e as any)?.message || e)); /* 2026-09-05：无本地 tunnel 是预期降级（走云端默认），非错误——不再打 error 日志 */ }
+  try { execSync("curl -sf --connect-timeout 1 " + SYNC_TUNNEL + "/health", { stdio: "ignore" }); _syncEndpointCache = SYNC_TUNNEL; return SYNC_TUNNEL; } catch { /* 2026-09-05（9/8 补：注释里写了"不再打"但 console.error 没去掉——现在真正静默）：无本地 tunnel 是预期降级（走云端默认），非错误——不打 error 日志。原 console.error 见 git 历史 */ }
   _syncEndpointCache = SYNC_ENDPOINT_DEFAULT;
   return SYNC_ENDPOINT_DEFAULT;
 }

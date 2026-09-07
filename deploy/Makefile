@@ -140,6 +140,8 @@ _integrity: _paths
 
 dev-minutely:
 	@$(LOCKED) _dev-minutely
+	# 2026-09-08（用户定稿：dev 默认自动发 prerelease——要手动选"不发"才不发）：完成 dev 构建后自动推 prerelease（SKIP_PRERELEASE=1 显式跳过）
+	@if [ -n "$(SKIP_PRERELEASE)" ]; then echo "[$$(date +%H:%M:%S)] SKIP_PRERELEASE=1——跳过 prerelease（要发时手动 make prerelease-minutely）"; else echo "[$$(date +%H:%M:%S)] 自动推 prerelease（不发用 SKIP_PRERELEASE=1）"; $(MAKE) prerelease-minutely; fi
 
 _dev-minutely: _integrity
 	@echo "[$$(date +%H:%M:%S)] integrity done"
