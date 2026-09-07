@@ -60,7 +60,7 @@ function isArchived(personId: string): boolean {
     const list = JSON.parse(readFileSync(plistPath, "utf8"));
     const entry = list.find((p: any) => p.id === personId);
     return entry?.archived === true;
-  } catch { return false; }
+  } catch (e) { console.error("[god.backend.services/client.ts] " + ((e as any)?.message || e)); return false; }
 }
 
 export interface LocalFile {
@@ -173,7 +173,7 @@ export function scanSyncFiles(skipRunning = false): LocalFile[] {
 interface ShadowEntry { hash: string; size: number; mtimeMs?: number }
 
 function loadShadow(): Record<string, ShadowEntry> {
-  try { return JSON.parse(readFileSync(SHADOW_FILE, "utf8")); } catch { return {}; }
+  try { return JSON.parse(readFileSync(SHADOW_FILE, "utf8")); } catch (e) { console.error("[god.backend.services/client.ts] " + ((e as any)?.message || e)); return {}; }
 }
 
 function saveShadow(manifest: Record<string, ShadowEntry>) {

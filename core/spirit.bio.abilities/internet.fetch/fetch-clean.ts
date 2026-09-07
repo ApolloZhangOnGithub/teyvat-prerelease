@@ -70,7 +70,7 @@ export async function extractMainText(html: string): Promise<ExtractResult> {
   try {
     const trafText = await extractWithTrafilatura(html);
     if (trafText) return { title: extractTitle(html), text: trafText };
-  } catch {
+  } catch (e) { console.error("[spirit.bio.abilities/internet.fetch/fetch-clean.ts] " + ((e as any)?.message || e));
     // trafilatura 不可用/超时 → fallback
   }
   return extractMainTextFallback(html);
@@ -82,7 +82,7 @@ function extractWithTrafilatura(html: string, timeoutMs = 8000): Promise<string 
     let py: ReturnType<typeof spawn>;
     try {
       py = spawn("python3", ["-c", "import sys,trafilatura;r=trafilatura.extract(sys.stdin.read(),include_comments=False);print(r or '')"]);
-    } catch {
+    } catch (e) { console.error("[spirit.bio.abilities/internet.fetch/fetch-clean.ts] " + ((e as any)?.message || e));
       resolve(null);
       return;
     }
@@ -103,7 +103,7 @@ function extractWithTrafilatura(html: string, timeoutMs = 8000): Promise<string 
       resolve(v);
     };
     const timer = setTimeout(() => {
-      try { py.kill(); } catch { /* ignore */ }
+      try { py.kill(); } catch (e) { console.error("[spirit.bio.abilities/internet.fetch/fetch-clean.ts] " + ((e as any)?.message || e)); /* ignore */ }
       finish(null);
     }, timeoutMs);
     py.stdout!.on("data", (d: Buffer) => (out += d.toString()));
@@ -115,7 +115,7 @@ function extractWithTrafilatura(html: string, timeoutMs = 8000): Promise<string 
     try {
       py.stdin!.write(html);
       py.stdin!.end();
-    } catch {
+    } catch (e) { console.error("[spirit.bio.abilities/internet.fetch/fetch-clean.ts] " + ((e as any)?.message || e));
       finish(null);
     }
   });

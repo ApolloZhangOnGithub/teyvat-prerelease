@@ -95,7 +95,7 @@ db.exec(`
 `);
 
 // 迁移（2026-09-05）：devices 表补 created_at（首次绑定时间——存量设备此前未记录，置 NULL 用 last_seen 近似）
-try { db.exec("ALTER TABLE devices ADD COLUMN created_at TEXT"); } catch { /* 列已存在 = 迁移已做过 */ }
+try { db.exec("ALTER TABLE devices ADD COLUMN created_at TEXT"); } catch (e) { console.error("[god.backend.services/db.ts] " + ((e as any)?.message || e)); /* 列已存在 = 迁移已做过 */ }
 
 export default db;
 

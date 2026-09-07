@@ -16,14 +16,14 @@ async function loadToolsAuth(pid: string): Promise<{ enabled: string[]; disabled
   try {
     const d = JSON.parse(await readFile(toolsAuthPath(pid), "utf8"));
     return { enabled: d.enabled || [], disabled: d.disabled || [] };
-  } catch { return { enabled: [], disabled: [] }; }
+  } catch (e) { console.error("[god.frontend.tui/commands/authdir.ts] " + ((e as any)?.message || e)); return { enabled: [], disabled: [] }; }
 }
 
 async function manifestToolNames(): Promise<string[]> {
   // 走 ribosome 既有管线 getToolManifest()（带缓存/环境变量/出错兜底），不手写路径
   try {
     return Object.keys(getToolManifest().tools || {});
-  } catch { return []; }
+  } catch (e) { console.error("[god.frontend.tui/commands/authdir.ts] " + ((e as any)?.message || e)); return []; }
 }
 
 export async function authdirCompletions(prefix: string) {

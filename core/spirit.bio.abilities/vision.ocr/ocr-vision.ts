@@ -24,7 +24,7 @@ function hasPyObjc(): boolean {
   try {
     execFileSync("python3", ["-c", "import Quartz, Vision, Foundation"], { timeout: 15_000 });
     pyobjcCache = true;
-  } catch {
+  } catch (e) { console.error("[spirit.bio.abilities/vision.ocr/ocr-vision.ts] " + ((e as any)?.message || e));
     pyobjcCache = false;
   }
   return pyobjcCache;
@@ -35,7 +35,7 @@ function logEyes(entry: Record<string, unknown>): void {
     const dir = join(homedir(), ".teyvat/LogData", process.env.PAIMON_AGENT_ID || "unknown");
     mkdirSync(dir, { recursive: true });
     appendFileSync(join(dir, "eyes.log"), JSON.stringify(entry) + "\n");
-  } catch {
+  } catch (e) { console.error("[spirit.bio.abilities/vision.ocr/ocr-vision.ts] " + ((e as any)?.message || e));
     // 日志失败不影响主流程
   }
 }

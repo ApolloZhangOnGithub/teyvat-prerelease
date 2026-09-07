@@ -36,7 +36,7 @@ function remindersPath(personDir: string) {
 function loadReminders(personDir: string): Reminder[] {
   try {
     return JSON.parse(fs.readFileSync(remindersPath(personDir), "utf8"));
-  } catch {
+  } catch (e) { console.error("[universe.infotech/local.mobile/apps/reminder/reminder.ts] " + ((e as any)?.message || e));
     return [];
   }
 }

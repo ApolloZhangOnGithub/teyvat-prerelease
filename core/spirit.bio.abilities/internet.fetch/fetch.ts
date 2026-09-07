@@ -31,7 +31,7 @@ export function isValidHttpUrl(url: string): boolean {
   let u: URL;
   try {
     u = new URL(url);
-  } catch {
+  } catch (e) { console.error("[spirit.bio.abilities/internet.fetch/fetch.ts] " + ((e as any)?.message || e));
     return false;
   }
   if (u.protocol !== "http:" && u.protocol !== "https:") return false;
@@ -49,6 +49,26 @@ export function isValidHttpUrl(url: string): boolean {
   }
   // IPv6：回环/链路本地/ULA
   if (host === "::1" || host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd")) return false;
+  // IPv4-mapped/compat IPv6 (::ffff:x.x.x.x / ::x.x.x.x) — extract embedded IPv4 and recheck
+  const v4mapped = host.match(/^::(?:ffff:)?(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4mapped) {
+    const a = Number(v4mapped[1]), b = Number(v4mapped[2]);
+    if (a === 0 || a === 127 || a === 10) return false;
+    if (a === 172 && b >= 16 && b <= 31) return false;
+    if (a === 192 && b === 168) return false;
+    if (a === 169 && b === 254) return false;
+  }
+  // IPv4-mapped hex form (e.g. ::ffff:7f00:1 for 127.0.0.1) — Node URL normalises to this
+  const v4hex = host.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (v4hex) {
+    const hi = parseInt(v4hex[1], 16), lo = parseInt(v4hex[2], 16);
+    const a = (hi >> 8) & 0xff, b = hi & 0xff, c = (lo >> 8) & 0xff;
+    if (a === 0 || a === 127 || a === 10) return false;
+    if (a === 172 && b >= 16 && b <= 31) return false;
+    if (a === 192 && b === 168) return false;
+    if (a === 169 && b === 254) return false;
+    void c; // d octet unused for range checks
+  }
   return true;
 }
 

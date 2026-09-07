@@ -57,7 +57,7 @@ function getLogPath(): string {
     const dir = join(homedir(), ".teyvat", "DebugData", pid);
     mkdirSync(dir, { recursive: true });
     return join(dir, "debug.log");
-  } catch {
+  } catch (e) { console.error("[spirit.bio.gene/_debug_riboswitch.ts] " + ((e as any)?.message || e));
     return join(homedir(), ".teyvat/LogData/unknown/debug.log");
   }
 }
@@ -78,7 +78,7 @@ export const debug = {
         msg: typeof msg === "string" ? msg : JSON.stringify(msg),
       });
       appendFileSync(getLogPath(), entry + "\n");
-    } catch { /* 静默吞错——debug 不能影响正常流程 */ }
+    } catch (e) { console.error("[spirit.bio.gene/_debug_riboswitch.ts] " + ((e as any)?.message || e)); /* 静默吞错——debug 不能影响正常流程 */ }
   },
 
   /** 列出所有已注册的 ID（用于 check-debug.sh） */

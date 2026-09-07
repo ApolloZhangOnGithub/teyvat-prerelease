@@ -87,7 +87,7 @@ export function registerStatusTool(_pi: ExtensionAPI) {
             return { content: [{ type: "text", text: lines2.join("\n") }] };
           }
           // 新数据：sessions.log 配对 start/end，合并 startup.log 历史（管线启用前的启动，无真实结束/原因，用下次启动近似）
-          const evts = readFileSync(slog, "utf8").trim().split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+          const evts = readFileSync(slog, "utf8").trim().split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l); } catch (e) { console.error("[spirit.abio.status/status.ts] " + ((e as any)?.message || e)); return null; } }).filter(Boolean);
           const starts = evts.filter((e: any) => e.type === "start");
           const ends = evts.filter((e: any) => e.type === "end");
           const now = Date.now();
@@ -105,7 +105,7 @@ export function registerStatusTool(_pi: ExtensionAPI) {
             const sl2 = join(logDir, "startup.log");
             if (existsSync(sl2)) {
               const raw2 = readFileSync(sl2, "utf8").trim().split("\n").filter(Boolean);
-              const srecs = raw2.map((l) => { try { const o = JSON.parse(l); return { ts: o.ts || "", v: (o.genshin || "").match(/20260815\.(\d+)/)?.[1] || o.genshin || "?" }; } catch { return null; } }).filter((r) => r && r.ts);
+              const srecs = raw2.map((l) => { try { const o = JSON.parse(l); return { ts: o.ts || "", v: (o.genshin || "").match(/20260815\.(\d+)/)?.[1] || o.genshin || "?" }; } catch (e) { console.error("[spirit.abio.status/status.ts] " + ((e as any)?.message || e)); return null; } }).filter((r) => r && r.ts);
               // 只取早于 sessions 记录开始的历史启动
               const pre = srecs.filter((r: any) => !firstSessTs || new Date(r.ts).getTime() < firstSessTs);
               if (pre.length) {
@@ -182,7 +182,7 @@ export function registerStatusTool(_pi: ExtensionAPI) {
                   for (const mm of Object.values(mods as any) as any[]) merged.push({ provider: prov, ...mm });
                 }
               }
-            } catch { /* catalog 加载失败则仅用 models.json */ }
+            } catch (e) { console.error("[spirit.abio.status/status.ts] " + ((e as any)?.message || e)); /* catalog 加载失败则仅用 models.json */ }
             const seen = new Set<string>();
             const lines: string[] = [`${T("可用模型", "Available models")} (${T("★=当前", "★=current")}, ${T("screenshot=视觉模型", "screenshot=vision model")}):`];
             const push = (m: any, prov: string) => {
@@ -216,7 +216,7 @@ export function registerStatusTool(_pi: ExtensionAPI) {
           try {
             const auth = JSON.parse(readFileSync(authPath, "utf8"));
             allowed = auth?.authorized && (auth?.all === true || (auth?.models || []).includes(target));
-          } catch (e) { /* 无授权文件 => 默认禁止 */ }
+          } catch (e) { console.error("[spirit.abio.status/status.ts] " + ((e as any)?.message || e)); /* 无授权文件 => 默认禁止 */ }
           if (!allowed) return { content: [{ type: "text", text: T(`切换模型 ${target} 未授权。请用户执行 /a model ${target}（或 /a model all 授权任意）后重试。`, `Switching to ${target} not authorized. Ask the user to run /a model ${target} (or /a model all to authorize any), then retry.`) }], isError: true };
           // 从 models.json 构造 model 对象（setModel 需要 {provider, id, ...}）
           const models = JSON.parse(readFileSync(join(homedir(), ".teyvat/config/models.json"), "utf8"));
@@ -322,9 +322,9 @@ export function registerStatusTool(_pi: ExtensionAPI) {
               }
             }
             lines.push(`Started: ${started}`);
-          } catch { 
+          } catch (e) { console.error("[spirit.abio.status/status.ts] " + ((e as any)?.message || e)); 
             try { const d = new Date(last.ts || ""); if (!isNaN(d.getTime())) { const p = (n: number) => String(n).padStart(2, "0"); lines.push(`Started: ${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`); } else lines.push(`Started: ${(last.ts || "").slice(0, 19).replace("T", " ")}`); }
-            catch { lines.push(`Started: ${(last.ts || "").slice(0, 19).replace("T", " ")}`); }
+            catch (e) { console.error("[spirit.abio.status/status.ts] " + ((e as any)?.message || e)); lines.push(`Started: ${(last.ts || "").slice(0, 19).replace("T", " ")}`); }
           }
         } catch (e) { console.error("[spirit.abio.status/status.ts] " + ((e as any)?.message || e)); }
         // Pending wake（hibernate until 挂着的定时唤醒，issue 071 附带）
@@ -347,7 +347,7 @@ export function registerStatusTool(_pi: ExtensionAPI) {
           }
         } catch (e) { console.error("[spirit.abio.status/status.ts] " + ((e as any)?.message || e)); }
         return { content: [{ type: "text", text: lines.join("\n") }] };
-      } catch { return { content: [{ type: "text", text: T("读取失败", "Read failed") }], isError: true }; }
+      } catch (e) { console.error("[spirit.abio.status/status.ts] " + ((e as any)?.message || e)); return { content: [{ type: "text", text: T("读取失败", "Read failed") }], isError: true }; }
     },
   });
 }

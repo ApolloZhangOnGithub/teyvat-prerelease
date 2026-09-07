@@ -1,6 +1,7 @@
 {
   "name": "teyvat",
-  "version": "0.3.2-dev",
+  "//_version": "请勿手动修改 version——用 make bump v=0.x.x 统一变更",
+  "version": "0.3.3-dev",
   "type": "module",
   "//": "路径别名总表(唯一真相源)。所有跨模块 import 用 #别名,文件随便移——只改这里这一行。Node 原生 imports 字段,运行时解析,不用打包器。",
   "imports": {

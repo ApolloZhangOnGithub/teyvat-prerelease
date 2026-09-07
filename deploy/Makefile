@@ -13,7 +13,7 @@ CLI        := god.frontend.cli
 TUI        := god.frontend.tui
 TRANSPILER := spirit.bio.gene/polymerase.ts
 
-.PHONY: help setup dev-minutely dev-stable note prerelease-minutely release nightly wiki-deploy wiki-publish sync-deploy dev-restore _paths _ecosystem \
+.PHONY: help setup bump dev-minutely dev-stable note prerelease-minutely release nightly wiki-deploy wiki-publish sync-deploy dev-restore _paths _ecosystem \
         _dev-minutely _dev-stable _note _prerelease-minutely _release
 
 # ── 构建串行化 ─────────────────────────────────────────────────────────────
@@ -48,9 +48,10 @@ help:
 	@echo ""
 	@echo "  teyvat"
 	@echo "  ───────────────────────────────────────────────────────"
-	@echo "  dev-minutely             开发部署（minutely canary → 0.3.2-dev.YYYYMMDD.N，递增 N）"
+	@echo "  bump                     升版本号 (make bump v=0.x.x)，自动改 package.json 的 version 字段"
+	@echo "  dev-minutely             开发部署（minutely canary → X.Y.Z-dev.YYYYMMDD.N，递增 N）"
 	@echo "  dev-stable               钉住当前 dev 为 dev-stable 保底"
-	@echo "  prerelease-minutely       发布 alpha（0.3.2-alpha.YYYYMMDD.M，独立递增 M + pin dev）。用 dev= 绑指定 dev，默认绑最新"
+	@echo "  prerelease-minutely       发布 alpha（X.Y.Z-alpha.YYYYMMDD.M，独立递增 M + pin dev）。用 dev= 绑指定 dev，默认绑最新"
 	@echo "  release                  正式发布 (make release v=0.x.x)"
 	@echo "  dev-restore              回退到指定 minutely 版本并部署 (make dev-restore v=0.x.x-dev.20xxxxxx.xx)"
 	@echo "  wiki-deploy              部署 wiki 到服务器"
@@ -58,6 +59,27 @@ help:
 	@echo "  sync-deploy              部署 sync 服务到服务器"
 	@echo "  setup                    新电脑首次安装（不 commit、不 push）"
 	@echo ""
+
+# ── bump (版本号升级) ──
+# package.json 的 version 字段是唯一版本真相源，dev-minutely/prerelease/release 全读它。
+# 升版本必须走 make bump，不要手动编辑 package.json。
+# bump 只改 version 字段（→ v-dev），不 commit、不部署——后续 make dev-minutely 一并提交。
+
+bump:
+	@if [ -z "$(v)" ]; then echo "  用法: make bump v=0.x.x (例: make bump v=0.3.3)"; exit 1; fi
+	@CUR=$$(node -e "console.log(require('$(CORE)/package.json').version)"); \
+	NEW="$(v)-dev"; \
+	if [ "$$CUR" = "$$NEW" ]; then echo "  version 已是 $$NEW，无需变更"; exit 0; fi; \
+	node -e " \
+	  const fs = require('fs'); \
+	  const f = '$(CORE)/package.json'; \
+	  const pkg = JSON.parse(fs.readFileSync(f, 'utf8')); \
+	  const old = pkg.version; \
+	  pkg.version = '$$NEW'; \
+	  fs.writeFileSync(f, JSON.stringify(pkg, null, 2) + '\n'); \
+	  console.log('  version: ' + old + ' → ' + '$$NEW'); \
+	"; \
+	echo "  下一步: make dev-minutely msg='...' detail='...'"
 
 # ── setup (新电脑首次安装) ──
 

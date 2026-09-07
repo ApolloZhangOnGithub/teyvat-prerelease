@@ -225,8 +225,8 @@ export default function (pi: ExtensionAPI) {
       const wf = canRestart ? wakeRestartFile() : null;
       if (wf) {
         dlog("sleep-done → RESTART");
-        try { writeFileSync(wf, String(Date.now()), "utf-8"); } catch (e) { dlog("wake nonce write failed: " + e); }
-        setTimeout(() => { try { ctx.shutdown(); } catch (e) { dlog("shutdown failed: " + e); } }, 50);
+        try { writeFileSync(wf, String(Date.now()), "utf-8"); } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); dlog("wake nonce write failed: " + e); }
+        setTimeout(() => { try { ctx.shutdown(); } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); dlog("shutdown failed: " + e); } }, 50);
         return;
       }
       dlog("sleep-done → re-enable in place");
@@ -558,13 +558,20 @@ export default function (pi: ExtensionAPI) {
     if (process.env.PI_ALIVE_WOKE === "1") {
       // self-reboot 检测：在这里做，不在 userback 里做，保证消息先于一切到达
       let selfRebootMsg = "";
+      let selfRebootElapsed = 0;
       try {
         const reasonPath = join(runtimeCacheDir(sessionPersonId), "self-reboot-reason.json");
         if (existsSync(reasonPath)) {
           const rd = JSON.parse(readFileSync(reasonPath, "utf8"));
           selfRebootMsg = rd.reason || "self-reboot";
+          selfRebootElapsed = rd.elapsed || 0;
           unlinkSync(reasonPath);
         }
+      } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
+      // ISSUE 140：清理 wake-restart 标记（消费后删除，防止残留导致下次启动误判）
+      try {
+        const wakePath = join(runtimeCacheDir(sessionPersonId), "wake-restart");
+        if (existsSync(wakePath)) unlinkSync(wakePath);
       } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
 
       dlog(`session_start: PI_ALIVE_WOKE → kick (selfReboot=${!!selfRebootMsg})`);
@@ -572,19 +579,14 @@ export default function (pi: ExtensionAPI) {
       if (selfRebootMsg) {
         (globalThis as any).__genshinSelfRebooted = true;
         // 恢复 self-reboot 前的累积运行时长（连续计时，不重置）
-        // 注意：reasonPath 在上面的首次读取（selfRebootMsg 处）已被 unlink——这里用 if 包裹而非 return：
-        // 2026-08-20 实测 return 会跳出整个 session_start 函数，导致后面的 self-reboot 消息注入被跳过
-        // （重启后无 "Life Restarted/重启注入"——用户暴怒）；文件不存在时静默跳过 elapsed 恢复即可
+        // 0.3.3 修复：原代码在上面 unlink 后又 re-read 同一文件 → existsSync 永远 false → elapsed 永远不恢复。
+        // 现在用首次读取时保存的 selfRebootElapsed。
         try {
-          const reasonPath = join(runtimeCacheDir(sessionPersonId), "self-reboot-reason.json");
-          if (existsSync(reasonPath)) {
-          const rd = JSON.parse(readFileSync(reasonPath, "utf8"));
-          if (rd.elapsed > 0) {
+          if (selfRebootElapsed > 0) {
             setTimeout(() => {
               const sb = (globalThis as any).__genshinStatusBar;
-              if (sb) { sb._sessionAccumulated = rd.elapsed; }
+              if (sb) { sb._sessionAccumulated = selfRebootElapsed; }
             }, 1500);
-          }
           }
         } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
       }
@@ -610,6 +612,12 @@ export default function (pi: ExtensionAPI) {
   // ── agent_end: intentions 驱动续命 ──
   pi.on("agent_end", async (event, ctx) => {
     dlog(`agent_end: kind=${heartState()}`);
+
+    // ISSUE 140：self-reboot 即将退出，不续命（否则开新 turn 被 process.exit 打断 → abort → paused 循环）
+    if ((globalThis as any).__genshinRebootPending) {
+      dlog("agent_end: reboot pending, skip auto-continue");
+      return;
+    }
 
     // 阻塞态不续命（wait/hibernate/pause 的 transition 已在工具里完成）
     // 注意：不调 setWorkingVisible(false)，否则会清掉 wait 的倒计时和 hibernate/pause 的状态文字

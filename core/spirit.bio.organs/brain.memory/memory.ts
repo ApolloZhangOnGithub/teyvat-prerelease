@@ -24,7 +24,7 @@ function getPersonDir(sessionFile: string | undefined): string | null {
 }
 
 function readFile(p: string): string {
-  try { return fs.readFileSync(p, "utf-8"); } catch { return ""; }
+  try { return fs.readFileSync(p, "utf-8"); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); return ""; }
 }
 
 function _errLogPath(p: string): string {
@@ -87,7 +87,7 @@ export default function registerMemory(pi: ExtensionAPI) {
       try {
         // 2026-08-20 修复：空/截断文件安全解析（竞态截断是暂时性的，下次写入自动修复——用默认值不刷日志）
         let raw: any = null;
-        try { raw = JSON.parse(readFile(tokenmaxxedPath) || "{}"); } catch { /* 截断/损坏：用默认值，不刷日志 */ }
+        try { raw = JSON.parse(readFile(tokenmaxxedPath) || "{}"); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); /* 截断/损坏：用默认值，不刷日志 */ }
         pond = {
           tokenmaxxed: raw?.tokenmaxxed || 0,
           sessions: raw?.sessions || 0,
@@ -180,7 +180,7 @@ export default function registerMemory(pi: ExtensionAPI) {
     const wmNow = readFile(path.join(personDir, "work_memory.md"));
     let frozen = readFile(frozenPath);
     let meta = { ctxLen: 0, wmLen: 0 };
-    try { meta = { ...meta, ...JSON.parse(readFile(metaPath) || "{}") }; } catch { /* 冻结 meta 竞态截断：默认值不刷（同 .54 快照截断行处理，数据损坏暂时性）*/ }
+    try { meta = { ...meta, ...JSON.parse(readFile(metaPath) || "{}") }; } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); /* 冻结 meta 竞态截断：默认值不刷（同 .54 快照截断行处理，数据损坏暂时性）*/ }
     const dCtx = ctxNow.length - meta.ctxLen;
     const dWm = wmNow.length - meta.wmLen;
     if (!frozen || dCtx > REFREEZE_DELTA || dCtx < 0 || dWm < 0) {
@@ -397,7 +397,7 @@ export default function registerMemory(pi: ExtensionAPI) {
           const costPath = path.join(personDir, `cost-${role}.json`);
           if (!fs.existsSync(costPath)) continue; // 该角色无消费记录（新 agent/未启用）——不存在不刷 ENOENT
           let d: any = null;
-          try { d = JSON.parse(readFile(costPath)); } catch { /* 竞态截断：按 0 计不刷（下次写入自动修复）*/ }
+          try { d = JSON.parse(readFile(costPath)); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); /* 竞态截断：按 0 计不刷（下次写入自动修复）*/ }
           if (role === "main") sessMain = d?.cost || 0;
           else if (role === "hippocampus") sessHippo = d?.cost || 0;
           else if (role === "metaconsciousness") sessSub = d?.cost || 0;
@@ -409,7 +409,7 @@ export default function registerMemory(pi: ExtensionAPI) {
       // 2026-08-20 修复：costTotalPath（AgentFileData/../MonitorData/<id>/cost_total.json）目录通常不存在——
       // readFile 返回空串 → JSON.parse("") 每次 flush 报 Unexpected end（Unexpected end 刷屏的真正来源）——
       // 不存在跳过（与 cost-role 的 existsSync 同模式），截断用默认值
-      try { if (fs.existsSync(costTotalPath)) total = JSON.parse(readFile(costTotalPath)); } catch { /* 截断用默认值 */ }
+      try { if (fs.existsSync(costTotalPath)) total = JSON.parse(readFile(costTotalPath)); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); /* 截断用默认值 */ }
       total.main = (total.main || 0) + sessMain;
       total.hippocampus = (total.hippocampus || 0) + sessHippo;
       total.metaconsciousness = (total.metaconsciousness || 0) + sessSub;
@@ -430,7 +430,7 @@ export default function registerMemory(pi: ExtensionAPI) {
         try {
           // 2026-08-20 修复：空/截断文件安全解析（同 flushTokenmaxxed——竞态截断用默认值不刷日志）
           let raw: any = null;
-          try { raw = JSON.parse(readFile(tokenmaxxedPath) || "{}"); } catch { /* 截断/损坏：用默认值 */ }
+          try { raw = JSON.parse(readFile(tokenmaxxedPath) || "{}"); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); /* 截断/损坏：用默认值 */ }
           pond = {
             tokenmaxxed: raw?.tokenmaxxed || 0,
             sessions: raw?.sessions || 0,
@@ -530,7 +530,7 @@ export default function registerMemory(pi: ExtensionAPI) {
           text = String(text).trim();
           return text ? `[tool: ${text.slice(0, 500).replace(/\n/g, " ")}]` : null;
         }
-      } catch {
+      } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e));
         // context.md 截断行（如 toolResult 被截断成无效 JSON）：数据污染噪音，非代码 bug，无法修复——
         // 保留原文不压缩、不刷日志（2026-08-20：此前每次快照构建都报 Unexpected end of JSON input 刷屏）
       }
@@ -801,7 +801,7 @@ export default function registerMemory(pi: ExtensionAPI) {
         // 剔除 assistant 自身产生的内容（think / text / toolCall）——不参与 hash 基准
         if (o.role === "assistant") continue;
         out.push(line);
-      } catch { out.push(line); }
+      } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); out.push(line); }
     }
     return out.join("\n");
   }
@@ -1009,7 +1009,7 @@ export default function registerMemory(pi: ExtensionAPI) {
           ageBuckets[bidx].count++;
           ageBuckets[bidx].chars += c;
         } else noTs++;
-      } catch { nonJson++; }
+      } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); nonJson++; }
     }
     const parts = Object.entries(counts)
       .filter(([k]) => !k.startsWith("assistant.")) // 细分行单独列
@@ -1194,13 +1194,14 @@ export default function registerMemory(pi: ExtensionAPI) {
             const w = action === "manage" || action === "revert" ? 3 : 1;
             return { e, d, action, w };
           });
-          const totalW = weighted.reduce((s, x) => s + x.w, 0);
+          let totalW = weighted.reduce((s, x) => s + x.w, 0);
           const pickedW: any[] = [];
           for (let i = 0; i < Math.min(n, weighted.length); i++) {
             let roll = Math.random() * totalW;
             let pick = weighted[0];
             for (const x of weighted) { roll -= x.w; if (roll <= 0) { pick = x; break; } }
             weighted.splice(weighted.indexOf(pick), 1);
+            totalW -= pick.w;
             pickedW.push(pick);
           }
           let r = i18n(`amem review: ${pickedW.length} of ${pool.length} active archives${topic ? ` (主题: "${params.q}")` : ""} — 回放旧记忆(●manage/◐sweep):\n`, `amem review: ${pickedW.length} of ${pool.length} active archives${topic ? ` (topic: "${params.q}")` : ""} — replaying old memories (●manage/◐sweep):\n`);
@@ -1455,11 +1456,11 @@ export default function registerMemory(pi: ExtensionAPI) {
               const ms = _tsToMs(r.ts);
               if (!ms) return false;
               if (fq) {
-                const fBase = fq.length < 19 ? fq + ":00".slice(0, 19 - fq.length) : fq;
+                const fBase = fq.length < 14 ? fq + ":00".slice(0, 14 - fq.length) : fq;
                 if (ms < _tsToMs(fBase)) return false;
               }
               if (tq) {
-                const tBase = tq.length < 19 ? tq + ":59".slice(0, 19 - tq.length) : tq;
+                const tBase = tq.length < 14 ? tq + ":59".slice(0, 14 - tq.length) : tq;
                 if (ms > _tsToMs(tBase)) return false;
               }
               return true;
@@ -1516,7 +1517,7 @@ export default function registerMemory(pi: ExtensionAPI) {
             // types 同时匹配 role 和 type——sweep(["toolResult"]) 才能命中工具结果记录。
             if (tSet.has(o.role) || tSet.has(o.type)) { swept.push(line); } else { kept.push(line); }
           }
-          catch { kept.push(line); }
+          catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); kept.push(line); }
         }
         const sweptText = swept.join("\n");
 
@@ -1536,7 +1537,7 @@ export default function registerMemory(pi: ExtensionAPI) {
                 const o = JSON.parse(ln);
                 const raw = o.text || o.think || o.content || o.tool || "";
                 txt = (typeof raw === "string" ? raw : JSON.stringify(raw)).replace(/\n/g, " ");
-              } catch { txt = ln.slice(0, 80); }
+              } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); txt = ln.slice(0, 80); }
               preview += `  · ${txt.slice(0, 100)}${txt.length > 100 ? "…" : ""}\n`;
             }
           }
@@ -1570,7 +1571,7 @@ export default function registerMemory(pi: ExtensionAPI) {
             const o = JSON.parse(t);
             if (tSet2.has(o.role) || tSet2.has(o.type)) { swept2.push(line); } else { kept2.push(line); }
           }
-          catch { kept2.push(line); }
+          catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); kept2.push(line); }
         }
         const sweptText2 = swept2.join("\n");
         if (sweptText2.length === 0) return { content: [{ type: "text", text: `amem ${actName}: 0 entries to remove in locked range.` }], details: {} };
@@ -1918,7 +1919,7 @@ echo "[nav] done"
 
       napHandle = {
         stop: () => { try { execSync(`tmux kill-session -t ${tmuxName} 2>/dev/null`); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); } },
-        isRunning: () => { try { execSync(`tmux has-session -t ${tmuxName} 2>/dev/null`); return true; } catch { return false; } },
+        isRunning: () => { try { execSync(`tmux has-session -t ${tmuxName} 2>/dev/null`); return true; } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); return false; } },
       };
 
       return {

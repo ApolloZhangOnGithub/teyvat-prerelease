@@ -128,7 +128,7 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
       const tok = Math.round(cjk * 1.8 + (t.length - cjk) * 0.25);
       const pct = ((tok / 1000000) * 100).toFixed(1);
       cur = parseFloat(pct) >= 80 ? i18n(`context ${(tok / 1000).toFixed(1)}k tokens / 1.0M (${pct}%) — 建议 amem 整理`, `context ${(tok / 1000).toFixed(1)}k tokens / 1.0M (${pct}%) — consider amem cleanup`) : i18n(`context ${(tok / 1000).toFixed(1)}k tokens / 1.0M (${pct}%) — 健康`, `context ${(tok / 1000).toFixed(1)}k tokens / 1.0M (${pct}%) — healthy`);
-    } catch { cur = (message.content ?? "").toString(); }
+    } catch (e) { console.error("[god.frontend.tui/renderers.ts] " + ((e as any)?.message || e)); cur = (message.content ?? "").toString(); }
     const { Text, Container } = require("@earendil-works/pi-tui");
     const c = new Container();
     c.addChild(new Text(theme.fg("yellow", "◆") + " " + theme.bold(theme.fg("yellow", "Memory Alert")), 0, 0));

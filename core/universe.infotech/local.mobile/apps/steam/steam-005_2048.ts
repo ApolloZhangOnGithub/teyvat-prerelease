@@ -150,7 +150,7 @@ export class G2048 {
     try {
       const raw = readFileSync(join(homedir(), '.teyvat', 'AppData', G2048._personId, 'steam', `${slot}.json`), 'utf8');
       return G2048.fromJSON(JSON.parse(raw));
-    } catch { return null; }
+    } catch (e) { console.error("[universe.infotech/local.mobile/apps/steam/steam-005_2048.ts] " + ((e as any)?.message || e)); return null; }
   }
 
   static listSlots(): { slot: string; score: number; ts: string }[] {
@@ -166,7 +166,7 @@ export class G2048 {
         } catch (e) { console.error("[universe.infotech/local.mobile/apps/steam/steam-005_2048.ts] " + ((e as any)?.message || e)); }
       }
       return result.sort((a, b) => b.ts.localeCompare(a.ts));
-    } catch { return []; }
+    } catch (e) { console.error("[universe.infotech/local.mobile/apps/steam/steam-005_2048.ts] " + ((e as any)?.message || e)); return []; }
   }
 
   toJSON() {

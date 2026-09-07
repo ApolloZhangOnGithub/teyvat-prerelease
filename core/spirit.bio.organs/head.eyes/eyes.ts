@@ -66,7 +66,7 @@ export default function (pi: ExtensionAPI) {
     label: "Eyes",
     messageDescription:
       "看图：VL 视觉 + 本地 OCR + 图片注入。一个工具，action 参数选择操作：\n" +
-      "  action:\"look\"  path, model?, prompt?  — 用 VL 模型描述图片内容\n" +
+      "  action:\"vlm\"   path, model?, prompt?  — 用 VL 模型描述图片内容\n" +
       "      model 默认 qwen3-vl-plus；prompt 缺省为「请用中文简洁描述这张图片/截图的内容。」\n" +
       "  action:\"ocr\"   path, mode?           — 本地 macOS Vision OCR（免配置、离线、中英混排）\n" +
       "      mode: text=纯文本（默认）| structure=带坐标行 + 区域分类（menubar/sidebar/content/button/statusbar）\n" +
@@ -75,8 +75,8 @@ export default function (pi: ExtensionAPI) {
     parameters: Type.Object({
       action: Type.String({ messageDescription: "vlm | ocr | native" }),
       path: Type.String({ messageDescription: i18n("图片文件路径", "Image file path") }),
-      model: Type.Optional(Type.String({ messageDescription: i18n("VL 模型（action=look，默认 qwen3-vl-plus）", "VL model (action=look, default qwen3-vl-plus)") })),
-      prompt: Type.Optional(Type.String({ messageDescription: i18n("自定义提问（action=look）", "Custom question (action=look)") })),
+      model: Type.Optional(Type.String({ messageDescription: i18n("VL 模型（action=vlm，默认 qwen3-vl-plus）", "VL model (action=vlm, default qwen3-vl-plus)") })),
+      prompt: Type.Optional(Type.String({ messageDescription: i18n("自定义提问（action=vlm）", "Custom question (action=vlm)") })),
       mode: Type.Optional(Type.String({ messageDescription: i18n("ocr 输出模式：text（默认）| structure（action=ocr）", "ocr output mode: text (default) | structure (action=ocr)") })),
     }),
     renderCall(args: any, theme: any) {

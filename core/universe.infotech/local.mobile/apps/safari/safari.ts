@@ -47,7 +47,7 @@ function tab(s: any): Tab {
   return s._tabs[s._activeTab];
 }
 
-function loadJson(p: string): any[] { try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return []; } }
+function loadJson(p: string): any[] { try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch (e) { console.error("[universe.infotech/local.mobile/apps/safari/safari.ts] " + ((e as any)?.message || e)); return []; } }
 function saveJson(p: string, data: any[]) { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, JSON.stringify(data, null, 2)); }
 
 function recordHistory(personDir: string, entry: string) {
@@ -120,7 +120,7 @@ async function bc(action: string, params: Record<string, any> = {}, session = "s
 }
 
 function displayUrl(url: string): string {
-  try { return decodeURIComponent(url); } catch { return url; }
+  try { return decodeURIComponent(url); } catch (e) { console.error("[universe.infotech/local.mobile/apps/safari/safari.ts] " + ((e as any)?.message || e)); return url; }
 }
 
 function htmlToText(html: string): string {

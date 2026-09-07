@@ -19,7 +19,7 @@ function fmtDuration(secs: number): string {
 }
 
 function getTasks(): any[] {
-  try { return (globalThis as any).__genshinBgTasks ?? []; } catch { return []; }
+  try { return (globalThis as any).__genshinBgTasks ?? []; } catch (e) { console.error("[god.frontend.tui/commands/bg.ts] " + ((e as any)?.message || e)); return []; }
 }
 
 export async function bgHandler(args: string, ctx: any) {

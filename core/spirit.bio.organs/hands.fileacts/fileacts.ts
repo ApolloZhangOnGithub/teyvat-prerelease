@@ -44,7 +44,7 @@ function readMeta(filePath: string): XattrFileMeta | null {
   try {
     const raw = execSync(`xattr -p ${XATTR_KEY} "${filePath}"`, { encoding: "utf8", timeout: 2000, stdio: ["ignore","pipe","ignore"] });
     return JSON.parse(raw.trim());
-  } catch {
+  } catch (e) { console.error("[spirit.bio.organs/hands.fileacts/fileacts.ts] " + ((e as any)?.message || e));
     return null;
   }
 }
@@ -53,7 +53,7 @@ function writeMetaRaw(filePath: string, json: string): boolean {
   try {
     execSync(`xattr -w ${XATTR_KEY} '${json.replace(/'/g, `'\\''`)}' "${filePath}"`, { timeout: 2000, stdio: "ignore" });
     return true;
-  } catch {
+  } catch (e) { console.error("[spirit.bio.organs/hands.fileacts/fileacts.ts] " + ((e as any)?.message || e));
     return false;
   }
 }
@@ -104,6 +104,7 @@ const AGENT_WORK_ROOT = join(homedir(), ".teyvat/AgentWorkDir/Individual");
 export interface TrustEntry { path: string; until?: number }
 export interface AgentTrust { all?: boolean; root?: boolean; trusted: TrustEntry[] }
 let authDb: { agents: Record<string, AgentTrust> } = { agents: {} };
+let _trustReady: Promise<void> | null = null;
 
 // agent 身份：process.title = genshin:name(main,personId,sessionHash)，与 hands.terminal 同源
 export function agentId(): string {
@@ -117,7 +118,7 @@ export async function loadTrust() {
   try {
     const data = JSON.parse(await fsReadFile(AUTH_FILE, "utf8"));
     authDb = data && typeof data === "object" && data.agents ? data : { agents: {} };
-  } catch {
+  } catch (e) { console.error("[spirit.bio.organs/hands.fileacts/fileacts.ts] " + ((e as any)?.message || e));
     authDb = { agents: {} };
   }
 }
@@ -166,7 +167,7 @@ const COMPANIONS = [".SPEC", ".CHANGELOG", ".HISTORY", ".NAMETRACE"]; // .LOCATI
 
 // prompt 来自 coded.dna（coded fileactions.wise + fileactions.rules），由 runtime 取，不再硬编码。
 const PROMPT = getPrompt("fileactions.wise");
-const RULES_PROMPT = (() => { try { return getPrompt("fileactions.rules"); } catch { return ""; } })();
+const RULES_PROMPT = (() => { try { return getPrompt("fileactions.rules"); } catch (e) { console.error("[spirit.bio.organs/hands.fileacts/fileacts.ts] " + ((e as any)?.message || e)); return ""; } })();
 
 function isExempt(path: string): boolean {
   // #human 目录下的 companion 文件也受保护，不豁免
@@ -207,7 +208,7 @@ function fmt(): string {
 }
 
 async function exists(path: string): Promise<boolean> {
-  try { await access(path); return true; } catch { return false; }
+  try { await access(path); return true; } catch (e) { console.error("[spirit.bio.organs/hands.fileacts/fileacts.ts] " + ((e as any)?.message || e)); return false; }
 }
 
 // 沿着路径往上找到第一个【真实存在】的目录（要落进去的那个环境）。
@@ -221,7 +222,7 @@ async function nearestExistingDir(path: string): Promise<string> {
 }
 
 async function nonEmpty(path: string): Promise<boolean> {
-  try { const c = await readFile(path, "utf8"); return c.trim().length > 0; } catch { return false; }
+  try { const c = await readFile(path, "utf8"); return c.trim().length > 0; } catch (e) { console.error("[spirit.bio.organs/hands.fileacts/fileacts.ts] " + ((e as any)?.message || e)); return false; }
 }
 
 async function lastLine(path: string): Promise<string> {
@@ -229,7 +230,7 @@ async function lastLine(path: string): Promise<string> {
     const c = await readFile(path, "utf8");
     const lines = c.trim().split("\n");
     return lines[lines.length - 1]?.trim() ?? "";
-  } catch { return ""; }
+  } catch (e) { console.error("[spirit.bio.organs/hands.fileacts/fileacts.ts] " + ((e as any)?.message || e)); return ""; }
 }
 
 async function moveCompanions(oldPath: string, newPath: string): Promise<void> {
@@ -296,7 +297,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerMessageRenderer("syntax-error", (message: any, _opts: any, theme: any) => {
     return renderMessage.notice(theme, "Syntax", (message.content ?? "").toString());
   });
-  loadTrust();
+  _trustReady = loadTrust();
 
   const editedThisTurn = new Set<string>();
   const changelogUpdatedThisTurn = new Set<string>();
@@ -337,6 +338,7 @@ export default function (pi: ExtensionAPI) {
 
   // ── tool_call: Write gate (spec required) ────────────────────────
   pi.on("tool_call", async (event: any, _ctx: any) => {
+    if (_trustReady) await _trustReady;
     // ── Authorization check: 写/改/bash 必须在 workDir 或 trusted dir ──
     let authPath = (event.input as any).path ?? (event.input as any).file_path ?? "";
     // bash 没有 path 字段 → 从 command 抠目标路径。尽量抠全：重定向 > >> >| / cp mv ln install dest /
@@ -847,7 +849,7 @@ export default function (pi: ExtensionAPI) {
         const found: string[] = [];
         async function walk(dir: string) {
           let entries: string[];
-          try { entries = await readdir(dir); } catch { return; }
+          try { entries = await readdir(dir); } catch (e) { console.error("[spirit.bio.organs/hands.fileacts/fileacts.ts] " + ((e as any)?.message || e)); return; }
           for (const entry of entries) {
             const full = join(dir, entry);
             try {

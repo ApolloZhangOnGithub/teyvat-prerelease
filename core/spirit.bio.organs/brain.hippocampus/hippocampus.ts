@@ -17,10 +17,10 @@ import { sendCustomMessage } from "#kernel_backbone";
 
 function hcFlag(personDir: string): string { return `${personDir}/hippocampus.json`; }
 function hcDisabled(personDir: string): boolean {
-  try { return !!JSON.parse(readFileSync(hcFlag(personDir), "utf8")).disabled; } catch { return false; }
+  try { return !!JSON.parse(readFileSync(hcFlag(personDir), "utf8")).disabled; } catch (e) { console.error("[spirit.bio.organs/brain.hippocampus/hippocampus.ts] " + ((e as any)?.message || e)); return false; }
 }
 function setHcDisabled(personDir: string, disabled: boolean): void {
-  try { writeFileSync(hcFlag(personDir), JSON.stringify({ disabled, ts: new Date().toISOString() })); } catch (e) { _log("setHcDisabled", e); }
+  try { writeFileSync(hcFlag(personDir), JSON.stringify({ disabled, ts: new Date().toISOString() })); } catch (e) { console.error("[spirit.bio.organs/brain.hippocampus/hippocampus.ts] " + ((e as any)?.message || e)); _log("setHcDisabled", e); }
 }
 
 export interface HippocampusHandle {
@@ -45,7 +45,7 @@ export function createHippocampus(
     try {
       execSync(`tmux has-session -t ${tmuxName} 2>/dev/null`);
       return true;
-    } catch { return false; }
+    } catch (e) { console.error("[spirit.bio.organs/brain.hippocampus/hippocampus.ts] " + ((e as any)?.message || e)); return false; }
   }
 
   const self: HippocampusHandle = {
@@ -59,7 +59,7 @@ export function createHippocampus(
         { role: "system", content: getPrompt("hippocampus.gen_work_mem") }
       ]));
 
-      try { writeFileSync(`${personDir}/hc-offset`, String(statSync(`${personDir}/context.md`).size)); } catch (e) { _log("writeHcOffset", e); }
+      try { writeFileSync(`${personDir}/hc-offset`, String(statSync(`${personDir}/context.md`).size)); } catch (e) { console.error("[spirit.bio.organs/brain.hippocampus/hippocampus.ts] " + ((e as any)?.message || e)); _log("writeHcOffset", e); }
 
       const launchScript = `${personDir}/hippocampus-launch.sh`;
       const templatePath = fileURLToPath(new URL("./hippocampus-launcher.sh.template", import.meta.url));
@@ -111,7 +111,7 @@ export function createHippocampus(
 //         personDir,
 //       );
 //       try { await handle.start(); (globalThis as any).__genshinHippocampusHandle = handle; } catch (e: any) {
-//         try { sendCustomMessage(pi, "hippocampus-error", `WARN: 海马体启动异常（已隔离，不影响主意识）: ${e?.message ?? e}`); } catch (e2) { _log("sendHcError", e2); }
+//         try { sendCustomMessage(pi, "hippocampus-error", `WARN: 海马体启动异常（已隔离，不影响主意识）: ${e?.message ?? e}`); } catch (e2) { console.error("[spirit.bio.organs/brain.hippocampus/hippocampus.ts] " + ((e2 as any)?.message || e2)); _log("sendHcError", e2); }
 //       }
 //     }
 //   });

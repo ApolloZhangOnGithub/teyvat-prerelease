@@ -19,7 +19,7 @@ function readBody(req: IncomingMessage): Promise<any> {
   return new Promise((resolve) => {
     let data = "";
     req.on("data", (chunk) => (data += chunk));
-    req.on("end", () => { try { resolve(JSON.parse(data)); } catch { resolve({}); } });
+    req.on("end", () => { try { resolve(JSON.parse(data)); } catch (e) { console.error("[universe.infotech/local.mobile/system.server/game-server.ts] " + ((e as any)?.message || e)); resolve({}); } });
   });
 }
 

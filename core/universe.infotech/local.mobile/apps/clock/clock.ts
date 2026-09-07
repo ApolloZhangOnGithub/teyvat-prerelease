@@ -7,7 +7,7 @@ import * as path from "path";
 interface Alarm { id: number; label: string; time: string; enabled: boolean; repeat: string; created: string; }
 interface State { sw_status: "reset"|"running"|"stopped"; sw_accumulated: number; sw_started_at: number; sw_laps: {number:number;split:number;total:number}[]; timer_status: "idle"|"running"; timer_label: string; timer_total_secs: number; timer_started_at: number; }
 
-function loadJson(p: string): any[] { try { return JSON.parse(fs.readFileSync(p,"utf8")); } catch { return []; } }
+function loadJson(p: string): any[] { try { return JSON.parse(fs.readFileSync(p,"utf8")); } catch (e) { console.error("[universe.infotech/local.mobile/apps/clock/clock.ts] " + ((e as any)?.message || e)); return []; } }
 function saveJson(p: string, d: any[]) { fs.mkdirSync(path.dirname(p),{recursive:true}); fs.writeFileSync(p,JSON.stringify(d,null,2)); }
 function fmt(secs: number): string { const h=Math.floor(secs/3600),m=Math.floor((secs%3600)/60),s=Math.floor(secs%60); return h>0?`${h}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`:`${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`; }
 

@@ -43,7 +43,7 @@ async function llm(system: string, user: string): Promise<string> {
     if (!res) return "";
     const j = await res.json() as any;
     return (j.choices?.[0]?.message?.content || "").trim().replace(/^["「]|["」]$/g, "");
-  } catch { return ""; }
+  } catch (e) { console.error("[universe.infotech/local.mobile/apps/steam/steam.ts] " + ((e as any)?.message || e)); return ""; }
 }
 
 // 本地 fallback：LLM 不可用时，根据词生成简单描述
@@ -748,7 +748,7 @@ function persist(game: ChessGame, personDir: string) {
   try { mkdirSync(personDir, { recursive: true }); writeFileSync(join(personDir, "steam.json"), JSON.stringify({ chess: game.toJSON() })); } catch (e) { console.error("[universe.infotech/local.mobile/apps/steam/steam.ts] " + ((e as any)?.message || e)); }
 }
 function loadPersisted(personDir: string): ChessGame | null {
-  try { const raw = JSON.parse(readFileSync(join(personDir, "steam.json"), "utf8")); return raw?.chess ? ChessGame.fromJSON(raw.chess) : null; } catch { return null; }
+  try { const raw = JSON.parse(readFileSync(join(personDir, "steam.json"), "utf8")); return raw?.chess ? ChessGame.fromJSON(raw.chess) : null; } catch (e) { console.error("[universe.infotech/local.mobile/apps/steam/steam.ts] " + ((e as any)?.message || e)); return null; }
 }
 function clearPersisted(personDir: string) { try { writeFileSync(join(personDir, "steam.json"), "{}"); } catch (e) { console.error("[universe.infotech/local.mobile/apps/steam/steam.ts] " + ((e as any)?.message || e)); } }
 

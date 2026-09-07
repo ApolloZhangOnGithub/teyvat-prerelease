@@ -38,7 +38,7 @@ let speakQueue: string[] = [];
 let watchdog: ReturnType<typeof setTimeout> | null = null;
 let lastSpokenText = "";
 let lastSpokenAt = 0;
-let speakResolve: (() => void) | null = null;
+let speakResolvers: (() => void)[] = [];
 
 function finishCurrent() {
   if (watchdog) { clearTimeout(watchdog); watchdog = null; }
@@ -57,7 +57,8 @@ function processQueue() {
   const text = speakQueue.shift();
   if (text === undefined) {
     try { unlinkSync(voiceRc("pi_mouth_speaking")); } catch (e) { if ((e as any)?.code !== "ENOENT") console.error("[spirit.bio.organs/head.mouth/mouth.ts] " + ((e as any)?.message || e)); } // ENOENT=文件不存在（正常清理场景）静默
-    if (speakResolve) { speakResolve(); speakResolve = null; }
+    for (const r of speakResolvers) r();
+    speakResolvers = [];
     return;
   }
   speaking = true;
@@ -125,6 +126,8 @@ export default function (pi: ExtensionAPI) {
           speakProc = null;
           if (watchdog) { clearTimeout(watchdog); watchdog = null; }
           try { unlinkSync(voiceRc("pi_mouth_speaking")); } catch (e) { if ((e as any)?.code !== "ENOENT") console.error("[spirit.bio.organs/head.mouth/mouth.ts] " + ((e as any)?.message || e)); } // ENOENT 静默
+          for (const r of speakResolvers) r();
+          speakResolvers = [];
           return { content: [{ type: "text", text: i18n("已停止朗读，队列已清空", "Stopped speaking, queue cleared") }] };
         }
         if (text === "@skip" || text === "@跳过") {
@@ -158,7 +161,7 @@ export default function (pi: ExtensionAPI) {
       if (text === lastSpokenText && Date.now() - lastSpokenAt < 10000) return { content: [{ type: "text", text: "skipped (duplicate)" }] };
       speakQueue.push(text);
       processQueue();
-      await new Promise<void>(resolve => { speakResolve = resolve; });
+      await new Promise<void>(resolve => { speakResolvers.push(resolve); });
       return { content: [{ type: "text", text: "spoke" }] };
     },
   });
@@ -175,6 +178,8 @@ export default function (pi: ExtensionAPI) {
     if (speakProc) { speakProc.kill(); speakProc = null; }
     speaking = false;
     speakQueue = [];
+    for (const r of speakResolvers) r();
+    speakResolvers = [];
     try { unlinkSync(voiceRc("pi_mouth_speaking")); } catch (e) { if ((e as any)?.code !== "ENOENT") console.error("[spirit.bio.organs/head.mouth/mouth.ts] " + ((e as any)?.message || e)); } // ENOENT 静默
   });
 

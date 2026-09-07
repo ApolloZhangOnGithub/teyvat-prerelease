@@ -123,7 +123,7 @@ async function guardedSearch(kw: string): Promise<string> {
 let _browserPort = 0;
 function getBrowserPort(): number {
   if (_browserPort) return _browserPort;
-  try { _browserPort = Number(fs.readFileSync(os.homedir()+"/.teyvat/browser-service.port","utf8").trim()) || 19222; } catch { _browserPort = 19222; }
+  try { _browserPort = Number(fs.readFileSync(os.homedir()+"/.teyvat/browser-service.port","utf8").trim()) || 19222; } catch (e) { console.error("[universe.infotech/local.mobile/apps/bilibili/bilibili.ts] " + ((e as any)?.message || e)); _browserPort = 19222; }
   return _browserPort;
 }
 async function browserSearch(kw: string): Promise<string> {

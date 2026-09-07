@@ -31,7 +31,7 @@ export function launchSleepSession(
     try {
       execSync(`tmux has-session -t ${tmuxName} 2>/dev/null`);
       return true;
-    } catch { return false; }
+    } catch (e) { console.error("[spirit.bio.organs/brain.hippocampus/hippocampus-sleep.ts] " + ((e as any)?.message || e)); return false; }
   }
 
   // Launch async
@@ -44,9 +44,9 @@ export function launchSleepSession(
 
     // Build sleep prompt
     let dnaIndex = "";
-    try { dnaIndex = await readFile(`${personDir}/dna/index.md`, "utf8"); } catch (e) { _log("dnaIndex", e); }
+    try { dnaIndex = await readFile(`${personDir}/dna/index.md`, "utf8"); } catch (e) { console.error("[spirit.bio.organs/brain.hippocampus/hippocampus-sleep.ts] " + ((e as any)?.message || e)); _log("dnaIndex", e); }
     let sleepDlc = "";
-    try { sleepDlc = await readFile(`${personDir}/dna/sleep.dlc`, "utf8"); } catch (e) { _log("sleepDlc", e); }
+    try { sleepDlc = await readFile(`${personDir}/dna/sleep.dlc`, "utf8"); } catch (e) { console.error("[spirit.bio.organs/brain.hippocampus/hippocampus-sleep.ts] " + ((e as any)?.message || e)); _log("sleepDlc", e); }
 
     // 强制重载 RNA 缓存，确保 sleep 用到最新版 _built-rna.json
     reloadRNA();

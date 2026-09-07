@@ -492,7 +492,7 @@ async function main() {
     let screen: string;
     if (!input) {
       screen = state.currentApp
-        ? ((() => { try { return readFileSync(PHONE_SCREEN_FILE, "utf8"); } catch { return renderHome(); } })())
+        ? ((() => { try { return readFileSync(PHONE_SCREEN_FILE, "utf8"); } catch (e) { console.error("[god.frontend.cli/mobile.ts] " + ((e as any)?.message || e)); return renderHome(); } })())
         : renderHome();
     } else {
       try {

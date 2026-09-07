@@ -60,7 +60,7 @@ export class PianoTiles {
   }
 
   static loadBest(): number {
-    try { return JSON.parse(readFileSync(PianoTiles.savePath(), 'utf8')).best || 0; } catch { return 0; }
+    try { return JSON.parse(readFileSync(PianoTiles.savePath(), 'utf8')).best || 0; } catch (e) { console.error("[universe.infotech/local.mobile/apps/steam/steam-008_piano_tiles.ts] " + ((e as any)?.message || e)); return 0; }
   }
 
   saveBest() {

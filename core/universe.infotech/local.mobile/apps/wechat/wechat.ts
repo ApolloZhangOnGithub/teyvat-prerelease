@@ -60,7 +60,7 @@ function getReadTs(agentSid: string, conversationKey: string): number {
     if (!fs.existsSync(file)) return 0;
     const data = JSON.parse(fs.readFileSync(file, "utf8"));
     return data[conversationKey] || 0;
-  } catch { return 0; }
+  } catch (e) { console.error("[universe.infotech/local.mobile/apps/wechat/wechat.ts] " + ((e as any)?.message || e)); return 0; }
 }
 
 function sendWechatMsg(to: string, text: string): void {
@@ -93,7 +93,7 @@ function readWechatMsgs(forAgent?: string, limit = 30, offset = 0): WechatMsg[] 
   try {
     const lines = fs.readFileSync(MSG_FILE, "utf8").trim().split("\n").filter(Boolean);
     let msgs: WechatMsg[] = [];
-    for (const l of lines) { try { msgs.push(JSON.parse(l)); } catch { /* 跳过损坏行 */ } }
+    for (const l of lines) { try { msgs.push(JSON.parse(l)); } catch (e) { console.error("[universe.infotech/local.mobile/apps/wechat/wechat.ts] " + ((e as any)?.message || e)); /* 跳过损坏行 */ } }
     if (forAgent) {
       const mySid = getMySessionId();
       const myGroups = listMyGroups();
@@ -109,7 +109,7 @@ function readWechatMsgs(forAgent?: string, limit = 30, offset = 0): WechatMsg[] 
       return msgs.slice(start, end);
     })();
     return limitMsgs;
-  } catch { return []; }
+  } catch (e) { console.error("[universe.infotech/local.mobile/apps/wechat/wechat.ts] " + ((e as any)?.message || e)); return []; }
 }
 
 // ── 消息搜索 ──
@@ -133,7 +133,7 @@ interface Conversation {
 interface ConvState { pinned: string[]; archived: string[]; deleted: string[]; }
 function loadConvState(personDir: string): ConvState {
   const p = path.join(personDir, "conv_state.json");
-  try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return { pinned: [], archived: [], deleted: [] }; }
+  try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch (e) { console.error("[universe.infotech/local.mobile/apps/wechat/wechat.ts] " + ((e as any)?.message || e)); return { pinned: [], archived: [], deleted: [] }; }
 }
 function saveConvState(personDir: string, cs: ConvState): void {
   try { fs.mkdirSync(personDir, { recursive: true }); fs.writeFileSync(path.join(personDir, "conv_state.json"), JSON.stringify(cs)); } catch (e) { console.error("[universe.infotech/local.mobile/apps/wechat/wechat.ts] " + ((e as any)?.message || e)); }
@@ -175,7 +175,7 @@ function padR(s: string, w: number): string { return " ".repeat(Math.max(0, w - 
 // ── 群聊 ──
 interface Group { id: string; name: string; members: string[]; created: string; }
 function loadGroup(gid: string): Group | null {
-  try { return JSON.parse(fs.readFileSync(path.join(GROUPS_DIR, `${gid}.json`), "utf8")); } catch { return null; }
+  try { return JSON.parse(fs.readFileSync(path.join(GROUPS_DIR, `${gid}.json`), "utf8")); } catch (e) { console.error("[universe.infotech/local.mobile/apps/wechat/wechat.ts] " + ((e as any)?.message || e)); return null; }
 }
 function saveGroup(g: Group): void {
   try { fs.mkdirSync(GROUPS_DIR, { recursive: true }); fs.writeFileSync(path.join(GROUPS_DIR, `${g.id}.json`), JSON.stringify(g, null, 2)); } catch (e) { console.error("[universe.infotech/local.mobile/apps/wechat/wechat.ts] " + ((e as any)?.message || e)); }
@@ -184,9 +184,9 @@ function listGroups(): Group[] {
   try {
     fs.mkdirSync(GROUPS_DIR, { recursive: true });
     return fs.readdirSync(GROUPS_DIR).filter(f => f.endsWith(".json")).map(f => {
-      try { return JSON.parse(fs.readFileSync(path.join(GROUPS_DIR, f), "utf8")); } catch { return null; }
+      try { return JSON.parse(fs.readFileSync(path.join(GROUPS_DIR, f), "utf8")); } catch (e) { console.error("[universe.infotech/local.mobile/apps/wechat/wechat.ts] " + ((e as any)?.message || e)); return null; }
     }).filter(Boolean) as Group[];
-  } catch { return []; }
+  } catch (e) { console.error("[universe.infotech/local.mobile/apps/wechat/wechat.ts] " + ((e as any)?.message || e)); return []; }
 }
 function listMyGroups(): Set<string> {
   const my = new Set<string>();
@@ -262,7 +262,7 @@ function loadTalks(personDir: string): TalkSession[] {
   let talks = talkStore.get(personDir);
   if (!talks) {
     const p = path.join(personDir, "talks.json");
-    try { talks = JSON.parse(fs.readFileSync(p, "utf8")); } catch { talks = []; }
+    try { talks = JSON.parse(fs.readFileSync(p, "utf8")); } catch (e) { console.error("[universe.infotech/local.mobile/apps/wechat/wechat.ts] " + ((e as any)?.message || e)); talks = []; }
     talkStore.set(personDir, talks as TalkSession[]);
   }
   return talks as TalkSession[];
@@ -319,7 +319,7 @@ function renderTalkDetail(state: TalkState): string {
 // ── Contacts retrieval ─────────────────────────────────────────
 function loadContacts(personDir: string): any[] {
   const p = path.join(personDir, "contacts.json");
-  try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return []; }
+  try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch (e) { console.error("[universe.infotech/local.mobile/apps/wechat/wechat.ts] " + ((e as any)?.message || e)); return []; }
 }
 
 // ── Main handler ───────────────────────────────────────────────
@@ -570,7 +570,7 @@ export function getCurrentTalk(personDir: string): TalkSession | null {
 export { type TalkSession, type TalkState };
 
 function loadMoments(personDir: string): any[] {
-  try { return JSON.parse(fs.readFileSync(path.join(personDir, "moments.json"), "utf8")); } catch { return []; }
+  try { return JSON.parse(fs.readFileSync(path.join(personDir, "moments.json"), "utf8")); } catch (e) { console.error("[universe.infotech/local.mobile/apps/wechat/wechat.ts] " + ((e as any)?.message || e)); return []; }
 }
 function saveMoments(personDir: string, ms: any[]) {
   fs.mkdirSync(personDir, { recursive: true });
@@ -657,10 +657,10 @@ function discoverSessions(): Array<{pid: string, title: string}> {
         }
       }
       return result;
-    } catch {
+    } catch (e) { console.error("[universe.infotech/local.mobile/apps/wechat/wechat.ts] " + ((e as any)?.message || e));
       return pids.map(p => ({ pid: p, title: "(无标题)" }));
     }
-  } catch { return []; }
+  } catch (e) { console.error("[universe.infotech/local.mobile/apps/wechat/wechat.ts] " + ((e as any)?.message || e)); return []; }
 }
 
 // ── Agent 发现 ──
@@ -760,7 +760,7 @@ function discoverAgents(): Array<{id: string, pid: string, name: string, version
     }
     _agentCache = agents; _agentCacheTs = now;
     return agents;
-  } catch { return _agentCache || []; }
+  } catch (e) { console.error("[universe.infotech/local.mobile/apps/wechat/wechat.ts] " + ((e as any)?.message || e)); return _agentCache || []; }
 }
 
 // ── 通讯录 ──
@@ -1028,7 +1028,7 @@ export const app: MobileApp = {
             ["gnome-screenshot", `gnome-screenshot -f ${JSON.stringify(photoFp)}`],
             ["scrot",            `scrot ${JSON.stringify(photoFp)}`],
           ] as Array<[string, string]>) {
-            try { es(`which ${bin}`, { stdio: "ignore" }); return tmpl; } catch { /* 下一个 */ }
+            try { es(`which ${bin}`, { stdio: "ignore" }); return tmpl; } catch (e) { console.error("[universe.infotech/local.mobile/apps/wechat/wechat.ts] " + ((e as any)?.message || e)); /* 下一个 */ }
           }
           throw new Error("未找到截屏工具 (Linux: apt install scrot 或 imagemagick/gnome-screenshot)");
         })();

@@ -144,7 +144,7 @@ function loadAgentApps(id: string) {
   _agentAppsFile = path.join(appPersonDir(id, "mobile"), "apps.json");
   try {
     _agentAppList = JSON.parse(readFileSync(_agentAppsFile, "utf8")).apps;
-  } catch {
+  } catch (e) { console.error("[universe.infotech/local.mobile/system.kernel/kernel.ts] " + ((e as any)?.message || e));
     _agentAppList = null;
   }
 }
@@ -636,9 +636,9 @@ export default function (pi: ExtensionAPI) {
                 discoveredDirs.push(appFolder);
                 break;
               }
-            } catch (e) { /* app import failed */ }
+            } catch (e) { console.error("[universe.infotech/local.mobile/system.kernel/kernel.ts] " + ((e as any)?.message || e)); /* app import failed */ }
           }
-        } catch (e) { /* app dir scan failed */ }
+        } catch (e) { console.error("[universe.infotech/local.mobile/system.kernel/kernel.ts] " + ((e as any)?.message || e)); /* app dir scan failed */ }
       }
     }
     if (firstRun && discoveredDirs.length > 0) {

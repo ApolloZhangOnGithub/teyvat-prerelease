@@ -53,7 +53,7 @@ export interface Identity {
 function loadPlist(): AgentRecord[] {
   try {
     return JSON.parse(fs.readFileSync(PLIST_FILE, "utf8"));
-  } catch { return []; }
+  } catch (e) { console.error("[spirit.abio.status/identity.ts] " + ((e as any)?.message || e)); return []; }
 }
 
 // ── 解析身份：显式参数 > PAIMON_AGENT_ID > PAIMON_AGENT_NAME ──

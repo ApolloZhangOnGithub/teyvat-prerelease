@@ -157,7 +157,7 @@ syncRouter.post("/agent-presence", async (c) => {
     if (!sid || typeof sid !== "string") return c.json({ error: "sid required" }, 400);
     stmt.upsertPresence.run(user.githubId, sid, name || "", focus || "off", version || "", model || "", user.deviceId);
     return c.json({ ok: true });
-  } catch (e) { return c.json({ error: "bad json" }, 400); }
+  } catch (e) { console.error("[god.backend.services/sync.ts] " + ((e as any)?.message || e)); return c.json({ error: "bad json" }, 400); }
 });
 
 syncRouter.get("/agent-presence", (c) => {

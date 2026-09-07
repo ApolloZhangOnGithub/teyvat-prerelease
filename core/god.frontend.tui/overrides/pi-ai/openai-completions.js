@@ -71,13 +71,6 @@ const researchLogits = {
     }
     this._writers.clear();
   },
-  // 进程退出/中断时 flush 所有 gzip 流，避免尾部记录丢失。
-  closeAll() {
-    for (const w of this._writers.values()) {
-      try { w.gz.end(); } catch { /* ignore */ }
-    }
-    this._writers.clear();
-  },
 };
 // flush on exit (best-effort; normal exits flush automatically, this covers
 // SIGINT/SIGTERM and prevents tail loss).

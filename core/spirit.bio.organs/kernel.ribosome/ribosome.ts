@@ -131,7 +131,7 @@ export function getToolManifest(): any {
   const mPathAlt = process.env.PI_ALIVE_MANIFEST || mPath;
   try {
     _toolManifestCache = JSON.parse(_rfs(_es(mPathAlt) ? mPathAlt : mPath, "utf8"));
-  } catch { _toolManifestCache = { tools: {} }; }
+  } catch (e) { console.error("[spirit.bio.organs/kernel.ribosome/ribosome.ts] " + ((e as any)?.message || e)); _toolManifestCache = { tools: {} }; }
   return _toolManifestCache;
 }
 

@@ -118,7 +118,7 @@ function annaResults(s?: AnnaResult[]): AnnaResult[] {
 
 function annaKey(): string {
   if (_annaKey) return _annaKey;
-  try { _annaKey = serviceKey("anna") || ""; } catch { _annaKey = ""; }
+  try { _annaKey = serviceKey("anna") || ""; } catch (e) { console.error("[universe.infotech/local.mobile/apps/wechatread/wechatread.ts] " + ((e as any)?.message || e)); _annaKey = ""; }
   return _annaKey;
 }
 
@@ -243,21 +243,21 @@ function parseEpub(epub: string): Book|null {
         const titleTag=html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/<[^>]+>/g,'').trim();
         const chTitle=(titleTag&&titleTag!=='未知'&&titleTag!=='Unknown')?titleTag:(html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1]||html.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i)?.[1]||'').replace(/<[^>]+>/g,'').trim();
         const cleanTitle=chTitle||`Ch${chs.length+1}`;
-        chs.push({title:cleanTitle,content:text});}catch{continue;}
+        chs.push({title:cleanTitle,content:text});}catch (e) { console.error("[universe.infotech/local.mobile/apps/wechatread/wechatread.ts] " + ((e as any)?.message || e));continue;}
     }
     if(chs.length===0)return null;return{file:epub,title,author,chs};
-  }catch{return null;}
+  }catch (e) { console.error("[universe.infotech/local.mobile/apps/wechatread/wechatread.ts] " + ((e as any)?.message || e));return null;}
 }
 
 function booksDir(){const d=join(_pd,"wechatread","books");try{mkdirSync(d,{recursive:true});}catch (e) { console.error("[universe.infotech/local.mobile/apps/wechatread/wechatread.ts] " + ((e as any)?.message || e)); }return d;}
 const SHARED_BOOKS = join(homedir(), ".teyvat", "AppData", "shared", "wechatread", "books");
 const SHARED_META = join(homedir(), ".teyvat", "AppData", "shared", "wechatread", "shared.json");
 function sharedBooksDir(){try{mkdirSync(SHARED_BOOKS,{recursive:true});}catch (e) { console.error("[universe.infotech/local.mobile/apps/wechatread/wechatread.ts] " + ((e as any)?.message || e)); }return SHARED_BOOKS;}
-function scanEpubs():string[]{try{return readdirSync(booksDir()).filter(f=>f.endsWith(".epub"));}catch{return[];}}
-function scanSharedEpubs():string[]{try{return readdirSync(sharedBooksDir()).filter(f=>f.endsWith(".epub"));}catch{return[];}}
-function isSymlink(dir:string, file:string):boolean{try{return lstatSync(join(dir,file)).isSymbolicLink();}catch{return false;}}
+function scanEpubs():string[]{try{return readdirSync(booksDir()).filter(f=>f.endsWith(".epub"));}catch (e) { console.error("[universe.infotech/local.mobile/apps/wechatread/wechatread.ts] " + ((e as any)?.message || e));return[];}}
+function scanSharedEpubs():string[]{try{return readdirSync(sharedBooksDir()).filter(f=>f.endsWith(".epub"));}catch (e) { console.error("[universe.infotech/local.mobile/apps/wechatread/wechatread.ts] " + ((e as any)?.message || e));return[];}}
+function isSymlink(dir:string, file:string):boolean{try{return lstatSync(join(dir,file)).isSymbolicLink();}catch (e) { console.error("[universe.infotech/local.mobile/apps/wechatread/wechatread.ts] " + ((e as any)?.message || e));return false;}}
 interface SharedEntry { from: string; ts: number }
-function loadSharedMeta(): Record<string, SharedEntry> { try { return JSON.parse(readFileSync(SHARED_META, "utf8")).books || {}; } catch { return {}; } }
+function loadSharedMeta(): Record<string, SharedEntry> { try { return JSON.parse(readFileSync(SHARED_META, "utf8")).books || {}; } catch (e) { console.error("[universe.infotech/local.mobile/apps/wechatread/wechatread.ts] " + ((e as any)?.message || e)); return {}; } }
 function saveSharedMeta(books: Record<string, SharedEntry>) { try { mkdirSync(join(homedir(), ".teyvat", "AppData", "shared", "wechatread"), { recursive: true }); writeFileSync(SHARED_META, JSON.stringify({ books }, null, 2)); } catch (e) { console.error("[universe.infotech/local.mobile/apps/wechatread/wechatread.ts] " + ((e as any)?.message || e)); } }
 function fmtTime(ts: number): string { const d = new Date(ts); return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; }
 function agentName(): string { return process.env.PAIMON_AGENT_NAME || "unknown"; }

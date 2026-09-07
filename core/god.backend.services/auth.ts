@@ -83,7 +83,7 @@ authRouter.get("/devices", async (c) => {
   // 活跃同步：设备带 X-Device-Agents（本机 genshin agent 清单）→ 存 device_states（2026-09-05：本地上传→拉取 0.3s）
   const agentsRaw = c.req.header("X-Device-Agents");
   if (agentsRaw && agentsRaw.length > 4 && agentsRaw.length < 20000) {
-    try { JSON.parse(agentsRaw); stmt.upsertDeviceState.run(deviceId, user.githubId, agentsRaw, ""); stmt.logSync.run(deviceId, user.githubId); stmt.pruneSyncLog.run(user.githubId, user.githubId); } catch { /* 非法 JSON 忽略 */ }
+    try { JSON.parse(agentsRaw); stmt.upsertDeviceState.run(deviceId, user.githubId, agentsRaw, ""); stmt.logSync.run(deviceId, user.githubId); stmt.pruneSyncLog.run(user.githubId, user.githubId); } catch (e) { console.error("[god.backend.services/auth.ts] " + ((e as any)?.message || e)); /* 非法 JSON 忽略 */ }
   }
   const devices = stmt.listDevices.all(user.githubId);
   // 合并每设备的 genshin 状态（agents 清单 + 最后同步时间）

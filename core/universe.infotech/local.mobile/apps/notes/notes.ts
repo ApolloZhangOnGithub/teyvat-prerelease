@@ -23,7 +23,7 @@ function notesPath(personDir: string): string {
 function loadNotes(personDir: string): Note[] {
   try {
     return JSON.parse(fs.readFileSync(notesPath(personDir), "utf8"));
-  } catch {
+  } catch (e) { console.error("[universe.infotech/local.mobile/apps/notes/notes.ts] " + ((e as any)?.message || e));
     return [];
   }
 }

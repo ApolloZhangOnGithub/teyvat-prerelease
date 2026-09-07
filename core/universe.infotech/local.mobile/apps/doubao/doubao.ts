@@ -36,7 +36,7 @@ function loadHistory(personDir: string): DouMsg[] {
     const f = path.join(personDir, "doubao_chat.json");
     if (!fs.existsSync(f)) return [];
     return JSON.parse(fs.readFileSync(f, "utf8"));
-  } catch { return []; }
+  } catch (e) { console.error("[universe.infotech/local.mobile/apps/doubao/doubao.ts] " + ((e as any)?.message || e)); return []; }
 }
 
 function saveHistory(personDir: string, h: DouMsg[]) {

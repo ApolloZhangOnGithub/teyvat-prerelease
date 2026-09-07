@@ -8,7 +8,7 @@ const PLIST = path.join(PAIMON, "MemoryData", "plist.json");
 // ── helpers ──
 
 function readFile(p: string): string {
-  try { return fs.readFileSync(p, "utf-8"); } catch { return ""; }
+  try { return fs.readFileSync(p, "utf-8"); } catch (e) { console.error("[god.frontend.tui/commands/infos.ts] " + ((e as any)?.message || e)); return ""; }
 }
 
 function estimateTokens(text: string): number {
@@ -23,7 +23,7 @@ function estimateTokens(text: string): number {
 }
 
 function loadPlist(): any[] {
-  try { return JSON.parse(fs.readFileSync(PLIST, "utf8")); } catch { return []; }
+  try { return JSON.parse(fs.readFileSync(PLIST, "utf8")); } catch (e) { console.error("[god.frontend.tui/commands/infos.ts] " + ((e as any)?.message || e)); return []; }
 }
 
 // ── Page 1: Identity ──

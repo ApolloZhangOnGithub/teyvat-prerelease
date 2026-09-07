@@ -23,7 +23,7 @@ function loadNotifSettings(personDir: string): Record<string, string> {
     const f = path.join(personDir, "notif_settings.json");
     if (!existsSync(f)) return {};
     return JSON.parse(readFileSync(f, "utf8"));
-  } catch { return {}; }
+  } catch (e) { console.error("[universe.infotech/local.mobile/apps/settings/settings.ts] " + ((e as any)?.message || e)); return {}; }
 }
 function saveNotifSettings(personDir: string, s: Record<string, string>) {
   try {
@@ -39,14 +39,14 @@ async function getPiVersion(): Promise<string> {
 
 function loadCostTotal(personDir: string): { main: number; hippocampus: number; metaconsciousness: number; total: number; sessions: number } {
   const f = path.join(personDir, "cost_total.json");
-  try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch { return { main: 0, hippocampus: 0, metaconsciousness: 0, total: 0, sessions: 0 }; }
+  try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch (e) { console.error("[universe.infotech/local.mobile/apps/settings/settings.ts] " + ((e as any)?.message || e)); return { main: 0, hippocampus: 0, metaconsciousness: 0, total: 0, sessions: 0 }; }
 }
 
 function loadCostCurrent(personDir: string, role: string): number {
   try {
     const d = JSON.parse(fs.readFileSync(path.join(personDir, `cost-${role}.json`), "utf8"));
     return d.cost || 0;
-  } catch { return 0; }
+  } catch (e) { console.error("[universe.infotech/local.mobile/apps/settings/settings.ts] " + ((e as any)?.message || e)); return 0; }
 }
 
 export async function settingsCmd(args: any, _ctx: any, personDir: string): Promise<{ content: any[]; details: any }> {

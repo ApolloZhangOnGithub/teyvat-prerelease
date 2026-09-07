@@ -11,7 +11,7 @@ function stopPoll(){if(_timer){clearInterval(_timer);_timer=null}const out=_pd?(
 const R=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"../../../spirit.bio.organs/head.ears/ears-recorder.ts");
 const BUN=(()=>{try{return execSync("which bun",{encoding:"utf8",stdio:["ignore","pipe","ignore"]}).trim()}catch (e) { console.error("[universe.infotech/local.mobile/apps/ipod/ipod.ts] " + ((e as any)?.message || e)); }const h=process.env.HOME;if(h){const p=`${h}/.bun/bin/bun`;try{execSync(`test -x "${p}"`,{stdio:"ignore"});return p}catch (e) { console.error("[universe.infotech/local.mobile/apps/ipod/ipod.ts] " + ((e as any)?.message || e)); }}return"bun"})();
 interface P{file:string;bk:string;sp:number;ck:number;pos:number;fp:number;dur:number;lines:string[];out:string;}
-function ld(d:string):P{try{return JSON.parse(fs.readFileSync(path.join(d,"ipod.json"),"utf8"))}catch{return{file:"",bk:"doubao",sp:1,ck:1600,pos:0,fp:0,dur:0,lines:[],out:"ready"}}}
+function ld(d:string):P{try{return JSON.parse(fs.readFileSync(path.join(d,"ipod.json"),"utf8"))}catch (e) { console.error("[universe.infotech/local.mobile/apps/ipod/ipod.ts] " + ((e as any)?.message || e));return{file:"",bk:"doubao",sp:1,ck:1600,pos:0,fp:0,dur:0,lines:[],out:"ready"}}}
 function sv(d:string,s:P){fs.writeFileSync(path.join(d,"ipod.json"),JSON.stringify(s))}
 function bar(p:number,d:number,w=26):string{if(d<=0)return"▬".repeat(w);const f=Math.round(Math.min(1,Math.max(0,p/d))*w);return"█".repeat(f)+"▬".repeat(w-f)}
 function bars(ap:number,fp:number,d:number,w=26):string{const a=bar(ap,d,w);const f=bar(fp,d,w);let s="";for(let i=0;i<w;i++)s+=fp>=ap&&i>=Math.round(ap/d*w)&&i<Math.round(fp/d*w)?"▓":a[i];return s}
@@ -38,7 +38,7 @@ function halt(s:P):P{stopPoll();try{fs.writeFileSync(EAR_CTL,JSON.stringify({sta
 function ctrl(s:P,act:string,val?:number):P{try{fs.writeFileSync(EAR_CTL,JSON.stringify({state:act,...(val!==undefined?{seconds:val}:{})}))}catch (e) { console.error("[universe.infotech/local.mobile/apps/ipod/ipod.ts] " + ((e as any)?.message || e)); }return s}
 function rd(s:P,d:string):P{try{const out=d.replace("/MemoryData/","/RuntimeCache/")+"/ear_output.jsonl";if(!fs.existsSync(out))return s;
 const ls=fs.readFileSync(out,"utf8").trim().split("\n").filter(Boolean);
-s.lines=ls.slice(-4).map(l=>{try{const e=JSON.parse(l);s.pos=e.position||e.start||s.pos;s.fp=e.feed||e.position||s.fp;return e.text}catch{return""}}).filter(Boolean)}catch (e) { console.error("[universe.infotech/local.mobile/apps/ipod/ipod.ts] " + ((e as any)?.message || e)); }return s}
+s.lines=ls.slice(-4).map(l=>{try{const e=JSON.parse(l);s.pos=e.position||e.start||s.pos;s.fp=e.feed||e.position||s.fp;return e.text}catch (e) { console.error("[universe.infotech/local.mobile/apps/ipod/ipod.ts] " + ((e as any)?.message || e));return""}}).filter(Boolean)}catch (e) { console.error("[universe.infotech/local.mobile/apps/ipod/ipod.ts] " + ((e as any)?.message || e)); }return s}
 export const app:MobileApp={name:"ipod",icon:"🎵",messageDescription:"播放器",
 onOpen(state,d){const s=ld(d);return{screen:render(s),state:{...s}}},
 async onAction(input,state,d){let s={...state}as P;const t=input.trim().toLowerCase();

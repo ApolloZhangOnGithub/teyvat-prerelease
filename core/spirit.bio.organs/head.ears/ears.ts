@@ -35,7 +35,7 @@ interface EarState {
 
 function isRecorderAlive(): boolean {
   try { execSync("pgrep -f 'ears-recorder.ts'", { stdio: "ignore" }); return true; }
-  catch { return false; }
+  catch (e) { console.error("[spirit.bio.organs/head.ears/ears.ts] " + ((e as any)?.message || e)); return false; }
 }
 
 export default function (pi: ExtensionAPI) {

@@ -107,7 +107,7 @@ function collectSessions(daysBack: number = 7): SessionSummary[] {
 
   for (const agentDir of readdirSync(SESSION_DIR)) {
     const agentPath = join(SESSION_DIR, agentDir);
-    try { if (!statSync(agentPath).isDirectory()) continue; } catch { continue; }
+    try { if (!statSync(agentPath).isDirectory()) continue; } catch (e) { console.error("[god.frontend.cli/health.ts] " + ((e as any)?.message || e)); continue; }
 
     const scanDir = (dir: string) => {
       try {
@@ -117,7 +117,7 @@ function collectSessions(daysBack: number = 7): SessionSummary[] {
           try {
             const stat = statSync(fp);
             if (stat.mtimeMs < cutoff) continue;
-          } catch { continue; }
+          } catch (e) { console.error("[god.frontend.cli/health.ts] " + ((e as any)?.message || e)); continue; }
 
           try {
             const raw = readFileSync(fp, "utf8");
@@ -253,7 +253,7 @@ function loadAgents(): AgentInfo[] {
       lastSeen: new Date(a.lastSeen || a.created).getTime(),
       archived: !!a.archived,
     }));
-  } catch { return []; }
+  } catch (e) { console.error("[god.frontend.cli/health.ts] " + ((e as any)?.message || e)); return []; }
 }
 
 // ── Rendering helpers ──

@@ -63,7 +63,7 @@ function recordExecute(data: {
     if (!rec.title) delete rec.title; // 无标题不落字段，保持记录干净
     writeFileSync(file, JSON.stringify(rec, null, 2), "utf8");
     return file;
-  } catch { return ""; }
+  } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); return ""; }
 }
 
 // ── 历史记录查询（action:'show' + historical，2026-09-04 test-01 反馈）──
@@ -75,7 +75,7 @@ function findHistoricalFiles(idStr: string): string[] {
     if (exact.length > 0) return exact;
     if (/^\d/.test(idStr)) return files.filter((f) => f.startsWith(idStr)); // 前缀匹配仅限 id 样式（数字开头）
     return [];
-  } catch { return []; }
+  } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); return []; }
 }
 
 function formatHistoricalRecord(file: string): string {
@@ -109,7 +109,7 @@ export function asyncSh(cmd: string, timeout = 5000): Promise<string> {
 }
 
 export async function asyncShSafe(cmd: string, timeout = 5000): Promise<string> {
-  try { return await asyncSh(cmd, timeout); } catch { return ""; }
+  try { return await asyncSh(cmd, timeout); } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); return ""; }
 }
 
 // ── tmux 助手（原 terminal.ts，整合至此）──
@@ -120,7 +120,7 @@ function getAgentScope(): string {
 const TMUX_PFX = () => "dev-" + getAgentScope() + "-";
 const tmuxClean = (n: string) => TMUX_PFX() + (n || `t${Date.now().toString().slice(-5)}`).replace(/[^a-zA-Z0-9_]/g, "");
 const tmuxHas = async (n: string): Promise<boolean> => {
-  try { await asyncSh(`tmux has-session -t ${n} 2>/dev/null`); return true; } catch { return false; }
+  try { await asyncSh(`tmux has-session -t ${n} 2>/dev/null`); return true; } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); return false; }
 };
 const tmuxPeek = async (n: string): Promise<string> => {
   return (await asyncShSafe(`tmux capture-pane -pt ${n} -S -200 2>/dev/null`)).split("\n").filter(Boolean).slice(-60).join("\n");
@@ -138,7 +138,7 @@ function loadRenderDiff(): ((text: string) => string) | undefined {
   try {
     const bridge = require("../../god.frontend.tui/overrides/pi-dist/modes/interactive/components/diff.js");
     _renderDiff = bridge.renderDiff;
-  } catch {
+  } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e));
     _renderDiff = undefined;
   }
   return _renderDiff;
@@ -148,7 +148,7 @@ function loadGenerateDiffString(): ((oldContent: string, newContent: string, con
   try {
     const mod = require("../../god.frontend.tui/overrides/pi-dist/core/tools/edit-diff.js");
     _generateDiffString = mod.generateDiffString;
-  } catch {
+  } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e));
     _generateDiffString = undefined;
   }
   return _generateDiffString;
@@ -482,6 +482,8 @@ let _lastBgHash = ""; // @ 缓存：避免相同输出重复占用 context
         const segStart = statusBar?._segmentStartTime;
         const totalElapsed = seg + (segStart ? Date.now() - segStart : 0);
         try { writeFileSync(join(rcDir, "self-reboot-reason.json"), JSON.stringify({ reason, ts: new Date().toISOString(), elapsed: totalElapsed })); } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
+        // ISSUE 140：标记即将 reboot，阻止 heart agent_end 续命（否则框架开新 turn 被 process.exit 打断 → abort → paused 循环）
+        (globalThis as any).__genshinRebootPending = true;
         const nonce = `reboot-${Date.now()}`;
         // 2026-09-04 渲染保留：记录当前 pi session 文件 → launcher 重启时传 --session 恢复同一 session。
         // 否则 pi 开新 session → entries 空 → _replaySessionHistory() 渲染 0 条 → TUI 上文丢失
@@ -696,7 +698,7 @@ let _lastBgHash = ""; // @ 缓存：避免相同输出重复占用 context
                 break;
               }
             }
-          } catch { running.delete(ttyId); updateBgCount(); }
+          } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); running.delete(ttyId); updateBgCount(); }
         })();
         return {
           content: [{ type: "text", text: i18n(`Terminal ${tName || n.slice(TMUX_PFX().length)} — 使用 @N 查看画面，@N kill 关闭。`, `Terminal ${tName || n.slice(TMUX_PFX().length)} — use @N to view, @N kill to close.`) }],
@@ -783,7 +785,8 @@ let _lastBgHash = ""; // @ 缓存：避免相同输出重复占用 context
           if (entry) entry.accum = out;
           if (wantStream) { try { _onUpdate({ content: [{ type: "text", text: out }] }); } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); } }
           // 完整执行记录落盘（ExecuteData），cmd-done 只发尾部摘要
-          const recId = shortRecId(cmd);
+          // 0.3.3 修复 H9：recId 复用 running map 中首次计算的值，避免跨秒漂移导致 ID 不一致
+          const recId = entry?.recId || shortRecId(cmd);
           const recFile = recordExecute({
             id: recId, command: cmd, cwd: (params as any).cwd || "", title: entry?.title,
             start_time: bgStart, end_time: Date.now(), exit_code: r.code,
@@ -849,6 +852,11 @@ let _lastBgHash = ""; // @ 缓存：避免相同输出重复占用 context
   });
   // 2026-09-05（ISSUE 127）：重启后恢复 tmux 后台任务（session_start 扫描）
   registerTmuxRestore(pi);
+  // 0.3.3 修复 H10：tmux restore 用独立 ID 分配，可能与 nextExecId 碰撞。
+  // restore handler 先跑（注册顺序），这里跟一个 handler 把 nextExecId 推到 running 最大 key 之后。
+  pi.on("session_start" as any, async () => {
+    for (const k of running.keys()) { if (k >= nextExecId) nextExecId = k + 1; }
+  });
 }
 
 // 2026-09-05（ISSUE 127）：重启后恢复 tmux 后台任务——tmux 会话独立于 agent 进程（kill 进程组不清），
@@ -909,7 +917,7 @@ function registerTmuxRestore(pi: ExtensionAPI): void {
                 break;
               }
             }
-          } catch { running.delete(id); updateBgCount(); }
+          } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); running.delete(id); updateBgCount(); }
         })();
       }
       if (recovered > 0) { updateBgCount(); console.error("[spirit.bio.organs/hands.executes/executes.ts] restoreTmux: recovered " + recovered + " tmux session(s)"); }

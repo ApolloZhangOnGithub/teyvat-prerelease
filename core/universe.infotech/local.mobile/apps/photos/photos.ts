@@ -29,7 +29,7 @@ function listPhotos(): { fn: string; pic: MobilePic }[] {
       } catch (e) { console.error("[universe.infotech/local.mobile/apps/photos/photos.ts] " + ((e as any)?.message || e)); }
     }
     return result.sort((a, b) => (b.pic.ts_start || b.pic.ts) - (a.pic.ts_start || a.pic.ts));
-  } catch { return []; }
+  } catch (e) { console.error("[universe.infotech/local.mobile/apps/photos/photos.ts] " + ((e as any)?.message || e)); return []; }
 }
 
 export const app: MobileApp = {

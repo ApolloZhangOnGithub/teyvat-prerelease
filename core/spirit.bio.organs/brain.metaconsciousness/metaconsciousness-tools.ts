@@ -53,7 +53,7 @@ export function createReadConscious(pi: ExtensionAPI, getTranscriptPath: () => s
             if (seen.size > 100) { seen.clear(); seen.add(key); }
           }
           entries.push(e);
-        } catch { /* skip malformed */ }
+        } catch (e) { console.error("[spirit.bio.organs/brain.metaconsciousness/metaconsciousness-tools.ts] " + ((e as any)?.message || e)); /* skip malformed */ }
       }
 
       // Feed format 见 feed-format.SPEC: {role, type, content/think/text/tool, ts}
@@ -150,7 +150,7 @@ export function createAware(pi: ExtensionAPI) {
             isTriggerNewTurn: urgent,
             isDisplayedInTUI: true,
           });
-        } catch {
+        } catch (e) { console.error("[spirit.bio.organs/brain.metaconsciousness/metaconsciousness-tools.ts] " + ((e as any)?.message || e));
           return {
             content: [{ type: "text" as const, text: "Delivery failed." }],
             details: { urgency, delivered: false },

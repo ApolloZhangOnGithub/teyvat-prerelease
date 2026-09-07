@@ -17,7 +17,7 @@ export interface Binding {
 }
 
 export function getBinding(): Binding | null {
-  try { return JSON.parse(readFileSync(BINDING_FILE, "utf8")); } catch { return null; }
+  try { return JSON.parse(readFileSync(BINDING_FILE, "utf8")); } catch (e) { console.error("[god.backend.services/binding.ts] " + ((e as any)?.message || e)); return null; }
 }
 
 export function saveBinding(b: Binding) {

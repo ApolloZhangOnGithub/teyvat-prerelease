@@ -195,14 +195,14 @@ export function personId(): string {
 export function wakeRestartFile(): string | null {
   try {
     return (globalThis as any).__genshinRuntimeDir ? (globalThis as any).__genshinRuntimeDir + "/wake-restart" : null;
-  } catch { return null; }
+  } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart-state.ts] " + ((e as any)?.message || e)); return null; }
 }
 
 export function isWorkerSession(ctx: any): boolean {
   try {
     const sf = ctx?.sessionManager?.getSessionFile?.() || "";
     return /metaconsciousnessSessions|HippocampusSessions|SleepSessions/.test(sf);
-  } catch { return false; }
+  } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart-state.ts] " + ((e as any)?.message || e)); return false; }
 }
 
 export function isToolDisabled(toolName: string): boolean {
@@ -223,7 +223,7 @@ export function isToolDisabled(toolName: string): boolean {
       if (!pid || !existsSync(join(runtimeCacheDir(pid), "main-hibernate"))) return true;
     }
     return false;
-  } catch { return false; }
+  } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart-state.ts] " + ((e as any)?.message || e)); return false; }
 }
 
 export function isHibernateDisabled(): boolean { return isToolDisabled("hibernate"); }

@@ -11,7 +11,7 @@ function scanApps(): string[] {
       !d.startsWith(".") && !d.startsWith("@FUTURE.") && !d.startsWith("@removed.") &&
       statSync(path.join(PROGRAM_FILES_MOBILE, d)).isDirectory()
     );
-  } catch { return []; }
+  } catch (e) { console.error("[universe.infotech/local.mobile/apps/appstore/appstore.ts] " + ((e as any)?.message || e)); return []; }
 }
 
 function buildAppList(): string {
@@ -158,7 +158,7 @@ function handleInfo(name: string): string {
 
   const appDir = path.join(PROGRAM_FILES_MOBILE, dir);
   const files = readdirSync(appDir).filter(f => f.endsWith(".ts") && !f.includes(".test"));
-  const isSymlink = (() => { try { const s = statSync(appDir); return s.isSymbolicLink(); } catch { return false; } })();
+  const isSymlink = (() => { try { const s = statSync(appDir); return s.isSymbolicLink(); } catch (e) { console.error("[universe.infotech/local.mobile/apps/appstore/appstore.ts] " + ((e as any)?.message || e)); return false; } })();
 
   const lines = [
     `═══ ${dir} ═══`,

@@ -93,7 +93,7 @@ function readJson<T>(file: string, fallback: T): T {
   try {
     if (!existsSync(file)) return fallback;
     return JSON.parse(readFileSync(file, "utf8")) as T;
-  } catch { return fallback; }
+  } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return fallback; }
 }
 function writeJson(file: string, data: unknown): void {
   try {
@@ -152,7 +152,7 @@ async function reportPresence(kind: "up" | "down"): Promise<void> {
   if (_reportInFlight) return;
   try {
     let b: any = null;
-    try { b = JSON.parse(readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8")); } catch { return; }
+    try { b = JSON.parse(readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8")); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return; }
     if (!b?.token || !b?.deviceId) return;
     const sid = getMySid();
     if (!/^[a-f0-9]{8}$/.test(sid)) return;
@@ -225,13 +225,13 @@ export function isAgentActive(sid: string): boolean {
       const pid = parseInt(readFileSync(pf, "utf8").trim(), 10);
       if (pid) { process.kill(pid, 0); return true; }
     }
-  } catch { /* 无 pid 文件 / 进程不存在 / 心跳超时 */ }
+  } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* 无 pid 文件 / 进程不存在 / 心跳超时 */ }
   // bridge 心跳 fallback（外部 agent）
   try {
     const hb = join(HEARTBEAT_DIR, sid);
     const hst = require("fs").statSync(hb);
     if (Date.now() - hst.mtimeMs <= 90_000) return true;
-  } catch { /* 无心跳文件 */ }
+  } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* 无心跳文件 */ }
   return false;
 }
 
@@ -262,6 +262,7 @@ export function setFocus(mode: SocialFocus): void {
   const reg = readJson<Record<string, RegistryEntry>>(REGISTRY_FILE, {});
   if (!reg[sid]) registerSelf();
   const reg2 = readJson<Record<string, RegistryEntry>>(REGISTRY_FILE, {});
+  if (!reg2[sid]) return;
   reg2[sid].focus = mode;
   writeJson(REGISTRY_FILE, reg2);
 }
@@ -284,7 +285,7 @@ function listGroups(): Group[] {
   try {
     mkdirSync(GROUPS_DIR, { recursive: true });
     return readdirSync(GROUPS_DIR).filter(f => f.endsWith(".json")).map(f => readJson<Group | null>(join(GROUPS_DIR, f), null)).filter((g): g is Group => !!g);
-  } catch { return []; }
+  } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return []; }
 }
 function myGroups(): Group[] {
   const me = getMyName();
@@ -346,9 +347,9 @@ function readInbox(sid: string, limit = 50): SocialMsg[] {
     if (!existsSync(inboxFile(sid))) return [];
     const lines = readFileSync(inboxFile(sid), "utf8").trim().split("\n").filter(Boolean);
     const msgs: SocialMsg[] = [];
-    for (const l of lines.slice(-limit)) { try { msgs.push(JSON.parse(l)); } catch { /* 2026-09-07：外部写入坏行（如 claude-code-bridge 未转义 JSON）静默跳过——脏数据不是代码错误，不刷日志（纪律③） */ } }
+    for (const l of lines.slice(-limit)) { try { msgs.push(JSON.parse(l)); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* 2026-09-07：外部写入坏行（如 claude-code-bridge 未转义 JSON）静默跳过——脏数据不是代码错误，不刷日志（纪律③） */ } }
     return msgs;
-  } catch { return []; }
+  } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return []; }
 }
 
 function markInjected(sid: string, ids: string[]): void {
@@ -363,7 +364,7 @@ function markInjected(sid: string, ids: string[]): void {
         const m = JSON.parse(l) as SocialMsg;
         if (idSet.has(m.id)) m.injected = true;
         return JSON.stringify(m);
-      } catch { return l; }
+      } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return l; }
     });
     writeFileSync(file, out.join("\n"), "utf8");
   } catch (e: any) { logerr("SOC003", e); }
@@ -446,7 +447,7 @@ function loadBinding(): { token: string; deviceId: string } | null {
   try {
     const b = JSON.parse(readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8"));
     if (b?.token && b?.deviceId) return { token: b.token, deviceId: b.deviceId };
-  } catch { /* 未绑定 */ }
+  } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* 未绑定 */ }
   return null;
 }
 
@@ -496,7 +497,7 @@ export async function pullRemoteMessages(): Promise<number> {
       added++;
     }
     return added;
-  } catch { return 0; } // 拉取失败静默（下次心跳再拉）
+  } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return 0; } // 拉取失败静默（下次心跳再拉）
 }
 
 async function sendOne(to: string, text: string, mode: SocialMode, atList: string[], isGroup: boolean, gid: string | null, fromSid: string, fromName: string): Promise<{ to: string; mode_used: SocialMode; status: string }> {
@@ -533,7 +534,7 @@ async function sendOne(to: string, text: string, mode: SocialMode, atList: strin
     try {
       mkdirSync(TRIGGERS_DIR, { recursive: true });
       writeFileSync(join(TRIGGERS_DIR, `${receiverSid}.json`), JSON.stringify({ msgId: msg.id, ts: msg.ts }), "utf8");
-    } catch { /* 触发文件失败 → 降级为 agent_end 轮后注入 */ }
+    } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* 触发文件失败 → 降级为 agent_end 轮后注入 */ }
   }
   return { to: receiverSid, mode_used: modeUsed, status: modeUsed === "interrupt" ? "alert" : "queued" };
 }
@@ -615,8 +616,8 @@ function watchInterruptTriggers(pi: ExtensionAPI): void {
       const mySid = getMySid();
       if (!/^[a-f0-9]{8}$/.test(mySid)) return;
       let trig: any = null;
-      try { trig = JSON.parse(readFileSync(f, "utf8")); } catch { return; }
-      try { unlinkSync(f); } catch { return; } // 拿所有权失败 → 已由 watch/interval 另一方处理，放弃
+      try { trig = JSON.parse(readFileSync(f, "utf8")); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return; }
+      try { unlinkSync(f); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return; } // 拿所有权失败 → 已由 watch/interval 另一方处理，放弃
       try {
         const msgs = readInbox(mySid, 50).filter((m: SocialMsg) => !m.injected);
         // 立即注入范围：interrupt 全部（强制切断）；queue 仅在 resting（wait 中）时注入（打断 wait）
@@ -657,7 +658,7 @@ function watchInterruptTriggers(pi: ExtensionAPI): void {
           );
         }
         // queue 且非 resting → 留给 agent_end 轮后注入（不打断进行中的工作）
-      } catch { /* 注入异常 → 消息留在 inbox（injected:false），agent_end 轮询仍能兑底 */ }
+      } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* 注入异常 → 消息留在 inbox（injected:false），agent_end 轮询仍能兑底 */ }
     };
     const watcher = require("fs").watch(TRIGGERS_DIR, (_evt: string, filename: string | null) => {
       if (!filename || !filename.endsWith(".json")) return;
@@ -678,7 +679,7 @@ function watchInterruptTriggers(pi: ExtensionAPI): void {
       } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); }
     }, 8000);
     timer.unref?.();
-  } catch { /* fs.watch 不可用 → 降级为 agent_end 轮后注入（原行为） */ }
+  } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* fs.watch 不可用 → 降级为 agent_end 轮后注入（原行为） */ }
 }
 
 // ── 工具：单一 social 工具，action 参数区分操作 ─────────────────────
@@ -824,7 +825,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
                   remoteLines.push(`${ra.name} (${ra.sid})  focus:${ra.focus}  ${state}  remote:${ra.device_id === rb.deviceId ? "?" : "other"}  ${ra.version} ${ra.model}`);
                 }
               }
-            } catch { /* remote 拉取失败不影响本地列表 */ }
+            } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* remote 拉取失败不影响本地列表 */ }
           }
           const allCount = agents.length + remoteLines.length;
           if (!allCount && !remoteLines.length) return { content: [{ type: "text", text: "(no agents registered)" }], details: { social: true, action: "list", count: 0, lines: [] } };
@@ -841,7 +842,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
           // 跨设备 agents 发现（2026-09-05 用户定稿）：拉 /auth/devices（设备+各设备上传的 genshin 结果）
           // 视图：默认=跨设备 agents 概览；view="device"=设备列表；device=<id>=该设备 genshin 输出
           let b: any = null;
-          try { b = JSON.parse(readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8")); } catch { /* 未绑定/损坏 → 下方提示 login */ }
+          try { b = JSON.parse(readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8")); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* 未绑定/损坏 → 下方提示 login */ }
           if (!b?.token || !b?.deviceId) return { content: [{ type: "text", text: "(未绑定——先 genshin login)" }], details: { social: true, action: "global", count: 0, lines: [] } };
           const H = { Authorization: "Bearer " + b.token, "X-Device-Id": b.deviceId, "X-Device-Name": require("os").hostname() };
           const _url = syncEndpoint() + "/auth/devices";
@@ -853,7 +854,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
           if (!res.ok) return { content: [{ type: "text", text: "(server 查询失败: HTTP " + res.status + ")" }], details: { social: true, action: "global", count: 0, lines: [] } };
           const j: any = await res.json();
           const ds = (j?.devices ?? []).filter((d: any) => d.device_id === b.deviceId || (d.agents && String(d.agents).length > 2) || !d.archived);
-          const fmtTs = (s: string) => { if (!s) return ""; try { return new Date(String(s).replace(" ", "T") + "Z").toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }); } catch { return s; } };
+          const fmtTs = (s: string) => { if (!s) return ""; try { return new Date(String(s).replace(" ", "T") + "Z").toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return s; } };
           // 视图 2：device=<id> → 该设备 genshin 输出全文
           if (p.device) {
             const hit = ds.find((d: any) => String(d.device_id) === String(p.device));
@@ -1053,4 +1054,13 @@ export default function (pi: ExtensionAPI) {
 
   registerSocialTools(pi);
   registerSocialRenderer(pi);
+  // 2026-09-07：跨设备 presence/接收独立周期（修复缺陷：原来挂 touchPresence 依赖 getPendingInbox 调用——
+  // wait/hibernate/无消息时永不触发 → server presence 掉线 + 远端消息不拉）。独立 45s timer：
+  // reportPresence(up) 维持 server presence + pullRemoteMessages 拉远端消息写本地 inbox。
+  // 与 touchPresence 30s 节流互补（消息活跃时双保险）。unref：不阻止 agent 进程正常退出。
+  const _netTick = setInterval(() => {
+    try { reportPresence("up").catch(() => {}); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* 静默 */ }
+    try { pullRemoteMessages().catch(() => {}); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* 静默 */ }
+  }, 45_000);
+  if (typeof (_netTick as any)?.unref === "function") (_netTick as any).unref();
 }

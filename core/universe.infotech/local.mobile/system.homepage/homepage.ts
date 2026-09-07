@@ -40,7 +40,7 @@ interface Notification {
 function loadNotifications(personDir: string): Notification[] {
   if (!personDir) return [];
   const p = path.join(personDir, "mobile_notifications.json");
-  try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return []; }
+  try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch (e) { console.error("[universe.infotech/local.mobile/system.homepage/homepage.ts] " + ((e as any)?.message || e)); return []; }
 }
 
 function saveNotifications(personDir: string, notifs: Notification[]) {

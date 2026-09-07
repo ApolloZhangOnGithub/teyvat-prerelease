@@ -23,10 +23,10 @@ import { renderToolCall, renderMessage, diamond } from "#tui_blockrender";
 // 元意识开关：每人持久化(JSON 布尔，不删文件、避开删除禁令)。off=不再启动元意识；记忆不受影响。
 function scFlag(personDir: string): string { return `${personDir}/metaconsciousness.json`; }
 function scDisabled(personDir: string): boolean {
-  try { return !!JSON.parse(readFileSync(scFlag(personDir), "utf8")).disabled; } catch { return true; }
+  try { return !!JSON.parse(readFileSync(scFlag(personDir), "utf8")).disabled; } catch (e) { console.error("[spirit.bio.organs/brain.metaconsciousness/metaconsciousness.ts] " + ((e as any)?.message || e)); return true; }
 }
 function setScDisabled(personDir: string, disabled: boolean): void {
-  try { writeFileSync(scFlag(personDir), JSON.stringify({ disabled, ts: new Date().toISOString() })); } catch (e) { _log("setScDisabled", e); }
+  try { writeFileSync(scFlag(personDir), JSON.stringify({ disabled, ts: new Date().toISOString() })); } catch (e) { console.error("[spirit.bio.organs/brain.metaconsciousness/metaconsciousness.ts] " + ((e as any)?.message || e)); _log("setScDisabled", e); }
 }
 
 function ismetaconsciousnessSession(sessionFile: string | undefined): boolean {
@@ -92,7 +92,7 @@ export default function (pi: ExtensionAPI) {
     // 定期清理过期条目
     if (_lastFeedHash.size > 100) { for (const [k, t] of _lastFeedHash) { if (now - t > 5000) _lastFeedHash.delete(k); } }
     const json = JSON.stringify({ ...content, ts: now });
-    try { appendAsync(feedFile, json + "\n"); } catch (e) { _log("feedEntry", e); }
+    try { appendAsync(feedFile, json + "\n"); } catch (e) { console.error("[spirit.bio.organs/brain.metaconsciousness/metaconsciousness.ts] " + ((e as any)?.message || e)); _log("feedEntry", e); }
   }
 
   pi.on("message_end", async (event) => {
@@ -208,7 +208,7 @@ export default function (pi: ExtensionAPI) {
         const current = pi.getActiveTools();
         const filtered = current.filter(t => allowed.has(t));
         pi.setActiveTools(filtered);
-      } catch (e) { _log("setActiveTools", e); }
+      } catch (e) { console.error("[spirit.bio.organs/brain.metaconsciousness/metaconsciousness.ts] " + ((e as any)?.message || e)); _log("setActiveTools", e); }
 
       return;
     }
@@ -231,15 +231,15 @@ export default function (pi: ExtensionAPI) {
       (global as any).__genshinPersonId = personId;
       (global as any).__genshinChannelDir = channelDir;
       (global as any).__genshinSessionDir = sessionDir;
-    } catch (e) { _log("setGlobals", e); }
+    } catch (e) { console.error("[spirit.bio.organs/brain.metaconsciousness/metaconsciousness.ts] " + ((e as any)?.message || e)); _log("setGlobals", e); }
 
     feedFile = channelDir + "/conscious-feed.jsonl";
     awareFile = channelDir + "/conscious-aware.jsonl";
 
-    try { await appendFile(awareFile, "", { flag: "a" }); } catch (e) { _log("appendAware", e); }
+    try { await appendFile(awareFile, "", { flag: "a" }); } catch (e) { console.error("[spirit.bio.organs/brain.metaconsciousness/metaconsciousness.ts] " + ((e as any)?.message || e)); _log("appendAware", e); }
 
     // Track current offset so we only inject NEW thoughts
-    try { awareOffset = (await readFile(awareFile, "utf8")).length; } catch { awareOffset = 0; }
+    try { awareOffset = (await readFile(awareFile, "utf8")).length; } catch (e) { console.error("[spirit.bio.organs/brain.metaconsciousness/metaconsciousness.ts] " + ((e as any)?.message || e)); awareOffset = 0; }
 
     // Poll aware file → inject new thoughts into main session (fs.watch unreliable on macOS)
     const eventStore = `${personDir}/events.jsonl`;
@@ -274,7 +274,7 @@ export default function (pi: ExtensionAPI) {
               type: "aware", title, preview, strength,
               ts: new Date().toISOString()
             }) + "\n";
-            try { appendAsync(eventStore, ev); } catch (e) { _log("eventStore", e); }
+            try { appendAsync(eventStore, ev); } catch (e) { console.error("[spirit.bio.organs/brain.metaconsciousness/metaconsciousness.ts] " + ((e as any)?.message || e)); _log("eventStore", e); }
             // 送达策略：
             //   working  → 全送达，steer/followUp 按 strength 决定
             //   hibernated → 送达但不唤醒（isTriggerNewTurn=false），等用户消息时一并处理。
@@ -286,9 +286,9 @@ export default function (pi: ExtensionAPI) {
               isTriggerNewTurn: !isHibernated,
               isDisplayedInTUI: true,
             });
-          } catch (e) { _log("awareSend", e); }
+          } catch (e) { console.error("[spirit.bio.organs/brain.metaconsciousness/metaconsciousness.ts] " + ((e as any)?.message || e)); _log("awareSend", e); }
         }
-      } catch (e) { _log("awareWatcher", e); } finally { awareProcessing = false; }
+      } catch (e) { console.error("[spirit.bio.organs/brain.metaconsciousness/metaconsciousness.ts] " + ((e as any)?.message || e)); _log("awareWatcher", e); } finally { awareProcessing = false; }
     }, 1000);
 
     sub = createmetaconsciousness(

@@ -558,7 +558,7 @@ function readPending(): OutboxEntry[] {
   try {
     const arr = JSON.parse(readFileSync(outboxPendingFile(), "utf8"));
     return Array.isArray(arr) ? arr : [];
-  } catch {
+  } catch (e) { console.error("[spirit.bio.organs/kernel.backbone/backbone.ts] " + ((e as any)?.message || e));
     return [];
   }
 }
@@ -573,7 +573,7 @@ function ackedIds(): Set<string> {
   try {
     const lines = readFileSync(outboxAckedFile(), "utf8").split("\n").filter(Boolean);
     return new Set(lines.map(l => l.split("\t")[0]));
-  } catch {
+  } catch (e) { console.error("[spirit.bio.organs/kernel.backbone/backbone.ts] " + ((e as any)?.message || e));
     return new Set();
   }
 }
@@ -600,15 +600,15 @@ function recentSessionBlobs(): string[] {
     const files = readdirSync(dir)
       .filter(f => f.endsWith(".jsonl"))
       .map(f => {
-        try { return { f, m: statSync(join(dir, f)).mtimeMs }; } catch { return null; }
+        try { return { f, m: statSync(join(dir, f)).mtimeMs }; } catch (e) { console.error("[spirit.bio.organs/kernel.backbone/backbone.ts] " + ((e as any)?.message || e)); return null; }
       })
       .filter((x): x is { f: string; m: number } => x !== null)
       .sort((a, b) => b.m - a.m)
       .slice(0, 2);
     return files.map(({ f }) => {
-      try { return readFileSync(join(dir, f), "utf8"); } catch { return ""; }
+      try { return readFileSync(join(dir, f), "utf8"); } catch (e) { console.error("[spirit.bio.organs/kernel.backbone/backbone.ts] " + ((e as any)?.message || e)); return ""; }
     });
-  } catch {
+  } catch (e) { console.error("[spirit.bio.organs/kernel.backbone/backbone.ts] " + ((e as any)?.message || e));
     return [];
   }
 }

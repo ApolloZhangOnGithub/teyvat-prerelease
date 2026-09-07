@@ -216,7 +216,7 @@ function pollControl(): any {
     const ctl = JSON.parse(readFileSync(CTL_FILE, "utf8"));
     try { unlinkSync(CTL_FILE); } catch (e) { console.error("[spirit.bio.organs/head.ears/ears-recorder.ts] " + ((e as any)?.message || e)); }
     return ctl;
-  } catch { return null; }
+  } catch (e) { console.error("[spirit.bio.organs/head.ears/ears-recorder.ts] " + ((e as any)?.message || e)); return null; }
 }
 
 async function runFileDoubao(wavPath: string, outputJsonl: string, speed: number, chunk: number) {

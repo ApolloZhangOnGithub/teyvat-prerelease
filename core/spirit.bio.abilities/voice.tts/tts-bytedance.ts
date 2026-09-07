@@ -45,7 +45,7 @@ export class BytedanceTtsBackend implements TtsBackend {
               } catch (e) { console.error("[spirit.bio.abilities/voice.tts/tts-bytedance.ts] " + ((e as any)?.message || e)); }
               resolve({ error: errMsg });
             }
-          } catch { resolve({ error: "TTS response parse error" }); }
+          } catch (e) { console.error("[spirit.bio.abilities/voice.tts/tts-bytedance.ts] " + ((e as any)?.message || e)); resolve({ error: "TTS response parse error" }); }
         });
       });
       req.on("error", (err) => resolve({ error: `TTS request error: ${err.message}` }));

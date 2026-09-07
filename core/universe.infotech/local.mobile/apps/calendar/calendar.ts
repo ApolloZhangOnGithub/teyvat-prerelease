@@ -17,7 +17,7 @@ export function getRegion(personDir: string): Region {
   try {
     const raw = JSON.parse(fs.readFileSync(path.join(personDir, "settings.json"), "utf8"));
     return raw.region === "US" ? "US" : "CN";
-  } catch {
+  } catch (e) { console.error("[universe.infotech/local.mobile/apps/calendar/calendar.ts] " + ((e as any)?.message || e));
     return "CN";
   }
 }
@@ -563,7 +563,7 @@ function eventsPath(personDir: string) {
 function loadEvents(personDir: string): CalendarEvent[] {
   try {
     return JSON.parse(fs.readFileSync(eventsPath(personDir), "utf8"));
-  } catch {
+  } catch (e) { console.error("[universe.infotech/local.mobile/apps/calendar/calendar.ts] " + ((e as any)?.message || e));
     return [];
   }
 }

@@ -34,7 +34,7 @@ function saveSessionOverrides(ov: Record<string, boolean>): boolean {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, "tools-session.json"), JSON.stringify(ov, null, 2));
     return true;
-  } catch { return false; }
+  } catch (e) { console.error("[god.frontend.tui/commands/tools.ts] " + ((e as any)?.message || e)); return false; }
 }
 
 export function toolsHandler(getActiveTools: () => string[], setActiveTools?: (t: string[]) => void) {

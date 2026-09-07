@@ -101,5 +101,5 @@ export async function checkUnreadMessages(agentId?: string): Promise<{count: num
     if (!unread.length) return { count: 0 };
     const last = unread[unread.length - 1];
     return { count: unread.length, last: { from: last.from, text: last.text } };
-  } catch { return null; }
+  } catch (e) { console.error("[universe.infotech/local.mobile/system.notifications/notifications.ts] " + ((e as any)?.message || e)); return null; }
 }

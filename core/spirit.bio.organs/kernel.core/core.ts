@@ -65,7 +65,7 @@ const __consoleErrId = (() => {
   // 2026-08-20 修复：优先用环境变量（launcher 启动即设置）——process.title 在模块加载时还没设置，
   // 用 title 解析会失败落到 unknown/（实测：错误全写进 LogData/unknown/console-error.log）
   if (process.env.PAIMON_AGENT_ID) return process.env.PAIMON_AGENT_ID;
-  try { const m = process.title.match(/\(main,([a-f0-9]+)/); return m?.[1] || "unknown"; } catch { return "unknown"; }
+  try { const m = process.title.match(/\(main,([a-f0-9]+)/); return m?.[1] || "unknown"; } catch (e) { console.error("[spirit.bio.organs/kernel.core/core.ts] " + ((e as any)?.message || e)); return "unknown"; }
 })();
 const __consoleErrDir = join(homedir(), ".teyvat", "LogData", __consoleErrId);
 const __consoleErrPath = join(__consoleErrDir, "console-error.log");
@@ -388,7 +388,7 @@ export default function kernelMain(pi: ExtensionAPI) {
             }
           } catch (e2) { logerr("K024", e2); }
           allowed = enabled;
-        } catch { allowed = new Set(); }
+        } catch (e) { console.error("[spirit.bio.organs/kernel.core/core.ts] " + ((e as any)?.message || e)); allowed = new Set(); }
       } else {
         allowed = new Set(ROLE_TOOLS[role] || []);
       }
@@ -566,7 +566,7 @@ export default function kernelMain(pi: ExtensionAPI) {
           const s = JSON.parse(readFileSync(settingsPath, "utf8"));
           global.__genshinLang = s.lang === "zh" ? "zh" : "en";
         }
-      } catch { global.__genshinLang = "en"; }
+      } catch (e) { console.error("[spirit.bio.organs/kernel.core/core.ts] " + ((e as any)?.message || e)); global.__genshinLang = "en"; }
     } catch (e) { console.error("[spirit.bio.organs/kernel.core/core.ts] " + ((e as any)?.message || e)); }
 
     // 更新 lastSeen——重新读文件拿最新 archived 状态，已归档的不碰

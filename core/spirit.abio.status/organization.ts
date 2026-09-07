@@ -32,7 +32,7 @@ export function loadOrgs(): Org[] {
   try {
     if (!fs.existsSync(ORG_FILE)) return [];
     return JSON.parse(fs.readFileSync(ORG_FILE, "utf8"));
-  } catch { return []; }
+  } catch (e) { console.error("[spirit.abio.status/organization.ts] " + ((e as any)?.message || e)); return []; }
 }
 
 export function saveOrgs(orgs: Org[]) {
