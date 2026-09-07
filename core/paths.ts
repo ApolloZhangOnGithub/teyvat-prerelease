@@ -73,7 +73,7 @@ export function personDir(sessionFile: string | null | undefined): string | null
   return m ? join(MEMORY_DATA, m[1]) : null;
 }
 
-export function personDataDir(sessionFile: string | null | undefined): string | null {
+export function personDataDir(sessionFile: string | null | undefined): string | null { // alias for backward compat
   return personDir(sessionFile);
 }
 
@@ -84,11 +84,11 @@ export function personId(sessionFile: string | null | undefined): string | null 
 }
 
 export function memoryDir(id: string): string { return join(MEMORY_DATA, id); }
-export function channelDir(id: string): string { return join(RUNTIME_CACHE, id); }
+export function runtimeCacheDir(id: string): string { return join(RUNTIME_CACHE, id); }
+export function channelDir(id: string): string { return runtimeCacheDir(id); } // alias
+export function monitorDir(id: string): string { return runtimeCacheDir(id); } // alias
 export function sessionDirFor(id: string): string { return join(SESSION_DATA, id); }
 export function agentFileDir(id: string): string { return join(AGENT_FILE_DATA, id); }
-export function monitorDir(id: string): string { return join(RUNTIME_CACHE, id); }
-export function runtimeCacheDir(id: string): string { return join(RUNTIME_CACHE, id); }
 export function identityDir(id: string): string { return join(IDENTITY_DATA, id); }
 export function blackboxDir(id: string): string { return join(BLACKBOX_DATA, id); }
 export function socialDataDir(): string { return SOCIAL_DATA; }

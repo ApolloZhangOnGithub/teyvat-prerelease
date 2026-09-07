@@ -263,14 +263,16 @@ export function registerStatusTool(_pi: ExtensionAPI) {
           if (model) lines.push(`Model: ${model}`);
 
           // Organization(s): show name alongside ID
-          if (rec.orgs?.length) {
+          // organization.ts writes rec.org (singular string ID); legacy data may have rec.orgs (array). Normalize.
+          const orgIds: string[] = Array.isArray((rec as any).orgs) ? (rec as any).orgs : ((rec as any).org ? [(rec as any).org] : []);
+          if (orgIds.length) {
             let orgMap: Record<string, string> = {};
             try {
               const orgsFile = join(homedir(), ".teyvat/AgentWorkDir/Organizational/orgs.json");
               const orgs = JSON.parse(readFileSync(orgsFile, "utf8"));
               for (const o of orgs) orgMap[o.id] = o.name;
             } catch (e) { console.error("[spirit.abio.status/status.ts] " + ((e as any)?.message || e)); }
-            const orgDisplay = rec.orgs.map((oid: string) => {
+            const orgDisplay = orgIds.map((oid: string) => {
               const name = orgMap[oid];
               return name ? `${name} (${oid})` : oid;
             }).join(", ");

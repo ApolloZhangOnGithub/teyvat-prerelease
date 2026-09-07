@@ -748,22 +748,6 @@ export default function (pi: ExtensionAPI) {
     const path = (event.input as any)?.path ?? (event.input as any)?.file_path;
     if (!path) return;
     try {
-      const { statSync } = await import("node:fs");
-      const abs = resolve(path);
-      const st = statSync(abs);
-      const size = st.size < 1024 ? `${st.size}B` : st.size < 1024*1024 ? `${(st.size/1024).toFixed(1)}KB` : `${(st.size/1024/1024).toFixed(1)}MB`;
-      const mtime = new Date(st.mtimeMs).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false });
-      let meta = `@ ${size}  ${mtime}`;
-      // git 检测：从文件所在目录向上找 .git
-      let gitMsg = "";
-      try {
-        const { execSync } = await import("node:child_process");
-        const dir = dirname(abs);
-        if (execSync(`cd "${dir}" && git rev-parse --git-dir 2>/dev/null`, { timeout: 3000 }).toString().trim()) {
-          const log = execSync(`cd "${dir}" && git log -1 --format="%s" -- "${abs}" 2>/dev/null`, { timeout: 3000 }).toString().trim();
-          if (log) gitMsg = `\n  ${log}`;
-        }
-      } catch (e) { console.error("[spirit.bio.organs/hands.fileacts/fileacts.ts] " + ((e as any)?.message || e)); }
       // 行数统计
       const input = event.input as any;
       const offset = input?.offset;

@@ -58,6 +58,7 @@ export class QwenVlmBackend implements VlmBackend {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${config.apiKey}` },
         body,
+        signal: AbortSignal.timeout(30_000),
       });
       const data = await resp.json();
       if (data.error) return { error: `API 错误: ${data.error.message || JSON.stringify(data.error)}` };

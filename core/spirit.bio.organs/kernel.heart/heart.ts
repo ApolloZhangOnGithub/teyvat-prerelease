@@ -568,11 +568,8 @@ export default function (pi: ExtensionAPI) {
           unlinkSync(reasonPath);
         }
       } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
-      // ISSUE 140：清理 wake-restart 标记（消费后删除，防止残留导致下次启动误判）
-      try {
-        const wakePath = join(runtimeCacheDir(sessionPersonId), "wake-restart");
-        if (existsSync(wakePath)) unlinkSync(wakePath);
-      } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
+      // wake-restart 不删：launcher while 循环退出后读它判断是否重启。
+      // 旧残留无害（launcher 用 nonce 比较，同 nonce 不重复重启）。
 
       dlog(`session_start: PI_ALIVE_WOKE → kick (selfReboot=${!!selfRebootMsg})`);
       // self-reboot 时标记跳过 userback（防止两条消息同时触发）

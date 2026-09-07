@@ -23,18 +23,24 @@ import { transformMessages } from "./transform-messages.js";
 const RESEARCH_AGENT_IDS = new Set(["00568f1b"]);
 const researchLogits = {
   _writers: new Map(),
+  _enabledCache: undefined,
+  _enabledCacheTs: 0,
   agentId() {
     return process.env.PAIMON_AGENT_ID || globalThis.__genshinPersonId || "unknown";
   },
   enabled() {
     if (process.env.PI_RESEARCH === "off") return false;
-    if (!RESEARCH_AGENT_IDS.has(this.agentId())) return false; // 先只记录 researcher 本人
-    // settings.json.research 持久化开关（/experimental 命令切换），默认 ON
+    if (!RESEARCH_AGENT_IDS.has(this.agentId())) return false;
+    const now = Date.now();
+    if (this._enabledCache !== undefined && now - this._enabledCacheTs < 60_000) return this._enabledCache;
+    let val = true;
     try {
       const s = JSON.parse(readFileSync(join(homedir(), ".teyvat", "settings.json"), "utf8"));
-      if (typeof s.research === "boolean") return s.research;
+      if (typeof s.research === "boolean") val = s.research;
     } catch { /* settings 缺失 → 默认开启 */ }
-    return true;
+    this._enabledCache = val;
+    this._enabledCacheTs = now;
+    return val;
   },
   writer(sessionId) {
     const key = sessionId || "nosession";
@@ -323,14 +329,6 @@ export const stream = (model, context, options) => {
                     output.routedProvider = capturedProvider;
                     globalThis.__genshinRoutedProvider = capturedProvider;
                     globalThis.__genshinRoutedProviderModel = (typeof chunk.model === "string" && chunk.model) || model.id;
-                    // ISSUE 129 自验证探针（确认后移除）：记录最近一次捕获的托管商
-                    try {
-                        const probeDir = join(homedir(), ".teyvat", "RuntimeCache", process.env.PAIMON_AGENT_ID || "unknown");
-                        mkdirSync(probeDir, { recursive: true });
-                        writeFileSync(join(probeDir, "routed-provider-probe.json"), JSON.stringify({ ts: Date.now(), model: globalThis.__genshinRoutedProviderModel, provider: capturedProvider }, null, 2), "utf8");
-                    } catch (e) {
-                        console.error("[teyvat routed-provider probe] " + (e?.message || e));
-                    }
                 }
                 // OpenAI documents ChatCompletionChunk.id as the unique chat completion identifier,
                 // and each chunk in a streamed completion carries the same id.

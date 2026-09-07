@@ -88,6 +88,7 @@ export const MESSAGE_TYPES: Record<string, MessageTypeDef> = {
     render: false,
     description: "wait 中途被打断（含实际等待秒数，nextTurn 与打断消息同请求一次性送达模型，不渲染）",
   },
+  // @UNUSED — 无活跃发送方，保留仅为兼容历史 session 回放
   "continuous-retry": {
     messageType: "continuous-retry",
     category: "resume",
@@ -97,6 +98,7 @@ export const MESSAGE_TYPES: Record<string, MessageTypeDef> = {
     render: false,
     description: "意图栈为空时的续命提示",
   },
+  // @UNUSED — 无活跃发送方，保留仅为兼容历史 session 回放
   "continuous-timeout": {
     messageType: "continuous-timeout",
     category: "resume",
@@ -106,6 +108,7 @@ export const MESSAGE_TYPES: Record<string, MessageTypeDef> = {
     render: false,
     description: "超时通知",
   },
+  // @UNUSED — 无活跃发送方，保留仅为兼容历史 session 回放
   "sleep-wake-resume": {
     messageType: "sleep-wake-resume",
     category: "resume",
@@ -135,6 +138,7 @@ export const MESSAGE_TYPES: Record<string, MessageTypeDef> = {
     render: true,
     description: "上下文容量警告（仅UI显示，不喂模型——模型自主管理，不被系统提醒逼着用）",
   },
+  // @UNUSED — 无活跃发送方，保留仅为兼容历史 session 回放
   "budget-trip": {
     messageType: "budget-trip",
     category: "notice",
@@ -171,6 +175,7 @@ export const MESSAGE_TYPES: Record<string, MessageTypeDef> = {
     render: true,
     description: "语法错误",
   },
+  // @UNUSED — 无活跃发送方，保留仅为兼容历史 session 回放
   "hippocampus-error": {
     messageType: "hippocampus-error",
     category: "notice",

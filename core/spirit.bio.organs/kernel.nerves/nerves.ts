@@ -58,9 +58,15 @@ function getEntry(path: string, maxBytes?: number): StreamEntry {
 }
 
 function rotate(path: string, entry: StreamEntry): void {
-  try { entry.stream.end(); } catch (e) { console.error("[spirit.bio.organs/kernel.nerves/nerves.ts] " + ((e as any)?.message || e)); }
-  try { renameSync(path, path + ".1"); } catch (e) { console.error("[spirit.bio.organs/kernel.nerves/nerves.ts] " + ((e as any)?.message || e)); }
-  const newStream = openStream(path);
+  const oldStream = entry.stream;
+  const newStream = openStream(path + ".rotating");
+  // Swap immediately so new writes go to the temp file; rename old+new after old flushes.
+  try {
+    oldStream.end(() => {
+      try { renameSync(path, path + ".1"); } catch (e) { console.error("[spirit.bio.organs/kernel.nerves/nerves.ts] " + ((e as any)?.message || e)); }
+      try { renameSync(path + ".rotating", path); } catch (e) { console.error("[spirit.bio.organs/kernel.nerves/nerves.ts] " + ((e as any)?.message || e)); }
+    });
+  } catch (e) { console.error("[spirit.bio.organs/kernel.nerves/nerves.ts] " + ((e as any)?.message || e)); }
   entry.stream = newStream;
   entry.bytes = 0;
   entry.errCount = 0;

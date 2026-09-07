@@ -163,11 +163,17 @@ async function reportPresence(kind: "up" | "down"): Promise<void> {
     if (kind === "up") {
       const sys = getSysInfo();
       const body = { sid, name: getMyName(), focus: getFocus(), version: sys.version, model: sys.model };
-      await fetch(ep + "/sync/agent-presence", { method: "POST", headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "Content-Type": "application/json", "User-Agent": SYNC_UA }, body: JSON.stringify(body) });
+      // 2026-09-07：活跃同步顺带更新 device_states（alice 反馈：agent 清单上传原只靠 genshin d spawn，一次性不可靠）——
+      // /sync/* 都走 authMiddleware（server L16），带 X-Device-Agents + X-Device-Name 即存 device_states + 更新真实设备名，随 45s timer 周期刷新。
+      let agentsHeader = "";
+      try { agentsHeader = JSON.stringify(listAgents().map((a: any) => ({ sid: a.sid, name: a.name, version: a.version, model: a.model, focus: a.focus }))); } catch { /* 清单构造失败不阻塞 presence 上报 */ }
+      const headers: Record<string, string> = { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "Content-Type": "application/json", "User-Agent": SYNC_UA, "X-Device-Name": require("os").hostname() };
+      if (agentsHeader) headers["X-Device-Agents"] = agentsHeader;
+      await fetch(ep + "/sync/agent-presence", { method: "POST", headers, body: JSON.stringify(body) });
     } else {
       await fetch(`${ep}/sync/agent-presence/${sid}`, { method: "DELETE", headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "User-Agent": SYNC_UA } });
     }
-  } catch (e) { logerr("reportPresence(" + kind + "): " + ((e as any)?.message || e)); }
+  } catch (e) { logerr("SOC-PRESENCE", e, "reportPresence(" + kind + ")"); }
   finally { _reportInFlight = false; }
 }
 
@@ -497,6 +503,14 @@ export async function pullRemoteMessages(): Promise<number> {
       if (readInbox(sid, 500).some((x: SocialMsg) => x.id === p.id)) continue; // 去重（server 标记延迟防重复注入）
       appendInbox(sid, p as SocialMsg);
       added++;
+      // ISSUE 125 跨设备扩展：写 trigger 文件让 handleTrigger 走打断路径（resting→working→inject）
+      // 没有 trigger 时跨设备消息只能等 agent_end drain，wait 中不被打断
+      if (p.mode_used === "interrupt" || p.mode_used === "queue") {
+        try {
+          mkdirSync(TRIGGERS_DIR, { recursive: true });
+          writeFileSync(join(TRIGGERS_DIR, `${sid}.json`), JSON.stringify({ msgId: p.id, ts: p.ts }), "utf8");
+        } catch { /* trigger 写入失败 → 降级为 agent_end drain */ }
+      }
     }
     return added;
   } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return 0; } // 拉取失败静默（下次心跳再拉）

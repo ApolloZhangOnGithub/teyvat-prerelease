@@ -509,10 +509,6 @@ function renderOverview(sessions: SessionSummary[], commits: CommitInfo[], sleep
     heatRow += color + ch + ch + C.reset;
   }
   heatLines.push(heatRow);
-  let labels = "";
-  for (let h = 0; h < 24; h++) {
-    labels += (h % 3 === 0) ? String(h).padEnd(2) + (h < 23 ? " ".repeat(Math.max(0, 4)) : "") : "  " + (h < 23 ? " ".repeat(Math.max(0, 4)) : "");
-  }
   // Simpler label row
   const hourLabels = C.dim + "0  3  6  9  12 15 18 21" + C.reset;
   heatLines.push(hourLabels);
@@ -562,9 +558,6 @@ function renderOverview(sessions: SessionSummary[], commits: CommitInfo[], sleep
     const dayEnd = dayStart + 86400000;
     dayData[6 - i] = commits.filter(c => c.date >= dayStart && c.date < dayEnd).length;
   }
-  const dayNames = ZH
-    ? ["一", "二", "三", "四", "五", "六", "日"]
-    : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   const weekdayOfToday = (new Date().getDay() + 6) % 7;
 
   let weekRow = "";

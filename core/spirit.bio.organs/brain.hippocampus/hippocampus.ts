@@ -39,8 +39,6 @@ export function createHippocampus(
   const personId = personDir.match(/([a-f0-9]+)$/)?.[1] ?? "x";
   const tmuxName = `hc-${personId}`;
       const sessionDir = path.join(personDir, "..", "..", "SessionData", personId, "HippocampusSessions");
-  let running = false;
-
   function tmuxHas(): boolean {
     try {
       execSync(`tmux has-session -t ${tmuxName} 2>/dev/null`);
@@ -50,8 +48,6 @@ export function createHippocampus(
 
   const self: HippocampusHandle = {
     async start() {
-      running = true;
-
       await mkdir(sessionDir, { recursive: true });
 
       const convPath = `${sessionDir}/conv.json`;
@@ -77,12 +73,10 @@ export function createHippocampus(
         );
       } catch (err: any) {
         onError(`Hippocampus tmux spawn failed: ${err?.message ?? err}`);
-        running = false;
       }
     },
 
     stop() {
-      running = false;
       try { execSync(`tmux kill-session -t ${tmuxName} 2>/dev/null`); } catch (e) { console.error("[spirit.bio.organs/brain.hippocampus/hippocampus.ts] " + ((e as any)?.message || e)); }
     },
 

@@ -128,32 +128,6 @@ const tmuxPeek = async (n: string): Promise<string> => {
 
 // ── execute tool ──
 
-// ── renderDiff 管线（write/edit 工具同款：generateDiffString + renderDiff）──
-// 动态 require：绕过 extension load check 的静态循环检测；
-// 部署后 overrides 目录在 extensions/teyvat/ 下保持（相对路径有效）。
-let _renderDiff: ((text: string) => string) | undefined;
-let _generateDiffString: ((oldContent: string, newContent: string, contextLines?: number) => { diff: string; firstChangedLineNumber?: number }) | undefined;
-function loadRenderDiff(): ((text: string) => string) | undefined {
-  if (_renderDiff) return _renderDiff;
-  try {
-    const bridge = require("../../god.frontend.tui/overrides/pi-dist/modes/interactive/components/diff.js");
-    _renderDiff = bridge.renderDiff;
-  } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e));
-    _renderDiff = undefined;
-  }
-  return _renderDiff;
-}
-function loadGenerateDiffString(): ((oldContent: string, newContent: string, contextLines?: number) => { diff: string; firstChangedLineNumber?: number }) | undefined {
-  if (_generateDiffString) return _generateDiffString;
-  try {
-    const mod = require("../../god.frontend.tui/overrides/pi-dist/core/tools/edit-diff.js");
-    _generateDiffString = mod.generateDiffString;
-  } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e));
-    _generateDiffString = undefined;
-  }
-  return _generateDiffString;
-}
-
 // 后台化阈值：快命令直接返回，慢命令自动后台
 const BG_THRESHOLD_MS = 1000;
 
@@ -522,7 +496,9 @@ let _lastBgHash = ""; // @ 缓存：避免相同输出重复占用 context
             }
           }
         } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
-        setTimeout(() => { process.exit(0); }, 500);
+        // ISSUE 140 v2：缩短 exit 延迟（500→100ms）减少框架在 exit 前处理 tool result 开新 turn 的窗口
+        // __genshinRebootPending 已阻止 agent_end 续命，100ms 够写完磁盘但不够开新 API 请求
+        setTimeout(() => { process.exit(0); }, 100);
         return { content: [{ type: "text", text:
           i18n(`self-reboot: 进程将在 0.5s 后退出并由 launcher 自动重启。\nreason: ${reason}\n` +
                `重启后：记忆快照重新冻结、make 后的代码变更生效。`,

@@ -549,8 +549,28 @@ if [ "$MODE" = "kill" ]; then
   if _confirm "杀掉 $NAME?" "Kill $NAME?"; then
     # 杀掉 pi 进程及其父 bash launcher，清 wake-restart 防重启
     PARENT_PID=$(ps -o ppid= -p "$PID" 2>/dev/null | tr -d ' ')
-    kill "$PID" 2>/dev/null
-    [ -n "$PARENT_PID" ] && kill "$PARENT_PID" 2>/dev/null
+    # 2026-09-07（ISSUE 139）：kill 分支补 T/Z 残留处理（对齐 ISSUE 133 启动锁判定）——
+    # Ctrl+C/Ctrl+Z 遗留的 stopped(T)/僵尸(Z) 进程对 SIGTERM 无效：裸 kill 报"已杀掉"但进程没死
+    # （用户实测 Linux：genshin k 反复杀 smart-linux-lifer-helper-008 每次都报已杀掉、进程一直在）。
+    # T/Z → TERM 先行 + KILL 兜底；正常进程仍 TERM。
+    PSTAT=$(ps -o stat= -p "$PID" 2>/dev/null | tr -d ' ')
+    case "$PSTAT" in
+      *Z*)
+        kill -9 "$PID" 2>/dev/null;;
+      *T*)
+        kill -TERM "$PID" 2>/dev/null; sleep 0.4; kill -KILL "$PID" 2>/dev/null;;
+      *)
+        kill "$PID" 2>/dev/null;;
+    esac
+    # 父 launcher 同步清理（若也是残留则同法兜底）
+    if [ -n "$PARENT_PID" ]; then
+      PPSTAT=$(ps -o stat= -p "$PARENT_PID" 2>/dev/null | tr -d ' ')
+      case "$PPSTAT" in
+        *Z*) kill -9 "$PARENT_PID" 2>/dev/null;;
+        *T*) kill -TERM "$PARENT_PID" 2>/dev/null; sleep 0.4; kill -KILL "$PARENT_PID" 2>/dev/null;;
+        *)   kill "$PARENT_PID" 2>/dev/null;;
+      esac
+    fi
     # 找对应的 agent id 清文件
     AGENT_ID=$(echo "$NAME" | node --input-type=commonjs -e "const fs=require('fs'); const list=JSON.parse(fs.readFileSync('$PLIST','utf8')); const n=process.argv[1]; const p=list.find(x=>x.name===n||x.id===n); if(p)console.log(p.id)" "$NAME" 2>/dev/null)
     if [ -n "$AGENT_ID" ]; then

@@ -460,7 +460,10 @@ function main() {
       const varPromotor = resolve(varDir, `promotor.${kind}.dna`);
       const varCoded = resolve(varDir, `coded.${kind}.dna`);
       try { readFileSync(varPromotor); } catch (e) { console.error("[spirit.bio.gene/polymerase.ts] " + ((e as any)?.message || e)); continue; }
-      const assembleePaths = [`${GENE_ROOT}/*_.DNA`];
+      const assembleePaths = readdirSync(GENE_ROOT)
+        .filter((f: string) => f.endsWith("_.DNA"))
+        .map((f: string) => `${GENE_ROOT}/${f}`)
+        .sort();
       try { readFileSync(varCoded); } catch (e) { console.error("[spirit.bio.gene/polymerase.ts] " + ((e as any)?.message || e)); }
       const outPath = resolve(varDir, "rna.json");
       transcribe(varPromotor, assembleePaths, outPath, `variants.kinds.${kind}/rna.json`, false);

@@ -43,8 +43,6 @@ import brain_senses_bioclock from "#brain_bioclock";
 // import brain_senses_metaconsciousness from "#brain_metaconsciousness"; // 技术债：rna.json 无注册，不装配
 import brain_intentions from "../brain.intentions/intentions.ts";
 import body_ear from "#head_ears";
-// ── 传统海马体开关：false = 不启动 hc-* 编码进程
-const TRADITIONAL_HIPPOCAMPUS = false;
 import body_mouth from "#head_mouth";
 import body_eyes_visual from "#head_eyes";
 import technology_mobile from "#infotech_mobile";
@@ -303,16 +301,10 @@ export default function kernelMain(pi: ExtensionAPI) {
       // → K020 启动硬检查才 throw（social 曾因此未注入）；且 K020 throw 在 process.title 设置前，
       // 导致 personId() 提取失败 → validateExecute 的 root/own-id 放行全失效，连锁故障。
       // make 门禁：C.deploy/check-func-load.cjs 会在部署时加载所有 func 预检（构建期拦截）。
-      logerr("K003", e);
+      logerr("K002", e, `func ${f.name} load`);
       throw new Error(`[K002] func ${f.name} 加载失败（fail-fast，ISSUE 112）: ${e?.message ?? e}`);
     }
   }
-  // 海马体 spawn 逻辑在 default export，单独调用（2026-08-20 注释：TRADITIONAL_HIPPOCAMPUS 恒 false，技术债预留不装配）
-  // if (TRADITIONAL_HIPPOCAMPUS) { try { brain_hippocampus_spawn(pi); } catch (e: any) {
-  //   try { sendCustomMessage(pi, "system-error", `WARN: 海马体 spawn 加载失败: ${e?.message ?? e}`); } catch (e2) { logerr("K004", e2); }
-  // }
-  // }
-
   // ── 工具统一注册（所有 organ 加载完后 flush）──
   try { flushTools(pi); } catch (e: any) { logerr("K005", e); }
 

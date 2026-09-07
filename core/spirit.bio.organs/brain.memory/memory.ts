@@ -372,11 +372,6 @@ export default function registerMemory(pi: ExtensionAPI) {
       const abs = path.resolve(p);
       const pd = path.resolve(personDir);
       if (abs.startsWith(pd)) {
-        // 海马体 session 可以读写 work_memory（蓝图的 hebbian 编码）
-        const isHc = getSessionRole() === "hippocampus";
-        const isWorkMem = base === "work_memory.md";
-        const isContext = base === "context.md" || base === "hc-new-slice.md";
-        if (isHc && (isWorkMem || (isContext && (event.toolName as string) === "read"))) return;
         return { block: true, reason: i18n(`记忆文件 ${base} 由海马体管理，主 session 不能直接修改。使用 editcontext / nap / sleep 工具。`, `Memory file ${base} is managed by the hippocampus; the main session cannot modify it directly. Use the editcontext / nap / sleep tools.`) };
       }
     }
