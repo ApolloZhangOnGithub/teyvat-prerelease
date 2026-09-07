@@ -268,6 +268,12 @@ for AI_PKG in "$PI_PKG/node_modules/@earendil-works/pi-ai" "$RUNTIME/node_module
   for f in openai-completions.js openai-responses-shared.js transform-messages.js google-shared.js mistral-conversations.js; do
     if [ -f "$OVERRIDES/pi-ai/$f" ]; then _override "$OVERRIDES/pi-ai/$f" "$AI_PKG/dist/api/$f" && AI_APPLIED=1; fi
   done
+  # teyvat 2026-09-07：覆盖 pi-ai providers 模型 catalog（deepseek.models.js 等，含官方 catalog 定制/新增模型）
+  if [ -d "$OVERRIDES/pi-ai/providers" ]; then
+    for f in $(cd "$OVERRIDES/pi-ai/providers" && find . -name '*.js' 2>/dev/null); do
+      if [ -f "$OVERRIDES/pi-ai/providers/$f" ]; then _override "$OVERRIDES/pi-ai/providers/$f" "$AI_PKG/dist/providers/$f" && AI_APPLIED=1; fi
+    done
+  fi
 done
 [ "$AI_APPLIED" = "1" ] || warn "pi-ai overrides not applied (no pi-ai@$PIN found — check alignment / rebase golden)"
 # theme overrides
@@ -642,8 +648,7 @@ ENDPATCH
     node "$_patch_tui" "$_tui_js" && rm -f "$_patch_tui"
   fi
 
-  # patch model-resolver.js: deepseek provider 首次安装默认模型 pro → flash（2026-09-07 用户定稿：首次装 teyvat 默认 deepseek-v4-flash）
-  _mr_js="$PI_DIST/core/model-resolver.js"
+  # patch read.js: getNonVisionImageNote 的 model.input.includes 缺 Array.isArray 防御（2026-09-07 用户/我定稿：models.dev 合成/第三方模型缺 input 字段 → Undefined reading 'includes'）。debug-01 只修了 pi-ai 5 处，漏了 pi-coding-agent read.js 这处。\n  _read_js=\"$PI_DIST/core/tools/read.js\"\n  if [ -f \"$_read_js\" ]; then\n    _patch_readimg=\"$PI_DIST/core/tools/.patch-readimg.cjs\"\n    cat > \"$_patch_readimg\" <<'ENDPATCH'\nconst fs = require('fs');\nlet src = fs.readFileSync(process.argv[2], 'utf8');\nconst oldLine = 'if (!model || model.input.includes(\"image\")) {';\nconst newLine = 'if (!model || !Array.isArray(model.input) || model.input.includes(\"image\")) {';\nif (src.includes(oldLine)) {\n  src = src.split(oldLine).join(newLine);\n  fs.writeFileSync(process.argv[2], src);\n  console.log('patch-read-image-input-ok');\n} else {\n  console.log('patch-read-image-input-skip (pattern not found, already patched or version drift)');\n}\nENDPATCH\n    node \"$_patch_readimg\" \"$_read_js\" && rm -f \"$_patch_readimg\"\n  fi\n\n  # patch model-resolver.js: deepseek provider 首次安装默认模型 pro → flash（2026-09-07 用户定稿：首次装 teyvat 默认 deepseek-v4-flash）\n  _mr_js=\"$PI_DIST/core/model-resolver.js\""
   if [ -f "$_mr_js" ]; then
     _patch_mr="$PI_DIST/core/.patch-model-resolver.cjs"
     cat > "$_patch_mr" <<'ENDPATCH'

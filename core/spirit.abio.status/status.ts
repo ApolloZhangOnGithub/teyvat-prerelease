@@ -164,25 +164,44 @@ export function registerStatusTool(_pi: ExtensionAPI) {
         } catch (e: any) { return { content: [{ type: "text", text: T(`设置昵称失败: ${e?.message}`, `Failed to set nickname: ${e?.message}`) }], isError: true }; }
       }
       if (params.instruction !== "@identity") {
-        // 2026-09-07 用户定稿：status @model — 列出可用模型（读 models.json），标注视觉模型 + 当前模型 ★
+        // 2026-09-07 用户定稿：status @model — 列出可用模型，标注视觉模型 + 当前模型 ★。
+        // 2026-09-07 teyvat：模型清单官方化——built-in catalog（官方 DEEPSEEK_MODELS 等）+ models.json custom 合并，
+        // 不只见models.json（否则 vision-exp 需手改 models.json才出现）。deepseek 的 vision-exp 来自官方 catalog。
         if (params.instruction.startsWith("@model")) {
           try {
             const models = JSON.parse(readFileSync(join(homedir(), ".teyvat/config/models.json"), "utf8"));
             const cur = (globalThis as any).__genshinGetModel?.();
             const curId = cur?.id ?? cur?.model ?? "";
-            const lines: string[] = [`${T("可用模型", "Available models")} (${T("★=当前", "★=current")}, ${T("screenshot=视觉模型", "screenshot=vision model")}):`];
-            for (const [prov, p] of Object.entries(models.providers || {})) {
-              const provName = String(prov);
-              for (const m of ((p as any).models || [])) {
-                const isVision = Array.isArray(m.input) && m.input.includes("image");
-                const star = m.id === curId ? "★ " : "      ";
-                const vis = isVision ? " [视觉]" : "";
-                lines.push(`${star}${m.id}${vis}  (${provName})`);
+            // built-in catalog（官方）：MODELS[provider] 是 { modelId: {...} }，取 Object.values 成数组，与 models.json custom 合并
+            let merged: any[] = [];
+            try {
+              const piAi = require(join(process.env.PAIMON_RUNTIME || "", "node_modules/@earendil-works/pi-ai/dist/models.generated.js")) as any;
+              const catalog = piAi?.MODELS || {};
+              for (const [prov, mods] of Object.entries(catalog)) {
+                if (mods && typeof mods === "object" && !Array.isArray(mods)) {
+                  for (const mm of Object.values(mods as any) as any[]) merged.push({ provider: prov, ...mm });
+                }
               }
+            } catch { /* catalog 加载失败则仅用 models.json */ }
+            const seen = new Set<string>();
+            const lines: string[] = [`${T("可用模型", "Available models")} (${T("★=当前", "★=current")}, ${T("screenshot=视觉模型", "screenshot=vision model")}):`];
+            const push = (m: any, prov: string) => {
+              const key = prov + "::" + (m.id || m);
+              if (seen.has(key)) return; seen.add(key);
+              const isVision = Array.isArray(m.input) && m.input.includes("image");
+              const star = (m.id === curId) ? "★ " : "      ";
+              const vis = isVision ? " [视觉]" : "";
+              lines.push(`${star}${m.id}${vis}  (${prov})`);
+            };
+            // 先 built-in catalog（官方，含 vision）
+            for (const it of merged) push(it, it.provider);
+            // 再 models.json custom（覆盖/补充）
+            for (const [prov, p] of Object.entries(models.providers || {})) {
+              for (const mm of ((p as any).models || [])) push(mm, String(prov));
             }
             return { content: [{ type: "text", text: lines.join("\n") }] };
           } catch (e: any) {
-            return { content: [{ type: "text", text: T(`读取 models.json 失败: ${e?.message || e}`, `Failed to read models.json: ${e?.message || e}`) }], isError: true };
+            return { content: [{ type: "text", text: T(`读取模型失败: ${e?.message || e}`, `Failed to load models: ${e?.message || e}`) }], isError: true };
           }
         }
       }

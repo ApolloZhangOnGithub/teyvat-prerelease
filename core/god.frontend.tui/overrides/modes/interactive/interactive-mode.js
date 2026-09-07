@@ -448,16 +448,7 @@ export class InteractiveMode {
         }
         // Expose settingsManager for /view commands
         globalThis.__genshinSettingsManager = this.settingsManager;
-        // 2026-09-04：/m 精选模型清单（featured，选择器置顶 ✓ 标记）——用户可改此清单调整精选
-        globalThis.__genshinFeaturedModels = [
-            { provider: "deepseek", id: "deepseek-v4-pro" },
-            { provider: "deepseek", id: "deepseek-v4-flash" },
-            { provider: "openrouter", id: "anthropic/claude-fable-5.1" },
-            { provider: "openrouter", id: "openai/gpt-5.5" },
-            { provider: "openrouter", id: "google/gemini-3.8-flash" },
-            { provider: "openrouter", id: "moonshotai/kimi-k2.6" },
-            { provider: "bigmodel", id: "glm-5.3-flash" },
-        ];
+        // 2026-09-07 用户定稿：删除硬编码精选清单（__genshinFeaturedModels）——/m 名单一律从官方 registry/catalog 读，不再有手写硬编码。model-selector.js 用 `|| []` 兜底，删除安全。
         // 2026-09-04：footer 显示偏好恢复（/u 的 Footer 年龄/Footer 履历开关，默认 true）；2026-09-06 用户定稿默认隐藏（改 false）
         globalThis.__genshinFooterAge = this.settingsManager?.globalSettings?.footerAge ?? false;
         globalThis.__genshinFooterTokenmaxxed = this.settingsManager?.globalSettings?.footerTokenmaxxed ?? false;

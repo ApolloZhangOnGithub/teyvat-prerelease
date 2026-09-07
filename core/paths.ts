@@ -137,7 +137,8 @@ export function userFile(name: string): string {
 }
 
 // ── 域名 ──
-export const PAIMON_DOMAIN = "spirit.beer";
+// 2026-09-07 修复：7/29 曾改为 spirit.beer（git 15449e0a），但 sync.spirit.beer TLS 不通 → 所有走 syncEndpoint 的功能（social global / presence 上报 / 设备同步）fetch failed。用户确认正确域名是 paimon.beer（sync.paimon.beer HTTP 200 正常）。
+export const PAIMON_DOMAIN = "paimon.beer";
 export const WIKI_ENDPOINT_DEFAULT = `https://wiki.${PAIMON_DOMAIN}`;
 export const SYNC_ENDPOINT_DEFAULT = `https://sync.${PAIMON_DOMAIN}`;
 
