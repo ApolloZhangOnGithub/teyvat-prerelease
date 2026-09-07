@@ -23,13 +23,24 @@ const save = () => {
 };
 
 // ── setting definitions ──
-const MODELS = ['deepseek-v4-pro', 'deepseek-v4-flash', 'Qwen3.8-27B']; // 2026-08-18 加本地 qwen（settings 菜单默认模型可选）
+const MODELS = ['deepseek-v4-flash', 'deepseek-v4-flash-vision-exp', 'deepseek-v4-pro', 'Qwen3.8-27B']; // 2026-09-07：默认 flash 在前（首次默认）+ vision-exp 加入；2026-08-18 加本地 qwen
+
+// 2026-09-07 用户：默认模型要实际有效（不硬编码 fallback）——读 models.json 真实可用模型，flash 优先，无则取实际第一个
+function actualDefaultModel() {
+  try {
+    const m = JSON.parse(fs.readFileSync(path.join(PAIMON_HOME, 'config/models.json'), 'utf8'));
+    const ds = m.providers?.deepseek?.models || [];
+    if (ds.find(x => x.id === 'deepseek-v4-flash')) return 'deepseek-v4-flash';
+    if (ds.length > 0) return ds[0].id;
+  } catch (e) { /* models.json 缺失时落兜底 */ }
+  return 'deepseek-v4-flash';
+}
 
 function getItems() {
   const dev = !!settings.developerMode;
   const items = [
     { key: 'lang', label: zh ? '语言' : 'Language', value: settings.lang === 'zh' ? '简体中文' : 'English', type: 'toggle' },
-    { key: 'defaultModel', label: zh ? '默认模型' : 'Default model', value: settings.defaultModel || 'deepseek-v4-pro', type: 'cycle', options: MODELS },
+    { key: 'defaultModel', label: zh ? '默认模型' : 'Default model', value: settings.defaultModel || actualDefaultModel(), type: 'cycle', options: MODELS },
     { key: 'autoArchiveDays', label: zh ? '自动归档' : 'Auto-archive', value: (settings.autoArchiveDays || 0) > 0 ? (zh ? `闲置 ${settings.autoArchiveDays} 天后` : `after ${settings.autoArchiveDays}d idle`) : (zh ? '关闭' : 'off'), type: 'input' },
     { key: 'sep1', type: 'separator' },
     { key: 'displayHeader', label: zh ? '显示' : 'Display', value: '', type: 'label' },

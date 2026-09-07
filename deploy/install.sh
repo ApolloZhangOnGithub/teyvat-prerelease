@@ -642,6 +642,26 @@ ENDPATCH
     node "$_patch_tui" "$_tui_js" && rm -f "$_patch_tui"
   fi
 
+  # patch model-resolver.js: deepseek provider 首次安装默认模型 pro → flash（2026-09-07 用户定稿：首次装 teyvat 默认 deepseek-v4-flash）
+  _mr_js="$PI_DIST/core/model-resolver.js"
+  if [ -f "$_mr_js" ]; then
+    _patch_mr="$PI_DIST/core/.patch-model-resolver.cjs"
+    cat > "$_patch_mr" <<'ENDPATCH'
+const fs = require('fs');
+let src = fs.readFileSync(process.argv[2], 'utf8');
+const oldLine = 'deepseek: "deepseek-v4-pro",';
+const newLine = 'deepseek: "deepseek-v4-flash",  // teyvat patch 2026-09-07: 首次安装默认 flash（原 v4-pro）';
+if (src.includes(oldLine)) {
+  src = src.split(oldLine).join(newLine);
+  fs.writeFileSync(process.argv[2], src);
+  console.log('patch-model-resolver-ok');
+} else {
+  console.log('patch-model-resolver-skip (pattern not found, already patched or version drift)');
+}
+ENDPATCH
+    node "$_patch_mr" "$_mr_js" && rm -f "$_patch_mr"
+  fi
+
   # patch runtime package.json: add #gene_riboswitch import (inline, no temp file)
   node -e "
     const fs=require('fs');
