@@ -792,6 +792,15 @@ export class TuiAltScreen extends TuiBase {
         // OSC 52 剪贴板写 → 选中复制静默失败。fallback 链参考 utils/clipboard.js：
         // pbcopy(mac) / wl-copy(wayland) / xclip→xsel(X11) → OSC 52（失败或远程 SSH/MOSH 会话兜底）
         const fallbackOsc52 = () => this.terminal.write(`\x1b]52;c;${Buffer.from(text).toString("base64")}\x07`);
+        // 2026-09-07：X11/XWayland 兼容路径（DISPLAY 存在时用 xclip→xsel；wl-copy 失败后的 fallback）
+        const x11ClipCopy = () => {
+          const optsX = { input: text, timeout: 5000, stdio: ["pipe", "ignore", "ignore"] };
+          try { execSync("xclip -selection clipboard", optsX); return true; }
+          catch (e) { /* xclip 不存在/失敗 → 试 xsel */ }
+          try { execSync("xsel --clipboard --input", optsX); return true; }
+          catch (e) { /* xsel 也不可用 → 返回 false 走 OSC 52/提示 */ }
+          return false;
+        };
         let sysCopied = false;
         let asyncCopy = false; // ISSUE 135：wl-copy 分支异步化（spawn 事件确认），跳过下方同步 fallback
         try {
@@ -820,14 +829,22 @@ export class TuiAltScreen extends TuiBase {
                             wl.unref();
                         });
                         wl.on("error", () => {
-                            fallbackOsc52();
-                            this.flash("Copied!");
+                            // wl-copy 不可用（ENOENT）→ 先试 X11/XWayland 路径（DISPLAY=:0 时 xclip 可用）→ 最后 OSC 52
+                            // 2026-09-07（用户：Linux 选中复制不生效）：原实现 ENOENT 直接跳 OSC 52——
+                            //   但 gnome-terminal 等默认禁 OSC 52 写剪贴板 → 复制必失败还 flash "Copied!" 误导。
+                            //   现在完整链 wl-copy → xclip/xsel → OSC 52，且失败给真实提示。
+                            if (!process.env.DISPLAY || !x11ClipCopy()) {
+                              fallbackOsc52();
+                              this.flash("Clipboard: 系统无 wl-copy/xclip，OSC 52 可能被终端禁用。sudo apt install wl-clipboard xclip");
+                            } else {
+                              this.flash("Copied!");
+                            }
                         });
                     }
                     else if (process.env.DISPLAY) {
-                        try { execSync("xclip -selection clipboard", opts); }
-                        catch { execSync("xsel --clipboard --input", opts); }
-                        sysCopied = true;
+                        // 2026-09-07：xclip→xsel 任一成功即置位；都失败（ENOENT）不假装成功，留给 OSC 52
+                        if (!x11ClipCopy() && !remote) { /* 落到下方同步 fallback */ }
+                        else sysCopied = true;
                     }
                 }
             }
