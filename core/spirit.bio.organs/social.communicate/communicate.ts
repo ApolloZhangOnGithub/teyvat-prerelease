@@ -253,14 +253,19 @@ function resolveSid(nameOrSid: string): string | null {
 }
 
 /** 显示名：name (sid)；未知 sid 原样返回 */
+// 2026-09-07（用户反馈：远端 agent send 渲染显示 id 而非 name）：远端名字缓存——remoteSendOne 查 presence 时填充，displayName/displayNameShort 读它。
+const remoteNameCache = new Map<string, string>();
 function displayName(sid: string): string {
   const reg = readJson<Record<string, RegistryEntry>>(REGISTRY_FILE, {});
   const e = reg[sid];
-  return e ? `${e.name} (${sid})` : sid;
+  if (e) return `${e.name} (${sid})`;
+  const remote = remoteNameCache.get(sid);
+  return remote ? `${remote} (${sid})` : sid;
 }
 function displayNameShort(sid: string): string {
   const reg = readJson<Record<string, RegistryEntry>>(REGISTRY_FILE, {});
-  return reg[sid]?.name ?? sid;
+  if (reg[sid]?.name) return reg[sid].name;
+  return remoteNameCache.get(sid) ?? sid;
 }
 
 // ── focus ─────────────────────────────────────────────────────────────
@@ -482,6 +487,10 @@ async function findRemoteAgent(key: string): Promise<{ sid: string; name: string
 async function remoteSendOne(toSid: string, text: string, mode: SocialMode, fromSid: string, fromName: string): Promise<{ to: string; mode_used: SocialMode; status: string }> {
   const b = loadBinding();
   if (!b) throw new Error(`social.send: ${toSid} 不在本机且未绑定 GitHub 账号——跨设备投递需要 binding`);
+  // 2026-09-07（用户反馈：send 渲染显示 id 而非 name）：查 presence 拿远端名字填缓存，供 displayName 渲染（跨设备 agent 不在本地 registry）
+  if (!remoteNameCache.has(toSid)) {
+    try { const rmt = await findRemoteAgent(toSid); if (rmt) remoteNameCache.set(toSid, rmt.name); } catch { /* 名字获取失败不阻塞发送 */ }
+  }
   const msg: SocialMsg = {
     id: `msg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
     from: fromSid,

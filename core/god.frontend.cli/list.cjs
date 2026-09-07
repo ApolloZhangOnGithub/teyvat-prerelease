@@ -361,7 +361,7 @@ for (let i = 0; i < rows1.length; i++) {
 
 if (filter === 'help') {
   let ver = '';
-  try { const v = JSON.parse(fs.readFileSync(PAIMON_HOME + '/agent/version.json', 'utf8')); ver = ' v' + v.genshin; } catch (e) { console.error("[god.frontend.cli/list.cjs] " + (e?.message || e)); }
+  try { const v = JSON.parse(fs.readFileSync(PAIMON_HOME + '/agent/version.json', 'utf8')); const dv = (v.channel === 'prerelease' && v.pinnedDev) ? v.pinnedDev : v.genshin; ver = ' v' + dv; } catch (e) { console.error("[god.frontend.cli/list.cjs] " + (e?.message || e)); }
   console.log('');
   console.log('  ' + LOGO + 'Teyvat · Help' + R + ver);
   console.log('');

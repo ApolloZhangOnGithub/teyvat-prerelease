@@ -65,7 +65,7 @@ function pad(s, n) { return s + ' '.repeat(Math.max(0, n - vw(s))); }
 if (!ARG1) {
   const BOLD = '\x1b[1m', D = '\x1b[90m', G = '\x1b[32m', Y = '\x1b[33m', R = '\x1b[0m';
   let devVer = '';
-  try { const v = JSON.parse(fs.readFileSync(PAIMON_HOME + '/agent/version.json', 'utf8')); devVer = D + '  v' + v.genshin + ' (' + v.channel + ')' + R; } catch (e) { console.error("[god.frontend.cli/organization.cjs] " + (e?.message || e)); }
+  try { const v = JSON.parse(fs.readFileSync(PAIMON_HOME + '/agent/version.json', 'utf8')); const dv = (v.channel === 'prerelease' && v.pinnedDev) ? v.pinnedDev : v.genshin; devVer = D + '  v' + dv + ' (' + v.channel + ')' + R; } catch (e) { console.error("[god.frontend.cli/organization.cjs] " + (e?.message || e)); }
   console.log('');
   console.log('  ' + BOLD + 'Teyvat' + R + D + ' · ' + orgs.length + ' organization' + (orgs.length === 1 ? '' : 's') + R + devVer);
   console.log('');

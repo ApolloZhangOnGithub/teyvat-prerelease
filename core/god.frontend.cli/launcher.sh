@@ -149,7 +149,9 @@ while [ $# -gt 0 ]; do
             const fs=require('fs'),h=require('os').homedir(),lang=process.env.PAIMON_LANG||'en',zh=lang==='zh';
             const cur=JSON.parse(fs.readFileSync(h+'/.teyvat/agent/version.json','utf8'));
             const C=zh?'当前':'current', H=zh?'通道':'channels', N=zh?'(无)':' (none)';
-            console.log('  '+C+': ' + cur.genshin + ' (' + (cur.channel||'minutely') + ', pi v'+cur.pi+')');
+            // 2026-09-07：prerelease 双号（ISSUE 138）——prerelease 显示实际 dev 号（用户关心内容对应哪个 dev，alpha 是发布管道内部号）。
+            const dispVer = (cur.channel==='prerelease' && cur.pinnedDev) ? cur.pinnedDev : cur.genshin;
+            console.log('  '+C+': ' + dispVer + ' (' + (cur.channel||'minutely') + ', pi v'+cur.pi+')');
             console.log('');
             console.log('  '+H+':');
             const pad = (s,n) => s + ' '.repeat(Math.max(0, n - s.length));
