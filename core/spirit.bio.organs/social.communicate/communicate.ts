@@ -687,6 +687,8 @@ function watchInterruptTriggers(pi: ExtensionAPI): void {
         // 立即注入范围：interrupt 全部（强制切断）；queue 仅在 resting（wait 中）时注入（打断 wait）
         const resting = existsSync(join(homedir(), ".teyvat", "RuntimeCache", mySid, "main-resting"));
         const toInject = msgs.filter((m: SocialMsg) => m.mode_used === "interrupt" || (resting && m.mode_used === "queue"));
+        // 2026-09-08（testor 03:12 实证：消息 injected 但 wait 未被唤醒——诊断打点）：trigger 消费路径低频事件——打点定位静默失败点（toInject 空 / resting 判断 / sendCustomMessage 未达）
+        console.error("[social-trigger] consumed " + f.split("/").pop() + " trig=" + JSON.stringify(trig) + " inboxUninjected=" + msgs.length + " toInject=" + toInject.length + " resting=" + resting);
         if (toInject.length) {
           // ── interrupt 唤醒 hibernated（2026-08-14 用户报修）──
           // 此前 interrupt 在 hibernated 时照常注入 → _flushBatch 开新 turn →
@@ -725,7 +727,9 @@ function watchInterruptTriggers(pi: ExtensionAPI): void {
               { deliverAs: "interrupt" }, // agent-session.js override：abort 当前 run + 立即注入
             );
             markInjected(mySid, toInject.map((m: SocialMsg) => m.id));
+            console.error("[social-trigger] injected OK " + toInject.length + " msgs → " + toInject.map((m: SocialMsg) => m.id).join(","));
           } catch (e2) {
+            console.error("[social-trigger] sendCustomMessage FAILED: " + ((e2 as any)?.message || e2));
             console.error("[spirit.bio.organs/social.communicate/communicate.ts] sendCustomMessage(interrupt) 注入失败——消息未标记 injected（agent_end 兑底将补注）: " + ((e2 as any)?.message || e2));
           }
         }
