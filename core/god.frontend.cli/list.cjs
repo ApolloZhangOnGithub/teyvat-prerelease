@@ -33,6 +33,16 @@ try { const v = JSON.parse(fs.readFileSync(path.join(PAIMON_HOME, 'agent/version
 const detailMode = !!process.env.PAIMON_DETAIL;
 
 const Y = '\x1b[33m', G = '\x1b[32m', D = '\x1b[90m', C = '\x1b[36m', M = '\x1b[35m', R = '\x1b[0m', BOLD = '\x1b[1m', RED = '\x1b[31m', YLW = '\x1b[33m';
+// 2026-09-07（用户：light 白底 logo 消失）：logo 纯 BOLD 无色 → 用终端默认前景色，白底下浅色字不可见。
+// 按 settings theme 给 logo 固定颜色：dark → 白亮粗体；light → 深色粗体（黑），两端都可见。
+let LOGO_FG = '\x1b[97m'; // dark 默认：亮白
+{
+  try {
+    const s = JSON.parse(fs.readFileSync(path.join(PAIMON_CONFIG, 'settings.json'), 'utf8'));
+    if (s && s.theme === 'light') LOGO_FG = '\x1b[30m'; // light：黑
+  } catch (e) { /* settings 缺失/损坏 → 保持 dark 默认 */ }
+}
+const LOGO = LOGO_FG + BOLD;
 const KIND_COLORS = { 'coding-agent': M, 'coding': M };
 
 const { pad, lpad, vw } = require(path.join(__dirname, 'pad.cjs'));
@@ -208,10 +218,10 @@ const numW = String(list.length).length;
 const hdr = ' '.repeat(numW + 2 + 1); // number + '. ' + trailing space
 
 const title = filter === 'help'
-  ? '  ' + BOLD + 'Teyvat' + R + D + ' ' + (zh ? '用法' : 'usage') + R
+  ? '  ' + LOGO + 'Teyvat' + R + D + ' ' + (zh ? '用法' : 'usage') + R
   : filter === 'archived'
-  ? '  ' + BOLD + 'Teyvat' + R + D + ' · ' + list.length + (zh ? ' 已归档' : ' archived') + R
-  : '  ' + BOLD + 'Teyvat' + R + D + ' · ' + list.length + ' agent' + (list.length === 1 ? '' : 's') + R
+  ? '  ' + LOGO + 'Teyvat' + R + D + ' · ' + list.length + (zh ? ' 已归档' : ' archived') + R
+  : '  ' + LOGO + 'Teyvat' + R + D + ' · ' + list.length + ' agent' + (list.length === 1 ? '' : 's') + R
     + (() => { try { const v = JSON.parse(fs.readFileSync(PAIMON_HOME + '/agent/version.json', 'utf8')); return D + '  v' + v.genshin + ' (' + v.channel + ')' + R; } catch(e) { try { fs.mkdirSync(PAIMON_HOME + '/LogData', { recursive: true }); fs.appendFileSync(PAIMON_HOME + '/LogData/genshin-list-error.log', 'version display: ' + (e?.message||e) + '\n'); } catch(_) { /* 日志写入失败不阻塞列表 */ } return ''; } })();
 
 const statusStrs = list.map(p => {
@@ -353,7 +363,7 @@ if (filter === 'help') {
   let ver = '';
   try { const v = JSON.parse(fs.readFileSync(PAIMON_HOME + '/agent/version.json', 'utf8')); ver = ' v' + v.genshin; } catch (e) { console.error("[god.frontend.cli/list.cjs] " + (e?.message || e)); }
   console.log('');
-  console.log('  ' + BOLD + 'Teyvat · Help' + R + ver);
+  console.log('  ' + LOGO + 'Teyvat · Help' + R + ver);
   console.log('');
   if (zh) {
     console.log('  世界上最先进的 AI 硅基智能系统，在持续生命、Agent Native OS、AI间交互、记忆设计等领先 Claude Code 等前沿工程。');
