@@ -197,12 +197,12 @@ while [ $# -gt 0 ]; do
                 else {rows.push(['dev-stable', N, ''])}
               } catch {rows.push(['dev-stable', N, ''])}
             }
-            // prerelease: 本地 update-prerelease 目录（若 update 过）——2026-09-05 加
-            try {
-              const pp = h + '/.local/lib/teyvat/update-prerelease/package.json';
-              if (fs.existsSync(pp)) { rows.push(['prerelease', JSON.parse(fs.readFileSync(pp,'utf8')).version, isCur('prerelease')]); }
-              else { rows.push(['prerelease', N, '']) }
-            } catch { rows.push(['prerelease', N, '']) }
+            // prerelease: 远程 git 源——2026-09-08 修：本机跑 minutely 从不 checkout prerelease → 本地目录永远空 → 永远 (无) 假象。改查远程 prerelease 仓库 package.json（同 release 行远程机制）；本地 update-prerelease 作 fallback
+            // ISSUE 138 双号：alpha 号 + 对应 pinnedDev 号都显示（用户关心内容对应哪个 dev）
+            let preVer = '', preDev = '';
+            try { const _pj = JSON.parse(require('child_process').execSync('curl -s -m 6 https://raw.githubusercontent.com/ApolloZhangOnGithub/paimon-code-prerelease/main/package.json',{encoding:'utf8',timeout:8000}).trim()); preVer = _pj.version || ''; preDev = _pj.pinnedDev || ''; } catch {}
+            if (!preVer) try { const pp = h + '/.local/lib/teyvat/update-prerelease/package.json'; if (fs.existsSync(pp)) { const _pj = JSON.parse(fs.readFileSync(pp,'utf8')); preVer = _pj.version || ''; preDev = _pj.pinnedDev || ''; } } catch {}
+            rows.push(['prerelease', (preVer || N) + (preVer && preDev ? '  → ' + preDev : ''), isCur('prerelease')])
             // release: npm + GitHub  ⚠️ npm 分发已废弃（2026-09-05 用户定稿，见 Versioning WIKI）——优先 git 源
             let relVer = '';
             try{relVer=require('child_process').execSync('npm view teyvat version 2>/dev/null',{encoding:'utf8',timeout:3000}).trim()}catch{}

@@ -49,7 +49,7 @@ func hands.fileacts-read //read 工具覆盖：office 格式自动分发 + pi �
     session main
     mode:abled DWN
     coded:fileread.wise
-func hands.webacts //网络（web tool：fetch URL 正文过滤 + search 搜索）
+func hands.webacts //网络（web tool：fetch URL 正文过滤 + search 搜索 + upload 文件分享——上传≤1MB 本地文件得 url+自动密码，24h 过期）
     session main
     mode:abled DWN
     tools web

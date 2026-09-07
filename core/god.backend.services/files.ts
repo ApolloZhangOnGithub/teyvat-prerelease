@@ -63,8 +63,29 @@ export async function downloadFile(c: any): Promise<Response> {
     try { const { unlinkSync } = await import("node:fs"); if (existsSync(join(SHARE_DIR, id))) unlinkSync(join(SHARE_DIR, id)); } catch { /* 忽略 */ }
     return c.json({ error: "expired" }, 410);
   }
-  // 密码校验（sha256）
-  if (!key || sha256(key) !== row.password_hash) return c.json({ error: "forbidden" }, 403);
+  // 密码校验（sha256）——2026-09-08：浏览器友好（无 key/错 key 返回 HTML 表单页，API 请求保持 JSON 403）
+  if (!key || sha256(key) !== row.password_hash) {
+    const accept = (c.req.header("Accept") || "") + " " + (c.req.header("User-Agent") || "");
+    const isBrowser = /text\/html|Mozilla/i.test(accept) && !/curl|fetch|node|genshin/i.test(accept);
+    if (isBrowser) {
+      const ok = !key ? "" : "";
+      const errMsg = key ? "密码错误，请重试" : "此文件受密码保护";
+      const fname = (row.filename || "file").replace(/[<>&"]/g, "");
+      const html = `<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>teyvat 文件下载</title></head>
+<body style="font-family:system-ui,-apple-system,sans-serif;background:#f5f6f8;margin:0;padding:0">
+<div style="max-width:440px;margin:80px auto;background:#fff;border-radius:14px;box-shadow:0 2px 16px rgba(0,0,0,.08);padding:32px">
+<h2 style="margin:0 0 6px;font-size:18px">📎 ${fname}</h2>
+<p style="color:#888;margin:0 0 20px;font-size:13px">${row.size || 0} bytes · 分享后 24 小时过期</p>
+<div style="background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:16px">🔒 ${errMsg}——请输入访问密码</div>
+<form method="get" action="/files/${id}">
+<input type="password" name="key" required placeholder="访问密码" autofocus style="width:100%;box-sizing:border-box;padding:12px 14px;border:1px solid #d0d5dd;border-radius:8px;font-size:15px;margin-bottom:12px">
+<button type="submit" style="width:100%;box-sizing:border-box;padding:12px;background:#1a56db;color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer">下载文件</button>
+</form>
+</div></body></html>`;
+      return c.html(html);
+    }
+    return c.json({ error: "forbidden" }, 403);
+  }
 
   const fp = join(SHARE_DIR, id);
   if (!existsSync(fp)) { stmt.deleteShare.run(id); return c.json({ error: "gone" }, 404); }

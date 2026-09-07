@@ -171,16 +171,17 @@ export default function (pi: ExtensionAPI) {
         if (!path) return { content: [{ type: "text", text: i18n("upload 需要 path（本地文件路径）", "upload requires path (local file path)") }], details: {}, isError: true };
         // ISSUE 142（2026-09-08 网盘式）：读本地文件 → POST sync /auth/files → 得 {url, password}（24h 过期自动密码）。单文件 ≤1MB（用户定稿）。
         try {
-          const fs = require("fs");
-          const { join } = require("path");
-          const { homedir } = require("os");
+          // 2026-09-08：require 在 ESM 未定义（上传实测暴露）——改用动态 import
+          const nfs = await import("node:fs");
+          const { join } = await import("node:path");
+          const { homedir } = await import("node:os");
           const resolved = path.startsWith("/") ? path : join(process.cwd(), path);
-          const data = fs.readFileSync(resolved);
+          const data = nfs.readFileSync(resolved);
           const MAX = 1024 * 1024;
           if (data.length > MAX) {
             return { content: [{ type: "text", text: i18n(`文件 ${data.length} B 超上限 1MB——需用户处理（截断/压缩后重传，或用户 /a 授权其他通道）`, `file ${data.length}B exceeds 1MB limit — user needed (truncate/compress, or /a authorize another channel)`) }], details: {}, isError: true };
           }
-          const b = JSON.parse(fs.readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8"));
+          const b = JSON.parse(nfs.readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8"));
           if (!b?.token || !b?.deviceId) return { content: [{ type: "text", text: i18n("未绑定 GitHub——先 genshin login", "not bound — run genshin login first") }], details: {}, isError: true };
           const filename = String(path.split("/").pop() || "file").replace(/[\\/:*?"<>|]/g, "_").slice(-120);
           const res = await fetch("https://sync.paimon.beer/auth/files", {
