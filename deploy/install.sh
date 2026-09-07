@@ -530,12 +530,19 @@ fi
 if [ -n "$PAIMON_VER" ]; then
   mkdir -p "$HOME/.teyvat/agent"
   CHANNEL="${PAIMON_CHANNEL:-minutely}"
-  echo "{\"genshin\":\"$PAIMON_VER\",\"pi\":\"$PIN\",\"channel\":\"$CHANNEL\"}" > "$HOME/.teyvat/agent/version.json"
-  # dev-stable: also save a separate version file for genshin -v listing
-  if [ "$PAIMON_CHANNEL" = "dev-stable" ]; then
-    echo "{\"genshin\":\"$PAIMON_VER\",\"pi\":\"$PIN\"}" > "$HOME/.teyvat/agent/version-stable.json"
+  # ISSUE 138：prerelease 双号——pinnedDev = 绑定的 dev 版本（类比 genshin/pi 双版本）。
+  # PAIMON_PINNED_DEV 非空时记入 version.json；非 prerelease 通道不设。
+  if [ -n "$PAIMON_PINNED_DEV" ] && [ "$PAIMON_PINNED_DEV" != "$PAIMON_VER" ]; then
+    echo "{\"genshin\":\"$PAIMON_VER\",\"pinnedDev\":\"$PAIMON_PINNED_DEV\",\"pi\":\"$PIN\",\"channel\":\"$CHANNEL\"}" > "$HOME/.teyvat/agent/version.json"
+    ok "version $PAIMON_VER ($CHANNEL, pin $PAIMON_PINNED_DEV, pi@$PIN)"
+  else
+    echo "{\"genshin\":\"$PAIMON_VER\",\"pi\":\"$PIN\",\"channel\":\"$CHANNEL\"}" > "$HOME/.teyvat/agent/version.json"
+    # dev-stable: also save a separate version file for genshin -v listing
+    if [ "$PAIMON_CHANNEL" = "dev-stable" ]; then
+      echo "{\"genshin\":\"$PAIMON_VER\",\"pi\":\"$PIN\"}" > "$HOME/.teyvat/agent/version-stable.json"
+    fi
+    ok "version $PAIMON_VER ($CHANNEL, pi@$PIN)"
   fi
-  ok "version $PAIMON_VER ($CHANNEL, pi@$PIN)"
 fi
 
 # ── 8. 部署完整性验证 ──

@@ -145,4 +145,36 @@ if (errors.length > 0 || dead.length > 0) {
   process.exit(1);
 }
 
+// ── 第五步（NORM-013 扩展，ISSUE 137 / PROPOSAL 037）：manifest default ↔ per-model 横向一致性 ──
+// 背景: eyes default:false→true（.11）但 tools/deepseek-v4-flash.json 遗留 eyes:false → flash 模型下
+//   eyes 被 per-model 覆盖过滤 → K020 误报「未注入」。manifest 默认演进必须同步所有 per-model 覆盖：
+//   default:true 的工具若某 per-model 文件显式 false，说明默认被局部覆盖——机械防线拦在 make。
+//   特例豁免: per-model false 表示「该模型特性性不支持/用户有意关闭」时，需显式 reason 字段（否则仍报错）。
+const pmDir = path.join(core, "spirit.bio.gene/tools");
+const pmConflicts = [];
+if (fs.existsSync(pmDir)) {
+  for (const pmFile of fs.readdirSync(pmDir)) {
+    if (!pmFile.endsWith(".json") || pmFile === "template.json") continue;
+    let pm;
+    try { pm = JSON.parse(fs.readFileSync(path.join(pmDir, pmFile), "utf8")); }
+    catch (e) { pmConflicts.push(`  ${pmFile} 解析失败: ${e?.message || e}`); continue; }
+    const ov = pm.overrides || {};
+    for (const [k, v] of Object.entries(ov)) {
+      if (v !== false) continue;
+      const manifestEntry = tools[k];
+      if (!manifestEntry) continue; // 覆盖不存在的工具 → 死覆盖，另查（不在此报）
+      if (manifestEntry.default && !manifestEntry.abandoned) {
+        // default:true 被 per-model 关掉 = 横向不一致（manifest 默认演进没同步 per-model）→ K020 误报源
+        pmConflicts.push(`  "${k}" default:true 但 ${pmFile} overrides 显式 false → 该模型下被过滤，K020 误报源。修复: 同步覆盖为 true，或把 manifest 改回 default:false`);
+      }
+    }
+  }
+}
+if (pmConflicts.length > 0) {
+  console.error(`  manifest-tools check FAILED: ${pmConflicts.length} 个 manifest↔per-model 不一致:`);
+  for (const c of pmConflicts) console.error(c);
+  console.error(`  修复: manifest 默认演进必须同步 per-model 覆盖（NORM-013 第五步，ISSUE 137）`);
+  process.exit(1);
+}
+
 console.log(`  manifest-tools check: OK (${registered.length} 个注册工具，全部在清单中)`);

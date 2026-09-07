@@ -1039,14 +1039,29 @@ export function convertMessages(model, context, compat) {
         }
         lastRole = msg.role;
     }
-    // 2026-09-07（ISSUE 136）：非 vision 模型下 toolResult 的 image 被替换为 [image] 文本后，
-    // tool 消息可能直接跟在 user 消息前（缺少 assistant 桥接）→ OpenAI 400: tool must be a response to tool_calls。
-    // 遍历 params，在 tool→user 直接相连处插入合成 assistant 桥接。
-    for (let i = 0; i < params.length - 1; i++) {
-        if (params[i].role === "tool" && params[i + 1].role === "user") {
-            params.splice(i + 1, 0, { role: "assistant", content: "I have processed the tool results." });
-            i++;
+    // 2026-09-07（ISSUE 136 加固）：非 vision 模型下 toolResult 的 image 被替换为 [image] 文本后，
+    // tool 消息可能直接跟在 user 消息前、或消息序列首条就是 tool（历史截断/ctx 重建/切模型后重放）
+    // → OpenAI 400: tool must be a response to tool_calls。
+    // 加固：遍历 params，任何 tool 消息若其前面没有 assistant 带 tool_calls（配对缺失），强制插入合成 assistant。
+    // 这样无论消息序列如何截断/重建都不会再 400（比 ISSUE 136 只处理 tool→user 更完备）。
+    {
+      const out = [];
+      let lastWasAssistantWithToolCalls = false;
+      for (const p of params) {
+        if (p.role === "tool") {
+          if (!lastWasAssistantWithToolCalls) {
+            out.push({ role: "assistant", content: "I have processed the tool results." });
+          }
+          out.push(p);
+          // 单条 tool 后重置：下一条若还是 tool 且无新 assistant，不再插（同批工具结果共享前置 assistant）
+          lastWasAssistantWithToolCalls = false;
         }
+        else {
+          out.push(p);
+          lastWasAssistantWithToolCalls = p.role === "assistant" && (Array.isArray(p.tool_calls) && p.tool_calls.length > 0);
+        }
+      }
+      params.splice(0, params.length, ...out);
     }
     return params;
 }

@@ -48,9 +48,9 @@ help:
 	@echo ""
 	@echo "  teyvat"
 	@echo "  ───────────────────────────────────────────────────────"
-	@echo "  dev-minutely             开发部署（minutely canary，默认启动版本）"
+	@echo "  dev-minutely             开发部署（minutely canary → 0.3.2-dev.YYYYMMDD.N，递增 N）"
 	@echo "  dev-stable               钉住当前 dev 为 dev-stable 保底"
-	@echo "  prerelease-minutely       推送精简包到 github-prerelease"
+	@echo "  prerelease-minutely       发布 alpha（0.3.2-alpha.YYYYMMDD.M，独立递增 M + pin dev）。用 dev= 绑指定 dev，默认绑最新"
 	@echo "  release                  正式发布 (make release v=0.x.x)"
 	@echo "  dev-restore              回退到指定 minutely 版本并部署 (make dev-restore v=0.x.x-dev.20xxxxxx.xx)"
 	@echo "  wiki-deploy              部署 wiki 到服务器"
@@ -216,22 +216,7 @@ prerelease-minutely:
 	@$(LOCKED) _prerelease-minutely
 
 _prerelease-minutely: _integrity
-	@REL_VER=$$(node -e "console.log(require('$(CORE)/package.json').version)"); \
-	TODAY=$$(date +%Y%m%d); \
-	COUNTER_FILE="$(CORE)/.build-counter"; \
-	if [ -f "$$COUNTER_FILE" ]; then \
-		read LAST_DATE LAST_COUNT < "$$COUNTER_FILE"; \
-		if [ "$$LAST_DATE" = "$$TODAY" ]; then \
-			COUNT=$$LAST_COUNT; \
-		else \
-			echo "  ERROR: no build today, run dev-minutely first"; exit 1; \
-		fi; \
-	else \
-		echo "  ERROR: no build counter, run dev-minutely first"; exit 1; \
-	fi; \
-	PAIMON_VER="$$REL_VER.$$TODAY.$$COUNT"; \
-	echo -e "  teyvat $$PAIMON_VER (prerelease)"; \
-	bash "$(DEPLOY)/build-release.sh" "$$PAIMON_VER" minutely
+	@bash "$(DEPLOY)/prerelease.sh" "$(CORE)" "$$(node -e "console.log(require('$(CORE)/package.json').version)")" "$(dev)" "$(DEPLOY)/build-release.sh"
 
 release:
 	@$(LOCKED) _release

@@ -22,6 +22,8 @@ RELEASE_DIR="$PARENT/../teyvat-sides/R.release"
 
 VER="${1:-}"
 TARGET="${2:-all}"
+# ISSUE 138（版本机制重构）：prerelease 双号——PINNED_DEV 用环境变量传入（不占参数位，兼容旧调用）
+PINNED_DEV="${PINNED_DEV:-}"
 
 if [ -z "$VER" ]; then
   echo "用法: $0 <版本号> [dev|stable|minutely|all]"
@@ -145,11 +147,14 @@ build_minutely() {
   rsync -a --delete "${CLEAN_EXCLUDES[@]}" \
     "$DEV/../C.deploy/" "$PRERELEASE_DIR/deploy/"
 
-  # package.json（写入 dev 版本号）
+  # package.json（ISSUE 138 双号：version=alpha 发布号，pinnedDev=绑定的 dev 版本号）
+  # PINNED_DEV 为空（旧调用）时回退：version 即 dev 号（兼容；新调用必传）
+  if [ -z "$PINNED_DEV" ]; then PINNED_DEV="$VER"; fi
   cat > "$PRERELEASE_DIR/package.json" << PKGEOF
 {
   "name": "teyvat",
   "version": "$VER",
+  "pinnedDev": "$PINNED_DEV",
   "description": "Living AI agent extension for pi-coding-agent",
   "license": "MIT",
   "os": ["darwin", "linux"],
@@ -158,7 +163,7 @@ build_minutely() {
     "@earendil-works/pi-coding-agent": "0.80.7"
   },
   "scripts": {
-    "postinstall": "PAIMON_CHANNEL=prerelease PAIMON_VER=$VER bash deploy/install.sh"
+    "postinstall": "PAIMON_CHANNEL=prerelease PAIMON_VER=$VER PAIMON_PINNED_DEV=$PINNED_DEV bash deploy/install.sh"
   },
   "files": ["core/", "deploy/", "README.md"]
 }
@@ -199,7 +204,7 @@ GITEOF
   if git diff --cached --quiet 2>/dev/null; then
     echo "  无变更。"
   else
-    git commit -m "${VER} $(date '+%Y-%m-%d %H:%M')"
+    git commit -m "${VER} (pin ${PINNED_DEV}) $(date '+%Y-%m-%d %H:%M')"
     git push origin main --force
     echo "  OK pushed github-prerelease"
   fi
