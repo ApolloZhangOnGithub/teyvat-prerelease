@@ -338,7 +338,21 @@ function enterAgent(name: string, mode='') {
     try{ execSync(`tmux has-session -t ${tn} 2>/dev/null`); console.log(`Attaching to ${tn}`); execSync(`tmux attach -t ${tn}`,{stdio:'inherit'}); process.exit(0) }catch{ console.error(`${pname} hippocampus not running`); process.exit(0) }
   }
   if(mode==='kill'){
-    try{ execSync(`pkill -f "genshin:.*${pname}" 2>/dev/null`); console.log(`killed ${pname}`) }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); }
+    // 2026-09-09（first-tester-on-linux-01 实证：Linux 上 genshin k 注销整个 GNOME session——systemd user session 级联）
+    // 旧：pkill -f "genshin:.*${pname}"——宽正则 + pname 未转义拼接——短名/前缀误杀多 agent + Linux scope 结构下
+    // 误杀连带 → logind Session logged out → exit.target → 整桌面注销（macOS launchd 隔离无此问题——平台差异）。
+    // 修：ps 精确匹配 agent 主进程 cmdline "genshin:<name>(main," 或 "(main,<sid>," → kill 精确 PID——绝不宽匹配、不碰系统进程。
+    try{
+      const out = execSync('ps -eo pid,command', { encoding: 'utf8' });
+      const hit = out.split('\n').filter(l => l.includes(`genshin:${pname}(main,`) || (pname.length >= 8 && l.includes(`(main,${pname},`)));
+      if (!hit.length) { console.error(`${pname} not running (no agent process matched)`); process.exit(0); }
+      for (const l of hit) {
+        const pid = parseInt(l.trim().split(/\s+/)[0], 10);
+        if (pid && pid > 1) {
+          try { process.kill(pid, 'SIGTERM'); console.log(`killed ${pname} (pid ${pid})`); } catch (e2) { console.error(`[god.frontend.cli/cli.ts] [kill ${pid}] ` + ((e2 as any)?.message || e2)); }
+        }
+      }
+    }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); }
     process.exit(0);
   }
   if(mode==='tmux'){
