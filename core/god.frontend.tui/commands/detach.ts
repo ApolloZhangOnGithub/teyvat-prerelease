@@ -65,7 +65,11 @@ export function spawnHeadlessBg(pid: string, reason: string): void {
   const child = spawn(nodeBin, [cliJs, "-ne", "-e", indexTs, "--mode", "rpc", "--session-dir", sessionDir], {
     detached: true,
     stdio: [fdIn, fdLog, fdLog, fdWrite],
-    env: { ...process.env, PI_ALIVE_RESTART_LOOP: "1" },
+    // 2026-09-09（用户报：Ctrl+C 转后台的 agent 60 秒后"自然超时退出"——heart.ts L298 孤儿检测误杀）：
+    // 孤儿检测（启动 60s 后 ps TTY="??" → shutdown）只放行 PAIMON_HEADLESS_DAEMON=1 的合法 headless。
+    // launcher.sh /h 路径设了此标志，但这里（Ctrl+C 转后台 spawn）漏了——spawn 的 headless 无 TTY →
+    // 60 秒后被当孤儿 shutdown（用户实测 1b 状态自然超时退出）。补上 daemon 标志 = 声明合法 headless，不自然退出。
+    env: { ...process.env, PI_ALIVE_RESTART_LOOP: "1", PAIMON_HEADLESS_DAEMON: "1" },
   });
   child.unref(); // 父进程（本 TUI）退出后子进程独立存活
   (globalThis as any).__genshinSpawnedHeadless = child.pid; // 记录供 attach 杀残留
