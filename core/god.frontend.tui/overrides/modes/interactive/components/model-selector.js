@@ -165,13 +165,13 @@ export class ModelSelectorComponent extends Container {
             try {
                 availableModels = [...availableModels, ...await this.loadModelsDevExtras(availableModels)];
             } catch (e) { console.error("[teyvat model-selector] models.dev 合并失败（用内置目录）: " + (e?.message ?? e)); }
-            // 补 openWeights：models.dev extras 已带（loadModelsDevExtras 设置），内置模型从 catalog 查或按 provider 推断
-            const OPEN_PROVIDERS = new Set(["deepseek", "mistral", "qwen", "ollama"]);
-            const CLOSED_PROVIDERS = new Set(["anthropic", "openai", "google", "amazon-bedrock"]);
+            // 补 openWeights：models.dev extras 已带（loadModelsDevExtras 设置），内置模型从 catalog 查或按 vendor 推断
+            const OPEN_VENDORS = new Set(["deepseek", "mistral", "mistralai", "qwen", "ollama", "meta-llama", "nvidia", "nousresearch", "cognitivecomputations", "01-ai", "databricks"]);
+            const CLOSED_VENDORS = new Set(["anthropic", "openai", "google", "amazon-bedrock", "amazon", "cohere", "x-ai"]);
             const catalog = this.readModelsDevCache();
             for (const model of availableModels) {
                 if (model.openWeights !== undefined) continue;
-                // 从 catalog 查
+                // 从 catalog 查（遍历所有 provider 的 models）
                 if (catalog) {
                     for (const mdProv of Object.values(catalog)) {
                         if (!mdProv?.models) continue;
@@ -179,10 +179,11 @@ export class ModelSelectorComponent extends Container {
                         if (found && found.open_weights !== undefined) { model.openWeights = found.open_weights; break; }
                     }
                 }
-                // fallback：按 provider 推断
+                // fallback：按 vendor 推断（openrouter ID 格式 vendor/model-name，取斜杠前的 vendor；非 openrouter 取 provider）
                 if (model.openWeights === undefined) {
-                    if (OPEN_PROVIDERS.has(model.provider)) model.openWeights = true;
-                    else if (CLOSED_PROVIDERS.has(model.provider)) model.openWeights = false;
+                    const vendor = model.id.includes("/") ? model.id.split("/")[0].toLowerCase() : model.provider.toLowerCase();
+                    if (OPEN_VENDORS.has(vendor)) model.openWeights = true;
+                    else if (CLOSED_VENDORS.has(vendor)) model.openWeights = false;
                 }
             }
             models = availableModels.map((model) => ({
