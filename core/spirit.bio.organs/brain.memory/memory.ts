@@ -48,6 +48,21 @@ function appendFile(p: string, text: string): void {
   appendAsync(p, text);
 }
 
+// 2026-09-09（用户报 bug：homedir 下被拉出 MonitorData/undefined + undefined 空目录）：
+// __genshinPersonDir/__genshinAgentFileDir/__genshinPersonId 未设时（启动早期/特定进程/session_shutdown 晚段）
+// 字符串拼接出 undefined 相对路径 → 在 cwd(~) 下 mkdir 垃圾。统一走本 helper：全局无效静默跳过（监控数据非核心，丢记录可接受）。
+function monitorDataPath(globalDir: string, file: string): string | null {
+  const pid = global.__genshinPersonId;
+  const dir = globalDir || global.__genshinPersonDir;
+  if (!dir || !pid || !/^[a-f0-9]{8}$/.test(pid)) return null;
+  return dir + "/../MonitorData/" + pid + "/" + file;
+}
+function monitorAppend(file: string, json: string): void {
+  const p = monitorDataPath(global.__genshinAgentFileDir || "", file) || monitorDataPath(global.__genshinPersonDir || "", file);
+  if (!p) return;
+  try { appendFile(p, json); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
+}
+
 function writeFile(p: string, text: string): void {
   // 2026-08-20 原子写（tmp + rename）：防重启时新旧进程交替读到半截文件（Unexpected end of JSON input 竞态根因）
   try { const tmp = p + ".tmp-" + process.pid; fs.writeFileSync(tmp, text, "utf-8"); fs.renameSync(tmp, p); } catch (e) { try { const d = path.dirname(_errLogPath(p)); if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); fs.appendFileSync(_errLogPath(p), `[${new Date().toISOString()}] [memory] writeFile ${p}: ${e}\n`); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); } }
@@ -391,7 +406,8 @@ export default function registerMemory(pi: ExtensionAPI) {
     // Accumulate session costs into cost_total.json
     if (!personDir) return;
     try {
-      const costTotalPath = global.__genshinAgentFileDir + "/../MonitorData/" + global.__genshinPersonId + "/cost_total.json";
+      const costTotalPath = monitorDataPath(global.__genshinAgentFileDir, "cost_total.json");
+      if (!costTotalPath) return; // 2026-09-09：全局未设（启动早期/小号）→ 不拼 undefined 路径（曾拉出 homedir 垃圾目录）
       const roles = ["main", "hippocampus", "metaconsciousness", "sleep"];
       let sessMain = 0, sessHippo = 0, sessSub = 0, sessSleeping = 0;
       for (const role of roles) {
@@ -545,7 +561,7 @@ export default function registerMemory(pi: ExtensionAPI) {
       trimmed = true;
       // 截断可见化：记录丢了多长，避免"静默遗忘"——agent 至少知道最旧记忆没进来。
       try {
-        appendFile(global.__genshinPersonDir + "/../MonitorData/" + global.__genshinPersonId + "/growth.jsonl",
+        monitorAppend("growth.jsonl",
           JSON.stringify({ ts: new Date().toISOString(), event: "snapshot_trim", dropped: beforeLen - context.length, kept: context.length }) + "\n");
       } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
     }
@@ -596,7 +612,7 @@ export default function registerMemory(pi: ExtensionAPI) {
     const memTokens = estimateTokens(dna) + estimateTokens(dlc) + estimateTokens(context) + estimateTokens(workMem) + estimateTokens(cortex);
     const usageRatio = memTokens / modelMax;
     const rawPct = Math.round(usageRatio * 100);
-    appendFile(global.__genshinPersonDir + "/../MonitorData/" + global.__genshinPersonId + "/growth.jsonl",
+    monitorAppend("growth.jsonl",
       JSON.stringify({ ts: new Date().toISOString(), bytes: context.length, tokens: memTokens, ratio: +(usageRatio * 100).toFixed(1) }) + "\n");
     // 容量提醒——只在达到 URGE(80%) 真危险时发（用户反馈：这条是垃圾，
     // 1) 清理后屏幕上还留着清理前的旧快照（过期数据） 2) 每次 amem 后用户说话就冒出来。
