@@ -258,7 +258,8 @@ export default function registerMemory(pi: ExtensionAPI) {
       if (combinedText.includes("｜DSML｜")) {
         const t = new Date().toISOString();
         appendFile(path.join(personDir, "bad_cases.jsonl"), JSON.stringify({ ts: t, role: e.role, type: e.type, reason: "DSML/tools-template leak", raw: combinedText.slice(0, 20000) }) + "\n");
-        appendFile(path.join(personDir, "context.md"), JSON.stringify({ role: e.role, type: "bad_frame", content: i18n("[坏帧已隔离：DSML，没收进记忆；原文见 bad_cases.jsonl]", "[bad frame quarantined: DSML, not stored into memory; original in bad_cases.jsonl]"), ts: Date.now() }) + "\n");
+        // 2026-09-09 同步写（同 L325——context.md 记忆核心，归档 rename/强杀不丢）
+        appendFileSync(path.join(personDir, "context.md"), JSON.stringify({ role: e.role, type: "bad_frame", content: i18n("[坏帧已隔离：DSML，没收进记忆；原文见 bad_cases.jsonl]", "[bad frame quarantined: DSML, not stored into memory; original in bad_cases.jsonl]"), ts: Date.now() }) + "\n");
         continue;
       }
 
@@ -321,8 +322,9 @@ export default function registerMemory(pi: ExtensionAPI) {
       if (sig === lastSig) continue;
       lastSig = sig;
       // 原始归档（完整历史，不清洗，模型不读）
-      appendFile(path.join(personDir, "context.archive.jsonl"), jsonl);
-      appendFile(path.join(personDir, "context.md"), scrubSecrets(jsonl));
+        appendFile(path.join(personDir, "context.archive.jsonl"), jsonl);
+        // 2026-09-09（房东在意 bug：归档 rewrite context.md 后 nerves stream 池指向旧 inode → 后续 append 落孤儿文件 + 强杀不冲刷——11 分钟对话丢失实证）：context.md 必须同步写当前路径（appendFileSync 每次 open）——归档 rename 后不丢、被 SIGKILL 最多丢正在写的一行
+        appendFileSync(path.join(personDir, "context.md"), scrubSecrets(jsonl));
 
       // ── Record structured event for event list ──
       if (e.role === "tool" || e.role === "assistant" || e.role === "user") {
