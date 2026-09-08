@@ -136,13 +136,12 @@ export class ModelSelectorComponent extends Container {
                     api: "openai-completions",
                     provider: prov,
                     baseUrl: "https://openrouter.ai/api/v1",
-                    // 2026-09-05：必须有 input（缺省 → transform-messages.js 的 model.input.includes 炸——inkling 事件）
-                    // models.dev 的 modalities.input 映射（如 ["text","image"]）；缺省 text（LLM 兜底）
                     input: (mdModel.modalities?.input && mdModel.modalities.input.length) ? mdModel.modalities.input : ["text"],
                     reasoning: !!mdModel.reasoning,
                     contextWindow: mdModel.limit?.context || 200000,
                     maxTokens: mdModel.limit?.output || 64000,
                     cost: { input: mdModel.cost?.input || 0, output: mdModel.cost?.output || 0, cacheRead: mdModel.cost?.cache_read || 0, cacheWrite: mdModel.cost?.cache_write || 0 },
+                    openWeights: mdModel.open_weights,
                 });
             }
         }
@@ -166,6 +165,26 @@ export class ModelSelectorComponent extends Container {
             try {
                 availableModels = [...availableModels, ...await this.loadModelsDevExtras(availableModels)];
             } catch (e) { console.error("[teyvat model-selector] models.dev 合并失败（用内置目录）: " + (e?.message ?? e)); }
+            // 补 openWeights：models.dev extras 已带（loadModelsDevExtras 设置），内置模型从 catalog 查或按 provider 推断
+            const OPEN_PROVIDERS = new Set(["deepseek", "mistral", "qwen", "ollama"]);
+            const CLOSED_PROVIDERS = new Set(["anthropic", "openai", "google", "amazon-bedrock"]);
+            const catalog = this.readModelsDevCache();
+            for (const model of availableModels) {
+                if (model.openWeights !== undefined) continue;
+                // 从 catalog 查
+                if (catalog) {
+                    for (const mdProv of Object.values(catalog)) {
+                        if (!mdProv?.models) continue;
+                        const found = Object.values(mdProv.models).find((m) => m.id === model.id || m.id === `${model.provider}/${model.id}`);
+                        if (found && found.open_weights !== undefined) { model.openWeights = found.open_weights; break; }
+                    }
+                }
+                // fallback：按 provider 推断
+                if (model.openWeights === undefined) {
+                    if (OPEN_PROVIDERS.has(model.provider)) model.openWeights = true;
+                    else if (CLOSED_PROVIDERS.has(model.provider)) model.openWeights = false;
+                }
+            }
             models = availableModels.map((model) => ({
                 provider: model.provider,
                 id: model.id,
@@ -284,8 +303,11 @@ export class ModelSelectorComponent extends Container {
             const ctxW = item.model.contextWindow;
             const ctxStr = ctxW ? (ctxW >= 1e6 ? (ctxW / 1e6).toFixed(1) + "M" : Math.round(ctxW / 1000) + "k") : "";
             const ctxCol = ctxStr ? theme.fg("muted", ctxStr.padStart(6)) : "      ";
+            // 开源/闭源标记
+            const ow = item.model.openWeights;
+            const owCol = ow === true ? theme.fg("success", "  open") : ow === false ? theme.fg("muted", "closed") : theme.fg("muted", "     ?");
             const check = isCurrent ? theme.fg("success", " ✓") : "";
-            this.listContainer.addChild(new Text(`${prefix}${star}${providerCol}${modelText}${ctxCol}${check}`, 0, 0));
+            this.listContainer.addChild(new Text(`${prefix}${star}${providerCol}${modelText}${ctxCol} ${owCol}${check}`, 0, 0));
         }
         // Add scroll indicator if needed
         if (startIndex > 0 || endIndex < this.filteredModels.length) {
