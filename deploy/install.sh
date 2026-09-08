@@ -57,8 +57,11 @@ if command -v python3 >/dev/null 2>&1; then
   if python3 -c "import trafilatura" >/dev/null 2>&1; then
     ok "trafilatura (正文提取)"
   else
-    warn "未找到 trafilatura — web fetch 正文过滤(auto)将 fallback 到内置启发式。安装: pip3 install trafilatura"
-    DEP_WARN=1
+    warn "未找到 trafilatura — web fetch 正文过滤(auto)不可用，尝试自动安装..."
+    if command -v pip3 >/dev/null 2>&1; then
+      if [ "$(id -u)" = "0" ]; then pip3 install --quiet trafilatura >/dev/null 2>&1; else sudo pip3 install --quiet trafilatura >/dev/null 2>&1; fi
+    fi
+    if python3 -c "import trafilatura" >/dev/null 2>&1; then ok "trafilatura 已自动安装 (正文提取)"; else warn "trafilatura 自动安装失败 — web fetch 将 fallback（手动: pip3 install trafilatura）"; DEP_WARN=1; fi
   fi
 fi
 
@@ -100,18 +103,28 @@ if [ "$(uname)" != "Darwin" ] && command -v python3 >/dev/null 2>&1; then
   fi
 fi
 
-# office 读取能力（office.docx/pptx/xlsx/pdf + read 工具自动分发需要；缺了对应格式不可读）
+# office 读取能力（office.docx/pptx/xlsx/pdf + read 工具自动分发需要；缺了自动装——2026-09-09 用户：依赖都装不 warn）
 OFFICE_PYDEPS="python-docx:docx python-pptx:pptx openpyxl:openpyxl PyMuPDF:fitz xlrd:xlrd"
 if command -v python3 >/dev/null 2>&1; then
+  _OFFICE_MISS=""
   for dep in $OFFICE_PYDEPS; do
     PKG="${dep%%:*}"; MOD="${dep##*:}"
-    if python3 -c "import $MOD" >/dev/null 2>&1; then
-      ok "office: $PKG"
-    else
-      warn "未找到 $PKG — office.$([ "$PKG" = "python-docx" ] && echo docx || [ "$PKG" = "python-pptx" ] && echo pptx || [ "$PKG" = "openpyxl" ] && echo xlsx || [ "$PKG" = "PyMuPDF" ] && echo pdf || echo xls) 读取不可用。安装: pip3 install $PKG"
-      DEP_WARN=1
-    fi
+    python3 -c "import $MOD" >/dev/null 2>&1 || _OFFICE_MISS="$_OFFICE_MISS $PKG"
   done
+  if [ -n "$_OFFICE_MISS" ]; then
+    warn "未找到 office 读取包:$_OFFICE_MISS — 自动安装..."
+    if command -v pip3 >/dev/null 2>&1; then
+      if [ "$(id -u)" = "0" ]; then pip3 install --quiet python-docx python-pptx openpyxl PyMuPDF xlrd >/dev/null 2>&1; else sudo pip3 install --quiet python-docx python-pptx openpyxl PyMuPDF xlrd >/dev/null 2>&1; fi
+    fi
+    _OFFICE_MISS2=""
+    for dep in $OFFICE_PYDEPS; do
+      PKG="${dep%%:*}"; MOD="${dep##*:}"
+      python3 -c "import $MOD" >/dev/null 2>&1 || _OFFICE_MISS2="$_OFFICE_MISS2 $PKG"
+    done
+    if [ -n "$_OFFICE_MISS2" ]; then warn "office 自动安装失败:$_OFFICE_MISS2（手动: pip3 install python-docx python-pptx openpyxl PyMuPDF xlrd）"; DEP_WARN=1; else ok "office 读取包已自动安装"; fi
+  else
+    for dep in $OFFICE_PYDEPS; do PKG="${dep%%:*}"; ok "office: $PKG"; done
+  fi
 fi
 
 # Chrome/Chromium 检查（Safari 浏览器 app 需要）
