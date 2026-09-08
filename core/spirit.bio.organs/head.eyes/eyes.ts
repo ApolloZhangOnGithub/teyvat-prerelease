@@ -20,7 +20,8 @@ import type { OcrStructured } from "#vision_ocr";
 const DEFAULT_MODEL = "qwen3-vl-plus";
 const DEFAULT_PROMPT = i18n("请用中文简洁描述这张图片/截图的内容。", "Please briefly describe this image/screenshot in English.");
 const vlm = createVlmBackend("qwen")!;
-const ocr = createOcrEngine("vision")!;
+// 2026-09-09（first-tester 漏改）：OCR engine 无参按平台选（darwin→macvision / Linux→rapidocr）——之前硬传 "vision" 绕过平台选择，Linux 上永远走 macvision 报缺 PyObjC
+const ocr = createOcrEngine()!;
 
 // 2026-09-07 用户定稿：图片可由当前（视觉）模型直接看——图作为 image 块注入上下文（非 VL/OCR 外部通道）。
 // 检测当前模型是否支持图片：模型配置 input 含 "image"（如 deepseek-v4-flash-vision-exp）；否则提示切换视觉模型。
@@ -68,7 +69,7 @@ export default function (pi: ExtensionAPI) {
       "看图：VL 视觉 + 本地 OCR + 图片注入。一个工具，action 参数选择操作：\n" +
       "  action:\"vlm\"   path, model?, prompt?  — 用 VL 模型描述图片内容\n" +
       "      model 默认 qwen3-vl-plus；prompt 缺省为「请用中文简洁描述这张图片/截图的内容。」\n" +
-      "  action:\"ocr\"   path, mode?           — 本地 macOS Vision OCR（免配置、离线、中英混排）\n" +
+      "  action:\"ocr\"   path, mode?           — 本地 OCR：macOS 用 Vision（免配置、中英混排、快）；Linux 用 rapidocr（install 自动装——质量~90% 复杂图慢~2.4s）\n" +
       "      mode: text=纯文本（默认）| structure=带坐标行 + 区域分类（menubar/sidebar/content/button/statusbar）\n" +
       "  action:\"native\" path                   — 把图片作为 image 块注入当前模型（模型看原图；需当前为视觉模型，否则提示切换）",
     promptSnippet: "Eyes({action, path, ...}) — vlm=VL 描述图片 | ocr=本地提取文字 | native=注入图给当前模型看",
