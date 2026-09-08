@@ -328,7 +328,15 @@ export const renderToolCall = {
 // 注意：只剥 backbone 的 feed 标注；工具自设计的 summary（如 execute 的 [HH:MM:SS, N tokens]）不含
 // "result" 前缀，不受影响（read/execute 的 summary 行保留）。
 function stripResultTokenMark(text) {
-  return String(text ?? "").replace(/\n*\[result\s+[\d.]+[kM]?\s*tokens?(?:,\s*(?:ctx|contexted)\s+[\d.]+[kM]?)?\]\s*$/, "");
+  // 2026-09-09（用户：Result 还带 [id: xxx]——9/8 只剥 [result N tokens] 漏 id/时间戳——"垃圾过滤器"）：
+  // 剥尾部工具元数据段组（不限行首——[background: ...] [id: xxx] [result N tokens, ctx X] [remaining: N]
+  // [HH:MM:SS.mmm +Ns] 任意顺序连续/空格隔开——只剥元数据前缀段，不碰内容里的正常 [方括号]。
+  // feed content 保留不剥（模型要）——渲染层显示剥离。
+  let s = String(text ?? "");
+  const re = /(?:(?:\[(?:id|background|remaining):[^\]]*\]|\[result\s+[\d.]+[kM]?\s*tokens?(?:,\s*(?:ctx|contexted)\s+[\d.]+[kM]?)?\]|\[\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:\s+[+-]?\d+(?:\.\d+)?s)?\])\s*)+$/;
+  let prev;
+  do { prev = s; s = s.replace(re, "").trimEnd(); } while (s !== prev);
+  return s;
 }
 
 export const renderMessage = {
