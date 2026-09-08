@@ -354,5 +354,17 @@
   "glm-5.3-flash": true,
   "claude-sonnet-4-20250514": false,
   "claude-opus-4-20250514": false,
-  "claude-haiku-3.5-20241022": false
+  "claude-haiku-3.5-20241022": false,
+  "anthropic/claude-haiku-latest": false,
+  "anthropic/claude-opus-latest": false,
+  "anthropic/claude-sonnet-latest": false,
+  "google/gemini-flash-latest": false,
+  "google/gemini-pro-latest": false,
+  "openai/gpt-latest": false,
+  "openai/gpt-mini-latest": false,
+  "moonshotai/kimi-latest": false,
+  "x-ai/grok-latest": false,
+  "x-ai/grok-3-latest": false,
+  "cohere/command-r-plus-latest": false,
+  "cohere/command-r-latest": false
 }
