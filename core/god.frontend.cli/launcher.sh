@@ -26,9 +26,32 @@ export PAIMON_CONFIG="$PAIMON_HOME/config"
 [ -d "$HOME/.bun/bin" ] && PATH="$HOME/.bun/bin:$PATH"
 [ -d "$HOME/.local/share/node24/bin" ] && PATH="$HOME/.local/share/node24/bin:$PATH"
 
-# git 访问 GitHub 的代理自包含：本机 Clash 等代理端口在监听时自动 export（Linux 无代理直连 GitHub 被墙）
+# git 访问 GitHub 的代理自包含：检测本机 Clash 等代理监听端口自动 export（Linux 无代理直连 GitHub 被墙）
+# 2026-09-09（房东实测：Clash Verge 监听 7892/17897——原硬编码 7897/7890 探测不到 → 裸连波动 HTTP2 framing/超时）：
+# 改智能检测——①从代理进程（clash/mihomo/verge）实际监听端口发现（lsof/ss）②常见端口交集优先
+# ③无进程则常见端口列表 /dev/tcp 探测。不能硬编码单一端口。
 _proxy_port=""
-for _p in 7897 7890; do (exec 3<>/dev/tcp/127.0.0.1/$_p) 2>/dev/null && { exec 3>&- 3<&-; _proxy_port=$_p; break; }; done
+_proxy_found=""
+if command -v lsof >/dev/null 2>&1; then
+  _proxy_found=$(lsof -iTCP -sTCP:LISTEN -P 2>/dev/null | grep -iE "clash|mihomo|verge" | grep -oE ':[0-9]+$' | grep -oE '[0-9]+' | sort -u | tr '\n' ' ')
+elif command -v ss >/dev/null 2>&1; then
+  _proxy_found=$(ss -tlnp 2>/dev/null | grep -iE "clash|mihomo|verge" | grep -oE ':[0-9]+' | grep -oE '[0-9]+' | sort -u | tr '\n' ' ')
+fi
+# 常见代理端口优先（进程监听的 ∩ 常见列表）
+for _p in 7897 7890 7892 7891 7898 1080 10809 8888 2080; do
+  case " $_proxy_found " in *" $_p "*) _proxy_port=$_p; break;; esac
+done
+# 无交集 → 进程端口任取（排除 control/dns 等非代理端口）
+if [ -z "$_proxy_port" ] && [ -n "$_proxy_found" ]; then
+  for _p in $_proxy_found; do
+    case "$_p" in 9090|9091|1053|53|80|443|8080) continue;; esac
+    _proxy_port=$_p; break
+  done
+fi
+# 无进程 → 常见端口 /dev/tcp 探测
+if [ -z "$_proxy_port" ]; then
+  for _p in 7897 7890 7892 7891 7898 1080 10809 8888 2080; do (exec 3<>/dev/tcp/127.0.0.1/$_p) 2>/dev/null && { exec 3>&- 3<&-; _proxy_port=$_p; break; }; done
+fi
 if [ -z "${https_proxy:-}" ] && [ -n "$_proxy_port" ]; then
   export https_proxy="http://127.0.0.1:$_proxy_port" http_proxy="http://127.0.0.1:$_proxy_port"
 fi
