@@ -1,12 +1,24 @@
+"""命名来由（2026-09-09 dev-01）：本文件是 OCR engine 的 py 引擎本体（engine 词后缀）——
+与 ts 封装（ocr-macvision.ts / ocr-rapidocr.ts——不带 engine 词）不同名（NORM 001 同名不同扩展禁止）。
+engine 是 OCR 主概念——macvision/rapidocr 是 engine 的两种实现（非平行 provider 层）。
+"""
 #!/usr/bin/env python3
-"""vision.ocr 引擎 —— macOS Vision 本地 OCR（由 ocr-vision.ts 调用）
+"""vision.ocr macVision 引擎 —— macOS Vision 本地 OCR（由 ocr-macvision.ts 调用）
 
-文字模式（默认）: python3 ocr-vision-engine.py <image> [--lang zh-Hans en] [--upscale N]
-结构模式        : python3 ocr-vision-engine.py <image> --mode json [--group] [--gap N] [...]
+文字模式（默认）: python3 ocr-engine-macvision.py <image> [--lang zh-Hans en] [--upscale N]
+结构模式        : python3 ocr-engine-macvision.py <image> --mode json [--group] [--gap N] [...]
 
---upscale: 0=auto（小图自动 2x；实验结论：10-12px 小字 1x 会漏行/错字，2x 全部识别）
-           1=不放大  N=强制 N 倍（1~4）。
+--upscale: 0=auto（小图自动 2x）  1=不放大  N=强制 N 倍（1~4）。
            自动放大时输出坐标已折算回原图坐标系，调用方无感知。
+
+auto 2x 的本质是 Retina 分辨率补偿（2026-09-09 用户洞察）：
+  macOS Retina 截图原生 2x（1920×1080 逻辑 → 3840×2160 像素 ≈ 830 万），
+  UI 文字在 Retina 截图中 ~20-24px，Vision 识别无压力。
+  非 Retina / 1x 截图（1920×1080 ≈ 207 万像素），同样 UI 文字只有 ~10-12px，
+  Vision 会漏整行或错字。阈值 200 万像素恰好就是 1080p 的边界：
+    ≤200 万 → 非 Retina 等效 → 放大 2x 补偿到 Retina 等效分辨率
+    >200 万 → 已是 Retina 等效 → 不放大
+  之前是实验做出来的经验值，实际底层原因是 Retina 像素密度差异。
 """
 import argparse
 import json
@@ -40,6 +52,7 @@ def load_cgimage(path, upscale):
 
     factor = upscale
     if factor == 0:
+        # Retina 补偿：≤200 万像素 ≈ 非 Retina 1080p，2x 补到 Retina 等效
         factor = 2 if w * h <= 2_000_000 else 1
     if factor <= 1:
         return cg, w, h, 1, None

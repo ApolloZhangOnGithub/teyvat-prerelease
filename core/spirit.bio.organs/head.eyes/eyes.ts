@@ -13,14 +13,14 @@ import { registerPaimonTool, resultContent } from "#kernel_backbone";
 import { renderToolCall, renderMessage } from "#tui_blockrender";
 import { i18n } from "#tui_localizations";
 import { createVlmBackend } from "#vision_vlm";
-import { createOcrBackend } from "#vision_ocr";
+import { createOcrEngine } from "#vision_ocr";
 import type { OcrStructured } from "#vision_ocr";
 
 // ── 配置与 backend（模块级单例）────────────────────────────────────────
 const DEFAULT_MODEL = "qwen3-vl-plus";
 const DEFAULT_PROMPT = i18n("请用中文简洁描述这张图片/截图的内容。", "Please briefly describe this image/screenshot in English.");
 const vlm = createVlmBackend("qwen")!;
-const ocr = createOcrBackend("vision")!;
+const ocr = createOcrEngine("vision")!;
 
 // 2026-09-07 用户定稿：图片可由当前（视觉）模型直接看——图作为 image 块注入上下文（非 VL/OCR 外部通道）。
 // 检测当前模型是否支持图片：模型配置 input 含 "image"（如 deepseek-v4-flash-vision-exp）；否则提示切换视觉模型。

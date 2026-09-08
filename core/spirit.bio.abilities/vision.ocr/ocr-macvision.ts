@@ -1,6 +1,9 @@
-// ocr-vision.ts — vision.ocr 供应商实现：macOS Vision 框架（本地离线）
+// ── 命名来由（2026-09-09 dev-01）：engine 是 OCR 主概念——macvision/rapidocr 是 engine 的两种实现（非平行 provider 层）。
+// ts 封装名不带 engine 词（ocr-macvision.ts / ocr-rapidocr.ts）；py 引擎本体带 engine 词（ocr-engine-*.py）——
+// ts 与 py 组件名不得相同（仅后缀不同不算区分——NORM 001「同名不同扩展禁止」）。
+// ocr-macvision.ts — vision.ocr macVision 引擎封装（macOS Vision 框架，本地离线——调 ocr-engine-macvision.py）
 // 文档: B.docs/Dev.Common/Wiki/Dependents(Bio Service Support).WIKI
-// 实现 OcrBackend 接口（ocr.ts）。通过 python3 + ocr-vision-engine.py（PyObjC）调用系统 Vision：
+// 实现 OcrEngine 接口（ocr.ts）。通过 python3 + ocr-engine-macvision.py（PyObjC）调用系统 Vision：
 //   不依赖网络、不花钱、中英混排准确率高（实测比 tesseract 快 ~10 倍，全屏 Retina 截图 ~1.4s）。
 // 日志 → ~/.teyvat/LogData/<agentId>/eyes.log（与 vlm.ts 同款，JSON 行）。
 
@@ -10,10 +13,10 @@ import { existsSync, appendFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import type { OcrBackend, OcrOptions, OcrStructured } from "./ocr.ts";
+import type { OcrEngine, OcrOptions, OcrStructured } from "./ocr.ts";
 
 const execFileAsync = promisify(execFile);
-const ENGINE_PATH = join(dirname(fileURLToPath(import.meta.url)), "ocr-vision-engine.py");
+const ENGINE_PATH = join(dirname(fileURLToPath(import.meta.url)), "ocr-engine-macvision.py");
 const OCR_TIMEOUT_MS = 120_000; // 含 python 冷启动 + 大图放大，留足余量
 const MAX_BUFFER = 16 * 1024 * 1024;
 
@@ -24,7 +27,7 @@ function hasPyObjc(): boolean {
   try {
     execFileSync("python3", ["-c", "import Quartz, Vision, Foundation"], { timeout: 15_000 });
     pyobjcCache = true;
-  } catch (e) { console.error("[spirit.bio.abilities/vision.ocr/ocr-vision.ts] " + ((e as any)?.message || e));
+  } catch (e) { console.error("[spirit.bio.abilities/vision.ocr/ocr-macvision.ts] " + ((e as any)?.message || e));
     pyobjcCache = false;
   }
   return pyobjcCache;
@@ -35,7 +38,7 @@ function logEyes(entry: Record<string, unknown>): void {
     const dir = join(homedir(), ".teyvat/LogData", process.env.PAIMON_AGENT_ID || "unknown");
     mkdirSync(dir, { recursive: true });
     appendFileSync(join(dir, "eyes.log"), JSON.stringify(entry) + "\n");
-  } catch (e) { console.error("[spirit.bio.abilities/vision.ocr/ocr-vision.ts] " + ((e as any)?.message || e));
+  } catch (e) { console.error("[spirit.bio.abilities/vision.ocr/ocr-macvision.ts] " + ((e as any)?.message || e));
     // 日志失败不影响主流程
   }
 }
@@ -51,7 +54,7 @@ function buildArgs(imagePath: string, options: OcrOptions, mode: "text" | "json"
   return args;
 }
 
-export class VisionOcrBackend implements OcrBackend {
+export class MacvisionOcrEngine implements OcrEngine {
   async readText(imagePath: string, options: OcrOptions = {}): Promise<{ text: string } | { error: string }> {
     if (!existsSync(imagePath)) return { error: `文件不存在: ${imagePath}` };
     if (!hasPyObjc()) {

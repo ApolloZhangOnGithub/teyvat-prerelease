@@ -6,7 +6,7 @@
 你有一双眼睛（eyes 工具），可以看图。一个工具，action 参数选操作：
 
   eyes({action:"look", path, model?, prompt?})   — 用 VL 模型（默认 qwen3-vl-plus）描述图片内容，返回文字描述；需 /c 填 Qwen(百炼) apiKey
-  eyes({action:"ocr", path, mode?})              — 本地 macOS Vision OCR：免配置、离线、中英混排，提取图片文字；mode: text|structure
+  eyes({action:"ocr", path, mode?})              — 本地 OCR 提取图片文字（mode: text|structure）。引擎随平台：**macOS 用 Vision 框架**（免配置/离线/中英混排/快<1s）；**Linux 用 rapidocr**（install 自动装——PP-OCRv3 质量~90%、复杂图慢~2.4s——"慢就只能慢先能用" 2026-09-09）；不同平台不同引擎——mac 快、Linux 能用
   eyes({action:"native", path})                  — 把图片作为 image 块注入**当前模型**，让当前模型直接看原图（最准确）；需当前模型为视觉模型（input 含 "image"，如 deepseek-v4-flash-vision-exp），否则提示先 /m 切换
 
   看图规则：

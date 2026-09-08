@@ -85,6 +85,21 @@ if [ "$(uname)" != "Darwin" ]; then
   fi
 fi
 
+# ── Linux OCR 引擎 rapidocr（2026-09-09 用户定稿：Linux 默认装 rapidocr + eyes ocr 用它——"先能用，慢就只能慢"）──
+# macOS 用 Vision 框架无需装；Linux 无 Vision → rapidocr（PP-OCRv3 onnxruntime）本地兜底（质量~90%、复杂图 2.4s/张）
+if [ "$(uname)" != "Darwin" ] && command -v python3 >/dev/null 2>&1; then
+  if python3 -c "import rapidocr_onnxruntime" >/dev/null 2>&1; then
+    ok "rapidocr (Linux OCR 引擎)"
+  else
+    warn "未找到 rapidocr — Linux OCR (eyes ocr) 不可用，尝试自动安装..."
+    _RAPIDOCR_INSTALL="pip3 install --quiet rapidocr_onnxruntime onnxruntime pillow"
+    if command -v pip3 >/dev/null 2>&1; then
+      if [ "$(id -u)" = "0" ]; then $_RAPIDOCR_INSTALL >/dev/null 2>&1; else sudo $_RAPIDOCR_INSTALL >/dev/null 2>&1; fi
+    fi
+    if python3 -c "import rapidocr_onnxruntime" >/dev/null 2>&1; then ok "rapidocr 已自动安装 (Linux OCR)"; else warn "rapidocr 自动安装失败 — eyes ocr 在 Linux 不可用（手动: pip3 install rapidocr_onnxruntime onnxruntime pillow）"; DEP_WARN=1; fi
+  fi
+fi
+
 # office 读取能力（office.docx/pptx/xlsx/pdf + read 工具自动分发需要；缺了对应格式不可读）
 OFFICE_PYDEPS="python-docx:docx python-pptx:pptx openpyxl:openpyxl PyMuPDF:fitz xlrd:xlrd"
 if command -v python3 >/dev/null 2>&1; then
