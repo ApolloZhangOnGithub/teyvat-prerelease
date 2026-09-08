@@ -142,6 +142,7 @@ export class ModelSelectorComponent extends Container {
                     maxTokens: mdModel.limit?.output || 64000,
                     cost: { input: mdModel.cost?.input || 0, output: mdModel.cost?.output || 0, cacheRead: mdModel.cost?.cache_read || 0, cacheWrite: mdModel.cost?.cache_write || 0 },
                     openWeights: mdModel.open_weights,
+                    family: mdModel.family || "",
                 });
             }
         }
@@ -165,26 +166,42 @@ export class ModelSelectorComponent extends Container {
             try {
                 availableModels = [...availableModels, ...await this.loadModelsDevExtras(availableModels)];
             } catch (e) { console.error("[teyvat model-selector] models.dev 合并失败（用内置目录）: " + (e?.message ?? e)); }
-            // 补 openWeights：models.dev extras 已带（loadModelsDevExtras 设置），内置模型从 catalog 查或按 vendor 推断
-            const OPEN_VENDORS = new Set(["deepseek", "mistral", "mistralai", "qwen", "ollama", "meta-llama", "nvidia", "nousresearch", "cognitivecomputations", "01-ai", "databricks"]);
-            const CLOSED_VENDORS = new Set(["anthropic", "openai", "google", "amazon-bedrock", "amazon", "cohere", "x-ai"]);
+            // 补元数据：openWeights / family / _vendor / _series
+            // openWeights 数据源：open-weights.json（从 OpenRouter API 抓取维护的权威映射）> models.dev catalog > 未知
+            let owMap = {};
+            try {
+                const owPath = join(dirname(dirname(dirname(dirname(dirname(import.meta.url.replace("file://", "")))))), "spirit.bio.gene/open-weights.json");
+                owMap = JSON.parse(readFileSync(owPath, "utf8"));
+            } catch { /* open-weights.json 缺失 → 全部未知 */ }
             const catalog = this.readModelsDevCache();
             for (const model of availableModels) {
-                if (model.openWeights !== undefined) continue;
-                // 从 catalog 查（遍历所有 provider 的 models）
-                if (catalog) {
+                // vendor 提取（openrouter ID 格式 vendor/model-name；非 openrouter 取 provider）
+                const vendor = model.id.includes("/") ? model.id.split("/")[0].toLowerCase() : model.provider.toLowerCase();
+                model._vendor = vendor;
+                // openWeights：open-weights.json 精确查找（按完整 ID，再按 base ID 去掉版本后缀）
+                if (model.openWeights === undefined) {
+                    const ow = owMap[model.id] ?? owMap[model.id.split(":")[0]];
+                    if (ow !== undefined) model.openWeights = ow;
+                }
+                // fallback：models.dev catalog
+                if (catalog && (model.openWeights === undefined || !model.family)) {
                     for (const mdProv of Object.values(catalog)) {
                         if (!mdProv?.models) continue;
                         const found = Object.values(mdProv.models).find((m) => m.id === model.id || m.id === `${model.provider}/${model.id}`);
-                        if (found && found.open_weights !== undefined) { model.openWeights = found.open_weights; break; }
+                        if (found) {
+                            if (model.openWeights === undefined && found.open_weights !== undefined) model.openWeights = found.open_weights;
+                            if (!model.family && found.family) model.family = found.family;
+                            break;
+                        }
                     }
                 }
-                // fallback：按 vendor 推断（openrouter ID 格式 vendor/model-name，取斜杠前的 vendor；非 openrouter 取 provider）
-                if (model.openWeights === undefined) {
-                    const vendor = model.id.includes("/") ? model.id.split("/")[0].toLowerCase() : model.provider.toLowerCase();
-                    if (OPEN_VENDORS.has(vendor)) model.openWeights = true;
-                    else if (CLOSED_VENDORS.has(vendor)) model.openWeights = false;
+                // series：family 优先，否则从 model ID 提取
+                if (!model.family) {
+                    const bare = model.id.includes("/") ? model.id.slice(model.id.indexOf("/") + 1) : model.id;
+                    const first = bare.split(/[-_]/)[0].toLowerCase();
+                    model.family = first || "";
                 }
+                model._series = model.family;
             }
             models = availableModels.map((model) => ({
                 provider: model.provider,
@@ -278,37 +295,39 @@ export class ModelSelectorComponent extends Container {
         this.startIndex = Math.max(0, Math.min(this.startIndex, Math.max(0, this.filteredModels.length - maxVisible)));
         const startIndex = this.startIndex;
         const endIndex = Math.min(startIndex + maxVisible, this.filteredModels.length);
-        // Show visible slice of filtered models
-        // 2026-09-04 用户定稿：两栏渲染——provider 对齐栏 + model 栏（去 provider 前缀，不重复）。
-        // ★ = featured 推荐（置顶，result 鲸鱼蓝）；✓ = 正在使用的模型（行尾，success 绿）；当前模型 id 用 result 鲸鱼蓝。
-        const providerMax = Math.max(8, ...this.filteredModels.map((it) => it.provider.length));
-        const modelIdMax = Math.max(20, ...this.filteredModels.slice(startIndex, startIndex + maxVisible).map((it) => {
+        // 六栏渲染：hoster | provider | series | model | context | open/closed
+        // ★ = featured 推荐（置顶，result 鲸鱼蓝）；✓ = 正在使用的模型（行尾，success 绿）
+        // 选中行：所有文字用 accent 色高亮
+        const vis = this.filteredModels.slice(startIndex, endIndex);
+        const hosterW = Math.max(6, ...vis.map((it) => it.provider.length));
+        const vendorW = Math.max(6, ...vis.map((it) => (it.model._vendor || "").length));
+        const seriesW = Math.max(5, ...vis.map((it) => (it.model._series || "").length));
+        const modelW = Math.max(16, ...vis.map((it) => {
             const bare = it.id.includes("/") ? it.id.slice(it.id.indexOf("/") + 1) : it.id;
             return bare.length;
         }));
         for (let i = startIndex; i < endIndex; i++) {
             const item = this.filteredModels[i];
-            if (!item)
-                continue;
+            if (!item) continue;
             const featured = (globalThis.__genshinFeaturedModels) || [];
             const isFeatured = featured.some((f) => f.provider === item.provider && f.id === item.id);
             const isSelected = i === this.selectedIndex;
             const isCurrent = modelsAreEqual(this.currentModel, item.model);
+            const fg = (color, text) => isSelected ? theme.fg("accent", text) : theme.fg(color, text);
             const prefix = isSelected ? theme.fg("accent", "→ ") : "  ";
             const star = isFeatured ? theme.fg("result", "★ ") : "  ";
-            const providerCol = theme.fg("muted", item.provider.padEnd(providerMax + 2));
-            // model 栏：去 provider 前缀（openrouter 风格 id 如 anthropic/claude-xxx → claude-xxx；无斜杠的内置 id 原样）
+            const hosterCol = fg("muted", item.provider.padEnd(hosterW + 1));
+            const vendorCol = fg("muted", (item.model._vendor || "?").padEnd(vendorW + 1));
+            const seriesCol = fg("muted", (item.model._series || "?").padEnd(seriesW + 1));
             const bareId = item.id.includes("/") ? item.id.slice(item.id.indexOf("/") + 1) : item.id;
-            const modelText = isCurrent ? theme.fg("result", bareId.padEnd(modelIdMax + 2)) : bareId.padEnd(modelIdMax + 2);
-            // context window 栏
+            const modelCol = isCurrent && !isSelected ? theme.fg("result", bareId.padEnd(modelW + 1)) : fg("default", bareId.padEnd(modelW + 1));
             const ctxW = item.model.contextWindow;
             const ctxStr = ctxW ? (ctxW >= 1e6 ? (ctxW / 1e6).toFixed(1) + "M" : Math.round(ctxW / 1000) + "k") : "";
-            const ctxCol = ctxStr ? theme.fg("muted", ctxStr.padStart(6)) : "      ";
-            // 开源/闭源标记
+            const ctxCol = fg("muted", ctxStr.padStart(5));
             const ow = item.model.openWeights;
-            const owCol = ow === true ? theme.fg("success", "  open") : ow === false ? theme.fg("muted", "closed") : theme.fg("muted", "     ?");
+            const owCol = ow === true ? fg("success", " open") : ow === false ? fg("muted", "close") : fg("muted", "    ?");
             const check = isCurrent ? theme.fg("success", " ✓") : "";
-            this.listContainer.addChild(new Text(`${prefix}${star}${providerCol}${modelText}${ctxCol} ${owCol}${check}`, 0, 0));
+            this.listContainer.addChild(new Text(`${prefix}${star}${hosterCol}${vendorCol}${seriesCol}${modelCol} ${ctxCol} ${owCol}${check}`, 0, 0));
         }
         // Add scroll indicator if needed
         if (startIndex > 0 || endIndex < this.filteredModels.length) {
