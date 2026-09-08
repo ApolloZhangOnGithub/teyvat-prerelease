@@ -269,6 +269,14 @@ case "$NAME" in
     VER_JSON="$HOME/.teyvat/agent/version.json"
     CHANNEL="minutely"
     [ -f "$VER_JSON" ] && CHANNEL=$(node -e "try{console.log(JSON.parse(require('fs').readFileSync('$VER_JSON','utf8')).channel)}catch{console.log('minutely')}" 2>/dev/null)
+    # 2026-09-09（房东定稿：dev/minutely 线 genshin update 应显示无需更新）：
+    # minutely = dev 源码自动构建线——每次 make dev-minutely 自动部署已最新，手动 update 无意义。
+    # 不跑源码 pull/install（Windows WSL 等环境跑 dev 线 update 会误走源码逻辑/失败）。
+    if [ "$CHANNEL" = "minutely" ]; then
+      echo "  channel: minutely (dev 自动构建线——已自动部署最新)"
+      echo -e "  \033[32mOK\033[0m minutely 无需更新（每次 dev 构建自动部署；要换通道请用发布线安装）"
+      exit 0
+    fi
     if [ "$CHANNEL" = "release" ]; then
       # ⚠️ npm 分发已废弃（2026-09-05 用户定稿）——release 改走 git tag（teyvat-release 仓库）
       echo "  channel: release (git tag)"
