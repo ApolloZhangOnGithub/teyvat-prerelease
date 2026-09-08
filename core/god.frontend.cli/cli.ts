@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { execSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { SYNC_ENDPOINT_DEFAULT } from '../paths.ts';
+import { SYNC_ENDPOINT_DEFAULT, estimateTokens } from '../paths.ts';
 
 const H = os.homedir();
 const PAIMON = path.join(H, '.teyvat');
@@ -136,7 +136,7 @@ function cmdList(filter='list') {
       const pp=path.join(md,'tokenmaxxed.json');
       let pt=0;
       if(fs.existsSync(pp)){ pt=JSON.parse(fs.readFileSync(pp,'utf8')).tokenmaxxed||0 }
-      if(!pt){ const ap=path.join(md,'context.archive.jsonl'); if(fs.existsSync(ap)){ try{ const est=(t:string)=>{let cjk=0;for(let i=0;i<t.length;i++){const c=t.charCodeAt(i);if((c>=0x3400&&c<=0x9fff)||(c>=0xf900&&c<=0xfaff)||(c>=0x3000&&c<=0x30ff)||(c>=0xff00&&c<=0xffef))cjk++}return Math.round(cjk*1.8+(t.length-cjk)*0.25)}; pt=est(fs.readFileSync(ap,'utf8')) }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); } } }
+      if(!pt){ const ap=path.join(md,'context.archive.jsonl'); if(fs.existsSync(ap)){ try{ pt=estimateTokens(fs.readFileSync(ap,'utf8')) }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); } } }
       if(pt>0){ const rk=getCfRank(pt); p._tokenmaxxed=(pt<1000?pt+'':pt<1e6?(pt/1000).toFixed(1)+'k':(pt/1e6).toFixed(1)+'M'); /* 2026-08-15 用户：cli 履历栏不写称号，染色即可——暂时注释 p._tokenmaxxed=rk.name+' '+p._tokenmaxxed; */ p._tokenmaxxedHex=rk.hex; }
     }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); }
   }
@@ -580,16 +580,7 @@ function isAgentActive(id: string): boolean {
   if (fs.existsSync(path.join(rc, 'main-resting')) || fs.existsSync(path.join(rc, 'main-hibernate')) || fs.existsSync(path.join(rc, 'paused'))) return false;
   try { const st = fs.statSync(path.join(PAIMON, 'MemoryData', id, 'main.pid')); return Date.now() - st.mtimeMs < 120000; } catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); return false; }
 }
-// Token 估算（与 memory.ts 同款：CJK 1.8/字，非 CJK /4）
-function estimateTokens(text: string): number {
-  if (!text) return 0;
-  let cjk = 0;
-  for (let i = 0; i < text.length; i++) {
-    const c = text.charCodeAt(i);
-    if ((c >= 0x3400 && c <= 0x9fff) || (c >= 0xf900 && c <= 0xfaff) || (c >= 0x3000 && c <= 0x30ff) || (c >= 0xff00 && c <= 0xffef)) cjk++;
-  }
-  return Math.ceil(cjk * 1.8 + (text.length - cjk) / 4);
-}
+// estimateTokens 已提取到 paths.ts（唯一真相源），通过 import 导入
 
 function cmdClone(name: string) {
   if (!name) { cmdCloneTree(); return; }
@@ -739,293 +730,9 @@ function cmdCloneTree() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// DOCTOR
+// DOCTOR（已拆分至 doctor.ts）
 // ═══════════════════════════════════════════════════════════════════
-function cmdDoctor() {
-  const B=BOLD, R_=R, G_=G, R2='\x1b[31m', YLW='\x1b[33m';
-  console.log('\n  '+B+'Teyvat · Doctor'+R_+D+R_+'\n');
-
-  let passed=0, failed=0, warned=0, skipped=0;
-  const ok=(label:string,msg:string)=>{ console.log(`  ${G_}✓${R_} ${pad(label,20)} ${msg}`); passed++ };
-  const fail=(label:string,msg:string)=>{ console.log(`  ${R2}✗${R_} ${pad(label,20)} ${msg}`); failed++ };
-  const warn=(label:string,msg:string)=>{ console.log(`  ${YLW}△${R_} ${pad(label,20)} ${msg}`); warned++ };
-  const skip=(label:string,msg:string)=>{ console.log(`  ${D}⊘${R_} ${pad(label,20)} ${msg}`); skipped++ };
-
-  const list=loadPlist();
-  const active=list.filter((p:any)=>!p.archived);
-  const archived=list.filter((p:any)=>p.archived);
-  const NAME_RE=/^[a-zA-Z][a-zA-Z0-9_.\-]*$/;
-
-  // doctorIgnore 白名单（2026-09-05）：~/.teyvat/config/doctor-whitelist.json 的已知问题豁免（独立于 settings.json——豁免是"已知问题登记"非运行配置）
-  let doctorIgnore: Array<{ check: string; match?: string }> = [];
-  try {
-    const s = JSON.parse(fs.readFileSync(path.join(PAIMON, 'config', 'doctor-whitelist.json'), 'utf8'));
-    doctorIgnore = Array.isArray(s) ? s : (Array.isArray(s.doctorIgnore) ? s.doctorIgnore : []);
-  } catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); /* 文件缺失/格式错 → 无豁免 */ }
-  let ignoredCount = 0;
-  const isIgnored = (check: string, content?: string): boolean => {
-    for (const r of doctorIgnore) {
-      if (r.check !== check) continue;
-      if (r.match === undefined || r.match === '') return true; // 无 match = 整项豁免
-      if (content !== undefined && new RegExp(r.match).test(content)) return true;
-    }
-    return false;
-  };
-  const skipIgnored = (check: string, content?: string): boolean => {
-    if (isIgnored(check, content)) { ignoredCount++; skip(check, `已豁免${content?` (${content.slice(0,40)})`:''}`); return true; }
-    return false;
-  };
-
-  // version
-  {
-    try{
-      const v=JSON.parse(fs.readFileSync(path.join(PAIMON,'agent','version.json'),'utf8'));
-      // prerelease 显示实际 dev 号（用户关心的是内容对应哪个 dev 版本，alpha 号是发布管道内部的）
-      const displayVer = (v.channel === 'prerelease' && v.pinnedDev) ? v.pinnedDev : v.genshin;
-      ok('version',`${displayVer} (${v.channel}, pi@${v.pi})`);
-    }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e));
-      try{
-        const v=JSON.parse(fs.readFileSync(path.join(PAIMON,'version.json'),'utf8'));
-        ok('version',`${v.paimon||v.genshin} (${v.channel})`);
-      }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); fail('version','version.json 不存在') }
-    }
-  }
-
-  // dir-structure: key directories exist
-  {
-    const dirs=['MemoryData','RuntimeCache','SessionData','IdentityData','UserAccount','MemoirData','AgentWorkDir','config'];
-    const missing=dirs.filter(d=>!fs.existsSync(path.join(PAIMON,d)));
-    if(missing.length) fail('dir-structure',`缺失: ${missing.join(', ')}`);
-    else ok('dir-structure',`${dirs.length} 核心目录全部存在`);
-  }
-
-  // plist-agents
-  {
-    ok('plist-agents',`${list.length} 个 agent（${active.length} 活跃, ${archived.length} 归档）`);
-  }
-
-  // plist-identity: check consistency between plist and identity.json
-  {
-    let mismatch=0, missing=0;
-    const mismatched:string[]=[];
-    for(const p of list){
-      const idFile=path.join(PAIMON,'IdentityData',p.id,'identity.json');
-      try{
-        const id=JSON.parse(fs.readFileSync(idFile,'utf8'));
-        if(id.name && id.name !== p.name) { mismatch++; mismatched.push(`${p.name}≠${id.name}`); }
-        if(id.kind && id.kind !== p.kind) { mismatch++; mismatched.push(`${p.name}.kind`); }
-      }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); missing++ }
-    }
-    if(mismatch) {
-      const shown = mismatched.filter(m => !isIgnored('plist-identity', m));
-      if (shown.length) fail('plist-identity',`${shown.length} 不一致: ${shown.slice(0,3).join(', ')}${shown.length>3?'...':''}`);
-      if (shown.length < mismatch) skipIgnored('plist-identity');
-      else if (!shown.length) { skipIgnored('plist-identity'); }
-    }
-    else if(missing>0) warn('plist-identity',`一致，但 ${missing} 个 agent 无 identity.json`);
-    else ok('plist-identity',`${list.length} 个 agent 数据一致`);
-  }
-
-  // name-valid
-  {
-    const bad=active.filter((p:any)=>!NAME_RE.test(p.name));
-    if(bad.length) fail('name-valid',`${bad.length} 个名称不合规: ${bad.map((p:any)=>p.name).join(', ')}`);
-    else ok('name-valid',`${active.length} 个活跃 agent 名称全部合规`);
-  }
-
-  // name-unique (only check active agents; archived duplicates are harmless)
-  {
-    const names=active.map((p:any)=>p.name);
-    const dups=names.filter((n:string,i:number)=>names.indexOf(n)!==i);
-    if(dups.length) fail('name-unique',`活跃 agent 重名: ${[...new Set(dups)].join(', ')}`);
-    else{
-      const archNames=archived.map((p:any)=>p.name);
-      const archDups=[...new Set(archNames.filter((n:string,i:number)=>archNames.indexOf(n)!==i))];
-      // 逐条豁免：白名单登记的具体重名名不报，未登记的仍报
-      const shownDups = archDups.filter((n:string)=>!isIgnored('name-unique', n));
-      if(shownDups.length) warn('name-unique',`活跃无重名，归档有 ${shownDups.length} 组重名: ${shownDups.join(', ')}`);
-      // 全豁免(shown 空)静默——白名单登记的历史错误不显示不计数（.20 外观，机制正确）
-      else if (archDups.length) { /* 已全部在白名单，静默 */ }
-      else ok('name-unique','无重名');
-    }
-  }
-
-  // name-reserved
-  {
-    const bad=active.filter((p:any)=>RESERVED_NAMES.has(p.name.toLowerCase()));
-    if(bad.length) fail('name-reserved',`${bad.length} 个保留字: ${bad.map((p:any)=>p.name).join(', ')}`);
-    else ok('name-reserved','无保留字冲突');
-  }
-
-  // plist-orphan: plist entry but no MemoryData dir
-  {
-    const orphans=active.filter((p:any)=>!fs.existsSync(path.join(PAIMON,'MemoryData',p.id)));
-    if(orphans.length) fail('plist-orphan',`${orphans.length} 个活跃 agent 无 MemoryData 目录`);
-    else ok('plist-orphan','全部有对应目录');
-  }
-
-  // dir-orphan: MemoryData dir but no plist entry（只算 8 位 hex id 的 agent 目录——MonitorData/工具目录等非 agent 不算）
-  {
-    const mdRoot=path.join(PAIMON,'MemoryData');
-    const ids=new Set(list.map((p:any)=>p.id));
-    const orphanList:string[]=[];
-    try{
-      for(const d of fs.readdirSync(mdRoot,{withFileTypes:true})){
-        if(!d.isDirectory()||ids.has(d.name)||d.name==='.DS_Store') continue;
-        if(/^[0-9a-f]{8}$/.test(d.name)) orphanList.push(d.name); // 仅 hex id 形态的 agent 数据目录
-      }
-    }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); }
-    if(orphanList.length) {
-      // 逐条豁免：白名单登记的具体孤儿 id 不报，新出现的仍报
-      const shown = orphanList.filter((id:string)=>!isIgnored('dir-orphan', id));
-      if (shown.length) warn('dir-orphan',`${shown.length} 个孤儿目录（无 plist 条目）${orphanList.length>shown.length?`（${orphanList.length-shown.length} 已登记豁免）`:''}`);
-      // 全豁免静默
-      else if (orphanList.length) { /* 全部在白名单，静默 */ }
-      else ok('dir-orphan','无孤儿目录');
-    }
-    else ok('dir-orphan','无孤儿目录');
-  }
-
-  // process: running agents
-  {
-    let psOut='';
-    try{ psOut=execSync('ps aux',{encoding:'utf8'}) }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); }
-    const running=active.filter((p:any)=>psOut.split('\n').some((l:string)=>l.includes('genshin:')&&l.includes('(main,')&&l.includes(p.id)));
-    ok('process',`${running.length} 个 agent 正在运行`);
-  }
-
-  // pid-stale: 只检查近期活跃（90s 内触碰）的 pid——历史残留（agent 休眠/退出后 pid 文件保留）是常态
-  {
-    const WINDOW_MS = 90 * 1000;
-    let stale=0, recent=0, historical=0, nofile=0;
-    const now = Date.now();
-    for(const p of list){
-      const pidFile=path.join(PAIMON,'MemoryData',p.id,'main.pid');
-      try{
-        const st = fs.statSync(pidFile);
-        if (now - st.mtimeMs > WINDOW_MS) { historical++; continue; } // 历史残留：休眠/退出已久，正常
-        recent++;
-        const pid=parseInt(fs.readFileSync(pidFile,'utf8').trim());
-        try{ process.kill(pid,0) }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); stale++ } // 近期活跃但进程已死 = 真 stale（崩溃残留）
-      }catch (e) {
-        if ((e as any)?.code === 'ENOENT') { nofile++; } // 从未运行，正常
-        else console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e));
-      }
-    }
-    const extra = `${historical?`，历史残留 ${historical}`:''}${nofile?`，未运行 ${nofile}`:''}`;
-    if(stale) {
-      if (!skipIgnored('pid-stale', `${stale} 个近期活跃 agent 的 PID 已死`)) warn('pid-stale',`${stale} 个近期活跃 PID 已死${extra}`);
-    }
-    else if(recent>0) ok('pid-stale',`${recent} 个近期活跃 PID 均有效${extra}`);
-    else ok('pid-stale',`无近期活跃 agent${extra}`);
-  }
-
-  // org: organization health
-  {
-    const orgsFile=path.join(PAIMON,'AgentWorkDir','Organizational','orgs.json');
-    try{
-      const orgs=JSON.parse(fs.readFileSync(orgsFile,'utf8'));
-      const totalMembers=orgs.reduce((s:number,o:any)=>s+o.members.length,0);
-      const badRefs=orgs.reduce((s:number,o:any)=>s+o.members.filter((mid:string)=>!list.find((p:any)=>p.id===mid)).length,0);
-      const badRefsAll=orgs.reduce((s:number,o:any)=>s+o.members.filter((mid:string)=>!list.find((p:any)=>p.id===mid)).length,0);
-      if(badRefsAll) {
-        // 逐条豁免：白名单登记的 org 失效成员不报，新出现的仍报
-        const badList: Array<[string,string]> = [];
-        for(const o of orgs) for(const mid of o.members) if(!list.find((p:any)=>p.id===mid)) badList.push([o.id||'', mid]);
-        const shown = badList.filter(([oid,mid])=>!isIgnored('org', mid) && !isIgnored('org', `${oid}:${mid}`));
-        const shownTotal = shown.length + (badRefsAll - badList.length);
-        if (shown.length) warn('org',`${orgs.length} 个组织, ${totalMembers} 个成员, ${shown.length} 个无效引用${badRefsAll>shown.length?`（${badRefsAll-shown.length} 已登记豁免）`:''}`);
-        // 全豁免静默
-        else if (badRefsAll) { /* 全部在白名单，静默 */ }
-        else ok('org',`${orgs.length} 个组织, ${totalMembers} 个成员`);
-      }
-      else ok('org',`${orgs.length} 个组织, ${totalMembers} 个成员`);
-    }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); skip('org','无组织数据') }
-  }
-
-  // sync-binding（autosync 废弃 2026-09-05：syncEnabled=false 时整个 sync 段跳过）
-  {
-    let syncOn = true;
-    try { syncOn = !!JSON.parse(fs.readFileSync(path.join(PAIMON,'config','settings.json'),'utf8')).syncEnabled; } catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); syncOn = true; /* settings 缺失→默认启用（不误跳） */ }
-    if (!syncOn) { skip('sync-binding','同步已禁用 (syncEnabled=false)'); }
-    else {
-      const bindFile=path.join(PAIMON,'UserAccount','binding.json');
-      if(fs.existsSync(bindFile)){
-        try{
-          const b=JSON.parse(fs.readFileSync(bindFile,'utf8'));
-          const user=b.githubLogin||b.username||b.github_id;
-          if(user) ok('sync-binding',`${user} (${b.authMethod||'unknown'})`);
-          else fail('sync-binding','binding.json 缺少用户信息');
-        }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); fail('sync-binding','binding.json 损坏') }
-      }else skip('sync-binding','未登录');
-    }
-  }
-
-  // sync-status（syncEnabled=false 时跳过——同步已禁用，旧记录无意义不显示）
-  {
-    let syncOn = true;
-    try { syncOn = !!JSON.parse(fs.readFileSync(path.join(PAIMON,'config','settings.json'),'utf8')).syncEnabled; } catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); syncOn = true; /* settings 缺失/读取失败 → 默认视为启用（不误跳） */ }
-    if (!syncOn) { skip('sync-status','同步已禁用 (syncEnabled=false)'); }
-    else {
-      const syncFile=path.join(PAIMON,'LogData','sync-status.json');
-      try{
-        const ss=JSON.parse(fs.readFileSync(syncFile,'utf8'));
-        if(ss.lastAt){
-          const ago=Math.round((Date.now()-new Date(ss.lastAt).getTime())/60000);
-          const agoStr=ago<1?'<1 分钟':ago<60?`${ago} 分钟`:ago<1440?`${Math.round(ago/60)} 小时`:`${Math.round(ago/1440)} 天`;
-          ok('sync-status',`${agoStr}前同步（${ss.lastAction||'unknown'} ${ss.count||0}）`);
-        }else skip('sync-status','无同步记录');
-      }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); skip('sync-status','无同步数据') }
-    }
-  }
-
-  // config: settings.json readable
-  {
-    const configDir=process.env.PAIMON_CONFIG||path.join(PAIMON,'config');
-    const settFile=path.join(configDir,'settings.json');
-    try{
-      const s=JSON.parse(fs.readFileSync(settFile,'utf8'));
-      const devMode=!!s.developerMode;
-      ok('config',`settings.json OK${devMode?' (开发者模式)':''}`);
-    }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e));
-      if(fs.existsSync(settFile)) fail('config','settings.json 格式错误');
-      else warn('config','settings.json 不存在，使用默认配置');
-    }
-  }
-
-  // terminal-scrollback: check iTerm2 scrollback settings（仅 macOS iTerm2）
-  // Linux 适配待定（ISSUE 130）：background 模式已缓解长输出占终端，Linux 终端 scrollback 检查暂不做——非 darwin 静默不检查
-  {
-    const termProg=process.env.TERM_PROGRAM;
-    if(process.platform==='darwin'&&(termProg==='iTerm.app'||fs.existsSync(path.join(process.env.HOME||'','Library/Preferences/com.googlecode.iterm2.plist')))){
-      try{
-        let idx=0,limited=0,total=0;
-        const plist=path.join(process.env.HOME||'','Library/Preferences/com.googlecode.iterm2.plist');
-        while(true){
-          try{
-            execSync(`/usr/libexec/PlistBuddy -c "Print ':New Bookmarks:${idx}:Name'" "${plist}"`,{encoding:'utf8',stdio:['pipe','pipe','pipe']});
-          }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); break }
-          const val=execSync(`/usr/libexec/PlistBuddy -c "Print ':New Bookmarks:${idx}:Unlimited Scrollback'" "${plist}"`,{encoding:'utf8',stdio:['pipe','pipe','pipe']}).trim();
-          if(val!=='true') limited++;
-          total++; idx++;
-        }
-        if(limited>0) warn('scrollback',`iTerm2 ${limited}/${total} 个 profile scrollback 有限制，运行 make dev-minutely 自动修复`);
-        else ok('scrollback',`iTerm2 ${total} 个 profile 均 unlimited`);
-      }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); skip('scrollback','无法读取 iTerm2 配置') }
-    }
-    // 非 darwin（Linux 等）：不检查不输出（ISSUE 130，Linux 待定）
-  }
-
-  // disk: total disk usage
-  {
-    try{
-      const du=execSync(`du -sh "${PAIMON}" 2>/dev/null`,{encoding:'utf8'}).trim().split(/\s/)[0];
-      ok('disk',`总占用 ${du}`);
-    }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); skip('disk','无法计算') }
-  }
-
-  console.log(`\n  ${passed} passed, ${failed} failed, ${warned} warned, ${skipped} skipped\n`);
-}
+import { cmdDoctor } from './doctor.ts';
 
 // ═══════════════════════════════════════════════════════════════════
 // ACCOUNT

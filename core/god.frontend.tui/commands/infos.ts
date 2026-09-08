@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { homedir } from "node:os";
+import { estimateTokens } from "#paths";
 
 const PAIMON = path.join(homedir(), ".teyvat");
 const PLIST = path.join(PAIMON, "MemoryData", "plist.json");
@@ -9,17 +10,6 @@ const PLIST = path.join(PAIMON, "MemoryData", "plist.json");
 
 function readFile(p: string): string {
   try { return fs.readFileSync(p, "utf-8"); } catch (e) { console.error("[god.frontend.tui/commands/infos.ts] " + ((e as any)?.message || e)); return ""; }
-}
-
-function estimateTokens(text: string): number {
-  if (!text) return 0;
-  let cjk = 0;
-  for (let i = 0; i < text.length; i++) {
-    const c = text.charCodeAt(i);
-    if ((c >= 0x3400 && c <= 0x9fff) || (c >= 0xf900 && c <= 0xfaff) ||
-        (c >= 0x3000 && c <= 0x30ff) || (c >= 0xff00 && c <= 0xffef)) cjk++;
-  }
-  return Math.ceil(cjk * 1.8 + (text.length - cjk) / 4);
 }
 
 function loadPlist(): any[] {

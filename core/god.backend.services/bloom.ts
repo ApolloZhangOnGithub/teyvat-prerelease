@@ -1,4 +1,4 @@
-// bloom.ts — 零依赖布隆过滤器基础组件（备件，暂未接入任何生产路径）
+// @FUTURE bloom.ts — 零依赖布隆过滤器基础组件（备件，暂未接入任何生产路径）
 // 背景：researcher-bloom-filter-01 对 teyvat 同步/记忆场景的调研结论（ISSUE 075 关联）：
 //   - 同步扫描：shadow manifest 已是精确 hash 映射，BF 答不了"hash 是多少"，增量用 mtime+size 而非 BF；
 //   - BF 甜点在协议层（服务端 manifest BF 预筛，O(N)→O(变更)）与消息投递幂等（内存挡重复 ID）；
