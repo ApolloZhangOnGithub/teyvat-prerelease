@@ -262,6 +262,10 @@ export class ModelSelectorComponent extends Container {
         // 2026-09-04 用户定稿：两栏渲染——provider 对齐栏 + model 栏（去 provider 前缀，不重复）。
         // ★ = featured 推荐（置顶，result 鲸鱼蓝）；✓ = 正在使用的模型（行尾，success 绿）；当前模型 id 用 result 鲸鱼蓝。
         const providerMax = Math.max(8, ...this.filteredModels.map((it) => it.provider.length));
+        const modelIdMax = Math.max(20, ...this.filteredModels.slice(startIndex, startIndex + maxVisible).map((it) => {
+            const bare = it.id.includes("/") ? it.id.slice(it.id.indexOf("/") + 1) : it.id;
+            return bare.length;
+        }));
         for (let i = startIndex; i < endIndex; i++) {
             const item = this.filteredModels[i];
             if (!item)
@@ -275,9 +279,13 @@ export class ModelSelectorComponent extends Container {
             const providerCol = theme.fg("muted", item.provider.padEnd(providerMax + 2));
             // model 栏：去 provider 前缀（openrouter 风格 id 如 anthropic/claude-xxx → claude-xxx；无斜杠的内置 id 原样）
             const bareId = item.id.includes("/") ? item.id.slice(item.id.indexOf("/") + 1) : item.id;
-            const modelText = isCurrent ? theme.fg("result", bareId) : bareId;
+            const modelText = isCurrent ? theme.fg("result", bareId.padEnd(modelIdMax + 2)) : bareId.padEnd(modelIdMax + 2);
+            // context window 栏
+            const ctxW = item.model.contextWindow;
+            const ctxStr = ctxW ? (ctxW >= 1e6 ? (ctxW / 1e6).toFixed(1) + "M" : Math.round(ctxW / 1000) + "k") : "";
+            const ctxCol = ctxStr ? theme.fg("muted", ctxStr.padStart(6)) : "      ";
             const check = isCurrent ? theme.fg("success", " ✓") : "";
-            this.listContainer.addChild(new Text(`${prefix}${star}${providerCol}${modelText}${check}`, 0, 0));
+            this.listContainer.addChild(new Text(`${prefix}${star}${providerCol}${modelText}${ctxCol}${check}`, 0, 0));
         }
         // Add scroll indicator if needed
         if (startIndex > 0 || endIndex < this.filteredModels.length) {
