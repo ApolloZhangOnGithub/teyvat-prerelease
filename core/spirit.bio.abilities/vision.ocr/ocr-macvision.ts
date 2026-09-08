@@ -9,14 +9,25 @@
 
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
-import { existsSync, appendFileSync, mkdirSync } from "node:fs";
+import { existsSync, appendFileSync, mkdirSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import type { OcrEngine, OcrOptions, OcrStructured } from "./ocr.ts";
 
 const execFileAsync = promisify(execFile);
-const ENGINE_PATH = join(dirname(fileURLToPath(import.meta.url)), "ocr-engine-macvision.py");
+// 2026-09-09（ISSUE 156）：引擎路径动态发现——目标存在用之；不存在（部署 rename 后）目录扫 ocr-engine-*.py fallback——
+// 消费者不硬编码死文件名——rename（保持 ocr-engine-* 模式）后新进程照用；都不在则返回目标名（execFile 报错走友好处理）
+function resolveEngine(): string {
+  const dir = dirname(fileURLToPath(import.meta.url));
+  const target = join(dir, "ocr-engine-macvision.py"); // 平台目标引擎
+  if (existsSync(target)) return target;
+  try {
+    const hits = readdirSync(dir).filter(f => f.startsWith("ocr-engine-") && f.endsWith(".py"));
+    if (hits.length) return join(dir, hits[0]);
+  } catch { /* readdir 失败 → 返回目标名让 execFile 报错 */ }
+  return target;
+}
 const OCR_TIMEOUT_MS = 120_000; // 含 python 冷启动 + 大图放大，留足余量
 const MAX_BUFFER = 16 * 1024 * 1024;
 
@@ -44,7 +55,7 @@ function logEyes(entry: Record<string, unknown>): void {
 }
 
 function buildArgs(imagePath: string, options: OcrOptions, mode: "text" | "json"): string[] {
-  const args = [ENGINE_PATH, imagePath, "--mode", mode];
+  const args = [resolveEngine(), imagePath, "--mode", mode];
   args.push("--lang", ...(options.lang?.length ? options.lang : ["zh-Hans", "en"]));
   if (options.upscale !== undefined) args.push("--upscale", String(options.upscale));
   if (mode === "json") {
