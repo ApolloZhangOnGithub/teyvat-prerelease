@@ -980,7 +980,15 @@ case "$MODE" in
       # 2026-09-07（cross-device-communication-testor-01 报告）：精简 Linux server（容器/minimal）无 lsof → 此处 command not found 污染所有 agent 退出路径。
       # 守卫静默跳过：19223 端口清理是 best-effort（缺 lsof 时跳过不影响退出），报错绝不能泄漏到退出输出。
       if [ "${_pim_count:-0}" -le 1 ] 2>/dev/null && command -v lsof >/dev/null 2>&1; then lsof -t -i :19223 | xargs kill 2>/dev/null; fi
-      printf '\x1b[<u' 2>/dev/null
+      # 终端状态完整清理（无条件，防 agent 崩溃后终端状态污染下一个 agent）：
+      # 1. 退出 alt screen（\x1b[?1049l）—— 如果 agent 崩溃没执行 afterTerminalStop，终端仍在 alt screen
+      # 2. 关闭鼠标跟踪（\x1b[?1006l 等）—— 否则后续 shell 收到鼠标事件垃圾
+      # 3. 恢复 autowrap（\x1b[?7h）
+      # 4. 显示光标（\x1b[?25h）
+      # 5. 重置字符属性（\x1b[0m）
+      # 6. kitty keyboard protocol pop（\x1b[<u）
+      # 多次退出 alt screen 是安全的（已在主屏幕时该序列无效果）
+      printf '\x1b[?1006l\x1b[?1004l\x1b[?1003l\x1b[?1002l\x1b[?1000l\x1b[?7h\x1b[?1049l\x1b[?25h\x1b[0m\x1b[<u' 2>/dev/null
       # 排空 tty 输入队列里残留的 kitty 编码按键（用户在 TUI 还活着时按的键，
       # 协议已开 → 终端编码成 ^[[99;5:3u 之类排在队列里，agent 退出后会被父 shell
       # 读出来显示成垃圾。min 0 time 0 = 只取当前已排队的字节、绝不等待，不会吃用户
