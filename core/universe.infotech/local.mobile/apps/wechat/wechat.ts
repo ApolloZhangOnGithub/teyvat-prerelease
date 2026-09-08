@@ -4,9 +4,9 @@ import { registerShareTarget } from "../../system.share/share.ts";
 // 保留代码供历史参考，不再维护。详见 Issues 002-wechat-deprecated.ISSUE。
 // 消息存在 ~/.teyvat/data/appdata/wechat/wechat.jsonl，所有 agent 共享
 
-import * as fs from "fs";
-import { existsSync, readFileSync, writeFileSync } from "fs";
-import * as path from "path";
+import * as fs from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import * as path from "node:path";
 import { appSharedDir, userFile } from "#paths";
 import { homedir } from "node:os";
 import type { MobileApp } from "../../system.kernel/kernel.ts";

@@ -1,7 +1,7 @@
 // apps/doubao/doubao.ts — 豆包：有温度的 AI 聊天伙伴
 import type { MobileApp } from "../../system.kernel/kernel.ts";
-import * as fs from "fs";
-import * as path from "path";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { serviceKey } from "#paths";
 
 // ============================================================

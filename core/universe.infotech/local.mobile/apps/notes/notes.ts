@@ -3,8 +3,8 @@ import { shareApps, shareDestinations, shareTo } from "../../system.share/share.
 // v0.2 spec: "备忘录也是，就是有事可以记在本地"
 // Simple persistent note-taking with tags and search
 
-import * as fs from "fs";
-import * as path from "path";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
 interface Note {
   id: string;

@@ -139,8 +139,8 @@ function exitState(cur: Heart): void {
     } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart-state.ts] " + ((e as any)?.message || e)); }
     // 离开 resting 一律清 wait 显示全局量（此前只有 wait 工具自身路径清理，
     // 被打断路径会残留 __genshinWaitLabel/__genshinWaitForUser）
-    try { (globalThis as any).__genshinWaitLabel = null; } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart-state.ts] " + ((e as any)?.message || e)); }
-    try { (globalThis as any).__genshinWaitForUser = false; } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart-state.ts] " + ((e as any)?.message || e)); }
+    (globalThis as any).__genshinWaitLabel = null;
+    (globalThis as any).__genshinWaitForUser = false;
   } else if (cur.kind === "hibernated") {
     // 醒来得早 → 取消"长时间休眠卸载"定时器（消息区没卸载就不需要重建）
     if (cur.unloadTimer) clearTimeout(cur.unloadTimer);

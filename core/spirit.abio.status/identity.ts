@@ -7,8 +7,8 @@
 //   identity <id|名字>    — 查指定 agent
 // 文档: B.docs/Dev.Common/Wiki/Identity.WIKI
 
-import * as fs from "fs";
-import * as path from "path";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { getOrgOfAgent, type Org } from "#status_organization";

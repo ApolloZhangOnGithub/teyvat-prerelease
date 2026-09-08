@@ -2,8 +2,8 @@
 // v0.2 spec: 提醒事项 — 创建待办、到期提醒、完成/推迟、follow-up check
 // "模型自己也可以follow up，然后后续提醒，要选择完成才能完成"
 
-import * as fs from "fs";
-import * as path from "path";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
 // ── Reminder types ──────────────────────────────────────────────
 type ReminderPriority = "low" | "normal" | "high" | "critical";

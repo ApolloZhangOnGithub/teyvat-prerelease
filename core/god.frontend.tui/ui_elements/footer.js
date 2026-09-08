@@ -470,11 +470,16 @@ export class FooterComponent {
         // FOOTER01=name行 FOOTER02=#id+记忆行 FOOTER03=spinner/status行
         // 设 FOOTERXX=0 关闭对应行，默认全开
         // ── 窗口标题：仅变化时设，避免每帧刷 OSC 码 ──
+        // 窗口标题：嵌入 footer 第一行开头（零宽 OSC 序列，不影响可见内容），
+        // 由 TUI 的 terminal.write 在 synchronized output block 内一并输出。
+        // 不能用 process.stdout.write 直接写——它在 render() 内、synchronized block 外执行，
+        // 会破坏 alt screen 的 previousScreen 同步导致差分渲染错位（2026-09-08 修）。
+        let _titlePrefix = "";
         try {
             const title = statsParts.length > 0 ? `genshin: ${statsParts.join(" · ")}` : "genshin";
             const cleanTitle = title.replace(/\x1b\[[0-9;]*m/g, "");
             if (cleanTitle !== FooterComponent._lastTitle) {
-                process.stdout.write(`\x1b]0;${cleanTitle}\x07`);
+                _titlePrefix = `\x1b]0;${cleanTitle}\x07`;
                 FooterComponent._lastTitle = cleanTitle;
             }
         } catch(e) { try { require("fs").appendFileSync((process.env.HOME||"")+"/.teyvat/LogData/genshin-catch-errors.log", "[title] " + (e?.stack||e) + "\n"); } catch (e) { console.error("[god.frontend.tui/ui_elements/footer.js] " + (e?.message || e)); } }
@@ -483,6 +488,7 @@ export class FooterComponent {
         if (process.env.FOOTER01 !== "0") lines.push(line1);
         if (process.env.FOOTER02 !== "0") lines.push(line2);
         if (process.env.FOOTER03 !== "0") lines.push(line3);
+        if (_titlePrefix && lines.length > 0) lines[0] = _titlePrefix + lines[0];
         return lines;
         } catch(e) {
             try { appendFileSync((process.env.HOME||"")+"/.teyvat/LogData/genshin-footer-error.log", `[${new Date().toISOString()}] ${e?.stack||e}\n`); } catch(e) { try { require("fs").appendFileSync((process.env.HOME||"")+"/.teyvat/LogData/genshin-catch-errors.log", "[??] " + (e?.stack||e) + "\n"); } catch (e) { console.error("[god.frontend.tui/ui_elements/footer.js] " + (e?.message || e)); } }

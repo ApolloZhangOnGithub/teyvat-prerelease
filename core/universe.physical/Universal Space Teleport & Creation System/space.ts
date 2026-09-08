@@ -2,8 +2,8 @@
 // v0.2 spec: space --env, --detail, --move, --list
 // Space defines the environment the model inhabits — who's around, what can be interacted with
 
-import * as fs from "fs";
-import * as path from "path";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
 // ── Space definition ──────────────────────────────────────────
 interface SpaceDef {

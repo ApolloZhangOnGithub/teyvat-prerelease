@@ -7,7 +7,7 @@ import { createRequire } from "node:module";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { logerr, runtimeCacheDir, sessionDirFor } from "#paths";
+import { logerr, runtimeCacheDir, sessionDirFor, estimateTokens } from "#paths";
 import { debug } from "#gene_riboswitch";
 const require = createRequire(import.meta.url);
 
@@ -380,8 +380,7 @@ export function registerPaimonTool(toolDef: any): void {
       try {
         if (result?.content?.length) {
           const resultText = result.content.map((c: any) => c.text || "").join("");
-          let cjk = 0; for (let i = 0; i < resultText.length; i++) { const c = resultText.charCodeAt(i); if ((c >= 0x3400 && c <= 0x9fff) || (c >= 0xf900 && c <= 0xfaff) || (c >= 0x3000 && c <= 0x30ff) || (c >= 0xff00 && c <= 0xffef)) cjk++; }
-          const resTok = Math.ceil(cjk * 1.8 + (resultText.length - cjk) / 4);
+          const resTok = estimateTokens(resultText);
           if (resTok > 50) {
             // 实时 context 总量（读 context.md 估算，与 memory.ts 同款算法）
             // 2026-09-07：__genshinPersonDir 未设（重启初始化早期窗口）时跳过——优雅降级（不拼 contexted），非错误不刷日志
@@ -391,8 +390,7 @@ export function registerPaimonTool(toolDef: any): void {
               try {
                 const ctxPath = join(_personDir, "context.md");
                 const ctxStr = readFileSync(ctxPath, "utf8");
-                let cj = 0; for (let i = 0; i < ctxStr.length; i++) { const c = ctxStr.charCodeAt(i); if ((c >= 0x3400 && c <= 0x9fff) || (c >= 0xf900 && c <= 0xfaff) || (c >= 0x3000 && c <= 0x30ff) || (c >= 0xff00 && c <= 0xffef)) cj++; }
-                ctxTok = Math.round(cj * 1.8 + (ctxStr.length - cj) * 0.25);
+                ctxTok = estimateTokens(ctxStr);
               } catch (e) { console.error("[spirit.bio.organs/kernel.backbone/backbone.ts] " + ((e as any)?.message || e)); }
             }
             const fmtTok = (n: number) => n < 1000 ? n + "" : n < 1e6 ? (n / 1000).toFixed(1) + "k" : (n / 1e6).toFixed(1) + "M";

@@ -32,15 +32,15 @@ export const DIRS = {
   cli: resolve(CORE, "god.frontend.cli"),
 
   // dev-only 路径（release 模式下不存在，用 IS_DEV 门控访问）
+  // 2026-09-08 修正：目录已从 Docs/ → B.docs/、Codebase/deploy → C.deploy（Continents 重构）
   ...(BUILD_MODE === "dev" ? {
-    docs: resolve(ROOT, "Docs"),
-    devCommon: resolve(ROOT, "Docs/Dev.Common"),
-    devIssues: resolve(ROOT, "Docs/Dev.Common/Issues"),
-    devLessons: resolve(ROOT, "Docs/Dev.Common/Lessons"),
-    devNorms: resolve(ROOT, "Docs/Dev.Common/Norms"),
-    cookAgent: resolve(ROOT, "Docs/Cook.Agent"),
-    cookHuman: resolve(ROOT, "Docs/Cook.Human"),
-    deploy: resolve(ROOT, "Codebase/deploy"),
+    docs: resolve(ROOT, "B.docs"),
+    devCommon: resolve(ROOT, "B.docs/Dev.Common"),
+    devIssues: resolve(ROOT, "B.docs/Dev.Common/Issues"),
+    devLessons: resolve(ROOT, "B.docs/Dev.Common/Lessons"),
+    devNorms: resolve(ROOT, "B.docs/Dev.Common/Norms"),
+    cookHuman: resolve(ROOT, "B.docs/Cook.Human"),
+    deploy: resolve(ROOT, "C.deploy"),
   } : {}),
 
   mobile: resolve(CORE, "universe.infotech/local.mobile"),
@@ -187,6 +187,17 @@ function writeApiLog(entry: Record<string, any>) {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     appendFileSync(join(dir, "api.log"), JSON.stringify(entry) + "\n");
   } catch (e) { console.error("[paths.ts] " + ((e as any)?.message || e)); }
+}
+
+export function estimateTokens(text: string): number {
+  if (!text) return 0;
+  let cjk = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if ((c >= 0x3400 && c <= 0x9fff) || (c >= 0xf900 && c <= 0xfaff) ||
+        (c >= 0x3000 && c <= 0x30ff) || (c >= 0xff00 && c <= 0xffef)) cjk++;
+  }
+  return Math.ceil(cjk * 1.8 + (text.length - cjk) / 4);
 }
 
 export async function apiFetch(

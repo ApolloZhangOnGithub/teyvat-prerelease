@@ -104,13 +104,12 @@ wss.on("connection", async (ws, req) => {
           ...msg,
           ts: new Date().toISOString(),
         };
+        // 与 messaging.ts 一致：总是先落库，WS 推送只做即时通知（假活/离线靠 /messages/pending 拉取兜底）
+        stmt.pushMessage.run(
+          user.githubId, personId!, deviceId!, msg.to,
+          msg.type || "text", JSON.stringify(msg.payload),
+        );
         const delivered = routeMessage(user.githubId, msg.to, full);
-        if (!delivered) {
-          stmt.pushMessage.run(
-            user.githubId, personId!, deviceId!, msg.to,
-            msg.type || "text", JSON.stringify(msg.payload),
-          );
-        }
         ws.send(JSON.stringify({ ack: true, delivered }));
       }
     } catch (e) { console.error("[god.backend.services/server.ts] " + ((e as any)?.message || e)); }

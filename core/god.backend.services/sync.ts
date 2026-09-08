@@ -221,9 +221,9 @@ syncRouter.delete("/lock/:personId", (c) => {
 });
 
 // 批量查询锁状态：客户端 push 前检查哪些 agent 被其他设备锁定
-syncRouter.post("/locks/batch", (c) => {
+syncRouter.post("/locks/batch", async (c) => {
   const user = c.get("user") as AuthUser;
-  const { agentIds } = c.req.json() as any || {};
+  const { agentIds } = await c.req.json() as any || {};
   if(!Array.isArray(agentIds)) return c.json({ error: "agentIds array required" }, 400);
   stmt.expireLocks.run();
   const locked:Record<string,string>={};

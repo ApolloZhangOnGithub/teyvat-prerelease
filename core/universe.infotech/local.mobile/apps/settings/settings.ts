@@ -1,5 +1,5 @@
-import * as fs from "fs";
-import * as path from "path";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { homedir } from "node:os";
 import { exec } from "node:child_process";
 
@@ -12,7 +12,7 @@ function asyncShSafe(cmd: string, timeout: number): Promise<string> {
 }
 import type { MobileApp } from "../../system.kernel/kernel.ts";
 import { getRegion, setRegion } from "../calendar/calendar.ts";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { logerr } from "#paths";
 
 // apps/settings/settings.ts — 系统设置

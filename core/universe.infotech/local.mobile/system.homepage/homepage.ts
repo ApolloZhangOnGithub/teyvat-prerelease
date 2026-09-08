@@ -1,8 +1,8 @@
 // system.homepage/homepage.ts — Mobile command implementation
 // v0.2 spec: mobile --home, --notifications, --open, --close, --back, --appswitcher
 
-import * as fs from "fs";
-import * as path from "path";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
 // ── App registry ───────────────────────────────────────────────
 interface AppDef {

@@ -762,20 +762,6 @@ ENDPATCH
   if [ ! -f "$PI_PKG/dist/debug.js" ]; then
     echo 'export const debug = () => {};' > "$PI_PKG/dist/debug.js"
   fi
-
-  # patch runtime package.json: add #gene_riboswitch import (inline, no temp file)
-  node -e "
-    const fs=require('fs');
-    const p='$PI_PKG/package.json';
-    const pkg=JSON.parse(fs.readFileSync(p,'utf8'));
-    pkg.imports=pkg.imports||{};
-    if(!pkg.imports['#gene_riboswitch']){pkg.imports['#gene_riboswitch']='./dist/debug.js';fs.writeFileSync(p,JSON.stringify(pkg,null,2));}
-  " 2>/dev/null
-  # create stub debug.js
-  mkdir -p "$PI_PKG/dist"
-  if [ ! -f "$PI_PKG/dist/debug.js" ]; then
-    echo 'export const debug = () => {};' > "$PI_PKG/dist/debug.js"
-  fi
 fi
 
 echo -e "  ${GRN}done${R}""  Teyvat@$PIN"

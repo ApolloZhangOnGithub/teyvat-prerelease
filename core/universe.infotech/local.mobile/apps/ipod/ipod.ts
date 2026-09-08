@@ -1,5 +1,5 @@
 // ipod.ts — Self-contained player. Background polling for realtime injection.
-import * as fs from "fs"; import * as path from "path"; import { execSync } from "child_process"; import { fileURLToPath } from "node:url";
+import * as fs from "node:fs"; import * as path from "node:path"; import { execSync } from "child_process"; import { fileURLToPath } from "node:url";
 import type { MobileApp } from "../../system.kernel/kernel.ts";
 import { pushNotification } from "../../system.kernel/kernel.ts";
 import { logerr } from "#paths";

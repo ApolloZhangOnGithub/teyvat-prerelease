@@ -1,6 +1,6 @@
 #!/bin/bash
 # bootstrap.sh — 新电脑一键部署 teyvat
-# 用法: curl -fsSL spirit.beer/install-dev | bash
+# 用法: curl -fsSL paimon.beer/install-dev | bash
 #
 # 前提: git, node (>=18), bun, gh (GitHub CLI, 已 gh auth login)
 set -e
@@ -67,7 +67,7 @@ fi
 
 # ── 5. 同步数据 ──
 step 5 "同步数据"
-curl -sf --connect-timeout 5 https://sync.spirit.beer/health >/dev/null 2>&1 || die "sync 服务不可用 (sync.spirit.beer)"
+curl -sf --connect-timeout 5 https://sync.paimon.beer/health >/dev/null 2>&1 || die "sync 服务不可用 (sync.paimon.beer)"
 ok "sync 服务连通"
 genshin sync pull 2>&1 || die "数据同步失败"
 ok "同步完成"

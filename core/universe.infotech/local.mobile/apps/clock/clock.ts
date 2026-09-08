@@ -1,8 +1,8 @@
 // apps/clock/clock.ts — Clock tool (纯 pi 实现)
 // 闹钟 / 秒表 / 计时器
 
-import * as fs from "fs";
-import * as path from "path";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
 interface Alarm { id: number; label: string; time: string; enabled: boolean; repeat: string; created: string; }
 interface State { sw_status: "reset"|"running"|"stopped"; sw_accumulated: number; sw_started_at: number; sw_laps: {number:number;split:number;total:number}[]; timer_status: "idle"|"running"; timer_label: string; timer_total_secs: number; timer_started_at: number; }

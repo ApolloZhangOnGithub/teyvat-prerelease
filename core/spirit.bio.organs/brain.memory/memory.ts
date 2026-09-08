@@ -6,7 +6,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { homedir } from "node:os";
 import { getSessionRole, getPrompt } from "#kernel_ribosome";
-import { memoryDir,  personDataDir as _personDataDir, memoryDataDir, sessionDirFor } from "#paths";
+import { memoryDir,  personDataDir as _personDataDir, memoryDataDir, sessionDirFor, estimateTokens } from "#paths";
 import { registerPaimonTool, sendCustomMessage, resultContent } from "#kernel_backbone";
 import { renderToolCall, renderMessage } from "#tui_blockrender";
 import { createHash, randomBytes } from "node:crypto";
@@ -457,19 +457,7 @@ export default function registerMemory(pi: ExtensionAPI) {
   let dnaState: "wake" | "sleep" = "wake"; // current DNA state
   let lastContextSize = 0; // for growth rate tracking
 
-  function estimateTokens(text: string): number {
-    if (!text) return 0;
-    // 不能用 chars/4：中文一个字 ≈ 1.8 token，chars/4 估成 0.25 token，少算约 7 倍。
-    // 后果：容量监控永不报警、isOverHalf 保护不触发 → 全量注入撑爆窗口
-    // （实测真 1.15M tokens 时只显示 ~38%）。按 CJK 单独计。
-    let cjk = 0;
-    for (let i = 0; i < text.length; i++) {
-      const c = text.charCodeAt(i);
-      if ((c >= 0x3400 && c <= 0x9fff) || (c >= 0xf900 && c <= 0xfaff) ||
-          (c >= 0x3000 && c <= 0x30ff) || (c >= 0xff00 && c <= 0xffef)) cjk++;
-    }
-    return Math.ceil(cjk * 1.8 + (text.length - cjk) / 4);
-  }
+  // estimateTokens 已提取到 paths.ts（唯一真相源），通过 #paths 导入
 
   // ── 模型窗口 ─────────────────────────────────────────────────────
   const modelMax = parseInt(process.env.PI_MODEL_MAX_TOKENS || "") || 1000000;

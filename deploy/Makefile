@@ -49,7 +49,7 @@ help:
 	@echo "  teyvat"
 	@echo "  ───────────────────────────────────────────────────────"
 	@echo "  bump                     升版本号 (make bump v=0.x.x)，自动改 package.json 的 version 字段"
-	@echo "  dev-minutely             开发部署（minutely canary → X.Y.Z-dev.YYYYMMDD.N，递增 N）"
+	@echo "  dev-minutely             开发部署（minutely canary → X.Y.Z-dev.YYYYMMDD.N，递增 N）—— committer/msg/detail 三参数必填"
 	@echo "  dev-stable               钉住当前 dev 为 dev-stable 保底"
 	@echo "  prerelease-minutely       发布 alpha（X.Y.Z-alpha.YYYYMMDD.M，独立递增 M + pin dev）。用 dev= 绑指定 dev，默认绑最新"
 	@echo "  release                  正式发布 (make release v=0.x.x)"
@@ -90,7 +90,8 @@ setup: _paths
 # ── integrity (minutely/stable/release 前自动执行) ──
 
 _integrity: _paths
-	@if [ -z "$${msg:-}" ]; then echo "  ERROR: msg required. Usage: make dev-minutely msg='标题(≥10字)' detail='详细内容(≥50字)'"; exit 1; fi
+	@if [ -z "$${committer:-}" ]; then echo "  ERROR: committer required. Usage: make dev-minutely committer='提交者名' msg='标题(≥10字)' detail='详细内容(≥50字)'"; exit 1; fi
+	@if [ -z "$${msg:-}" ]; then echo "  ERROR: msg required. Usage: make dev-minutely committer='提交者名' msg='标题(≥10字)' detail='详细内容(≥50字)'"; exit 1; fi
 	@if [ $${#msg} -lt 10 ]; then echo "  ERROR: msg 标题不得少于10个字（当前$${#msg}字）"; exit 1; fi
 	@if [ -z "$${detail:-}" ]; then echo "  ERROR: detail required"; exit 1; fi
 	@if [ $${#detail} -lt 50 ]; then echo "  ERROR: detail 详细内容不得少于50字（当前$${#detail}字）"; exit 1; fi
@@ -126,7 +127,7 @@ _integrity: _paths
 	@echo "[$$(date +%H:%M:%S)] theme-consistency check..." && node "$(DEPLOY)/check-theme-consistency.cjs" "$(CORE)" || { echo "  theme-consistency check FAILED — dark/light 配色键必须一一对应（用户：light 缺键会丢色/回退），补齐后再 make"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] empty-catch check..." && node "$(DEPLOY)/check-empty-catch.cjs" || { echo "  empty-catch check FAILED — 空 catch{} 静默吞错（LESSON 024 反模式，用户：任何地方空 catch 都无法运行通过）— 修复: node C.deploy/fix-empty-catch.cjs --apply"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] func-load check..." && node "$(DEPLOY)/check-func-load.mjs" "$(CORE)" || { echo "  func-load check FAILED — func 加载失败必须 fail-fast（ISSUE 112，用户多次强调），门禁缺失或 func 结构异常都禁止部署；修复后再 make"; exit 1; }
-	@echo "[$$(date +%H:%M:%S)] extension load check..." && cd "$(CORE)" && (set -o pipefail; (command -v timeout >/dev/null 2>&1 && timeout 30 node --experimental-transform-types -e "import('./index.ts').then(() => { console.log('  extension: OK'); process.exit(0); }).catch(e => { console.error('  extension LOAD FAIL: ' + e.message); process.exit(1); })" 2>&1 || node --experimental-transform-types -e "import('./index.ts').then(() => { console.log('  extension: OK'); process.exit(0); }).catch(e => { console.error('  extension LOAD FAIL: ' + e.message); process.exit(1); })" 2>&1) | grep -v ExperimentalWarning) || { echo "  extension load check FAILED"; exit 1; }
+	@echo "[$$(date +%H:%M:%S)] extension load check..." && cd "$(CORE)" && (set -o pipefail; (command -v timeout >/dev/null 2>&1 && timeout 30 node -e "import('./index.ts').then(() => { console.log('  extension: OK'); process.exit(0); }).catch(e => { console.error('  extension LOAD FAIL: ' + e.message); process.exit(1); })" 2>&1 || node -e "import('./index.ts').then(() => { console.log('  extension: OK'); process.exit(0); }).catch(e => { console.error('  extension LOAD FAIL: ' + e.message); process.exit(1); })" 2>&1) | grep -v ExperimentalWarning) || { echo "  extension load check FAILED"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] dep check..." && ( for pkg in "$(CORE)/node_modules/@earendil-works/pi-tui" "$$HOME/.local/lib/teyvat/runtime/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui"; do \
 		[ -d "$$pkg" ] || continue; \
 		[ -d "$$pkg/node_modules/marked" ] || ( echo "  fixing pi-tui deps..." && cd "$$pkg" && npm install --silent 2>&1 ); \
@@ -160,9 +161,10 @@ _dev-minutely: _integrity
 	fi; \
 	PAIMON_VER="$$REL_VER.$$TODAY.$$COUNT"; \
 	echo -e "  teyvat $$PAIMON_VER (minutely)"; \
-	if [ -z "$${msg:-}" ]; then echo -e "  ${YLW}ERROR: msg required. Usage: make dev-minutely msg='标题(≥10字)' detail='详细内容(≥50字)'${R}"; exit 1; fi; \
+	if [ -z "$${committer:-}" ]; then echo -e "  ${RED}ERROR: committer required. Usage: make dev-minutely committer='提交者名' msg='标题(≥10字)' detail='详细内容(≥50字)'${R}"; exit 1; fi; \
+	if [ -z "$${msg:-}" ]; then echo -e "  ${YLW}ERROR: msg required. Usage: make dev-minutely committer='提交者名' msg='标题(≥10字)' detail='详细内容(≥50字)'${R}"; exit 1; fi; \
 	if [ $${#msg} -lt 10 ]; then echo -e "  ${RED}ERROR: msg 标题不得少于10个字（当前$${#msg}字）${R}"; exit 1; fi; \
-	if [ -z "$${detail:-}" ]; then echo -e "  ${RED}ERROR: detail required. Usage: make dev-minutely msg='标题' detail='详细内容(≥50字)'${R}"; exit 1; fi; \
+	if [ -z "$${detail:-}" ]; then echo -e "  ${RED}ERROR: detail required. Usage: make dev-minutely committer='提交者名' msg='标题' detail='详细内容(≥50字)'${R}"; exit 1; fi; \
 	if [ $${#detail} -lt 50 ]; then echo -e "  ${RED}ERROR: detail 详细内容不得少于50字（当前$${#detail}字）${R}"; exit 1; fi; \
 	SRC_README="$(ROOT)/../B.docs/Cook.Human/README_dev.md"; \
 	DST_README="$(DEV)/README.md"; \
@@ -170,10 +172,10 @@ _dev-minutely: _integrity
 		echo -e "  ${YLW}ERROR: README.md differs from README_dev.md — was it manually edited? trash it first${R}"; exit 1; \
 	fi; \
 	cp "$$SRC_README" "$$DST_README"; \
-	echo "[$$(date '+%Y-%m-%d %H:%M:%S')] $$PAIMON_VER  $$msg" >> "$(ROOT)/../Makelogs_Minutely.KEYLOGS"; \
+	echo "[$$(date '+%Y-%m-%d %H:%M:%S')] $$PAIMON_VER  [$$committer]  $$msg" >> "$(ROOT)/../Makelogs_Minutely.KEYLOGS"; \
 	echo "  $$detail" >> "$(ROOT)/../Makelogs_Minutely.KEYLOGS"; \
 	echo "" >> "$(ROOT)/../Makelogs_Minutely.KEYLOGS"; \
-	cd "$(DEV)" && git add -A && (git diff --cached --quiet || git commit -m "$$PAIMON_VER" -m "$$msg" -m "$$detail") && \
+	cd "$(DEV)" && git add -A && (git diff --cached --quiet || git commit -m "$$PAIMON_VER" -m "[$$committer] $$msg" -m "$$detail") && \
 	echo "$$TODAY $$COUNT $$REL_VER" > "$$COUNTER_FILE" && \
 	(cd "$(DEV)" && git fetch origin main 2>/dev/null; cd "$(DEV)" && git diff --quiet origin/main..HEAD 2>/dev/null || { echo -e "  pushing $$PAIMON_VER..."; cd "$(DEV)" && git push origin main 2>/dev/null && echo -e "  pushed"; }); \
 	echo "[$$(date +%H:%M:%S)] git done"; \
@@ -216,20 +218,21 @@ _dev-stable: _integrity
 # agent/人提交的手动记录（测试结果、观察、决策等），追加到 Makelogs_Mannual.KEYLOGS。
 # 与 dev-minutely 日志（Makelogs_Minutely.KEYLOGS）格式一致：[时间戳] 版本号 + detail 段，
 # 每条自动生成 note id（note-YYYYMMDD-HHMMSS-<4hex>）便于引用。纯写日志：不 bump 版本、不 git、不部署。
-# 用法: make note msg='标题(≥10字)' detail='内容(≥30字)'
+# 用法: make note committer='提交者名' msg='标题(≥10字)' detail='内容(≥30字)'
 # 锁：与 dev-minutely 共用 .make-lock（同锁串行，防并发写日志文件）。
 note:
 	@$(LOCKED) _note
 
 _note:
-	@if [ -z "$${msg:-}" ]; then echo -e "  ${YLW}ERROR: msg required. Usage: make note msg='标题(≥10字)' detail='内容(≥30字)'${R}"; exit 1; fi; \
+	@if [ -z "$${committer:-}" ]; then echo -e "  ${RED}ERROR: committer required. Usage: make note committer='提交者名' msg='标题(≥10字)' detail='内容(≥30字)'${R}"; exit 1; fi; \
+	if [ -z "$${msg:-}" ]; then echo -e "  ${YLW}ERROR: msg required. Usage: make note committer='提交者名' msg='标题(≥10字)' detail='内容(≥30字)'${R}"; exit 1; fi; \
 	if [ $${#msg} -lt 10 ]; then echo -e "  ${RED}ERROR: msg 标题不得少于10个字（当前$${#msg}字）${R}"; exit 1; fi; \
-	if [ -z "$${detail:-}" ]; then echo -e "  ${RED}ERROR: detail required. Usage: make note msg='标题' detail='内容(≥30字)'${R}"; exit 1; fi; \
+	if [ -z "$${detail:-}" ]; then echo -e "  ${RED}ERROR: detail required. Usage: make note committer='提交者名' msg='标题' detail='内容(≥30字)'${R}"; exit 1; fi; \
 	if [ $${#detail} -lt 30 ]; then echo -e "  ${RED}ERROR: detail 内容不得少于30个字（当前$${#detail}字）${R}"; exit 1; fi; \
 	NOTE_VER=$$(node -e "try{console.log(JSON.parse(require('fs').readFileSync(process.env.HOME+'/.teyvat/agent/version.json','utf8')).genshin||'unknown')}catch(e){console.log('unknown')}"); \
 	NOTE_TS=$$(date '+%Y-%m-%d %H:%M:%S'); \
 	NOTE_ID="note-$$(date '+%Y%m%d-%H%M%S')-$$(openssl rand -hex 2 2>/dev/null || printf '%04x' $$((RANDOM % 65536)))"; \
-	echo "[$$NOTE_TS] $$NOTE_VER  [$$NOTE_ID]  $$msg" >> "$(ROOT)/../Makelogs_Mannual.KEYLOGS"; \
+	echo "[$$NOTE_TS] $$NOTE_VER  [$$NOTE_ID]  [$$committer]  $$msg" >> "$(ROOT)/../Makelogs_Mannual.KEYLOGS"; \
 	echo "  $$detail" >> "$(ROOT)/../Makelogs_Mannual.KEYLOGS"; \
 	echo "" >> "$(ROOT)/../Makelogs_Mannual.KEYLOGS"; \
 	echo -e "  ${GRN}note $$NOTE_ID logged${R} → Makelogs_Mannual.KEYLOGS"

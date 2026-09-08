@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-07T19:28:36.024Z",
+  "generated": "2026-09-08T13:11:45.771Z",
   "apps": [
     {
       "name": "amap",
@@ -41,8 +41,8 @@
       "name": "calendar",
       "dir": "calendar",
       "tier": "apps",
-      "build": 5,
-      "md5": "7cf13f03d84fc3ce4efa25d07bd02d80",
+      "build": 6,
+      "md5": "99b7a223b7703bb429917e0b137bb18c",
       "file": "calendar.ts",
       "handler": "code"
     },
@@ -50,8 +50,8 @@
       "name": "clock",
       "dir": "clock",
       "tier": "apps",
-      "build": 6,
-      "md5": "ec3c555edab68f8a60be04815fe09a03",
+      "build": 7,
+      "md5": "ac6682aa3b9f74a5179d53578d6c158f",
       "file": "clock.ts",
       "handler": "code"
     },
@@ -59,8 +59,8 @@
       "name": "doubao",
       "dir": "doubao",
       "tier": "apps",
-      "build": 7,
-      "md5": "db909683b2845b87b1e51cada9ae9bad",
+      "build": 8,
+      "md5": "bfb86ee5dbaa9ff2dd49562448dec89d",
       "file": "doubao.ts",
       "handler": "code"
     },
@@ -68,8 +68,8 @@
       "name": "ipod",
       "dir": "ipod",
       "tier": "apps",
-      "build": 11,
-      "md5": "50ecf1a1daf36628d6027998e6b6cb07",
+      "build": 12,
+      "md5": "a6aac6a3c5b287d760f2a5907878c7b8",
       "file": "ipod.ts",
       "handler": "code"
     },
@@ -77,8 +77,8 @@
       "name": "notes",
       "dir": "notes",
       "tier": "apps",
-      "build": 3,
-      "md5": "102532156f9dba253f04d60a13c7df94",
+      "build": 4,
+      "md5": "5d8dfc316ecad57d22c9d95780b9759f",
       "file": "notes.ts",
       "handler": "code"
     },
@@ -86,8 +86,8 @@
       "name": "photos",
       "dir": "photos",
       "tier": "apps",
-      "build": 7,
-      "md5": "402bab10c2e6da83201440057d5a6e6b",
+      "build": 8,
+      "md5": "df6188e5e95813542db3ab00f1500792",
       "file": "photos.ts",
       "handler": "code"
     },
@@ -95,8 +95,8 @@
       "name": "reminder",
       "dir": "reminder",
       "tier": "apps",
-      "build": 3,
-      "md5": "4d789f9ea10117156022ffe67dbec8e7",
+      "build": 4,
+      "md5": "4c3a0f3ebca4cbf4013ea22bda16698b",
       "file": "reminder.ts",
       "handler": "code"
     },
@@ -104,8 +104,8 @@
       "name": "safari",
       "dir": "safari",
       "tier": "apps",
-      "build": 23,
-      "md5": "b6d93716e5e8b790b57227879c8e7785",
+      "build": 24,
+      "md5": "49c7cff4b1858208f27ec192d1009731",
       "file": "safari.ts",
       "handler": "code"
     },
@@ -113,8 +113,8 @@
       "name": "settings",
       "dir": "settings",
       "tier": "apps",
-      "build": 7,
-      "md5": "419fae9784722af4f0076eaaa12308ec",
+      "build": 8,
+      "md5": "42c44b5ebe5ad7102777d4338959f2aa",
       "file": "settings.ts",
       "handler": "code"
     },
@@ -149,8 +149,8 @@
       "name": "wechat",
       "dir": "wechat",
       "tier": "apps",
-      "build": 22,
-      "md5": "80eaa0bee3d4f4875644c49dab224792",
+      "build": 23,
+      "md5": "aecdcfe2bff80ab5041bd9fed0668f85",
       "file": "wechat.ts",
       "handler": "code"
     },

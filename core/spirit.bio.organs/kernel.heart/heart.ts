@@ -164,8 +164,8 @@ export default function (pi: ExtensionAPI) {
           // 2026-08-20：unlink 前检查存在（ENOENT 不再报错，console-error.log 实测发现）
           try { if (existsSync(join(runtimeCacheDir(pid), "wake-at"))) unlinkSync(join(runtimeCacheDir(pid), "wake-at")); } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
           try { if (existsSync(join(runtimeCacheDir(pid), "wake-until"))) unlinkSync(join(runtimeCacheDir(pid), "wake-until")); } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
-          try { (globalThis as any).__genshinHibernateUntil = null; } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
-          try { (globalThis as any).__genshinHibernateUntilTs = null; } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
+          (globalThis as any).__genshinHibernateUntil = null;
+          (globalThis as any).__genshinHibernateUntilTs = null;
         }
       } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
     }
@@ -354,8 +354,8 @@ export default function (pi: ExtensionAPI) {
             try { if (require("fs").existsSync(join(cacheDir, "wake-at"))) require("fs").unlinkSync(join(cacheDir, "wake-at")); } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
             try { if (require("fs").existsSync(join(cacheDir, "wake-until"))) require("fs").unlinkSync(join(cacheDir, "wake-until")); } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
             if (globalThis.__genshinHibernateUntil || globalThis.__genshinHibernateUntilTs) {
-              try { (globalThis as any).__genshinHibernateUntil = null; } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
-              try { (globalThis as any).__genshinHibernateUntilTs = null; } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
+              (globalThis as any).__genshinHibernateUntil = null;
+              (globalThis as any).__genshinHibernateUntilTs = null;
             }
             return;
           }
@@ -385,8 +385,8 @@ export default function (pi: ExtensionAPI) {
               dlog(`wake-until: ${overslept ? "overslept" : "on time"} target=${targetHHMM}`);
               // 只有触发唤醒才删除文件、清除状态栏标签；未到时间保留，继续轮询（issue 071 修复补丁）
               try { require("fs").unlinkSync(wakeFile); } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
-              try { (globalThis as any).__genshinHibernateUntil = null; } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
-              try { (globalThis as any).__genshinHibernateUntilTs = null; } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
+              (globalThis as any).__genshinHibernateUntil = null;
+              (globalThis as any).__genshinHibernateUntilTs = null;
             }
           }
         } catch (e: any) { dlog(`wake-until check error: ${e?.message}`); }
