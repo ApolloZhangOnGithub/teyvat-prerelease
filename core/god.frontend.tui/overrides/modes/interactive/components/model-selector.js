@@ -227,6 +227,12 @@ export class ModelSelectorComponent extends Container {
             id: scoped.model.id,
             model: scoped.model,
         }));
+        // scoped 模型也需要补元数据（_vendor/_series/openWeights），否则 Tab 切 scope 后渲染闪退
+        for (const item of this.scopedModelItems) {
+            const m = item.model;
+            if (!m._vendor) m._vendor = m.id.includes("/") ? m.id.split("/")[0].toLowerCase() : m.provider?.toLowerCase() || "";
+            if (!m._series) m._series = m.family || (m.id.includes("/") ? m.id.slice(m.id.indexOf("/") + 1) : m.id).split(/[-_]/)[0].toLowerCase();
+        }
         this.activeModels = this.scope === "scoped" ? this.scopedModelItems : this.allModels;
         this.filteredModels = this.activeModels;
         const currentIndex = this.filteredModels.findIndex((item) => modelsAreEqual(this.currentModel, item.model));
@@ -313,14 +319,14 @@ export class ModelSelectorComponent extends Container {
             const isFeatured = featured.some((f) => f.provider === item.provider && f.id === item.id);
             const isSelected = i === this.selectedIndex;
             const isCurrent = modelsAreEqual(this.currentModel, item.model);
-            const fg = (color, text) => isSelected ? theme.fg("accent", text) : theme.fg(color, text);
+            const fg = (color, text) => isSelected ? theme.fg("accent", text) : (color === "plain" ? text : theme.fg(color, text));
             const prefix = isSelected ? theme.fg("accent", "→ ") : "  ";
             const star = isFeatured ? theme.fg("result", "★ ") : "  ";
             const hosterCol = fg("muted", item.provider.padEnd(hosterW + 1));
             const vendorCol = fg("muted", (item.model._vendor || "?").padEnd(vendorW + 1));
             const seriesCol = fg("muted", (item.model._series || "?").padEnd(seriesW + 1));
             const bareId = item.id.includes("/") ? item.id.slice(item.id.indexOf("/") + 1) : item.id;
-            const modelCol = isCurrent && !isSelected ? theme.fg("result", bareId.padEnd(modelW + 1)) : fg("default", bareId.padEnd(modelW + 1));
+            const modelCol = isCurrent && !isSelected ? theme.fg("result", bareId.padEnd(modelW + 1)) : fg("plain", bareId.padEnd(modelW + 1));
             const ctxW = item.model.contextWindow;
             const ctxStr = ctxW ? (ctxW >= 1e6 ? (ctxW / 1e6).toFixed(1) + "M" : Math.round(ctxW / 1000) + "k") : "";
             const ctxCol = fg("muted", ctxStr.padStart(5));
