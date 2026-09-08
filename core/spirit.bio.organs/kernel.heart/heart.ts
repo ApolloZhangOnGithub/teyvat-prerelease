@@ -695,7 +695,7 @@ export default function (pi: ExtensionAPI) {
       const retryTimer = setTimeout(() => {
         if (heartState() !== "error-backoff") return;
         transition({ kind: "working" });
-        try { sendCustomMessage(pi, "continuous-error-retry", i18n(`WARN: API 错误: ${String(errMsg).slice(0, 200)}。${Math.round(waitMs / 1000)}s 后重试。`, `WARN: API error: ${String(errMsg).slice(0, 200)}. Retrying in ${Math.round(waitMs / 1000)}s.`)); } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
+        try { sendCustomMessage(pi, "continuous-error-retry", i18n(`【系统自动】WARN: API 错误: ${String(errMsg).slice(0, 200)}。${Math.round(waitMs / 1000)}s 后重试。`, `[auto] WARN: API error: ${String(errMsg).slice(0, 200)}. Retrying in ${Math.round(waitMs / 1000)}s.`)); } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
       }, waitMs);
       transition({ kind: "error-backoff", retryTimer });
       return;
@@ -703,7 +703,7 @@ export default function (pi: ExtensionAPI) {
 
     // API 恢复：上次还在退避 → 注入恢复通知
     if (errorBackoffMs() > 0) {
-      try { sendCustomMessage(pi, "continuous-error-retry", i18n("API 已恢复，继续工作。", "API recovered, continue working.")); } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
+      try { sendCustomMessage(pi, "continuous-error-retry", i18n("【系统自动】API 已恢复，继续工作。", "[auto] API recovered, continue working.")); } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
     }
     setErrorBackoffMs(0);
 
@@ -762,15 +762,15 @@ export default function (pi: ExtensionAPI) {
       dlog(`agent_end: intentions non-empty → auto-continue (count=${limits().count})`);
       setTimeout(() => {
         sendCustomMessage(pi, "continuous-next",
-          i18n(`继续工作。你的计划：\n${intentions}\n\n做完的删掉（intentions({old_string:'done item', new_string:''})），有新的加上。没事做了就调 wait 或 hibernate。`,
-               `Continue working. Your plan:\n${intentions}\n\nRemove finished items (intentions({old_string:'done item', new_string:''})), add new ones. If nothing left to do, call wait or hibernate.`));
+          i18n(`【系统自动】继续工作（非用户指令，意图栈非空自动续命）。你的计划：\n${intentions}\n\n做完的删掉（intentions({old_string:'done item', new_string:''})），有新的加上。没事做了就调 wait 或 hibernate。`,
+               `[auto] Continue working (system auto-continue, not a user instruction). Your plan:\n${intentions}\n\nRemove finished items (intentions({old_string:'done item', new_string:''})), add new ones. If nothing left to do, call wait or hibernate.`));
       }, 0);
     } else {
       dlog(`agent_end: intentions empty → prompt to plan (count=${limits().count})`);
       setTimeout(() => {
         sendCustomMessage(pi, "continuous-next",
-          i18n(`你的意图栈为空。如果有事做，用 intentions 工具写入计划再继续。如果无事可做，调 wait({seconds:N}) 等待或 hibernate({summary:'...'}) 休眠。`,
-               `Your intention stack is empty. If you have work to do, write a plan with the intentions tool and continue. If not, call wait({seconds:N}) to pause or hibernate({summary:'...'}) to sleep.`));
+          i18n(`【系统自动】你的意图栈为空（非用户指令）。如果有事做，用 intentions 工具写入计划再继续。如果无事可做，调 wait({seconds:N}) 等待或 hibernate({summary:'...'}) 休眠。`,
+               `[auto] Your intention stack is empty (not a user instruction). If you have work to do, write a plan with the intentions tool and continue. If not, call wait({seconds:N}) to pause or hibernate({summary:'...'}) to sleep.`));
       }, 0);
     }
   });
