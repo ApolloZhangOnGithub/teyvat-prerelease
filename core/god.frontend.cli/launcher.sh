@@ -602,7 +602,11 @@ if [ "$MODE" = "kill" ]; then
     if [ -z "$TARGET" ]; then echo "$(_l "没有第 $NAME 个运行中的 agent" "No running agent #$NAME")"; exit 1; fi
     NAME="$TARGET"
   fi
-  PID=$(ps aux | grep "genshin:.*${NAME}" | grep -v grep | awk '{print $2}' | head -1)
+  # 2026-09-09 09:17（房东实测仍注销——ISSUE 155 修复在 cli.ts 是旁路，genshin k 真实路径在 launcher 内联）：
+  # 旧：ps aux | grep "genshin:.*${NAME}" 宽匹配 + NAME 未转义——短名/前缀匹配多个 agent + 取错 PID → 杀错进程
+  # → systemd user session scope 结构下连带注销整桌面（Linux；macOS launchd 隔离无此问题）。
+  # 修：精确匹配 agent 主进程标识 cmdline "genshin:<name>(main,"——绝不宽匹配、不碰其他进程。
+  PID=$(ps -eo pid,command | grep "genshin:${NAME}(main," | grep -v grep | awk '{print $1}' | head -1)
   if [ -z "$PID" ]; then echo "$(_l "没找到运行中的 $NAME" "No running agent found: $NAME")"; exit 1; fi
   if _confirm "杀掉 $NAME?" "Kill $NAME?"; then
     # 杀掉 pi 进程及其父 bash launcher，清 wake-restart 防重启
