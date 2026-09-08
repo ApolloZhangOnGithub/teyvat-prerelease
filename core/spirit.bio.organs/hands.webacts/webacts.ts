@@ -184,11 +184,13 @@ export default function (pi: ExtensionAPI) {
           const b = JSON.parse(nfs.readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8"));
           if (!b?.token || !b?.deviceId) return { content: [{ type: "text", text: i18n("未绑定 GitHub——先 genshin login", "not bound — run genshin login first") }], details: {}, isError: true };
           const filename = String(path.split("/").pop() || "file").replace(/[\\/:*?"<>|]/g, "_").slice(-120);
+          // 2026-09-09（first-tester 报：中文文件名上传失败——Cannot convert to ByteString）：fetch header 值限 Latin-1 单字节——中文（charCode>255）直接放抛错。
+          // 修：header 传 encodeURIComponent(filename)（ASCII 安全）——server 端 decodeURIComponent 还原（files.ts 同改）。
           const res = await fetch("https://sync.paimon.beer/auth/files", {
             method: "POST",
             headers: {
               "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId,
-              "Content-Type": "application/octet-stream", "X-File-Name": filename, "User-Agent": "genshin-sync/1.0",
+              "Content-Type": "application/octet-stream", "X-File-Name": encodeURIComponent(filename), "User-Agent": "genshin-sync/1.0",
             },
             body: data as any,
           });

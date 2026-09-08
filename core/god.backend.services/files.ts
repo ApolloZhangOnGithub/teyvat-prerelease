@@ -25,7 +25,7 @@ export async function uploadFile(c: any): Promise<Response> {
   const user = await resolveUser(auth.slice(7), deviceId, deviceName);
   if (!user) return c.json({ error: "invalid token" }, 401);
 
-  const filename = (c.req.header("X-File-Name") || "file").replace(/[\\/:*?"<>|]/g, "_").slice(-120);
+  const filename = decodeURIComponent((c.req.header("X-File-Name") || "file")).replace(/[\\/:*?"<>|]/g, "_").slice(-120); // 2026-09-09：中文文件名支持——client 传 encodeURIComponent，这里 decode 还原
   const cl = parseInt(c.req.header("Content-Length") || "0", 10);
   if (cl > MAX_SHARE_BYTES) {
     return c.json({ error: `file too large (max ${MAX_SHARE_BYTES} bytes = 1MB)`, maxBytes: MAX_SHARE_BYTES }, 413);
