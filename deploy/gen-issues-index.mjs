@@ -44,22 +44,30 @@ for (const f of readdirSync(dir)) {
   if (!m) continue;
   const num = parseInt(m[1]);
   const text = readFileSync(join(dir, f), "utf8");
-  const st = text.match(/^status:\s*(\S+)/m);
+  // 2026-09-09：双格式解析——旧版 status:xxx / 新版 > 状态：xxx；中文值归一
+  const stRaw = text.match(/^status:\s*(\S+)/m) || text.match(/^>\s*状态[:：]\s*([^|（(]*)/m);
   let status = null;
-  if (st) {
-    const s = st[1].trim();
-    status = s === "部分完成" ? "partially-complete" : s;
-    if (!SECTION[status]) status = "open";
+  if (stRaw) {
+    const s = stRaw[1].trim();
+    if (/^(fixed|mostly-fixed|resolved|已解决|已修复|已实现|已修|解决)/.test(s)) status = "resolved";
+    else if (/^closed|已关闭|关闭/.test(s)) status = "closed";
+    else if (/^(partially-complete|部分完成)/.test(s)) status = "partially-complete";
+    else if (/^deferred|待触发/.test(s)) status = "deferred";
+    else if (/^unconfirmed|待确认/.test(s)) status = "unconfirmed";
+    else status = "open"; // open / 打开 / in-progress / 待修复 / 分析中 / 其他
   }
-  const titleLine = text.split("\n").find((l) => l.startsWith("#")) || f;
+  // 找第一个单井号标题行（跳过 ##/### 小节标题）；无则 fallback 文件名
+  const titleLine = text.split("\n").find((l) => l.startsWith("# ")) || f;
   const title = titleLine
-    .replace(/^#\s*(ISSUE:\s*)?/, "")
-    .replace(/^\[\d{3}\]\s*/, "")
-    .replace(/^\d{3}\s*[—-]\s*/, "")
+    .replace(/^#\s*/, "")
+    .replace(/^ISSUE\s*(\d{3}\s*[:—-]\s*|:\s*)/, "")  // ISSUE NNN: / ISSUE NNN — / ISSUE:
+    .replace(/^\[?\d{3}\]?\s*[—:—-]?\s*/, "")         // NNN — / NNN: / NNN / [NNN] 前缀
     .replace(/\.ISSUE$/, "")
     .slice(0, 80);
+  // 2026-09-09：摘要只取文件内部标题（旧 INDEX 按编号匹配摘要——撞号时同号两文件共用一条
+  // 导致先到者被污染成后到者摘要；清理撞号后改为标题为准，人工摘要修正请直接改文件标题行）
   const old = oldMap.get(num);
-  entries.push({ num, file: f, status: status || old?.section || "open", summary: old?.summary || title });
+  entries.push({ num, file: f, status: status || old?.section || "open", summary: title });
 }
 entries.sort((a, b) => a.num - b.num);
 
