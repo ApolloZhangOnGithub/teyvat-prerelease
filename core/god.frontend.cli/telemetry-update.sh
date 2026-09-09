@@ -12,8 +12,11 @@ TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # ── ① 本地日志（append jsonl）──
 LOG_FILE="$HOME/.teyvat/update-history.jsonl"
 mkdir -p "$HOME/.teyvat" 2>/dev/null
-_DEVICE_ID=""
-[ -f "$HOME/.teyvat/agent/device.json" ] && _DEVICE_ID=$(node -e "try{console.log(JSON.parse(require('fs').readFileSync('$HOME/.teyvat/agent/device.json','utf8')).id||'')}catch(e){console.log('')}" 2>/dev/null)
+# 设备身份（2026-09-09）：与 communicate loadBinding 同源——UserAccount/binding.json 的 deviceId + token（Bearer 认证）
+_DEVICE_ID=""; _TOKEN=""
+_BIND="$HOME/.teyvat/UserAccount/binding.json"
+[ -f "$_BIND" ] && _BIND_INFO=$(node -e "try{const b=JSON.parse(require('fs').readFileSync('$HOME/.teyvat/UserAccount/binding.json','utf8'));console.log((b.deviceId||'')+'|'+(b.token||''))}catch(e){console.log('')}" 2>/dev/null)
+_DEVICE_ID="${_BIND_INFO%%|*}"; _TOKEN="${_BIND_INFO#*|}"
 [ -z "$_DEVICE_ID" ] && _DEVICE_ID=$(cat "$HOME/.teyvat/RuntimeCache/.device-id" 2>/dev/null || hostname)
 _ENTRY=$(printf '{"ts":"%s","device_id":"%s","from":"%s","to":"%s","channel":"%s","trigger":"%s"}' "$TS" "$_DEVICE_ID" "$FROM_VER" "$TO_VER" "$CHANNEL" "$TRIGGER")
 echo "$_ENTRY" >> "$LOG_FILE" 2>/dev/null
@@ -22,9 +25,12 @@ tail -200 "$LOG_FILE" > "$LOG_FILE.tmp" 2>/dev/null && mv "$LOG_FILE.tmp" "$LOG_
 
 # ── ② server 遥测上报（best effort——失败静默）──
 _PAYLOAD="{\"from\":\"$FROM_VER\",\"to\":\"$TO_VER\",\"channel\":\"$CHANNEL\",\"ts\":\"$TS\",\"trigger\":\"$TRIGGER\"}"
-curl -s -m 8 -X POST "https://sync.paimon.beer/sync/update-telemetry" \
-  -H "Content-Type: application/json" \
-  -H "X-Device-Id: $_DEVICE_ID" \
-  -H "User-Agent: genshin-sync/1.0" \
-  -d "$_PAYLOAD" >/dev/null 2>&1 || true
+if [ -n "$_TOKEN" ] && [ -n "$_DEVICE_ID" ]; then
+  curl -s -m 8 -X POST "https://sync.paimon.beer/sync/update-telemetry" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $_TOKEN" \
+    -H "X-Device-Id: $_DEVICE_ID" \
+    -H "User-Agent: genshin-sync/1.0" \
+    -d "$_PAYLOAD" >/dev/null 2>&1 || true
+fi
 exit 0
