@@ -104,6 +104,18 @@ db.exec(`
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_share_expires ON share_files(expires_at);
+  -- update 遥测（2026-09-09：每台 genshin update 自动上报——绑定账号/设备——集中可查"谁/何时/从→到"）
+  CREATE TABLE IF NOT EXISTS update_history (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    github_id INTEGER NOT NULL,            -- 绑定账号（authMiddleware resolveUser）
+    device_id TEXT NOT NULL,               -- X-Device-Id（哪台机器）
+    from_ver  TEXT NOT NULL,
+    to_ver    TEXT NOT NULL,
+    channel   TEXT NOT NULL,
+    trigger_by TEXT NOT NULL DEFAULT 'user', -- user/agent（agent env 有 PAIMON_AGENT_ID）
+    ts        TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_update_history_dev ON update_history(device_id, ts);
 `);
 
 // 迁移（2026-09-05）：devices 表补 created_at（首次绑定时间——存量设备此前未记录，置 NULL 用 last_seen 近似）
@@ -283,5 +295,14 @@ export const stmt = {
   `),
   cleanupExpiredShares: db.prepare(`
     DELETE FROM share_files WHERE expires_at < datetime('now')
+  `),
+  // update 遥测（2026-09-09）
+  insertUpdateHistory: db.prepare(`
+    INSERT INTO update_history (github_id, device_id, from_ver, to_ver, channel, trigger_by, ts)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `),
+  listUpdateHistory: db.prepare(`
+    SELECT device_id, from_ver, to_ver, channel, trigger_by, ts FROM update_history
+    WHERE github_id = ? ORDER BY id DESC LIMIT ?
   `),
 };

@@ -338,6 +338,9 @@ case "$NAME" in
       # （PAIMON_VIA_MAKE=1 + MAKELEVEL）——prerelease 消费方无 make，这里显式伪装
       # PAIMON_VER 从包内 package.json 读（version.json 只有 PAIMON_VER 非空才更新）
       PKG_VER=$(node -e "console.log(require('$UP_DIR/package.json').version)" 2>/dev/null)
+      # update 遥测（2026-09-09）：部署前旧版本 + 触发者（agent env 有 PAIMON_AGENT_ID=agent 触发；否则 user）
+      OLD_VER=$(node -e "try{console.log(JSON.parse(require('fs').readFileSync('$VER_JSON','utf8')).genshin)}catch(e){console.log('unknown')}" 2>/dev/null)
+      UP_TRIGGER="user"; [ -n "${PAIMON_AGENT_ID:-}" ] && UP_TRIGGER="agent"
       # 部署判断用 git HEAD 而非版本号（同版本号重发合法——prerelease 是 dev 滚动；HEAD 变化=有新提交才部署）
       NEW_HEAD=$(git -C "$UP_DIR" rev-parse HEAD 2>/dev/null)
       OLD_HEAD=""
@@ -350,6 +353,9 @@ case "$NAME" in
       if ( cd "$UP_DIR" && PAIMON_VIA_MAKE=1 MAKELEVEL=1 PAIMON_CHANNEL=prerelease PAIMON_VER="$PKG_VER" PAIMON_PINNED_DEV="$PKG_PINNED" bash deploy/install.sh 2>&1 | tail -5 ); then
         echo "$NEW_HEAD" > "$UP_DIR/.last-deployed-head"
         echo -e "  \033[32mOK\033[0m prerelease $PKG_VER 已更新并部署"
+        # update 遥测管线（2026-09-09——本地日志 + server 上报绑定账号；失败静默不阻塞）
+        _TEL="$HOME/.local/lib/teyvat/extensions/teyvat/god.frontend.cli/telemetry-update.sh"
+        [ -x "$_TEL" ] && bash "$_TEL" "$OLD_VER" "$PKG_VER" "$CHANNEL" "$UP_TRIGGER" || true
       else
         echo -e "  \033[31mERROR\033[0m prerelease 更新失败"
         exit 1

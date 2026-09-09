@@ -173,6 +173,18 @@ syncRouter.delete("/agent-presence/:sid", (c) => {
   return c.json({ ok: true });
 });
 
+// update 遥测（2026-09-09：每台 genshin update 自动上报——绑定账号/设备——集中可查"谁/何时/从→到"）
+syncRouter.post("/update-telemetry", async (c) => {
+  const user = c.get("user") as AuthUser;
+  try {
+    const b = await c.req.json();
+    const { from, to, channel, ts, trigger } = b || {};
+    if (!to || !from) return c.json({ error: "from/to required" }, 400);
+    stmt.insertUpdateHistory.run(user.githubId, user.deviceId || "", String(from), String(to), String(channel || ""), String(trigger || "user"), String(ts || new Date().toISOString()));
+    return c.json({ ok: true });
+  } catch (e) { console.error("[god.backend.services/sync.ts] " + ((e as any)?.message || e)); return c.json({ error: "bad json" }, 400); }
+});
+
 syncRouter.post("/lock/:personId", (c) => {
   const user = c.get("user") as AuthUser;
   const personId = c.req.param("personId");
