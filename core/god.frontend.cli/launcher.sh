@@ -1248,7 +1248,7 @@ case "$MODE" in
         # 单开读端会阻塞等写端——死锁！2026-08-20 实测踩坑）。fd 3 保持写端存活，
         # 外部 echo JSON > fifo 不阻塞；node 的 stdin（fifo 读端）也不会 EOF。
         exec 3<>"$FIFO"
-        PI_ALIVE_RESTART_LOOP=1 PI_ALIVE_WOKE="$WOKE" node "$RUNTIME_CLI" $EXT_FLAGS --mode rpc --session-dir "$SESSION_DIR" "$@" < "$FIFO" >> "$CONSOLE_LOG" 2>&1
+        PI_ALIVE_RESTART_LOOP=1 PI_ALIVE_WOKE="$WOKE" node "$RUNTIME_CLI" $EXT_FLAGS --mode rpc --session-dir "$SESSION_DIR" --continue "$@" < "$FIFO" >> "$CONSOLE_LOG" 2>&1
         exec 3>&-
         SKIP_TUI=1  # headless 守护：headless node 结束后不启动 TUI，直接走 NONCE 检查（while 循环）
         elif [ "$LOOP_ITER" = "1" ]; then
@@ -1276,12 +1276,18 @@ case "$MODE" in
       #    attach（LOOP_ITER=1 清标记后）SKIP_TUI=0 直接启动 TUI，不再依赖 while 下一轮；
       #    headless 守护 SKIP_TUI=1 跳过，走 NONCE 检查）──
       if [ "${SKIP_TUI:-0}" = "0" ]; then
+        # 2026-09-12：--continue 继续上一个 session（历史记录完整显示的根本修法）。
+        # 首次启动（SESSION_DIR 为空）--continue 无效，pi 自动建新 session。
+        # self-reboot 不传 --continue（用户定稿"就是要新的session"——restart-session.json 管重放）。
+        CONTINUE_FLAG=""
+        if [ -z "$WOKE" ] || [ "$WOKE" = "0" ]; then
+          # 非 self-reboot（用户 genshin xxx 进入 / /h 恢复）→ 继续上一个 session
+          CONTINUE_FLAG="--continue"
+        fi
         if [ -x "$BLACKBOX" ] && [ "$USE_BLACKBOX" = "1" ]; then
-          PI_ALIVE_RESTART_LOOP=1 PI_ALIVE_WOKE="$WOKE" "$BLACKBOX" "$ID" "${NAME:-unknown}" "main" -- node "$RUNTIME_CLI" $EXT_FLAGS --session-dir "$SESSION_DIR" "$@"
+          PI_ALIVE_RESTART_LOOP=1 PI_ALIVE_WOKE="$WOKE" "$BLACKBOX" "$ID" "${NAME:-unknown}" "main" -- node "$RUNTIME_CLI" $EXT_FLAGS --session-dir "$SESSION_DIR" $CONTINUE_FLAG "$@"
         else
-          # 黑匣子开关不连坐器官:PAIMON_NO_MC=1 是 0713 事故(sc spawn 递归风暴)的临时止血,
-          # 根因已在 dev.20260715.1 修复。手动调试禁用器官请自行 export PAIMON_NO_MC=1。
-          PI_ALIVE_RESTART_LOOP=1 PI_ALIVE_WOKE="$WOKE" node "$RUNTIME_CLI" $EXT_FLAGS --session-dir "$SESSION_DIR" "$@"
+          PI_ALIVE_RESTART_LOOP=1 PI_ALIVE_WOKE="$WOKE" node "$RUNTIME_CLI" $EXT_FLAGS --session-dir "$SESSION_DIR" $CONTINUE_FLAG "$@"
         fi
       fi
       NONCE=$(cat "$WAKEFILE" 2>/dev/null)
