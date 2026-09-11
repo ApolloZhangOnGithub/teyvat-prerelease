@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { execSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { SYNC_ENDPOINT_DEFAULT, estimateTokens } from '../paths.ts';
+import { SYNC_ENDPOINT_DEFAULT, estimateTokens, writeFileAtomic } from '../paths.ts';
 
 const H = os.homedir();
 const PAIMON = path.join(H, '.teyvat');
@@ -589,8 +589,13 @@ function cmdRename(oldName: string, newName: string) {
   try{ idData=JSON.parse(fs.readFileSync(idFile,'utf8')) }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); }
   if(!Array.isArray(idData.renameHistory)) idData.renameHistory=[];
   idData.renameHistory.unshift({from:prev,to:newName,at:new Date().toISOString()});
+  // 2026-09-11（prime-agent）：原来**只写 renameHistory、忘了写 idData.name** —— plist 改了名字、identity.json 的 name
+  // 还是旧的 → doctor 的 plist-identity 永久报不一致（线上实例 60ba86e9：plist=genshin-v0.3-system-01，
+  // identity.json=genshin-ecosystem-01，renameHistory 里明明记着这次改名）。创建路径（同文件 300 行）写对了，改名路径漏了。
+  idData.name = newName;
   fs.mkdirSync(idDir,{recursive:true});
-  fs.writeFileSync(idFile,JSON.stringify(idData,null,2));
+  // 原子写：identity.json 被 doctor / infos / sync 读取（半截 JSON → JSON.parse 抛错）
+  writeFileAtomic(idFile, JSON.stringify(idData,null,2));
 
   console.log(`  ${prev} → ${newName}`);
 }

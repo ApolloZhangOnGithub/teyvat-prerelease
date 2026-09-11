@@ -196,9 +196,23 @@ export class SettingsList {
     }
     addHintLine(lines, width) {
         lines.push("");
-        lines.push(truncateToWidth(this.theme.hint(this.searchEnabled
-            ? "  Type to search · ←→ switch · Enter to open · Esc to cancel"
-            : "  ←→ switch · Enter/Space to change · Esc to cancel"), width));
+        // 智能提示：根据当前选中项的 values 动态显示
+        const displayItems = this.searchEnabled ? this.filteredItems : this.items;
+        const sel = displayItems[this.selectedIndex];
+        const hasValues = sel?.values?.length > 1;
+        const hasSubmenu = !!sel?.submenu;
+        let hint;
+        if (this.searchEnabled) {
+            hint = hasValues ? "  Type to search · ←→ switch · Enter to confirm · Esc to cancel"
+                             : "  Type to search · Enter to open · Esc to cancel";
+        } else if (hasValues) {
+            hint = "  ←→ switch · Esc to cancel";
+        } else if (hasSubmenu) {
+            hint = "  Enter to open · Esc to cancel";
+        } else {
+            hint = "  Enter to select · Esc to cancel";
+        }
+        lines.push(truncateToWidth(this.theme.hint(hint), width));
     }
 }
 //# sourceMappingURL=settings-list.js.map
