@@ -786,6 +786,25 @@ if [ -z "$NAME" ] && [ -z "$MODE" ]; then
       echo -e "  \033[33m*\033[0m 新版本可用: \033[1m$_NEW\033[0m (当前 $_CUR)  运行 \033[1mgenshin update\033[0m 更新"
     fi
   fi
+  # 2026-09-12：云备份状态行（用户定稿：genshin 裸命令看板常驻状态行；文案逐字照打）
+  # 未配置态实时判 services.json（不读状态文件——否则新机永远不显示提示）；已配置读 backup-status.json
+  _BS=$(node -e '
+    const fs=require("fs"),os=require("os"),path=require("path");
+    const P=process.env.PAIMON_HOME||path.join(os.homedir(),".teyvat");
+    const zh=(process.env.PAIMON_LANG||"").indexOf("zh")>=0;
+    const T=(a,b)=>zh?a:b;
+    let conf=null;
+    for(const f of [path.join(P,"UserAccount/services.json"), path.join(P,"config/services.json")]){
+      try{ const j=JSON.parse(fs.readFileSync(f,"utf8")); if(j.backup&&j.backup.bucket){conf=j.backup;break;} }catch(e){}
+    }
+    if(!conf){ console.log(T("backup not configured!! · 运行 genshin b 配置","backup not configured!! · run genshin b to set up")); process.exit(0); }
+    let st=null; try{ st=JSON.parse(fs.readFileSync(path.join(P,"RuntimeCache/backup-status.json"),"utf8")); }catch(e){}
+    if(!st||!st.state){ console.log(T("已配置，尚无快照 · 运行 genshin b now","configured, no snapshot yet · run genshin b now")); process.exit(0); }
+    if(st.state==="failed"){ console.log(T("备份失败："+(st.error||"未知")+" · 运行 genshin b status","backup failed: "+(st.error||"unknown")+" · run genshin b status")); process.exit(0); }
+    if(st.state==="ok"){ const t=String(st.last||"").replace("T"," ").slice(0,16); console.log(T("已备份 · "+(st.snapshots||0)+" 个快照 · 最近 "+t, "backed up · "+(st.snapshots||0)+" snapshots · last "+t)); process.exit(0); }
+    console.log(T("已配置，尚无快照 · 运行 genshin b now","configured, no snapshot yet · run genshin b now"));
+  ' 2>/dev/null)
+  if [ -n "$_BS" ]; then echo ""; echo -e "  \033[33m*\033[0m $_BS"; fi
   exit 0
 fi
 
@@ -1285,8 +1304,6 @@ case "$MODE" in
       fi
       break
     done
-    # 2026-09-11：退出后清屏（清掉 footer 残留）+ 自动显示 agent 列表
-    printf '\033[H\033[J'
     # /h 转后台时等 headless 子进程起来（detached 标记出现），否则列表会误显示 offline
     if [ -n "$ID" ]; then
       for _w in $(seq 1 10); do
@@ -1294,7 +1311,8 @@ case "$MODE" in
         sleep 0.1
       done
     fi
-    # 自动显示列表：用已部署的 genshin 命令（$0 可能是旧快照，直接用 PATH 里的 genshin）
+    # 退出后显示 agent 列表（不清屏——保留 TUI 退出信息和 /h 提示）
+    echo ""
     genshin 2>/dev/null || "$0" 2>/dev/null || true
     # 退出后同步段已废弃（2026-09-05，PROPOSAL 036：agent 单机存活；代码保留不删）——以下注释
     # kill $SYNC_LOOP_PID 2>/dev/null; wait $SYNC_LOOP_PID 2>/dev/null

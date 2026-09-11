@@ -185,9 +185,10 @@ export default function (pi: ExtensionAPI) {
           _trace("backup_daily_spawn");
         }
       } else {
-        // 未配置 → 记 tip（载体待房东拍板；先写日志，避免每天打扰 agent）
-        _trace("backup_unconfigured_tip");
-        try { _traceAppend(_traceJoin(_bkHome, "LogData", "backup-tip.log"), `${new Date().toISOString()} backup not configured\n`); } catch { /* 静默 */ }
+        // 2026-09-12（用户定稿）：不做通知式 tip——未配置态由 launcher 的 genshin 看板状态行实时展示。
+        // 原 tip 日志逻辑注释保留（用户纪律：代码不删）。
+        // _trace("backup_unconfigured_tip");
+        // try { _traceAppend(_traceJoin(_bkHome, "LogData", "backup-tip.log"), `${new Date().toISOString()} backup not configured\n`); } catch { }
       }
     } catch (e) { console.error("[spirit.bio.organs/brain.bioclock/bioclock.ts] " + ((e as any)?.message || e)); }
   }

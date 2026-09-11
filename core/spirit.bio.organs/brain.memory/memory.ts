@@ -651,8 +651,10 @@ export default function registerMemory(pi: ExtensionAPI) {
     const rawPct = Math.round(usageRatio * 100);
     monitorAppend("growth.jsonl",
       JSON.stringify({ ts: new Date().toISOString(), bytes: context.length, tokens: memTokens, ratio: +(usageRatio * 100).toFixed(1) }) + "\n");
-    // context gauge 暴露给 bioclock 注入（纯想时模型也能看到 ground truth）
-    (globalThis as any).__genshinContextGauge = `ctx ${rawPct}%`;
+    // 2026-09-12（ISSUE 203）：此处原写 __genshinContextGauge（est 口径 estimateTokens），
+    // 与 memory.ts:155 的 API 口径（input+cacheRead）双写互相覆盖 → 工具行 gauge 在 60%/85% 间跳变。
+    // 修：gauge 唯一写者归 :155（API ground truth——模型真实收到的 prompt）；本行不再写（保留注释不删，用户纪律）。
+    // (globalThis as any).__genshinContextGauge = `ctx ${rawPct}%`;
     // 容量提醒——只在达到 URGE(80%) 真危险时发（用户反馈：这条是垃圾，
     // 1) 清理后屏幕上还留着清理前的旧快照（过期数据） 2) 每次 amem 后用户说话就冒出来。
     // 修：阈值提到 80%；带时间戳（明确是快照不是当前值）；feed:false 不喂模型（模型自主管理）。
@@ -661,7 +663,12 @@ export default function registerMemory(pi: ExtensionAPI) {
     const fmtTok = (n: number) => n < 1000 ? n + "" : n < 1e6 ? (n / 1000).toFixed(1) + "k" : (n / 1e6).toFixed(1) + "M";
     const ctxTok = estimateTokens(context);
     const capTs = _fmtLocalTs(Date.now()).slice(6, 14); // HH:MM:SS（本地时区）
-    let capacityLine = `context ${fmtTok(ctxTok)} tokens / ${fmtTok(modelMax)} (快照@${capTs})`;
+    // 2026-09-12（ISSUE 203）：显示改用 API 真实值（_pondSess.prevPrompt = input+cacheRead，与 gauge/footer 同源）；
+    // usageRatio（est 5 项）保留作“记忆体量/截断”阈值——两者语义不同，分别标注不再混用。
+    const _apiTok = _pondSess.prevPrompt ?? 0;
+    let capacityLine = _apiTok > 0
+      ? `context ${fmtTok(_apiTok)} tokens / ${fmtTok(modelMax)} (api@${capTs}) · 记忆体量 est ${rawPct}%`
+      : `context ${fmtTok(ctxTok)} tokens / ${fmtTok(modelMax)} (est@${capTs})`;
     if (usageRatio >= CAPACITY.FORCE) capacityLine += i18n(" — 立即用 amem 整理", " — use amem immediately");
     else if (usageRatio >= CAPACITY.URGE) capacityLine += i18n(" — 建议 amem 整理", " — consider amem cleanup");
     if (usageRatio >= CAPACITY.URGE) {

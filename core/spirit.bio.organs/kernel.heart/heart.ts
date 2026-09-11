@@ -866,7 +866,17 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_shutdown", async () => {
     // /h detach 导致的 shutdown 不切 paused——headless 子进程会接管，不应留 paused 标记
     if ((globalThis as any).__genshinDetaching) {
-      dlog("session_shutdown: detach mode, skip paused transition");
+      dlog("session_shutdown: detach mode, skip paused transition + clear paused");
+      // /h 转后台：不仅跳过 paused 转换，还清除已有的 paused 标记（否则列表显示 [P] 错误状态）
+      try {
+        const pid = personId();
+        if (pid) {
+          const pausedMem = join(memoryDir(pid), "paused");
+          const pausedRc = join(runtimeCacheDir(pid), "paused");
+          try { require("fs").unlinkSync(pausedMem); } catch { /* 不存在正常 */ }
+          try { require("fs").unlinkSync(pausedRc); } catch { /* 不存在正常 */ }
+        }
+      } catch (e) { console.error("[heart.ts] clear paused: " + ((e as any)?.message || e)); }
     } else if (heartState() !== "hibernated") {
       (globalThis as any).__genshinWaitReason = "shutdown";
       transition({ kind: "paused", reason: "shutdown" });

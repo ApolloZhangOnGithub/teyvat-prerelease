@@ -201,6 +201,8 @@ export class FooterComponent {
         let totalCacheWrite = 0;
         let totalCost = 0;
         let latestCacheHitRate;
+        // 2026-09-12（ISSUE 203）：把 API 真实 prompt token 提到循环外作用域（原在循环内 const，外面取不到）
+        let latestPromptTokens = 0;
         for (const entry of this.session.sessionManager.getEntries()) {
             if (entry.type === "message" && entry.message.role === "assistant") {
                 totalInput += entry.message.usage.input;
@@ -208,7 +210,7 @@ export class FooterComponent {
                 totalCacheRead += entry.message.usage.cacheRead;
                 totalCacheWrite += entry.message.usage.cacheWrite;
                 totalCost += entry.message.usage.cost.total;
-                const latestPromptTokens = entry.message.usage.input + entry.message.usage.cacheRead + entry.message.usage.cacheWrite;
+                latestPromptTokens = entry.message.usage.input + entry.message.usage.cacheRead + entry.message.usage.cacheWrite;
                 latestCacheHitRate =
                     latestPromptTokens > 0 ? (entry.message.usage.cacheRead / latestPromptTokens) * 100 : undefined;
             }
@@ -226,7 +228,10 @@ export class FooterComponent {
             diskTokens = { ctx: est(ctxTxt), work: est(wmTxt), cx: est(cxTxt) };
         } catch(e) { try { require("fs").appendFileSync((process.env.HOME||"")+"/.teyvat/LogData/genshin-catch-errors.log", "[??] " + (e?.stack||e) + "\n"); } catch (e) { console.error("[god.frontend.tui/ui_elements/footer.js] " + (e?.message || e)); } }
         const contextWindow = state.model?.contextWindow ?? 200000;
-        const totalTokens = diskTokens.ctx + diskTokens.work + diskTokens.cx;
+        // 2026-09-12（ISSUE 203，房东定调“以 API 报的为准”）：窗口实占改用 API 真实 prompt（input+cacheRead+cacheWrite）。
+        // 原 est(context.md+work+cx) 是“记忆文件全量体量”（非窗口实占，且 CJK×1.8 系数偏高 ~1.3×，>70% 时实注入还只tai tail）——
+        // 现在：有 API 值就用真实值；无（首轮/无 assistant 消息）才回退 est。diskTokens 保留（ctxPct 等仍用）。
+        const totalTokens = latestPromptTokens > 0 ? latestPromptTokens : (diskTokens.ctx + diskTokens.work + diskTokens.cx);
         const totalPercent = contextWindow > 0 ? Math.min(100, (totalTokens / contextWindow) * 100) : 0;
         const ctxPct = contextWindow > 0 ? ((diskTokens.ctx / contextWindow) * 100).toFixed(1) : "0";
         const workPct = contextWindow > 0 && diskTokens.work > 0 ? ((diskTokens.work / contextWindow) * 100).toFixed(1) : "0";

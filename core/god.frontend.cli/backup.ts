@@ -35,6 +35,9 @@ const PASS_FILE = path.join(BACKUP_DIR, 'restic-pass');
 const CRED_FILE = path.join(BACKUP_DIR, 'cred.json');
 const STATE_DIR = path.join(PAIMON, 'LogData');
 const LOG_FILE = path.join(STATE_DIR, 'backup.log');
+// 状态文件（2026-09-12 用户定稿：genshin 裸命令看板的状态行数据源，launcher 非阻塞读）
+// state: "configured-no-snapshot" | "ok" | "failed"（"未配置"由 launcher 实时判 services.json——不依赖本文件）
+const STATUS_FILE = path.join(PAIMON, 'RuntimeCache', 'backup-status.json');
 const BIN_DIR = path.join(PAIMON, 'bin');
 const RESTIC = path.join(BIN_DIR, 'restic');
 const REPO_PREFIX = 'teyvat-restic';
@@ -144,6 +147,25 @@ function log(line: string): void {
   } catch { /* 静默 */ }
 }
 
+// ── 状态文件（原子写——launcher 读它渲染看板状态行）────────────────
+function writeStatus(state: string, extra: Record<string, any> = {}): void {
+  try {
+    fs.mkdirSync(path.dirname(STATUS_FILE), { recursive: true });
+    const data = { state, host: os.hostname().replace(/\.local$/, ''), ts: new Date().toISOString(), ...extra };
+    const tmp = STATUS_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+    fs.renameSync(tmp, STATUS_FILE);
+  } catch { /* 静默 */ }
+}
+function countSnapshots(bin: string, conf: any): number {
+  try {
+    const r = runRestic(bin, conf, ['snapshots', '--json']);
+    if (!r.ok) return 0;
+    const arr = JSON.parse(r.out.replace(/^[^\[]*/, '') || '[]');
+    return Array.isArray(arr) ? arr.length : 0;
+  } catch { return 0; }
+}
+
 // ── 远端上报（best-effort——照抄 update 遥测：失败静默、绝不阻断）──────
 // 用 spawnSync curl（同步、可靠——避免 fire-and-forget fetch 随进程退出丢失）
 function reportRemote(ok: boolean, detail: string): void {
@@ -217,7 +239,12 @@ function cmdInit(): boolean {
   if (chk.ok) { console.log(`  ${D}${T('仓库已存在，跳过 init', 'repo exists, skip init')}${R}`); return true; }
   console.log(`  ${D}${T('初始化 restic 仓库...', 'initializing restic repo...')}${R}`);
   const r = runRestic(bin, conf, ['init'], { inherit: true });
-  if (r.ok) { console.log(`  ${G}✓${R} ${T('仓库已初始化', 'repo initialized')}`); log('init ok'); return true; }
+  if (r.ok) {
+    console.log(`  ${G}✓${R} ${T('仓库已初始化', 'repo initialized')}`);
+    log('init ok');
+    writeStatus('configured-no-snapshot');
+    return true;
+  }
   console.error(`  ${RED}${T('初始化失败', 'init failed')}${R}`);
   log(`init failed: ${(r.out || '').slice(0, 300)}`);
   return false;
@@ -243,12 +270,14 @@ function cmdNow(): boolean {
   if (ok) {
     console.log(`  ${G}✓${R} ${T('备份完成', 'backup done')} ${D}${secs}s${R}`);
     log(`backup ok ${secs}s`);
+    writeStatus('ok', { snapshots: countSnapshots(bin, conf), last: new Date().toISOString() });
     reportRemote(true, `ok ${secs}s`);
   } else {
     const tail = failDetail.trim().split('\n').slice(-4).join('\n');
     console.error(`  ${RED}${T('备份失败', 'backup failed')}${R}`);
     if (tail) console.error(`  ${D}${tail}${R}`);
     log(`backup failed: ${failDetail.slice(0, 400)}`);
+    writeStatus('failed', { error: (failDetail.trim().split('\n').pop() || 'restic exit!=0').slice(0, 120) });
     reportRemote(false, failDetail || 'restic exit!=0');
   }
   return ok;

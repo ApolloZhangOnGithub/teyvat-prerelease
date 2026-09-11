@@ -123,15 +123,24 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
   pi.registerMessageRenderer("memory-capacity", (message: any, _opts: any, theme: any) => {
     let cur = "";
     try {
+      // 2026-09-12（ISSUE 203，房东定调“以 API 报的为准”）：
+      // 主值改用 API 真实值 —— __genshinContextGauge（memory.ts:155 写，input+cacheRead，唯一写者）；
+      // est(context.md) 降级为“是否正在截断”预警（>70% = buildSnapshot 已在丢最旧记忆）。
+      const gauge = (globalThis as any).__genshinContextGauge || "";
+      const apiPct = parseFloat((gauge.match(/(\d+(?:\.\d+)?)%/) || [])[1] || "0");
       const ctxPath = join(global.__genshinPersonDir || "", "context.md");
       const t = readFileSync(ctxPath, "utf8");
       let cjk = 0;
       for (let i = 0; i < t.length; i++) { const c = t.charCodeAt(i); if ((c >= 0x3400 && c <= 0x9fff) || (c >= 0xf900 && c <= 0xfaff) || (c >= 0x3000 && c <= 0x30ff) || (c >= 0xff00 && c <= 0xffef)) cjk++; }
-      const tok = Math.round(cjk * 1.8 + (t.length - cjk) * 0.25);
-      const pct = ((tok / 1000000) * 100).toFixed(1);
-      cur = parseFloat(pct) >= 80 ? i18n(`context ${(tok / 1000).toFixed(1)}k/1.0M (${pct}%) — 建议 amem`, `context ${(tok / 1000).toFixed(1)}k/1.0M (${pct}%) — consider amem`) : i18n(`context ${(tok / 1000).toFixed(1)}k/1.0M (${pct}%)`, `context ${(tok / 1000).toFixed(1)}k/1.0M (${pct}%)`);
+      const estTok = Math.round(cjk * 1.8 + (t.length - cjk) * 0.25);
+      const modelMax = ((globalThis as any).__genshinGetModel?.()?.contextWindow) || 1000000;
+      const estPct = modelMax > 0 ? (estTok / modelMax) * 100 : 0;
+      const main = apiPct > 0
+        ? `${(gauge.trim() || `ctx ${apiPct}%`)}${estPct > 70 ? ` · 记忆体量 ${estPct.toFixed(0)}%（正在截断旧记忆）` : ""}`
+        : `ctx ~${estPct.toFixed(1)}% (est)`;
+      cur = estPct > 70 ? i18n(`${main} — 建议 amem`, `${main} — consider amem`) : main;
     } catch (e) { console.error("[god.frontend.tui/renderers.ts] " + ((e as any)?.message || e)); cur = (message.content ?? "").toString(); }
-    return _sysMsg(theme, cur, parseFloat(cur.match(/\((\d+\.\d+)%\)/)?.[1] || "0") >= 80 ? "warning" : undefined);
+    return _sysMsg(theme, cur, parseFloat((cur.match(/记忆体量\s*(\d+(?:\.\d+)?)%/) || [])[1] || "0") > 70 ? "warning" : undefined);
   });
   pi.registerMessageRenderer("memory-reminder", (message: any, _opts: any, theme: any) => {
     return _sysMsg(theme, (message.content ?? "").toString());
