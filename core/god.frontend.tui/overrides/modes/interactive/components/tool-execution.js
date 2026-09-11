@@ -632,7 +632,13 @@ export class ToolExecutionComponent extends Container {
                     // 正常工具名（fallback 掩盖真实错误，theme.dim TypeError 被吞 3 轮排查才找到）。
                     // 直接显示错误形态：红点 + 工具名 + 错误消息，让渲染 bug 一眼暴露。
                     console.error(`[tool-execution] renderCall 失败 (${this.toolName}):`, err?.message || err);
-                    try { globalThis.__genshinDlog?.(`renderCall fail (${this.toolName}): ${err?.message}`); } catch (e) { console.error("[god.frontend.tui/overrides/modes/interactive/components/tool-execution.js] " + (e?.message || e)); }
+                    // 2026-09-11（prime-agent）：__genshinDlog 这个挂点全项目（含 pi dist）都没有任何赋值 ——
+                    // 原来这行是静默 no-op，renderCall 失败连一行日志都没有。没注册时退回 console.error，保证可见。
+                    try {
+                        const _dlog = globalThis.__genshinDlog;
+                        if (typeof _dlog === "function") _dlog(`renderCall fail (${this.toolName}): ${err?.message}`);
+                        else console.error(`[renderCall fail] ${this.toolName}: ${err?.message}（__genshinDlog 未注册，已退回 console.error）`);
+                    } catch (e) { console.error("[god.frontend.tui/overrides/modes/interactive/components/tool-execution.js] " + (e?.message || e)); }
                     this.callRendererComponent = undefined;
                     renderContainer.addChild(renderToolCall.label(theme,
                         this.toolName.charAt(0).toUpperCase() + this.toolName.slice(1),

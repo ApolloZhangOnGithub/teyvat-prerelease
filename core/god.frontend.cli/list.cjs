@@ -112,8 +112,11 @@ for (const p of list) {
   p._ago = Math.round((now - new Date(p.lastEnded || p.lastSeen).getTime()) / 60000);
   // 2026-08-20 用户需求：先 F（前台 TUI）后 B（后台 headless）——detached 标记存在 = 后台
   p._fb = active && fs.existsSync(PAIMON_HOME + '/RuntimeCache/' + p.id + '/detached') ? 1 : 0;
+  // 2026-09-11：H（hibernated）排到 W/A/P 后面——活跃但休眠的优先级低于活跃工作中的
+  p._hibernated = active && fs.existsSync(PAIMON_HOME + '/RuntimeCache/' + p.id + '/main-hibernate') ? 1 : 0;
 }
-list.sort((a, b) => (b._active ? 1 : 0) - (a._active ? 1 : 0) || (a._fb || 0) - (b._fb || 0) || a._ago - b._ago);
+// 排序：active > offline，同为 active 时 非H > H，同 H 级别时 F > B，最后按 ago
+list.sort((a, b) => (b._active ? 1 : 0) - (a._active ? 1 : 0) || (a._hibernated || 0) - (b._hibernated || 0) || (a._fb || 0) - (b._fb || 0) || a._ago - b._ago);
 // 排序结果落盘（原 launcher 里第二个 node 子进程做的事，2026-08-14 收拢进来，省一次 node + ps 开销）
 if (filter === 'list') {
   try {
@@ -288,10 +291,16 @@ if (filter !== 'help') {
 console.log('');
 console.log(title);
 console.log('');
-// Header: 名称 类型 组织 ID 回忆录 状态 时间
 const showStatus = filter !== 'archived';
 const L_STATE = zh ? '运行时长/上次访问' : 'STATUS';
-const r1Hdr = hdr + pad(L_NAME, nw) + (detailMode ? pad(L_KIND, kw) + ' ' : '') + pad(L_ORG, orgW) + '  ' + pad(L_ID, idW) + '  ' + pad(L_AGE, ageW) + '  ' + pad(L_POND, pondW) + (detailMode ? '  ' + pad(L_MEMOIR, 6) : '') + (detailMode && hostW > 0 ? '  ' + pad(L_HOST, hostW) : '') + (showStatus ? '  ' + L_STATE : '');
+// 2026-09-11：宽度自适应——终端不够宽时按优先级依次隐藏列
+const termW = process.stdout.columns || 120;
+const baseW = numW + 2 + 1 + nw + tw + 4; // num + '. ' + space + name + status + padding
+const showOrg = termW >= baseW + orgW + 2;
+const showId = termW >= baseW + (showOrg ? orgW + 2 : 0) + idW + 2;
+const showAge = termW >= baseW + (showOrg ? orgW + 2 : 0) + (showId ? idW + 2 : 0) + ageW + 2;
+const showPond = termW >= baseW + (showOrg ? orgW + 2 : 0) + (showId ? idW + 2 : 0) + (showAge ? ageW + 2 : 0) + pondW + 2;
+const r1Hdr = hdr + pad(L_NAME, nw) + (detailMode ? pad(L_KIND, kw) + ' ' : '') + (showOrg ? pad(L_ORG, orgW) + '  ' : '') + (showId ? pad(L_ID, idW) + '  ' : '') + (showAge ? pad(L_AGE, ageW) + '  ' : '') + (showPond ? pad(L_POND, pondW) : '') + (detailMode ? '  ' + pad(L_MEMOIR, 6) : '') + (detailMode && hostW > 0 ? '  ' + pad(L_HOST, hostW) : '') + (showStatus ? '  ' + L_STATE : '');
 
 let oNum = 1, fNum = 1, bNum = 1; // 分组编号：offline=o / front=f / background=b 各自独立（2026-08-20 用户定稿：管理命令按 1o/1f/1b 路由，不再混编）
 // 分页：每 PAGE_SIZE 个 agent 暂停（直接 inline，无死代码）
@@ -329,7 +338,7 @@ for (let i = 0; i < list.length; i++) {
   const host = detailMode ? (p.hostname || (zh ? '本机' : 'local')) : '';
   const ageCol = pad(p._age || '', ageW);
   const pondCol = p._tokenmaxxedHex ? cfPaint(p._tokenmaxxedHex, pad(p._tokenmaxxed || '', pondW)) : pad(p._tokenmaxxed || '', pondW);
-  const row1 = '  ' + num + ' ' + pad(p.name, nw) + (detailMode ? kc + pad(kind, kw) + R + ' ' : '') + pad(org, orgW) + '  ' + p.id + ' '.repeat(Math.max(0, idW - vw(p.id))) + '  ' + ageCol + '  ' + pondCol + (detailMode ? '  ' + memoir : '') + (detailMode && hostW > 0 ? '  ' + pad(host, hostW) : '') + statusPart;
+  const row1 = '  ' + num + ' ' + pad(p.name, nw) + (detailMode ? kc + pad(kind, kw) + R + ' ' : '') + (showOrg ? pad(org, orgW) + '  ' : '') + (showId ? p.id + ' '.repeat(Math.max(0, idW - vw(p.id))) + '  ' : '') + (showAge ? ageCol + '  ' : '') + (showPond ? pondCol : '') + (detailMode ? '  ' + memoir : '') + (detailMode && hostW > 0 ? '  ' + pad(host, hostW) : '') + statusPart;
   rows1.push(row1);
   savedActive.push(p._active);
   if (detailMode) {
