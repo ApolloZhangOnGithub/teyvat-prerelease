@@ -2,13 +2,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-
-// 2026-09-11（系统检查）：统一扩展路径获取——install.sh 定义 PAIMON_EXT 环境变量，兼容 Linux/WSL/macOS
-function getExtensionsDir(): string {
-  return process.env.PAIMON_EXT || join(homedir(), ".local/lib/teyvat/extensions");
-}
 import { getSessionRole } from "#kernel_ribosome";
-import { runtimeCacheDir } from "#paths";
+import { runtimeCacheDir, DIRS } from "#paths";
 import { debug } from "#gene_riboswitch";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
@@ -215,7 +210,10 @@ export function isToolDisabled(toolName: string): boolean {
   try {
     const role = getSessionRole();
     // manifest role 检查
-    const mf = JSON.parse(readFileSync(join(getExtensionsDir(), "teyvat/spirit.bio.gene/tools.manifest.json"), "utf8"));
+    // 2026-09-11（系统检查）：改用 DIRS.core（paths.ts 唯一真相源，import.meta.url 动态解析）——
+    // 原硬编码 ~/.teyvat/agent/extensions/... 是已不存在的旧路径，导致所有 agent 持续 ENOENT。
+    // DIRS.core 相对模块自身解析，dev/部署、macOS/Linux/WSL 全自适应（与 core.ts 同模式）。
+    const mf = JSON.parse(readFileSync(join(DIRS.core, "spirit.bio.gene/tools.manifest.json"), "utf8"));
     const roleDef = mf?.roles?.[role];
     if (roleDef && !roleDef.includes(toolName)) return true;
     // settings.json 禁用检查

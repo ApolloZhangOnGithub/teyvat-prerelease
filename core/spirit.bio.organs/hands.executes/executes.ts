@@ -352,7 +352,7 @@ let _lastBgHash = ""; // @ 缓存：避免相同输出重复占用 context
         const hh = String(ts.getHours()).padStart(2, "0");
         const mm = String(ts.getMinutes()).padStart(2, "0");
         const ss = String(ts.getSeconds()).padStart(2, "0");
-        const timePart = ` [${hh}:${mm}:${ss}]`;
+        const timePart = ` at ${hh}:${mm}:${ss}`;
         c.addChild(new Text(indent + theme.fg("dim", "⎿  ") + createdStr + idPart + theme.fg("dim", timePart), 0, 0));
         // 不渲染 renderText（Running in background / Terminal N — 使用 @N）——创建行保持一行
         return c;

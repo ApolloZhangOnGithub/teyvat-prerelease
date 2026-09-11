@@ -558,7 +558,7 @@ export class ToolExecutionComponent extends Container {
             }
             const lines = [];
             if (contentLines.length > 0) {
-                lines.push("", "");
+                lines.push("");
                 lines.push(...contentLines);
             }
             for (let i = 0; i < this.imageComponents.length; i++) {
