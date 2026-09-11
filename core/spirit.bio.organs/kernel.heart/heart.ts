@@ -638,12 +638,14 @@ export default function (pi: ExtensionAPI) {
     }
 
     // 用户消息过滤
+    let hadUserMessage = false;
     if (hasUserMessage()) {
       const lastCustom = [...(event.messages ?? [])].reverse().find((m: any) => m.role === "custom");
       if ((lastCustom as any)?.content === "(see attached image)") { setHasUserMessage(false); dlog("agent_end: phantom image filtered"); }
     }
     if (hasUserMessage()) {
       dlog("agent_end: hasUserMessage (continuing)");
+      hadUserMessage = true;
       setHasUserMessage(false);
     }
 
@@ -675,7 +677,7 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
-    // error → 指数退避
+    // error → 指数退避（不可恢复错误直接 pause）
     if (sr === "error") {
       const errObj = (last as any).error || (event as any).error;
       const errMsg = (last as any).errorMessage || errObj?.message || errObj || "unknown";
@@ -685,12 +687,20 @@ export default function (pi: ExtensionAPI) {
         const ed = `${homedir()}/.teyvat/ErrorData/${pid}`;
         mkdirSync(ed, { recursive: true });
         const ts = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false });
-        // 2026-09-04：附错误 stack（ISSUE 126 排查——includes 炸点无栈难定位；errObj/error 若是 Error 带 stack）
-        // 2026-09-05：pi 回合错误的 errorStack（openai-completions L459 catch 保留的原始 TypeError stack，debug 方案）
         const errStack = errObj?.stack ? `\n${errObj.stack}` : (errObj instanceof Error ? `\n${errObj.stack}` : "");
         const es2 = (last as any)?.errorStack || (event as any)?.errorStack || (last as any)?.error?.errorStack || (event as any)?.error?.errorStack || "";
         appendFileSync(`${ed}/crash.log`, `[${ts}] ${errMsg}${errStack}${es2 ? `\n--- errorStack ---\n${es2}` : ""} (${process.title})\n`);
       } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
+      // ISSUE 035：不可恢复错误（余额不足/被封/硬限流）→ 直接 pause，不重试
+      const errStr = String(errMsg).toLowerCase();
+      const isFatal = /402|insufficient.balance|quota.exceeded|account.deactivated|billing|payment.required/i.test(errStr)
+        || (errObj?.status === 402 || errObj?.statusCode === 402);
+      if (isFatal) {
+        dlog(`agent_end: FATAL error (pause, no retry): ${errMsg}`);
+        try { sendCustomMessage(pi, "continuous-error-retry", i18n(`【系统暂停】不可恢复错误: ${String(errMsg).slice(0, 200)}。已暂停，充值/解决后按任意键恢复。`, `[paused] Fatal error: ${String(errMsg).slice(0, 200)}. Paused — press any key after resolving.`)); } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
+        transition({ kind: "paused", reason: "fatal-error" });
+        return;
+      }
       setErrorBackoffMs(errorBackoffMs() ? Math.min(errorBackoffMs() * 2, 300_000) : 20_000);
       const waitMs = errorBackoffMs();
       const retryTimer = setTimeout(() => {

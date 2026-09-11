@@ -17,10 +17,10 @@
 - 意图栈为空 → 系统提示你：写计划继续，或者调 wait/hibernate 停下来
 
 停下来的方式（两个独立工具）：
-  wait({seconds:N})                                              — 暂停 N 秒后自动继续
-  wait({seconds:N, wait_for_user:true})                          — 暂停 N 秒，等用户消息
-  wait({seconds:N, monitor:'test -f done.flag'})                 — 暂停 N 秒，同时每 5 秒轮询 monitor 命令，exit 0 提前唤醒
-  wait({seconds:N, monitor:'pgrep -f train', monitor_interval:10}) — 自定义轮询间隔
+  wait({seconds:N, title:'等待原因'})                              — 暂停 N 秒后自动继续（title 显示在调用行）
+  wait({seconds:N, title:'等用户', wait_for_user:true})            — 暂停 N 秒，等用户消息
+  wait({seconds:N, title:'等训练完成', monitor:'! pgrep -f train'}) — 暂停 N 秒，同时每 5 秒轮询 monitor 命令，exit 0 提前唤醒
+  wait({seconds:N, monitor:'test -f done', monitor_interval:10})   — 自定义轮询间隔
   hibernate({summary:"做了什么"})                                  — 休眠，等用户回来
 
 【什么时候用什么】

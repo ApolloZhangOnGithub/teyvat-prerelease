@@ -24,19 +24,21 @@ export function registerWaitTool(pi: ExtensionAPI) {
     promptSnippet: "wait({seconds:N}) to pause, wait({seconds:N, monitor:'test -f done.flag'}) to poll a condition, wait({seconds:N, wait_for_user:true}) to listen",
     parameters: Type.Object({
       seconds: Type.Number({ messageDescription: "Seconds to pause (1-86400)" }),
+      title: Type.Optional(Type.String({ messageDescription: "REQUIRED. Purpose of this wait (why), shows in call line. e.g. '等待训练完成', '等 GPU 资源'" })),
       wait_for_user: Type.Optional(Type.Boolean({ messageDescription: "Listen for user input during wait" })),
-      monitor: Type.Optional(Type.String({ messageDescription: "Shell command to poll during wait — exit 0 means condition met, auto-terminates wait early (e.g. 'test -f /tmp/done', 'pgrep -f training')" })),
+      monitor: Type.Optional(Type.String({ messageDescription: "Shell command to poll during wait — exit 0 means condition met, auto-terminates wait early (e.g. 'test -f /tmp/done', '! pgrep -f training')" })),
       monitor_interval: Type.Optional(Type.Number({ messageDescription: "Seconds between monitor polls (default 5)" })),
       next_steps: Type.Optional(Type.String({ messageDescription: "What to do when you wake up" })),
       message: Type.Optional(Type.String({ messageDescription: "Optional message shown during wait (e.g. reason)" })),
     }),
     renderCall(args: any, theme: any) {
       const s = args?.seconds ?? "?";
+      const title = args?.title || "";
       const wu = args?.wait_for_user ? " (for user)" : "";
       const mon = args?.monitor ? ` 📡 ${args.monitor}` : "";
       const msg = args?.message ? ` — ${args.message}` : "";
-      const ns = args?.next_steps ? ` ${args.next_steps}` : "";
-      return renderToolCall.label(theme, "Wait", `${s}s${wu}${mon}${msg}${ns}`);
+      const detail = title ? `${title} ${s}s${wu}${mon}${msg}` : `${s}s${wu}${mon}${msg}`;
+      return renderToolCall.label(theme, "Wait", detail);
     },
     renderResult(result: any, _options: any, theme: any, ctx: any) {
       return renderMessage.silent();
