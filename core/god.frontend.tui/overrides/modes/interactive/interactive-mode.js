@@ -2567,10 +2567,12 @@ export class InteractiveMode {
                                 try { this.transcriptScrollView.scrollToEnd(); } catch (e) { console.error("[interactive-mode.js] block render scroll: " + (e?.message || e)); }
                             }
                         }
-                        // Tool calls always render immediately
-                        else if (evType === "tool_use_begin" || evType === "tool_use_delta" || evType === "tool_use_end") {
+                        // Tool calls: begin/end 渲染，delta 只更新数据不重绘（参数未完整时渲染树不变——空转）
+                        else if (evType === "tool_use_begin" || evType === "tool_use_end") {
                             this.streamingComponent.updateContent(this.streamingMessage);
                             this.ui.requestRender();
+                        } else if (evType === "tool_use_delta") {
+                            this.streamingComponent.updateContent(this.streamingMessage);
                         }
                     } else if (this.renderMode === "line") {
                         const saved = [];
