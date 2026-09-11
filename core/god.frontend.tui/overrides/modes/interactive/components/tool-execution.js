@@ -595,8 +595,8 @@ export class ToolExecutionComponent extends Container {
                 if (this.callRendererComponent && !this.result) {
                     const dot = blockDot(theme, { partial: this.isDotPartial(), error: this.isDotError() });
                     (function replaceDot(node) {
-                        if (node && typeof node.text === 'string' && (node.text.includes('•') || node.text.includes('◦'))) {
-                            node.text = node.text.replace(/[•◦]/, dot);
+                        if (node && typeof node.text === 'string' && (node.text.includes('•') || node.text.includes('◦') || node.text.includes('⏺'))) {
+                            node.text = node.text.replace(/[•◦⏺]/, dot);
                         }
                         if (node && typeof node.children !== 'undefined') {
                             for (const child of node.children) replaceDot(child);
@@ -611,8 +611,8 @@ export class ToolExecutionComponent extends Container {
                     // 展开视图：把 • 替换成带状态颜色的版本（递归处理 Text 和 Box 子节点）
                     const dot = blockDot(theme, { partial: this.isDotPartial(), error: this.isDotError() });
                     (function replaceDot(node) {
-                        if (node && typeof node.text === 'string' && (node.text.includes('•') || node.text.includes('◦'))) {
-                            node.text = node.text.replace(/[•◦]/, dot);
+                        if (node && typeof node.text === 'string' && (node.text.includes('•') || node.text.includes('◦') || node.text.includes('⏺'))) {
+                            node.text = node.text.replace(/[•◦⏺]/, dot);
                         }
                         if (node && typeof node.children !== 'undefined') {
                             for (const child of node.children) replaceDot(child);
@@ -689,8 +689,8 @@ export class ToolExecutionComponent extends Container {
                 if (this.callRendererComponent) {
                     const fixDot = blockDot(theme, { error: this.isDotError(), partial: this.isDotPartial() });
                     (function replaceDot(node) {
-                        if (node && typeof node.text === 'string' && (node.text.includes('•') || node.text.includes('◦'))) {
-                            node.text = node.text.replace(/[•◦]/, fixDot);
+                        if (node && typeof node.text === 'string' && (node.text.includes('•') || node.text.includes('◦') || node.text.includes('⏺'))) {
+                            node.text = node.text.replace(/[•◦⏺]/, fixDot);
                             if (typeof node.invalidate === 'function') node.invalidate();
                         }
                         if (node && typeof node.children !== 'undefined') {

@@ -96,10 +96,11 @@ try {
 try {
   const { dot } = await import("./pi-tui/blocks_nongod.js");
   const t = { fg: (k, s) => `${k}:${s}` };
-  // 2026-08-14：进行中/等待中 partial 原为空心 ◦，用户定稿改实心黄 •（美观；空心语义见 blocks_nongod.js 注释）
-  check("D1 partial 点 = warning 黄（实心，原◦）", dot(t, { partial: true }) === "warning:•");
-  check("D1b error 点 = error 红", dot(t, { error: true }) === "error:•");
-  check("D1c 成功点 = success 绿", dot(t, {}) === "success:•");
+  // 2026-09-11：partial 改为闪烁灰⏺（dim/border 交替），error 红⏺，成功绿⏺
+  const partialDot = dot(t, { partial: true });
+  check("D1 partial 点 = 灰闪烁⏺", partialDot === "dim:⏺" || partialDot === "border:⏺");
+  check("D1b error 点 = error 红", dot(t, { error: true }) === "error:⏺");
+  check("D1c 成功点 = success 绿", dot(t, {}) === "success:⏺");
 } catch (e) {
   check("D1 状态点颜色", false, e?.message);
 }

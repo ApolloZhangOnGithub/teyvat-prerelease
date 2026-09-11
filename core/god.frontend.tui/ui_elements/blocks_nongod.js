@@ -21,17 +21,25 @@ export const GUTTER = 2; // 内容列：bullet "• " 占 2 列，内容从第 2
 // 空心语义保留在此注释：未完成=空心，完成/出错=实心。
 export function dot(theme, opts) {
   const o = opts || {};
-  // 2026-08-13 用户规范：进行中/等待中 = 黄色（warning），错误 = 红，成功 = 绿
-  if (o.partial) return theme.fg("warning", "•"); // 原 ◦（空心黄，语义=未完成），2026-08-14 为美观改实心
-  if (o.error) return theme.fg("error", "•"); // •
-  return theme.fg("success", "•"); // •
+  if (o.partial) {
+    // 进行中/等待中：闪烁灰点（亮灰/暗灰交替，跟随 sparkle 帧计数器）
+    const frame = globalThis.__genshinSparkleFrame || 0;
+    const dim = frame % 2 === 0;
+    return dim ? theme.fg("dim", "⏺") : theme.fg("border", "⏺");
+  }
+  if (o.error) return theme.fg("error", "⏺");
+  return theme.fg("success", "⏺");
 }
 
 // 菱形标记（收到的消息用：Result 推送 / Social Message / 通知类）。与 dot 同语义：进行=◇ / 错=◆ / 成功=◆。
 // 视觉区分：主动调用的工具行用圆点 dot，被动收到的消息用菱形 diamond。
 export function diamond(theme, opts) {
   const o = opts || {};
-  if (o.partial) return theme.fg("accent", "◇"); // ◇
+  if (o.partial) {
+    const frame = globalThis.__genshinSparkleFrame || 0;
+    const dim = frame % 2 === 0;
+    return dim ? theme.fg("dim", "◇") : theme.fg("border", "◇");
+  }
   if (o.error) return theme.fg("error", "◆"); // ◆
   return theme.fg("success", "◆"); // ◆
 }

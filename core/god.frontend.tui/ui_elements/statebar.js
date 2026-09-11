@@ -122,6 +122,7 @@ export class StatusBar {
     this._shimmerStartTime = Date.now();
     this._sparkleTimer = setInterval(() => {
       this._sparkleFrame = (this._sparkleFrame + 1) % SPARKLE_FRAMES.length;
+      globalThis.__genshinSparkleFrame = this._sparkleFrame;
       this._tickFn?.();
       this._requestRender?.();
     }, SPARKLE_INTERVAL);
