@@ -49,7 +49,6 @@ import { isEnglish, i18n } from "#tui_localizations";
 const HEARTBEAT_PROMPT = [
   getPrompt("heart.continuous"),
   getPrompt("heart.commands"),
-  getPrompt("assets.mobile"),
   getPrompt("core.typeRef"),
 ].join("\n\n");
 

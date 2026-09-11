@@ -100,6 +100,7 @@
       "default": false,
       "locked": false,
       "group": "设备",
+      "chr": "assets.mobile",
       "desc": "手机控制"
     },
     "web": {
