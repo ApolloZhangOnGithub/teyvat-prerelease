@@ -11,6 +11,7 @@
 import { join, dirname } from "node:path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, appendFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { writeFileAtomic } from "../paths.ts";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
@@ -79,9 +80,9 @@ function loadState() {
 function saveState(screen?: string) {
   if (screen) _lastScreen = screen;
   try {
-    writeFileSync(PHONE_STATE_FILE, JSON.stringify(state, null, 2));
+    writeFileAtomic(PHONE_STATE_FILE, JSON.stringify(state, null, 2));
     if (screen) {
-      writeFileSync(PHONE_SCREEN_FILE, screen);
+      writeFileAtomic(PHONE_SCREEN_FILE, screen);
       if (_recording) {
         _recFrames.push({ ts: Date.now(), app: state.currentApp || t("主屏幕", "Home"), screen });
       }

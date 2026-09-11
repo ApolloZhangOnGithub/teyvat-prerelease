@@ -16,7 +16,7 @@ import { createReadConscious } from "./metaconsciousness-tools.ts";
 import { GUTTER } from "#tui_blockrender"; // 统一块渲染引擎:内容列常量
 import { createRequire } from "node:module";
 const _require = createRequire(import.meta.url);
-import { personDir as getPersonDir } from "#paths";
+import { personDir as getPersonDir, writeFileAtomic } from "#paths";
 import { registerPaimonTool, sendCustomMessage, resultContent } from "#kernel_backbone";
 import { renderToolCall, renderMessage, diamond } from "#tui_blockrender";
 
@@ -26,7 +26,7 @@ function scDisabled(personDir: string): boolean {
   try { return !!JSON.parse(readFileSync(scFlag(personDir), "utf8")).disabled; } catch (e) { console.error("[spirit.bio.organs/brain.metaconsciousness/metaconsciousness.ts] " + ((e as any)?.message || e)); return true; }
 }
 function setScDisabled(personDir: string, disabled: boolean): void {
-  try { writeFileSync(scFlag(personDir), JSON.stringify({ disabled, ts: new Date().toISOString() })); } catch (e) { console.error("[spirit.bio.organs/brain.metaconsciousness/metaconsciousness.ts] " + ((e as any)?.message || e)); _log("setScDisabled", e); }
+  try { writeFileAtomic(scFlag(personDir), JSON.stringify({ disabled, ts: new Date().toISOString() })); } catch (e) { console.error("[spirit.bio.organs/brain.metaconsciousness/metaconsciousness.ts] " + ((e as any)?.message || e)); _log("setScDisabled", e); }
 }
 
 function ismetaconsciousnessSession(sessionFile: string | undefined): boolean {

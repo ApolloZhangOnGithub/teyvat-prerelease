@@ -1,4 +1,4 @@
-import { runtimeCacheDir, DIRS, PROGRAM_FILES_MOBILE, appPersonDir, setApiAgent } from "#paths";
+import { runtimeCacheDir, DIRS, PROGRAM_FILES_MOBILE, appPersonDir, setApiAgent, writeFileAtomic } from "#paths";
 import { Text } from "@earendil-works/pi-tui";
 // system.kernel/kernel.ts - 手机内核 // 2026-06-20-0841
 // 唯一注册的 tool: mobile。状态机 + app 路由 + 通知 + 提醒检查。
@@ -122,9 +122,9 @@ function saveState(screen?: string) {
   if (!_stateFile) return;
   try {
     mkdirSync(dirname(_stateFile), { recursive: true });
-    writeFileSync(_stateFile, JSON.stringify(state));
+    writeFileAtomic(_stateFile, JSON.stringify(state));
     if (screen) {
-      writeFileSync(_stateFile.replace('-state.json', '-screen.txt'), screen);
+      writeFileAtomic(_stateFile.replace('-state.json', '-screen.txt'), screen);
       // I3: 录屏中自动捕获帧
       if (_recording) {
         _recFrames.push({ ts: Date.now(), app: state.currentApp || i18n("主屏幕", "Home"), screen });

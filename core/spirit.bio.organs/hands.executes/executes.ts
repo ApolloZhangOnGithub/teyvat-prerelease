@@ -14,6 +14,7 @@ import { renderToolCall, renderMessage, GUTTER, lineNumbered } from "#tui_blockr
 import { i18n } from "#tui_localizations";
 import { validateExecute } from "../hands.fileacts/fileacts.ts";
 import { personId } from "../kernel.heart/heart-state.ts";
+import { writeFileAtomic } from "#paths";
 
 // ── execute 执行记录（ExecuteData）──
 // 每次 execute 落盘一条 JSON：命令、耗时、退出码、完整输出。
@@ -459,7 +460,7 @@ let _lastBgHash = ""; // @ 缓存：避免相同输出重复占用 context
         const fullRestart = /\bfull\b/i.test(cmd);
         const reason = cmd.replace(/^self[-_]?reboot\s*/i, "").replace(/^full\s*/i, "").trim() || "self-reboot";
         if (fullRestart) {
-          try { writeFileSync(join(rcDir, "full-restart"), JSON.stringify({ ts: new Date().toISOString(), reason })); } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
+          try { writeFileAtomic(join(rcDir, "full-restart"), JSON.stringify({ ts: new Date().toISOString(), reason })); } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
         }
         // 保存当前累积运行时长，重启后接续（不重置计时器）
         const accumulated = (globalThis as any).__genshinSessionElapsed || 0;
@@ -467,7 +468,7 @@ let _lastBgHash = ""; // @ 缓存：避免相同输出重复占用 context
         const seg = statusBar?._sessionAccumulated || 0;
         const segStart = statusBar?._segmentStartTime;
         const totalElapsed = seg + (segStart ? Date.now() - segStart : 0);
-        try { writeFileSync(join(rcDir, "self-reboot-reason.json"), JSON.stringify({ reason, ts: new Date().toISOString(), elapsed: totalElapsed })); } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
+        try { writeFileAtomic(join(rcDir, "self-reboot-reason.json"), JSON.stringify({ reason, ts: new Date().toISOString(), elapsed: totalElapsed })); } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
         // ISSUE 140：标记即将 reboot，阻止 heart agent_end 续命（否则框架开新 turn 被 process.exit 打断 → abort → paused 循环）
         (globalThis as any).__genshinRebootPending = true;
         const nonce = `reboot-${Date.now()}`;

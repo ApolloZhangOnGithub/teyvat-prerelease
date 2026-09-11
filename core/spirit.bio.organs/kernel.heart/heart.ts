@@ -15,7 +15,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, unl
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { getSessionRole, getPrompt, getActiveToolChrPrompts } from "#kernel_ribosome";
-import { runtimeCacheDir, memoryDir, memoryDataDir, logerr } from "#paths";
+import { runtimeCacheDir, memoryDir, memoryDataDir, logerr, writeFileAtomic } from "#paths";
 import { sendCustomMessage, messageTriggersTurn } from "#kernel_backbone";
 import { registerMessageRenderers } from "#tui_renderers";
 import { heartState, limits, setUI, hasUserMessage, setHasUserMessage, errorBackoffMs, setErrorBackoffMs, transition, resetLimits, dlog, personId, wakeRestartFile, isWorkerSession, onHeartStateChange } from "./heart-state.ts";
@@ -534,7 +534,7 @@ export default function (pi: ExtensionAPI) {
                       changes.push(i18n(`检测到用户将您从组织「${name}」中移除。`, `The user removed you from the organization "${name}".`));
                     }
                   }
-                  try { writeFileSync(orgStateFile, JSON.stringify(curOrgs)); } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
+                  try { writeFileAtomic(orgStateFile, JSON.stringify(curOrgs)); } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
                 } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
 
                 // 克隆事件检测（双向：克隆体首次启动知道自己是谁的克隆体 / 原体下次启动知道自己被克隆了）

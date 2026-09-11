@@ -3,7 +3,7 @@
 
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { existsSync, mkdirSync, appendFileSync, readFileSync, statSync, renameSync } from "node:fs";
+import { existsSync, mkdirSync, appendFileSync, readFileSync, statSync, renameSync, writeFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { homedir } from "node:os";
 
@@ -98,6 +98,16 @@ export function memoirDir(id: string): string {
   const dir = join(PAIMON, "MemoirData");
   try { mkdirSync(dir, { recursive: true }); } catch (e) { console.error("[paths.ts] " + ((e as any)?.message || e)); }
   return join(dir, id + ".MEMOIR");
+}
+
+// ── 原子写（tmp + rename）：凡"被并发读"的状态文件都用它 ─────────────────────
+// 为什么：writeFileSync 是「open('w') 截断 → write」两步，读者可能正好落在窗口里读到 **0 字节/半截内容**。
+// 线上实例（2026-09-11，ISSUE 182）：main.pid 0 字节 → parseInt("")=NaN → 活跃判定失效 + 启动守卫放行 → 双实例。
+// 用法：writeFileAtomic(pidFile, String(process.pid))；同目录建 tmp 再 rename（同盘 rename 是原子的）。
+export function writeFileAtomic(file: string, data: string): void {
+  const tmp = file + ".tmp-" + process.pid;
+  writeFileSync(tmp, data, "utf8");
+  renameSync(tmp, file);
 }
 
 export function logerr(code: string, e: unknown, ctx?: string) {
