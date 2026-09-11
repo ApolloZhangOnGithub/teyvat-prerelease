@@ -472,8 +472,14 @@ export class Editor {
             // Calculate padding based on actual visible width
             const padding = " ".repeat(Math.max(0, contentWidth - lineVisibleWidth));
             const lineRightPadding = cursorInPadding ? rightPadding.slice(1) : rightPadding;
-            // Render the line (no side borders, just horizontal lines above and below)
-            if (_e02) result.push(`${leftPadding}${displayText}${padding}${lineRightPadding}`);
+            if (_e02) {
+                const isFirstLine = result.length === (_e01 ? 1 : 0) && this.scrollOffset === 0;
+                if (isFirstLine && leftPadding.length >= 2) {
+                    result.push(`${this.borderColor("❯")} ${displayText}${padding}${lineRightPadding}`);
+                } else {
+                    result.push(`${leftPadding}${displayText}${padding}${lineRightPadding}`);
+                }
+            }
         }
         // Render bottom border (with scroll indicator if more content below)
         const linesBelow = layoutLines.length - (this.scrollOffset + visibleLines.length);
