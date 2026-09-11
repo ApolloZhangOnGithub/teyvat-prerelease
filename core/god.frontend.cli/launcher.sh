@@ -1313,9 +1313,10 @@ case "$MODE" in
         sleep 0.1
       done
     fi
-    # 退出后显示 agent 列表（不清屏——保留 TUI 退出信息和 /h 提示）
+    # [DISABLED 2026-09-12] 退出后自动显示 agent 列表——有 bug（第一遍 genshin 执行出错、
+    # 快照时序问题、清屏时序问题），暂禁用直到修好。
+    # genshin 2>/dev/null || "$0" 2>/dev/null || true
     echo ""
-    genshin 2>/dev/null || "$0" 2>/dev/null || true
     # 退出后同步段已废弃（2026-09-05，PROPOSAL 036：agent 单机存活；代码保留不删）——以下注释
     # kill $SYNC_LOOP_PID 2>/dev/null; wait $SYNC_LOOP_PID 2>/dev/null
     # if [ -f "$PAIMON_SYNC" ]; then
