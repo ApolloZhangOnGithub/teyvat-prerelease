@@ -378,7 +378,11 @@ if (filter === 'archived') {
   console.log('  genshin unarchive <' + (zh ? 'agent name/id/index' : 'agent') + '>  ' + (zh ? '恢复归档' : 'restore'));
 } else {
   const W = 40;  // 列宽需容纳最长命令（unarchive/rename 行 ~38 字符），2026-09-05 从 30 调大——W<cmd 宽时描述不齐
-  const row = (cmd, desc) => console.log('    ' + cmd + ' '.repeat(Math.max(1, W - vw(cmd))) + desc);
+  const row = (cmd, desc) => {
+    const pad = W - vw(cmd);
+    if (pad >= 2) console.log('    ' + cmd + ' '.repeat(pad) + desc);
+    else console.log('    ' + cmd + '\n' + ' '.repeat(4 + W) + desc);
+  };
   const hdr = (s) => { console.log(''); console.log('  ' + BOLD + s + R); };
 
   if (zh) {
@@ -424,7 +428,8 @@ if (filter === 'archived') {
 
     hdr('设置');
     row('settings, s',           '打开交互式设置界面');
-    row('config provider',       '自动配置 OpenAI 兼容 provider（base-url + token，自动发现模型）');
+    row('config provider <名称> --base-url <url> [--token <key>] [--models id1,id2]',
+                                 '配置 OpenAI 兼容 provider（自动发现模型，--models 可手动指定）');
   } else {
     hdr('Manage');
     row('<agent>',                        'Create a new agent or start an existing one');
@@ -467,7 +472,8 @@ if (filter === 'archived') {
 
     hdr('Settings');
     row('settings, s',                   'Open interactive settings interface');
-    row('config provider',               'Auto-configure an OpenAI-compatible provider (base-url + token, auto-discovers models)');
+    row('config provider <name> --base-url <url> [--token <key>] [--models id1,id2]',
+                                 'Configure an OpenAI-compatible provider (auto-discovers models, --models to specify manually)');
   }
 }
 console.log('');

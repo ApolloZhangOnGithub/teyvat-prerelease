@@ -776,18 +776,42 @@ function getEndpoint(): string {
 // ── genshin config provider：自动配置 OpenAI 兼容 provider（2026-09-07 用户：不要每次手改 models.json）──
 // 用法: genshin config provider <name> --base-url <url> [--token <key>] [--context <N>] [--max-tokens <N>]
 // 自动 GET {base-url}/models 拉模型清单 → 写 ~/.teyvat/config/models.json providers[name] → /m 即可切换。
+//
+// 2026-09-11：按 model id 查框架内置 catalog（pi-ai）——命中则用内置上限，未命中才用 CLI 默认值。
+//   缘起：房东发现 poixe 下 claude-opus-4-6 显示「33k context」，根因是本函数把 CLI 默认值
+//   32768/16384 无条件写进 models.json，覆盖了内置的 1M/128k。现在旗舰模型不会被压扁，
+//   第三方/本地小模型（内置查不到）仍走默认值（不为其特殊照顾）。
+//   注：pi-ai 只在 config provider 这条路径上动态 import，避免拖慢其他 genshin 子命令启动。
+const builtinModelCache = new Map<string, any>();
+async function lookupBuiltinModel(id: string): Promise<{ contextWindow?: number; maxTokens?: number; input?: string[] } | null> {
+  if (builtinModelCache.has(id)) return builtinModelCache.get(id);
+  let hit: { contextWindow?: number; maxTokens?: number; input?: string[] } | null = null;
+  try {
+    const compat: any = await import('@earendil-works/pi-ai/compat');
+    for (const p of compat.getProviders()) {
+      const pid = typeof p === 'string' ? p : p.id;
+      const mm = compat.getModel(pid, id);
+      if (mm) { hit = { contextWindow: mm.contextWindow, maxTokens: mm.maxTokens, input: mm.input }; break; }
+    }
+  } catch (e) { /* pi-ai 不可用（旧部署/依赖缺失）→ 静默退回 CLI 默认值 */ }
+  builtinModelCache.set(id, hit);
+  return hit;
+}
+
 async function cmdConfigProvider(pName: string, args: string[]): Promise<void> {
   const flag = (k: string) => { const i = args.indexOf('--' + k); return i >= 0 ? args[i + 1] : undefined; };
   const baseUrl = (flag('base-url') || flag('base_url') || '').replace(/\/+$/, '');
   const token = flag('token') || flag('key') || flag('api-key') || flag('apiKey');
-  const ctxW = parseInt(flag('context') || '32768', 10);
+  // 默认值：内置 catalog 查不到该模型时使用（2026-09-11 由 32768 提升，见 lookupBuiltinModel 注释）
+  const ctxW = parseInt(flag('context') || '1000000', 10);
   const maxTok = parseInt(flag('max-tokens') || '16384', 10);
   const apiType = flag('api') || 'openai-completions';
   const manualModels = (flag('models') || '').split(',').map((s: string) => s.trim()).filter(Boolean); // 2026-09-07：手动指定模型（跳过自动拉取——端点不支持 /models 或想自选时的 fallback）
-  if (!pName || !baseUrl || !/^https?:\/\//.test(baseUrl)) {
-    console.error('usage: genshin config provider <name> --base-url <url> [--token <key>] [--models id1,id2]');
+  if (!pName || !baseUrl || !/^https?:\/\//.test(baseUrl) || !token) {
+    console.error('usage: genshin config provider <name> --base-url <url> --token <key> [--models id1,id2]');
     console.error('  例: genshin config provider gpu-5080 --base-url http://host:7143/v1 --token xxxx');
-    console.error('  例(手动模型, 跳过自动拉取): genshin config provider local-llm --base-url http://127.0.0.1:11434/v1 --models qwen3:27b,qwen2.5:3b');
+    console.error('  例(手动模型, 跳过自动拉取): genshin config provider local-llm --base-url http://127.0.0.1:11434/v1 --token xxxx --models qwen3:27b,qwen2.5:3b');
+    if (pName && baseUrl && !token) console.error('\n  ✗ --token 必须提供，否则模型无法在 /m 中使用');
     process.exit(1);
   }
   if (pName === 'deepseek' || pName === 'openrouter' || pName === 'zai' || pName === 'bigmodel' || pName === 'qwen') {
@@ -810,19 +834,38 @@ async function cmdConfigProvider(pName: string, args: string[]): Promise<void> {
   }
   // 写 models.json（幂等原子写）
   const f = path.join(PAIMON, 'config', 'models.json');
+  // 逐模型解析上限：显式 --context/--max-tokens > 框架内置定义 > CLI 默认值
+  const explicitCtx = flag('context');
+  const explicitMt = flag('max-tokens');
+  const modelEntries: any[] = [];
   let m: any = { providers: {} };
   try { m = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { m = { providers: {} }; }
   if (!m.providers) m.providers = {};
+  for (const id of autoModels) {
+    const builtin = await lookupBuiltinModel(id);
+    const cw = explicitCtx ? parseInt(explicitCtx, 10) : (builtin?.contextWindow ?? ctxW);
+    const mt = explicitMt ? parseInt(explicitMt, 10) : (builtin?.maxTokens ?? maxTok);
+    console.log('  ' + id.padEnd(32) + String(cw).padStart(8) + ' ctx  ' + String(mt).padStart(7) + ' out  ' + (explicitCtx || explicitMt ? '[显式指定]' : builtin ? '[内置定义]' : '[默认值]'));
+    modelEntries.push({ id, name: id, contextWindow: cw, maxTokens: mt, input: builtin?.input ?? ['text'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } });
+  }
   m.providers[pName] = {
     name: flag('name') || pName,
     baseUrl,
     ...(token ? { apiKey: token } : {}),
     api: apiType,
-    models: autoModels.map((id: string) => ({ id, name: id, contextWindow: ctxW, maxTokens: maxTok, input: ['text'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } })),
+    models: modelEntries,
   };
   const tmp = f + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(m, null, 2));
   fs.renameSync(tmp, f);
+  // 自动注册到 enabledModels（/m scoped 视图）
+  try {
+    const sf = path.join(PAIMON, 'config', 'settings.json');
+    const settings = fs.existsSync(sf) ? JSON.parse(fs.readFileSync(sf, 'utf8')) : {};
+    const em: string[] = settings.enabledModels || [];
+    const pat = pName + '/*';
+    if (!em.includes(pat)) { em.push(pat); settings.enabledModels = em; fs.writeFileSync(sf, JSON.stringify(settings, null, 2)); }
+  } catch (e) { console.error('[config provider] enabledModels 写入失败: ' + ((e as any)?.message || e)); }
   console.log('✅ provider ' + pName + ' 已配置（自动发现 ' + autoModels.length + ' 个模型）：');
   autoModels.forEach((id: string) => console.log('   • ' + id));
   console.log('   → /m 里即可切换（重启 agent 或新会话生效）');

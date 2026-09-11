@@ -155,7 +155,7 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
-server.listen(PORT, "0.0.0.0", () => {
+server.listen(PORT, "127.0.0.1", () => {
   const addr = server.address();
   const actualPort = typeof addr === "object" ? addr.port : PORT;
   fs.mkdirSync(path.dirname(PORT_FILE), { recursive: true });

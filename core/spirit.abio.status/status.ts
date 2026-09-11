@@ -254,13 +254,32 @@ export function registerStatusTool(_pi: ExtensionAPI) {
             const m = process.title.match(/genshin:[^(]+\([^,]+,[^,]+,\s*([^)]+)/);
             if (m?.[1]) lines.push(`Session: ${m[1]}`);
           } catch (e) { console.error("[spirit.abio.status/status.ts] " + ((e as any)?.message || e)); }
-          // Model: 只取活 session
+          // Model + Context
           let model = "";
+          let contextWindow = 0;
           try {
             const live = (globalThis as any).__genshinGetModel?.();
             if (live?.id) model = live.id;
+            if (live?.contextWindow) contextWindow = live.contextWindow;
           } catch (e) { console.error("[spirit.abio.status/status.ts] " + ((e as any)?.message || e)); }
           if (model) lines.push(`Model: ${model}`);
+          // Context usage: 读 growth.jsonl 最后一行拿最新快照
+          try {
+            const growthPath = join(homedir(), ".teyvat/MemoryData", pid, "monitor/growth.jsonl");
+            if (existsSync(growthPath)) {
+              const gLines = readFileSync(growthPath, "utf8").trim().split("\n");
+              const last = JSON.parse(gLines[gLines.length - 1]);
+              const used = last.tokens || 0;
+              const cap = contextWindow || parseInt(process.env.PI_MODEL_MAX_TOKENS || "") || 0;
+              const fmtT = (n: number) => n < 1000 ? n + "" : n < 1e6 ? (n / 1000).toFixed(1) + "k" : (n / 1e6).toFixed(1) + "M";
+              if (cap > 0) {
+                const pct = Math.round((used / cap) * 100);
+                lines.push(`Context: ${fmtT(used)} / ${fmtT(cap)} tokens (${pct}%)`);
+              } else if (used > 0) {
+                lines.push(`Context: ${fmtT(used)} tokens`);
+              }
+            }
+          } catch (e) { console.error("[spirit.abio.status/status.ts] " + ((e as any)?.message || e)); }
 
           // Organization(s): show name alongside ID
           // organization.ts writes rec.org (singular string ID); legacy data may have rec.orgs (array). Normalize.

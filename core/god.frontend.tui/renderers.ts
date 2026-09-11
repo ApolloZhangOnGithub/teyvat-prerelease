@@ -201,10 +201,10 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
       if (nextSteps) text += "\n" + indent + "  " + theme.fg("dim", nextSteps);
       return new Text(text, 0, 0);
     }
-    // 从消息末尾提取短 id（[id: xxx]），output 里去掉重复的 id 行
+    // 从消息提取短 id（[id: xxx]），output 里剥掉 [id:] 和 [remaining:]（两者可能相邻，不能依赖 $ 锚定）
     const idMatch = raw.match(/\[id:\s*([A-Za-z0-9-]+)\]/);
     const idStr = idMatch ? idMatch[1] : "";
-    if (idMatch) output = output.replace(/\n*\[id:.*$/, "");
+    output = output.replace(/\n*\[id:\s*[A-Za-z0-9-]+\]/g, "");
     // 2026-09-08（用户：cmd-done 还带 [background: N running]——.79 只剥了 execute 同步返回路径，cmd-done 推送没剥）：任意位置剥 background 行
     output = output.replace(/\n*\[background: [^\]]*running[^\]]*\]/g, "");
     // 用户展示剥离：bioclock 耗时戳 [HH:MM:SS.mmm +Xs]（只对用户隐藏，模型消息里保留）

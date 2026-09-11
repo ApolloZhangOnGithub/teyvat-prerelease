@@ -394,7 +394,7 @@ export default function registerMemory(pi: ExtensionAPI) {
       const abs = path.resolve(p);
       const pd = path.resolve(personDir);
       if (abs.startsWith(pd)) {
-        return { block: true, reason: i18n(`记忆文件 ${base} 由海马体管理，主 session 不能直接修改。使用 editcontext / nap / sleep 工具。`, `Memory file ${base} is managed by the hippocampus; the main session cannot modify it directly. Use the editcontext / nap / sleep tools.`) };
+        return { block: true, reason: i18n(`记忆文件 ${base} 不允许直接修改。`, `Memory file ${base} cannot be modified directly.`) };
       }
     }
   });

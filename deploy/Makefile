@@ -96,7 +96,7 @@ _integrity: _paths
 	@if [ -z "$${detail:-}" ]; then echo "  ERROR: detail required"; exit 1; fi
 	@if [ $${#detail} -lt 50 ]; then echo "  ERROR: detail 详细内容不得少于50字（当前$${#detail}字）"; exit 1; fi
 	@echo "[$$(date +%H:%M:%S)] transpile..." && cd "$(CORE)" && bun $(TRANSPILER)
-	@echo "[$$(date +%H:%M:%S)] tsc check..." && cd "$(CORE)" && npx tsc --noEmit 2>&1 || echo "  tsc: warnings above (non-blocking)"
+	@echo "[$$(date +%H:%M:%S)] tsc check..." && cd "$(CORE)" && npx tsc --noEmit 2>&1 || { echo "  tsc: type errors above"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] syntax check..." && cd "$(CORE)" && \
 		N=0; FAIL=0; \
 		while IFS= read -r f; do \

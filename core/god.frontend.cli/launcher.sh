@@ -992,7 +992,7 @@ case "$MODE" in
           # headless 守护是 setsid 新会话（进程组首进程）——杀整个进程组（launcher+node），
           # 否则只杀 launcher 会留孤儿 node 继续跑（2026-08-20）
           kill -TERM -- "-$OLD_PID" 2>/dev/null || kill "$OLD_PID" 2>/dev/null
-          sleep 1
+          for _i in $(seq 1 20); do kill -0 "$OLD_PID" 2>/dev/null || break; sleep 0.05; done
           rm -rf "$LOCKDIR" 2>/dev/null
           rm -f "$PIDFILE" 2>/dev/null
           # 2026-08-20 用户需求：attach 回前台时给 agent 注入"用户已以前台模式进入"通知——
