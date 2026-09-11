@@ -615,7 +615,8 @@ _resolve_active_arg() {
       let a=false;
       try{const pf=PH+'/MemoryData/'+p.id+'/main.pid';const st=fs.statSync(pf);if(now-st.mtimeMs<=90000){const pid=parseInt(fs.readFileSync(pf,'utf8').trim(),10);if(pid){process.kill(pid,0);a=true;}}}catch{}
       p._active=a;
-      p._b=a&&fs.existsSync(PH+'/RuntimeCache/'+p.id+'/detached');
+      // 同 ENTRY：与 list.cjs:321-326 的编号判据同源（[H]/[P]/[B] 都算 B 组）——见上方 2026-09-11 说明
+      p._b=a&&(fs.existsSync(PH+'/RuntimeCache/'+p.id+'/detached')||fs.existsSync(PH+'/MemoryData/'+p.id+'/paused')||fs.existsSync(PH+'/RuntimeCache/'+p.id+'/paused')||fs.existsSync(PH+'/RuntimeCache/'+p.id+'/main-hibernate'));
       p._ago=Math.round((now-new Date(p.lastEnded||p.lastSeen).getTime())/60000);
     }
     list.sort((a,b)=>(b._active?1:0)-(a._active?1:0)||((a._b?1:0)-(b._b?1:0))||a._ago-b._ago);
@@ -749,7 +750,7 @@ if [ -z "$NAME" ] && [ -z "$MODE" ]; then
     if [ -n "$_UV" ]; then
       _NEW="${_UV%%|*}"; _CUR="${_UV##*|}"
       echo ""
-      echo -e "  \033[33m⚡\033[0m 新版本可用: \033[1m$_NEW\033[0m (当前 $_CUR)  运行 \033[1mgenshin update\033[0m 更新"
+      echo -e "  \033[33m*\033[0m 新版本可用: \033[1m$_NEW\033[0m (当前 $_CUR)  运行 \033[1mgenshin update\033[0m 更新"
     fi
   fi
   exit 0
@@ -805,11 +806,25 @@ ENTRY=$(node --input-type=commonjs -e "
     // 2026-09-05 修复：必须 active && detached——与 list.cjs 的 _fb 一致（offline 不算 B）。
     //   否则 offline 但残留 detached 标记的 agent（headless 测试遗留）被标 _b=1 → 排序 F前B后 沉底 →
     //   组内序号与列表显示错位（genshin 3 的 3o 指向错误 agent）
-    p._b = active && fs.existsSync(PAIMON_HOME + '/RuntimeCache/' + p.id + '/detached');
+    // 2026-09-11（prime-agent，ISSUE 192 的分歧点）：分组判据必须与 list.cjs 的**编号**判据同源。
+    // list.cjs 的编号是：active && ([H] || [P] || [B]) → B 组，其余 active → F 组（见 list.cjs:321-326）；
+    // 而 [H]=RuntimeCache/<id>/main-hibernate、[P]=MemoryData/<id>/paused 或 RuntimeCache/<id>/paused、[B]=RuntimeCache/<id>/detached。
+    // 原来只判 detached → 前台暂停/休眠（active 且有 paused/hibernate、但没有 detached）会被 launcher 归到 F 组，
+    // 而列表里它显示在 B 组 → 组内序号错位 → `genshin N`/`Nf`/`Nb` 选到错 agent（用户 2026-09-11 报的现象）。
+    // 今天线上 6 个 agent 恰好都是"有 paused/hibernate 就必然有 detached"，所以还没触发；判据统一后这类错位不可能再出现。
+    p._b = active && (fs.existsSync(PAIMON_HOME + '/RuntimeCache/' + p.id + '/detached')
+      || fs.existsSync(PAIMON_HOME + '/MemoryData/' + p.id + '/paused')
+      || fs.existsSync(PAIMON_HOME + '/RuntimeCache/' + p.id + '/paused')
+      || fs.existsSync(PAIMON_HOME + '/RuntimeCache/' + p.id + '/main-hibernate'));
+    // 排序键单独一个：与 list.cjs:114 的 _fb 完全一致（只认 detached；_b 管分组，_fb 管排序）
+    p._fb = active && fs.existsSync(PAIMON_HOME + '/RuntimeCache/' + p.id + '/detached') ? 1 : 0;
     p._ago = Math.round((now - new Date(p.lastEnded || p.lastSeen).getTime()) / 60000);
   }
   // 排序与 list.cjs 完全一致（活跃优先 + F 前 B 后 + 最近活跃优先）——保证数字路由的组内序号 = 列表显示序号
-  list.sort((a,b) => (b._active?1:0) - (a._active?1:0) || ((a._b?1:0) - (b._b?1:0)) || a._ago - b._ago);
+  // 2026-09-11（prime-agent）：排序键必须与 list.cjs 一致 —— list.cjs 用 _fb（**只**看 detached）排序，
+  // 而 _b 是"编号分组"用的（[H]/[P]/[B] 都算 B 组）。两者混用会让同组内顺序与列表显示不一致
+  // （check-numbering.cjs 的夹具实测抓出过：hib-foreground 与 detached-bg 的 2b/3b 会互换）。
+  list.sort((a,b) => (b._active?1:0) - (a._active?1:0) || ((a._fb||0) - (b._fb||0)) || a._ago - b._ago);
   const arg = '$NAME';
   let e;
   let grpMatch = arg.match(/^(\d+)([ofba])$/);   // 规范：数字在前（1f/1o/1b/1a，2026-08-20 定稿）

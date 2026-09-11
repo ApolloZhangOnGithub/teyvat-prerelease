@@ -314,8 +314,9 @@ for (let i = 0; i < list.length; i++) {
   const s = statusStrs[i];
   const statusFull = statusFullStrs[i];
   // 2026-08-20 用户需求（修正）：B（后台 headless）状态区整体用鲸鱼蓝 #718EF4——"绿色有哪些，蓝色就有哪些"（整段 tag+time 蓝，不再只 [B] 单字母）
-  const statusColor = statusFull.includes('[B]') && p._active ? '\x1b[38;2;113;142;244m' : (p._active ? G : '');
-  const statusReset = p._active ? R : '';
+  // statusColor 与序号同色（下面 numColor 计算后覆盖）
+  let statusColor = '';
+  let statusReset = R;
   // 2026-09-11 序号颜色重设计：按状态区分
   // [W]/[F] 前台活跃 = 绿 | [P]/[B] 后台 = 蓝 | [H] 休眠 = 黄 | [O] 离线 = 白（默认色）
   let numIdx, numColor;
@@ -324,6 +325,7 @@ for (let i = 0; i < list.length; i++) {
     else if (statusFull.includes('[B]')) { numColor = '\x1b[38;2;113;142;244m'; numIdx = bNum++; }
     else { numColor = G; numIdx = fNum++; }
   } else { numColor = '\x1b[37m'; numIdx = oNum++; } // O 离线 = 白色
+  statusColor = numColor; // 状态+时间与序号同色
   const num = numColor + String(numIdx).padStart(numW) + '. ' + R;
   const kc = KIND_COLORS[kind] || D;
   const memoir = pad(p._memoir ? '✓' : '✗', 6);
