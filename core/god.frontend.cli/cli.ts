@@ -37,6 +37,8 @@ const Y='\x1b[33m', G='\x1b[32m', D='\x1b[90m', M='\x1b[35m', R='\x1b[0m', BOLD=
 // ⚠️ 注意：genshin 默认列表走 list.cjs（node），本文件的列表分支仅 `bun cli.ts` 直接调用时使用！
 // 改 genshin 列表渲染请改 list.cjs，不要改这里（别的 agent 踩过多次）。
 import { getCfRank, cfPaint } from "./cf-rank.cjs";
+// 2026-09-12：teyvat 云备份（genshin b）——见 backup.ts / PROPOSAL 041
+import { cmdBackup } from "./backup.ts";
 function loadPlist(): any[] { try { return JSON.parse(fs.readFileSync(PLIST,'utf8')) } catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); return [] } }
 function savePlist(l: any[]) { fs.mkdirSync(path.dirname(PLIST),{recursive:true}); fs.writeFileSync(PLIST,JSON.stringify(l,null,2)) }
 const SUBCOMMANDS: Record<string,string> = {
@@ -62,6 +64,7 @@ const SUBCOMMANDS: Record<string,string> = {
   'doctor':'doctor',
   'config':'config',
   'note':'note', 'n':'note',
+  'backup':'backup', 'b':'backup',   // 2026-09-12 云备份（用户指派）
 };
 const RESERVED_NAMES = new Set([
   ...Object.keys(SUBCOMMANDS),
@@ -1075,6 +1078,7 @@ async function main() {
       case 'clone':
         cmdClone(name); return;
       case 'doctor': cmdDoctor(rest); return;   // 2026-09-11：把子参数透传给 doctor（--residual-trash / --yes）；rest[0] 就是子命令后的第一个参数
+      case 'backup': await cmdBackup(rest); return;   // 2026-09-12：云备份（genshin b）
       case 'login': await cmdLogin(); return;
       case 'logout': cmdLogout(); return;
       case 'unbind': cmdUnbind(); return;
