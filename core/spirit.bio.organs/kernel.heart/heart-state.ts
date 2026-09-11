@@ -106,7 +106,7 @@ function exitState(cur: Heart): void {
         const reason = (globalThis as any).__genshinWaitReason;
         // 2026-08-14：只对"用户可见"的打断原因画折线/红点（user message / ESC / /pause）；
         // 内部原因（reload/shutdown/sleep 等）静默退出——用户不需要知道，也不该看到垃圾文案。
-        const USER_VISIBLE_REASONS = new Set(["user", "esc", "command"]);
+        const USER_VISIBLE_REASONS = new Set(["user", "esc", "command", "system"]);
         if (reason && USER_VISIBLE_REASONS.has(reason)) {
           // 打断折线由 wait 组件自己画（位置天然正确、秒数取实际等待值）
           dlog(`wait interrupted: reason=${reason} toolCallId=${cur.toolCallId || ""}`);

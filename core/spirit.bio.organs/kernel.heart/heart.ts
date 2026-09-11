@@ -213,6 +213,7 @@ export default function (pi: ExtensionAPI) {
       if (st === "resting" ||
           (st === "hibernated" && msgType === "social-message" && msg?.details?.mode_used === "interrupt")) {
         dlog(`wake-by-message: ${msgType} (${st} → working)`);
+        if (st === "resting") (globalThis as any).__genshinWaitReason = "system";
         transition({ kind: "working" });
       }
     }

@@ -641,13 +641,10 @@ export class ToolExecutionComponent extends Container {
                 && this.toolCallId && globalThis.__genshinWaitInterruptedId === this.toolCallId) {
                 const secs = globalThis.__genshinWaitInterruptedSecs ?? this.args?.seconds ?? "?";
                 const reason = globalThis.__genshinWaitInterruptedReason;
-                const reasonLabel = { esc: "ESC", user: "user message", sleep: "sleep cycle", reload: "reload", shutdown: "shutdown", command: "/pause" };
-                const reasonStr = reason ? ` (interrupted by ${reasonLabel[reason] || reason})` : "";
-                // 2026-08-18 用户定稿：wait for user 被打断 = 用户来了（正常恢复）→ 绿色折线；
-                // 一般 wait 被打断（esc/命令等）→ 红色折线（异常中断）
-                // 2026-09-07（修复）：读转存值 __genshinWaitInterruptedForUser（exitState 已清全局 __genshinWaitForUser）
+                const reasonLabel = { esc: "ESC", user: "user message", system: "task completed", sleep: "sleep cycle", reload: "reload", shutdown: "shutdown", command: "/pause" };
+                const reasonStr = reason ? ` (${reasonLabel[reason] || reason})` : "";
                 const forUser = globalThis.__genshinWaitInterruptedForUser === true;
-                const color = forUser ? "success" : "error";
+                const color = (forUser || reason === "system" || reason === "user") ? "success" : "error";
                 renderContainer.addChild(new Text(" ".repeat(GUTTER) + theme.fg(color, `⎿  Waited ${secs}s${reasonStr}`), 0, 0));
                 hasContent = true;
             }

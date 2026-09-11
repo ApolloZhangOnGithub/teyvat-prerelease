@@ -78,7 +78,7 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
         // 2026-08-18 用户定稿 + 2026-09-07 纠正：按打断 reason 判色——reason=user（用户消息打断，任何 wait 都算"用户来了"）→ 绿；
         // esc/command 等（用户主动取消/命令）→ 红。与 wait 是否 forUser 无关。
         const reasonStr = intrReason ? ` (${reasonLabel[intrReason] || intrReason})` : "";
-        const color = intrReason === "user" ? "success" : "error";
+        const color = (intrReason === "user" || intrReason === "system") ? "success" : "error";
         const label = resumeType === "wait" ? "Waited" : "Hibernated";
         return new Text(indent + "⎿  " + theme.fg(color, `${label} ${secs}s (interrupted by ${(reasonLabel[intrReason] || intrReason || "interrupt")})`), 0, 0);
       }
@@ -211,8 +211,7 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
     output = output.replace(/\n*\[\d{2}:\d{2}:\d{2}\.\d{3}\s*\+\d+(?:\.\d+)?s\]\s*$/, "").trimEnd();
     const exitStr = exitCode !== undefined ? `exit ${exitCode}` : (elapsed === 0 ? "instantly" : `${elapsed}s`);
     const statusColor = isError ? "error" : "success";
-    // 2026-08-27 用户定稿：Result 符号 » 换成蓝点 •（result 专属蓝，错误态保持红）
-    const d = isError ? theme.fg("error", "•") : theme.fg("result", "•");
+    const d = isError ? theme.fg("error", "⎿") : theme.fg("result", "⎿");
     const c = new Container();
     const indent = " ".repeat(GUTTER);
     // Result 目标形态：主行 • Result[: title]，第二行 ⎿ Executed process <id> in Xs, with exit X (X remaining)
