@@ -35,7 +35,7 @@ export function registerWaitTool(pi: ExtensionAPI) {
       const s = args?.seconds ?? "?";
       const title = args?.title || "";
       const wu = args?.wait_for_user ? " (for user)" : "";
-      const mon = args?.monitor ? ` 📡 ${args.monitor}` : "";
+      const mon = args?.monitor ? ` monitor: ${args.monitor}` : "";
       const msg = args?.message ? ` — ${args.message}` : "";
       const detail = title ? `${title} ${s}s${wu}${mon}${msg}` : `${s}s${wu}${mon}${msg}`;
       return renderToolCall.label(theme, "Wait", detail);
@@ -132,7 +132,7 @@ export function registerWaitTool(pi: ExtensionAPI) {
             return;
           } catch (e) { /* exit non-0 = 条件未满足，继续等 */ }
         }
-        (globalThis as any).__genshinWaitLabel = label() + (monitorCmd ? " 📡" : "");
+        (globalThis as any).__genshinWaitLabel = label() + (monitorCmd ? " monitor:" : "");
       }, 1000);
 
       // 立即写入初始倒计时（0s/50s），不等第一个 interval tick——
