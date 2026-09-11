@@ -150,6 +150,12 @@ function touchPresence(): void {
 // 有 GitHub binding 时，把本 agent 轻量状态上报 sync server（/sync/agent-presence）——
 // 别的机器 social.list({remote:true}) 能看到本机 agent。上报失败不阻塞本地（纯增量）。
 let _reportInFlight = false;
+// 2026-09-11（prime-agent）：presence 失败日志限流。
+// 实证：网络抖动时这个 catch 每 45s 触发一次、每次都写完整堆栈 —— 24 小时灌了 90 条，
+// 7 天 303 条，是 catch-errors.log 长到 86MB 的主要来源（用户纪律③：日志噪音要治）。
+// 规则：同一个方向 5 分钟内只记第一条；恢复后（下一条又写进日志时）自然是新的一条。
+const PRESENCE_ERR_QUIET_MS = 5 * 60 * 1000;
+const _presenceErrAt: Record<string, number> = {};
 async function reportPresence(kind: "up" | "down"): Promise<void> {
   if (_reportInFlight) return;
   try {
@@ -173,7 +179,13 @@ async function reportPresence(kind: "up" | "down"): Promise<void> {
     } else {
       await fetch(`${ep}/sync/agent-presence/${sid}`, { method: "DELETE", headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "User-Agent": SYNC_UA } });
     }
-  } catch (e) { logerr("SOC-PRESENCE", e, "reportPresence(" + kind + ")"); }
+  } catch (e) {
+    const now = Date.now();
+    if (now - (_presenceErrAt[kind] || 0) > PRESENCE_ERR_QUIET_MS) {
+      _presenceErrAt[kind] = now;
+      logerr("SOC-PRESENCE", e, "reportPresence(" + kind + ")（网络抖动类失败 5 分钟最多记一条，不是每次 45s 都记）");
+    }
+  }
   finally { _reportInFlight = false; }
 }
 

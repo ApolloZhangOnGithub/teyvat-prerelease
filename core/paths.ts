@@ -3,7 +3,7 @@
 
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { existsSync, mkdirSync, appendFileSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, appendFileSync, readFileSync, statSync, renameSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { homedir } from "node:os";
 
@@ -107,6 +107,12 @@ export function logerr(code: string, e: unknown, ctx?: string) {
     const dir = join(PAIMON, 'ErrorData');
     const file = join(dir, 'catch-errors.log');
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    // 2026-09-11（prime-agent）：catch-errors.log 从来没有上限 —— 历史上长到过 86MB（.bak 还在），
+    // 成因是 45s 重试类的错误（如 SOC-PRESENCE fetch failed 网络抖动）无限追加。
+    // 规则：超过 32MB 就轮转成 catch-errors.log.1（只留一代，磁盘占用上限 64MB）。
+    try {
+      if (existsSync(file) && statSync(file).size > 32 * 1024 * 1024) renameSync(file, file + '.1');
+    } catch { /* 轮转失败不影响本次写日志 */ }
     appendFileSync(file, msg);
   } catch (e) { console.error("[paths.ts] " + ((e as any)?.message || e));
     try { const fallback = join(homedir(), '.teyvat/LogData/unknown/catch-errors.log'); mkdirSync(dirname(fallback), { recursive: true }); appendFileSync(fallback, msg); } catch (e) { console.error("[paths.ts] " + ((e as any)?.message || e)); }

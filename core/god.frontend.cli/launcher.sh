@@ -130,6 +130,19 @@ _l() {
   if [ "$PAIMON_LANG" = "zh" ]; then echo "$zh"; else echo "$en"; fi
 }
 
+# 日志轮转（2026-09-11 prime-agent）：LogData 之前没有任何上限——单个 console.log 长到 337MB、LogData 累计 966MB。
+# 规则：单个日志超过 32MB 就改名成 <name>.1（覆盖上一代，只留一代），下次写入从新文件开始。
+# 用 mv 而不是 truncate：已经在写的进程跟着自己的 inode 走，不会被截断写坏（轮转只在启动新进程前调用）。
+_rotate_log() {
+  local f="$1" cap_mb="${2:-32}" sz
+  [ -f "$f" ] || return 0
+  sz=$(stat -f %z "$f" 2>/dev/null); [ -n "$sz" ] || sz=$(wc -c < "$f" 2>/dev/null)
+  sz=$(echo "$sz" | tr -d ' ')
+  case "$sz" in ''|*[!0-9]*) return 0;; esac
+  [ "$sz" -gt $(( cap_mb * 1024 * 1024 )) ] || return 0
+  mv -f "$f" "$f.1" 2>/dev/null || : > "$f"
+}
+
 # ── 单一真相源：把 DEEPSEEK_API_KEY 强制对齐到 models.json 里配的字面量 key ──
 # 2026-08-14 提速：仅在实际启动 agent 的路径调用（列表/帮助等日常路径不再为它起 node 子进程）
 __sync_dsk() {
@@ -1165,6 +1178,7 @@ case "$MODE" in
         [ -p "$FIFO" ] || mkfifo "$FIFO" 2>/dev/null
         CONSOLE_LOG="$PAIMON_HOME/LogData/$ID/console.log"
         mkdir -p "$PAIMON_HOME/LogData/$ID" 2>/dev/null
+        _rotate_log "$CONSOLE_LOG"   # 超过 32MB 轮转（见 _rotate_log 注释：2026-09-11 加的，之前无上限）
         # 以 O_RDWR（<>）打开 fd 3：写端+读端同时打开立即成功（fifo 单开写端会阻塞等读端、
         # 单开读端会阻塞等写端——死锁！2026-08-20 实测踩坑）。fd 3 保持写端存活，
         # 外部 echo JSON > fifo 不阻塞；node 的 stdin（fifo 读端）也不会 EOF。

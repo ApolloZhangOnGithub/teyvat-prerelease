@@ -123,7 +123,7 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
     } catch (e) { console.error("[god.frontend.tui/renderers.ts] " + ((e as any)?.message || e)); cur = (message.content ?? "").toString(); }
     const { Text, Container } = require("@earendil-works/pi-tui");
     const c = new Container();
-    c.addChild(new Text(theme.fg("yellow", "◆") + " " + theme.bold(theme.fg("yellow", "Memory Alert")), 0, 0));
+    c.addChild(new Text(theme.fg("warning", "◆") + " " + theme.bold(theme.fg("warning", "Memory Alert")), 0, 0));  // 2026-09-11: "yellow" 不在 theme.colors 里，运行时 Theme.fg() 会抛 Unknown theme color（warning 指向 vars.yellow，同色）
     c.addChild(new Text(theme.fg("dim", cur), GUTTER, 0));
     return c;
   });
@@ -246,7 +246,8 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
     const timeFmt = `${hh}:${mm}:${ss}`;
     // → Task title done in X.Xs at HH:MM:SS（exit 0 不显示）
     const exitPart = exitCode !== undefined && exitCode !== 0 ? `, exit ${theme.bold(String(exitCode))}` : "";
-    const line1 = indent + theme.fg("dim", "⎿") + ` done in ${theme.bold(elapsedFmt)}${exitPart}${remPart}` + theme.fg("dim", ` at ${timeFmt}`);
+    const titlePart = title ? `"${title}" ` : "";
+    const line1 = indent + theme.fg("dim", "→") + ` ${titlePart}Done in ${theme.bold(elapsedFmt)}${exitPart}${remPart}` + theme.fg("dim", ` at ${timeFmt}`);
     c.addChild(new Text(line1, 0, 0));
     // [PRESERVED] 旧版两行渲染（→ Result 头 + Executed 详情行）：
     // const d = isError ? theme.fg("error", "→") : theme.fg("result", "→");

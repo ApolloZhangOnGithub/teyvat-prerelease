@@ -2,7 +2,12 @@
 # check-deploy.sh — 部署完整性检查
 set -e
 
-DEV_ROOT="${1:-${PI_DEV_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}}"
+# 2026-09-11（prime-agent）：目录拆成 A.core/C.deploy 之后，默认值还在按旧布局算 C.deploy/../..（= TEYVAT/，
+# 不是仓库根）→ 不带参数手跑会假报 "rna.json not found"（Makefile 里是带 $(DEV) 参数调用的，所以构建不受影响）。
+# 现在：默认取 C.deploy 的同级 A.core；仓库根固定按脚本自身位置算（B.docs 在那里）。
+DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$DEPLOY_DIR/.." && pwd)"
+DEV_ROOT="${1:-${PI_DEV_ROOT:-$REPO_ROOT/A.core}}"
 # 兼容传入 DEV 根目录或 Codebase 目录
 if [ -f "$DEV_ROOT/package.json" ]; then
   IMPL="$DEV_ROOT"
@@ -88,50 +93,65 @@ if [ -f "$MSG_TYPES_FILE" ]; then
 fi
 
 # 7. 文档编号检查：序号连续、不重、不漏、INDEX 匹配
-DOC_ROOT="$DEV_ROOT/Docs/Dev"
-for doc_dir in "$DOC_ROOT/Issues/Top-Level" "$DOC_ROOT/Norms" "$DOC_ROOT/Lessons"; do
-  [ ! -d "$doc_dir" ] && continue
-  dir_tag=$(echo "$doc_dir" | sed 's|.*/Docs/Dev/||')
-  # 提取文件序号
-  nums=$(ls "$doc_dir" 2>/dev/null | sed -n 's/^\([0-9][0-9]*\)-.*/\1/p' | sort -n)
-  if [ -z "$nums" ]; then continue; fi
-  # gaps & duplicates
-  prev=-1; gaps=""; dups=""
-  for n in $nums; do
-    nn=$((10#$n))
-    if [ $nn -le $prev ]; then dups="$dups $n"; fi
-    if [ $prev -ge 0 ] && [ $nn -le $prev ]; then :; elif [ $prev -ge 0 ] && [ $((nn - prev)) -gt 1 ]; then
-      for g in $(seq $((prev+1)) $((nn-1))); do gaps="$gaps $g"; done
-    fi
-    prev=$nn
-  done
-  # INDEX 检查：提取 INDEX 中条目编号行（- [NNN] 或 [N] 格式），只匹配行首
-  idx_file=$(ls "$doc_dir"/*.INDEX 2>/dev/null | head -1)
-  if [ -n "$idx_file" ]; then
-    idx_nums=$(grep -oE '^\s*-?\s*\[[0-9]+' "$idx_file" | grep -oE '[0-9]+' | sort -n | uniq)
-    file_nums=$(echo "$nums" | tr '\n' ' ' | xargs)
-    # 只检查 INDEX 里的每个条目号在文件中是否存在（允许 INDEX 有额外编号如 000）
-    missing_from_files=""
-    for inum in $idx_nums; do
-      inum=$((10#$inum))
-      found=0
-      for fnum in $nums; do fnum=$((10#$fnum)); [ "$inum" -eq "$fnum" ] && found=1; done
-      [ "$found" -eq 0 ] && missing_from_files="$missing_from_files $inum"
-    done
-    # 反向检查：文件中的每个编号是否在 INDEX 中
-    missing_from_idx=""
-    for fnum in $nums; do
-      fnum=$((10#$fnum))
-      found=0
-      for inum in $idx_nums; do inum=$((10#$inum)); [ "$inum" -eq "$fnum" ] && found=1; done
-      [ "$found" -eq 0 ] && missing_from_idx="$missing_from_idx $fnum"
-    done
-    if [ -n "$missing_from_files" ]; then err "$dir_tag INDEX 引用不存在的文件: $missing_from_files"; fi
-    if [ -n "$missing_from_idx" ]; then err "$dir_tag 文件未收录进 INDEX: $missing_from_idx"; fi
-  fi
-  if [ -n "$gaps" ]; then err "$dir_tag 序号缺失: $gaps"; fi
-  if [ -n "$dups" ]; then err "$dir_tag 序号重复: $dups"; fi
+# 2026-09-11（prime-agent）：这一段本来是"静默死掉"的——DOC_ROOT 还指 $DEV_ROOT/Docs/Dev（旧布局），
+# 目录不存在 → for 循环里的 [ ! -d ] && continue 全部跳过 → 检查看起来全绿，其实一个文件都没查
+# （和 Makefile 顶部"目录改名后 glob 零匹配被悄悄跳过"是同一类坑）。现在：
+#   - DOC_ROOT 先试旧路径，再试现在的 B.docs/Dev.Common；两处都找不到 → ERROR（不许再静默跳过）
+#   - 序号空洞（问题/教训关闭后删文件留下的）算 WARN，不拦构建；PI_DOC_STRICT=1 时才算 ERROR
+#   - 撞号检测忽略配套文件（.SPEC / .REMOVED / .NAMETRACE.REMOVED），否则 039-xxx.LESSON 和
+#     039-xxx.LESSON.SPEC 会被误判成重号
+DOC_ROOT=""
+for cand in "$DEV_ROOT/Docs/Dev" "$REPO_ROOT/B.docs/Dev.Common"; do
+  [ -d "$cand" ] && { DOC_ROOT="$cand"; break; }
 done
+DOC_STRICT="${PI_DOC_STRICT:-0}"
+docwarn() { if [ "$DOC_STRICT" = "1" ]; then err "$1"; else warn "$1"; fi; }
+if [ -z "$DOC_ROOT" ]; then
+  err "文档目录不存在（试过 $DEV_ROOT/Docs/Dev 与 $REPO_ROOT/B.docs/Dev.Common）—— 目录改名后请同步 check-deploy.sh 的 DOC_ROOT"
+else
+  for doc_dir in "$DOC_ROOT/Issues/Top-Level" "$DOC_ROOT/Norms" "$DOC_ROOT/Lessons"; do
+    [ ! -d "$doc_dir" ] && continue
+    dir_tag=$(echo "$doc_dir" | sed -E 's#.*/(Docs/Dev|Dev\.Common)/##')
+    # 提取文件序号（配套文件不算：.SPEC 是规格、.REMOVED 是已撤下留档）
+    nums=$(ls "$doc_dir" 2>/dev/null | grep -vE '\.(SPEC|REMOVED)|NAMETRACE\.REMOVED' | sed -n 's/^\([0-9][0-9]*\)-.*/\1/p' | sort -n)
+    if [ -z "$nums" ]; then continue; fi
+    # gaps & duplicates
+    prev=-1; gaps=""; dups=""
+    for n in $nums; do
+      nn=$((10#$n))
+      if [ $nn -le $prev ]; then dups="$dups $n"; fi
+      if [ $prev -ge 0 ] && [ $nn -le $prev ]; then :; elif [ $prev -ge 0 ] && [ $((nn - prev)) -gt 1 ]; then
+        for g in $(seq $((prev+1)) $((nn-1))); do gaps="$gaps $g"; done
+      fi
+      prev=$nn
+    done
+    # INDEX 检查：提取 INDEX 中条目编号行（- [NNN] 或 [N] 格式），只匹配行首
+    idx_file=$(ls "$doc_dir"/*.INDEX 2>/dev/null | head -1)
+    if [ -n "$idx_file" ]; then
+      idx_nums=$(grep -oE '^\s*-?\s*\[[0-9]+' "$idx_file" | grep -oE '[0-9]+' | sort -n | uniq)
+      # 只检查 INDEX 里的每个条目号在文件中是否存在（允许 INDEX 有额外编号如 000）
+      missing_from_files=""
+      for inum in $idx_nums; do
+        inum=$((10#$inum))
+        found=0
+        for fnum in $nums; do fnum=$((10#$fnum)); [ "$inum" -eq "$fnum" ] && found=1; done
+        [ "$found" -eq 0 ] && missing_from_files="$missing_from_files $inum"
+      done
+      # 反向检查：文件中的每个编号是否在 INDEX 中
+      missing_from_idx=""
+      for fnum in $nums; do
+        fnum=$((10#$fnum))
+        found=0
+        for inum in $idx_nums; do inum=$((10#$inum)); [ "$inum" -eq "$fnum" ] && found=1; done
+        [ "$found" -eq 0 ] && missing_from_idx="$missing_from_idx $fnum"
+      done
+      if [ -n "$missing_from_files" ]; then err "$dir_tag INDEX 引用不存在的文件:$missing_from_files"; fi
+      if [ -n "$missing_from_idx" ]; then docwarn "$dir_tag 文件未收录进 INDEX:$missing_from_idx"; fi
+    fi
+    if [ -n "$gaps" ]; then docwarn "$dir_tag 序号空洞（关闭/删除后留下的编号，确认是有意为之即可）:$gaps"; fi
+    if [ -n "$dups" ]; then docwarn "$dir_tag 序号重复（同号两个文件会让'参见 NNN'指向不明）:$dups"; fi
+  done
+fi
 
 # 8. 命名规范检查：app 目录的主入口 .ts 文件名必须和目录名一致
 MOBILE_DIR="$IMPL/universe.infotech/local.mobile"

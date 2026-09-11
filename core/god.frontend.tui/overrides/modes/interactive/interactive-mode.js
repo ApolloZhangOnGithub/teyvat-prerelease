@@ -2272,9 +2272,11 @@ export class InteractiveMode {
         globalThis.__genshinShowSettingsList = (title, getItems, onChange) => {
             return new Promise((resolve) => {
                 const { SettingsList } = require("@earendil-works/pi-tui");
+                const { MenuPanel, getEditorBackgroundColor } = require("./components/menu-panel.js");
+                const bg = getEditorBackgroundColor();
                 const items = typeof getItems === "function" ? getItems() : getItems;
                 const list = new SettingsList(items, 14, {
-                    cursor: theme.cursor || "> ",
+                    cursor: theme.fg("accent", "→") + " ",
                     label: (text, selected) => selected ? theme.bold(text) : text,
                     value: (text, selected) => selected ? theme.bold(text) : theme.fg("dim", text),
                     hint: (text) => theme.fg("dim", text),
@@ -2293,9 +2295,22 @@ export class InteractiveMode {
                     this.ui.requestRender();
                     resolve(undefined);
                 });
+                const panel = new MenuPanel({ title });
+                const wrapper = {
+                    render: (w) => {
+                        panel.clear();
+                        // Wrap list lines in panel background
+                        const listLines = list.render(Math.max(1, w - 4));
+                        const child = { render: () => listLines, invalidate: () => {} };
+                        panel.addChild(child);
+                        return panel.render(w);
+                    },
+                    invalidate: () => { list.invalidate?.(); panel.invalidate?.(); },
+                    handleInput: (d) => list.handleInput(d),
+                };
                 this.editorContainer.clear();
-                this.editorContainer.addChild({ render: (w) => [title, ...list.render(w)], invalidate: () => list.invalidate?.(), handleInput: (d) => list.handleInput(d) });
-                this.ui.setFocus(this.editorContainer.children[0]);
+                this.editorContainer.addChild(wrapper);
+                this.ui.setFocus(wrapper);
                 this.ui.requestRender();
             });
         };

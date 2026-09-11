@@ -125,6 +125,7 @@ _integrity: _paths
 	@echo "[$$(date +%H:%M:%S)] tool check..." && bash "$(DEPLOY)/check-tools.sh" "$(CORE)" || { echo "  tool check FAILED — 修复后再 make"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] manifest-tools check..." && node "$(DEPLOY)/check-manifest-tools.cjs" "$(CORE)" || { echo "  manifest-tools check FAILED — 已注册工具未进 tools.manifest.json 会被 session_start 过滤静默剔除（LESSON amem），补清单或移除注册后再 make"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] theme-consistency check..." && node "$(DEPLOY)/check-theme-consistency.cjs" "$(CORE)" || { echo "  theme-consistency check FAILED — dark/light 配色键必须一一对应（用户：light 缺键会丢色/回退），补齐后再 make"; exit 1; }
+	@echo "[$$(date +%H:%M:%S)] theme-usage check..." && node "$(DEPLOY)/check-theme-usage.cjs" "$(CORE)" || { echo "  theme-usage check FAILED — 代码里用了 colors 里没有的颜色名，运行时 Theme.fg()/bg() 会抛 Unknown theme color（历史：white 15034 次、default 5 次），改名字或在该行加 theme-allow 注释后再 make"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] empty-catch check..." && node "$(DEPLOY)/check-empty-catch.cjs" || { echo "  empty-catch check FAILED — 空 catch{} 静默吞错（LESSON 024 反模式，用户：任何地方空 catch 都无法运行通过）— 修复: node C.deploy/fix-empty-catch.cjs --apply"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] func-load check..." && node "$(DEPLOY)/check-func-load.mjs" "$(CORE)" || { echo "  func-load check FAILED — func 加载失败必须 fail-fast（ISSUE 112，用户多次强调），门禁缺失或 func 结构异常都禁止部署；修复后再 make"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] extension load check..." && cd "$(CORE)" && (set -o pipefail; (command -v timeout >/dev/null 2>&1 && timeout 30 node -e "import('./index.ts').then(() => { console.log('  extension: OK'); process.exit(0); }).catch(e => { console.error('  extension LOAD FAIL: ' + e.message); process.exit(1); })" 2>&1 || node -e "import('./index.ts').then(() => { console.log('  extension: OK'); process.exit(0); }).catch(e => { console.error('  extension LOAD FAIL: ' + e.message); process.exit(1); })" 2>&1) | grep -v ExperimentalWarning) || { echo "  extension load check FAILED"; exit 1; }
@@ -177,7 +178,7 @@ _dev-minutely: _integrity
 	echo "" >> "$(ROOT)/../Makelogs_Minutely.KEYLOGS"; \
 	cd "$(DEV)" && git add -A && (git diff --cached --quiet || git commit -m "$$PAIMON_VER" -m "[$$committer] $$msg" -m "$$detail") && \
 	echo "$$TODAY $$COUNT $$REL_VER" > "$$COUNTER_FILE" && \
-	(cd "$(DEV)" && git fetch origin main 2>/dev/null; cd "$(DEV)" && git diff --quiet origin/main..HEAD 2>/dev/null || { echo -e "  pushing $$PAIMON_VER..."; cd "$(DEV)" && git push origin main 2>/dev/null && echo -e "  pushed"; }); \
+	(cd "$(DEV)" && git fetch origin main 2>/dev/null; cd "$(DEV)" && git diff --quiet origin/main..HEAD 2>/dev/null || { echo -e "  pushing $$PAIMON_VER..."; cd "$(DEV)" && if git push origin main 2>&1 | sed 's/^/  /'; then echo -e "  ${GRN}pushed${R}"; else echo -e "  ${RED}push FAILED —— 本地有 $$PAIMON_VER 但远端没有！先查网络/权限，再手动 git push origin main（不然后续版本会和远端分叉）${R}"; fi; }); \
 	echo "[$$(date +%H:%M:%S)] git done"; \
 	trash "$$DST_README" 2>/dev/null || true; \
 	PAIMON_VER="$$PAIMON_VER" PAIMON_CHANNEL="minutely" bash "$(DEPLOY)/install.sh" || { echo "  install.sh FAILED —— 部署未完成，别信下面的 install done"; exit 1; }; \

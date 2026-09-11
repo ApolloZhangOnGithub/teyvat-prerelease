@@ -37,6 +37,10 @@ export function registerGodCommands(pi: any) {
 
   pi.registerCommand("s", {
     description: desc("settings", "设置面板（身份/显示/服务/模型/工具/推理/后台/实验）", "Settings panel"),
+    getArgumentCompletions: (prefix: string) => {
+      const tabs = ["identity", "display", "services", "model", "effort", "tools", "bg", "experimental"];
+      return tabs.filter(t => t.startsWith(prefix.toLowerCase())).map(t => ({ label: t, value: t }));
+    },
     handler: settingsHandler,
   });
   pi.registerCommand("a", {

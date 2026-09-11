@@ -9,7 +9,7 @@
 //   机制已在 C.deploy/verify-headless-spawn.cjs 验证（父退出后子进程存活 + fifo 读取正常）。
 // ⚠️ 2026-08-20 08:45 修复：spawnHeadlessBg 原先用 require()（ESM 下未定义）→ Ctrl+C 转后台直接炸
 //   （无 detached 无 spawn → [O]）。改为顶层静态 import（与项目 TS 风格一致，禁止 require）。
-import { writeFileSync, mkdirSync, existsSync, openSync } from "node:fs";
+import { writeFileSync, mkdirSync, existsSync, openSync, statSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { spawn, execSync } from "node:child_process";
@@ -51,6 +51,11 @@ export function spawnHeadlessBg(pid: string, reason: string): void {
   const fifo = join(fifoDir, "headless-in");
   if (!existsSync(fifo)) execSync(`mkfifo "${fifo}"`);
   const logFile = join(logDir, "console.log");
+  // 2026-09-11（prime-agent）：console.log 之前无上限，历史上单个长到 337MB。超过 32MB 先轮转成 .1（只留一代）。
+  // 用 rename 而不是 truncate：正在写的旧进程跟着自己的 fd，不会被写坏。
+  try {
+    if (existsSync(logFile) && statSync(logFile).size > 32 * 1024 * 1024) renameSync(logFile, logFile + ".1");
+  } catch { /* 轮转失败不影响 /h 转后台 */ }
   // fifo O_RDWR 打开（同时读写端，不阻塞 + 防 stdin EOF——launcher exec 3<> 等价物）
   const fdIn = openSync(fifo, "r+");      // → 子进程 stdin
   const fdWrite = openSync(fifo, "r+");   // → 子进程 fd 3（写端保持，防 EOF）

@@ -363,7 +363,7 @@ export const renderMessage = {
     if (!text) return C();
     const err = isToolError(ctx?.toolName, text, ctx);
     const indent = " ".repeat(GUTTER);
-    const prefix = indent + (err ? theme.fg("error", "⎿ ") : theme.fg("dim", "⎿ "));
+    const prefix = indent + (err ? theme.fg("error", "⎿  ") : theme.fg("dim", "⎿  "));
     return bulletText(prefix, err ? theme.fg("error", text) : theme.fg("toolOutput", text));
   },
 
@@ -375,7 +375,7 @@ export const renderMessage = {
     if (!str) return C();
     const err = isToolError(ctx?.toolName, String(text), ctx);
     const indent = " ".repeat(GUTTER);
-    const prefix = indent + (err ? theme.fg("error", "⎿ ") : theme.fg("dim", "⎿ "));
+    const prefix = indent + (err ? theme.fg("error", "⎿  ") : theme.fg("dim", "⎿  "));
     const hasAnsi = /\x1b\[/.test(str);
     return bulletText(prefix, hasAnsi ? str : (err ? theme.fg("error", str) : theme.fg("dim", str)));
   },
