@@ -78,32 +78,50 @@ try {
   process.exit(1);
 }
 
-// ── 映射 B：真实 launcher._resolve_active_arg ──
-let snippet;
-try {
-  const sh = fs.readFileSync(launcher, "utf8");
-  const fn = sh.match(/_resolve_active_arg\(\) \{[\s\S]*?node --input-type=commonjs -e "([\s\S]*?)"\s+"\$NAME"/);
-  if (!fn) throw new Error("抽不到 _resolve_active_arg 的 node 片段");
-  snippet = fn[1];
-} catch (e) {
-  console.error("[numbering] FAIL: 无法从 launcher.sh 提取判据（gate 需与实际实现同步）: " + e.message);
+// ── 映射 B：真实 launcher 的两个解析片段（ENTRY = 启动路径；_resolve_active_arg = kill/tmux 路径）──
+const shText = fs.readFileSync(launcher, "utf8");
+const entryM = shText.match(/ENTRY=\$\(node --input-type=commonjs -e "([\s\S]*?)"\s*\)/);
+const resolveM = shText.match(/_resolve_active_arg\(\) \{[\s\S]*?node --input-type=commonjs -e "([\s\S]*?)"\s+"\$NAME"/);
+if (!entryM || !resolveM) {
+  console.error("[numbering] FAIL: 无法从 launcher.sh 提取判据（ENTRY / _resolve_active_arg）—— gate 需与实际实现同步");
   process.exit(1);
 }
+const subst = (code) => code
+  .replace(/\$PLIST/g, plistPath)
+  .replace(/\$PAIMON_HOME/g, home)
+  .replace(/\$ORDER_FILE/g, path.join(tmp, "order.json"))   // 别写到用户真实 RuntimeCache
+  .replace(/\$NAME/g, NAME_PLACEHOLDER);
+const NAME_PLACEHOLDER = "__NAME__";
+
+const runEntry = (arg) => {
+  const code = subst(entryM[1]).replace(/__NAME__/g, arg);
+  try { return execFileSync(process.execPath, ["--input-type=commonjs", "-e", code], { encoding: "utf8", timeout: 15000 }).trim(); }
+  catch (e) { return "<ERR " + e.message.split("\n")[0] + ">"; }
+};
+const runResolve = (arg) => {
+  const code = subst(resolveM[1]).replace(/__NAME__/g, arg);
+  try { return execFileSync(process.execPath, ["--input-type=commonjs", "-e", code, arg], { encoding: "utf8", timeout: 15000 }).trim(); }
+  catch (e) { return "<ERR " + e.message.split("\n")[0] + ">"; }
+};
 
 const results = [];
 for (const r of mappingA) {
-  const code = snippet.replace(/\$PLIST/g, plistPath).replace(/\$PAIMON_HOME/g, home).replace(/\$NAME/g, `${r.index}${r.group}`);
-  let got = "";
-  try {
-    got = execFileSync(process.execPath, ["--input-type=commonjs", "-e", code, `${r.index}${r.group}`], { encoding: "utf8", timeout: 15000 }).trim();
-  } catch (e) { got = "<ERR " + e.message.split("\n")[0] + ">"; }
-  results.push({ ...r, resolved: got, ok: got === r.name });
+  const arg = `${r.index}${r.group}`;
+  const entryOut = runEntry(arg);
+  let got = r.name;
+  const j = entryOut.match(/^\{/);
+  if (j) { try { got = JSON.parse(entryOut).name; } catch (e) { got = "<BAD JSON>"; } }
+  else if (entryOut === "") got = "";   // 空 = 没解析到
+  else got = entryOut;
+  // kill/tmux 路径只支持 f/b/a（offline 本来就不能 kill）
+  const resolveGot = r.group === "o" ? "(n/a)" : runResolve(arg);
+  results.push({ ...r, arg, resolved: got, resolveGot, ok: got === r.name && (r.group === "o" || resolveGot === r.name) });
 }
 
 const bad = results.filter((r) => !r.ok);
 console.log("[numbering] 列表显示 vs launcher 解析：");
 for (const r of results) {
-  console.log(`  ${String(r.index).padStart(2)}${r.group}  列表=${r.name.padEnd(24)} launcher=${r.resolved.padEnd(24)} ${r.ok ? "OK" : "MISMATCH"}`);
+  console.log(`  ${r.arg.padStart(3)}  列表=${r.name.padEnd(24)} 启动解析=${String(r.resolved).padEnd(24)} kill解析=${String(r.resolveGot).padEnd(24)} ${r.ok ? "OK" : "MISMATCH"}`);
 }
 if (bad.length) {
   console.error(`[numbering] FAIL: ${bad.length} 处序号解析与列表显示不一致 —— genshin N 会选到错 agent`);

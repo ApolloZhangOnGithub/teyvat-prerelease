@@ -386,10 +386,26 @@ function enterAgent(name: string, mode='') {
 
   const pidFile=path.join(dataDir,'main.pid');
   if(fs.existsSync(pidFile)){
-    const oldPid=parseInt(fs.readFileSync(pidFile,'utf8').trim());
-    try{ process.kill(oldPid,0); console.error(`ERROR: ${pname} already running (PID ${oldPid})`); process.exit(1) }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); }
+    // 2026-09-11（prime-agent，ISSUE 182 的另一半）：原来 parseInt('')=NaN → process.kill(NaN,0) 抛错被下面的
+    // catch 吞掉 → 认定"没有旧实例" → 继续启动 → 双实例（实测 check-session-01 双实例 + 0 字节 main.pid）。
+    // 现在内容无效时不再静默放行：心跳新鲜（≤90s，heart 每 30s 更新）就认为已有实例在跑，拒绝启动并给出清理办法；
+    // 心跳陈旧才视为残留文件、正常覆盖。
+    const raw = (fs.readFileSync(pidFile,'utf8')||'').trim();
+    const oldPid = parseInt(raw,10);
+    if(oldPid){
+      try{ process.kill(oldPid,0); console.error(`ERROR: ${pname} already running (PID ${oldPid})`); process.exit(1) }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); }
+    } else {
+      let fresh=false; try{ fresh = Date.now() - fs.statSync(pidFile).mtimeMs <= 90000 }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); }
+      if(fresh){
+        console.error(`ERROR: ${pname} 的 main.pid 内容无效（[${raw}]）但心跳新鲜 —— 很可能已有实例在跑（ISSUE 182）。`);
+        console.error(`       确认没有实例后再启动：rm -f "${pidFile}"`);
+        process.exit(1);
+      }
+      console.error(`WARN: ${pname} 的 main.pid 内容无效（[${raw}]）且心跳陈旧 —— 按残留文件处理，覆盖启动。`);
+    }
   }
-  fs.writeFileSync(pidFile,String(process.pid));
+  // 原子写入（tmp + rename）：避免"先截断再写"的窗口被读到 0 字节（0 字节 → parseInt=NaN → 活跃判定失效 → 双实例）
+  { const _pfTmp = pidFile + '.tmp-' + process.pid; fs.writeFileSync(_pfTmp,String(process.pid)); fs.renameSync(_pfTmp,pidFile); }
 
   const wakeFile=path.join(rtDir,'wake-restart');
   const extFlags=`-ne -e ${EXT}/index.ts`;

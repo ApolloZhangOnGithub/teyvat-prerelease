@@ -340,7 +340,24 @@ export default function (pi: ExtensionAPI) {
       let statsTick = 0;
       setTimeout(() => { try { updateListStats(); } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); } }, 5000); // 启动后首刷
       const _heartbeatInterval = setInterval(() => {
-        try { const now = new Date(); const fd = require("fs").openSync(pidFile, "a"); require("fs").futimesSync(fd, now, now); require("fs").closeSync(fd); } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
+        try {
+          // 2026-09-11（prime-agent，ISSUE 182 收尾）：心跳不能只 touch mtime —— openSync(pidFile,"a") 在文件缺失时
+          // 会**创建 0 字节文件**并一直保持"新鲜"，于是活跃判定读到无效内容（列表判离线、启动守卫原样放行）→ 双实例。
+          // 线上实测：check-session-01（379e262b）按 2 天、main.pid 0 字节、同 sid 两个实例。
+          // 心跳是"我还活着"的权威 → 内容不等于自己的 pid 就原子补写（顺带自愈历史遗留的 0 字节/旧 pid 文件）；
+          // 内容正确时再 futimes（保持"心跳新鲜"语义）。
+          const now = new Date();
+          let _cur = ""; try { _cur = readFileSync(pidFile, "utf8").trim(); } catch (e) { /* ENOENT：下面补写 */ }
+          if (_cur !== String(process.pid)) {
+            const _hbTmp = pidFile + ".tmp-" + process.pid;
+            writeFileSync(_hbTmp, String(process.pid), "utf8");
+            require("fs").renameSync(_hbTmp, pidFile);
+          } else {
+            const fd = require("fs").openSync(pidFile, "a");
+            require("fs").futimesSync(fd, now, now);
+            require("fs").closeSync(fd);
+          }
+        } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
         // 每 10 个心跳（~5 分钟）刷新一次列表统计缓存
         statsTick++;
         if (statsTick % 10 === 0) { try { updateListStats(); } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); } }

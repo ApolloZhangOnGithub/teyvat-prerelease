@@ -311,6 +311,7 @@ case "$NAME" in
     if [ "$CHANNEL" = "minutely" ]; then
       echo "  channel: minutely (dev 自动构建线——已自动部署最新)"
       echo -e "  \033[32mOK\033[0m minutely 无需更新（每次 dev 构建自动部署；要换通道请用发布线安装）"
+      rm -f "$HOME/.teyvat/RuntimeCache/update-check.json" 2>/dev/null
       exit 0
     fi
     if [ "$CHANNEL" = "release" ]; then
@@ -360,12 +361,14 @@ case "$NAME" in
       [ -f "$UP_DIR/.last-deployed-head" ] && OLD_HEAD=$(cat "$UP_DIR/.last-deployed-head" 2>/dev/null)
       if [ -n "$NEW_HEAD" ] && [ "$NEW_HEAD" = "$OLD_HEAD" ]; then
         echo -e "  \033[32mOK\033[0m 无新提交 ($PKG_VER)，跳过部署"
+        rm -f "$HOME/.teyvat/RuntimeCache/update-check.json" 2>/dev/null
         exit 0
       fi
       PKG_PINNED=$(node -e "console.log(require('$UP_DIR/package.json').pinnedDev||'')" 2>/dev/null)
       if ( cd "$UP_DIR" && PAIMON_VIA_MAKE=1 MAKELEVEL=1 PAIMON_CHANNEL=prerelease PAIMON_VER="$PKG_VER" PAIMON_PINNED_DEV="$PKG_PINNED" bash deploy/install.sh 2>&1 | tail -5 ); then
         echo "$NEW_HEAD" > "$UP_DIR/.last-deployed-head"
         echo -e "  \033[32mOK\033[0m prerelease $PKG_VER 已更新并部署"
+        rm -f "$HOME/.teyvat/RuntimeCache/update-check.json" 2>/dev/null
         # update 遥测管线（2026-09-09——本地日志 + server 上报绑定账号；失败静默不阻塞）
         _TEL="$HOME/.local/lib/teyvat/extensions/teyvat/god.frontend.cli/telemetry-update.sh"
         [ -x "$_TEL" ] && bash "$_TEL" "$OLD_VER" "$PKG_VER" "$CHANNEL" "$UP_TRIGGER" || true
@@ -617,9 +620,10 @@ _resolve_active_arg() {
       p._active=a;
       // 同 ENTRY：与 list.cjs:321-326 的编号判据同源（[H]/[P]/[B] 都算 B 组）——见上方 2026-09-11 说明
       p._b=a&&(fs.existsSync(PH+'/RuntimeCache/'+p.id+'/detached')||fs.existsSync(PH+'/MemoryData/'+p.id+'/paused')||fs.existsSync(PH+'/RuntimeCache/'+p.id+'/paused')||fs.existsSync(PH+'/RuntimeCache/'+p.id+'/main-hibernate'));
+      p._fb=a&&fs.existsSync(PH+'/RuntimeCache/'+p.id+'/detached')?1:0; // 排序键：与 list.cjs:114/118 同源（只认 detached）
       p._ago=Math.round((now-new Date(p.lastEnded||p.lastSeen).getTime())/60000);
     }
-    list.sort((a,b)=>(b._active?1:0)-(a._active?1:0)||((a._b?1:0)-(b._b?1:0))||a._ago-b._ago);
+    list.sort((a,b)=>(b._active?1:0)-(a._active?1:0)||((a._fb||0)-(b._fb||0))||a._ago-b._ago);
     const F=list.filter(p=>p._active&&!p._b),B=list.filter(p=>p._active&&p._b),A=list.filter(p=>p._active);
     let m=arg.match(/^(\d+)([fba])$/),sw=false;
     if(!m){m=arg.match(/^([fba])(\d+)$/);sw=!!m;}
