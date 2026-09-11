@@ -211,17 +211,32 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
     output = output.replace(/\n*\[\d{2}:\d{2}:\d{2}\.\d{3}\s*\+\d+(?:\.\d+)?s\]\s*$/, "").trimEnd();
     const exitStr = exitCode !== undefined ? `exit ${exitCode}` : (elapsed === 0 ? "instantly" : `${elapsed}s`);
     const statusColor = isError ? "error" : "success";
+    // 合并检测：如果前一个组件就是同 recId 的 execute Created，跳过独立 Result 头——
+    // 把结果直接追加到 execute 组件里（像同步快命令一样）
+    const chatContainer = (globalThis as any).__genshinChatContainer;
+    let merged = false;
+    if (chatContainer && idStr) {
+      const kids = chatContainer.children || [];
+      // 从末尾往回找最近的非空组件（跳过 Spacer 等空行）
+      for (let i = kids.length - 1; i >= Math.max(0, kids.length - 5); i--) {
+        const kid = kids[i];
+        if (!kid || !kid.result) continue;
+        // 检查是否是同一个 execute 的 tool-execution 组件
+        const kidRecId = kid.result?.details?.recId;
+        if (kidRecId && kidRecId === idStr) {
+          merged = true;
+          break;
+        }
+        // 中间有其他内容组件就不合并
+        if (kid.toolName || kid.role) break;
+      }
+    }
+
     const d = isError ? theme.fg("error", "→") : theme.fg("result", "→");
     const c = new Container();
     const indent = " ".repeat(GUTTER);
-    // Result 目标形态：主行 • Result[: title]，第二行 ⎿ Executed process <id> in Xs, with exit X (X remaining)
-    // 2026-08-14 用户要求：Result 头不带命令（命令在调用行已显示），只留 "Result" 一行
-    // 2026-08-17 用户要求：cmd-done 带 title（execute title 参数）时第一行显示标题，如 "• Result: tsc 验证"
     const title = (message.details as any)?.title;
-    // 空格分隔无冒号（2026-08-18 用户定稿，与调用行 detail 形态一致）
-    // 2026-08-18 配色：Result 用专属 result 色（DeepSeek 鲢鱼蓝色相 H227 提亮降饱和 → #718EF4，与 accent/socialMessage 蓝系协调；theme 新增键）——蓝点+文字同色，区别于调用行工具名（白粗体）与 message（浅蓝），专属"结果通知"观感；错误态蓝点/exit 保持红
-    // 2026-09-04 用户定稿：只有点 • 保持 result 蓝（错误态红），"Result" 和 title 文字恢复默认色（与 wait 等调用行标题一致）
-    const mainStr = d + " " + theme.bold("Result") + (title ? " " + title : "");
+    const mainStr = merged ? "" : d + " " + theme.bold("Result") + (title ? " " + title : "");
     const fmtElapsed = (sec: number) => {
       if (sec < 60) return `${sec}s`;
       if (sec < 3600) { const m = Math.floor(sec / 60); const s2 = sec % 60; return s2 === 0 ? `${m}m` : `${m}m ${s2}s`; }
@@ -245,7 +260,7 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
     // 连接词不着色、时间戳全 dim；exit 保留语义色（绿/红粗体，属"高亮"）。
     // 2026-08-14 用户要求：done in Xs 的数字用蓝色（accent）
     const line2 = indent + theme.fg("dim", "⎿  ") + `Executed ${idPart}` + `in ${theme.fg("accent", elapsedFmt)}` + `, with ` + theme.bold(theme.fg(statusColor, exitStr)) + remPart + theme.fg("dim", timePart);
-    c.addChild(new Text(mainStr, 0, 0));
+    if (mainStr) c.addChild(new Text(mainStr, 0, 0));
     c.addChild(new Text(line2, 0, 0));
     if (output) {
       const compact = (globalThis as any).__genshinCompactExecute;
