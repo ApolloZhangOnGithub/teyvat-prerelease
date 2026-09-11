@@ -154,6 +154,28 @@ else
   done
 fi
 
+# 9. pi-ai 补丁残留检查（2026-09-11 prime-agent，对应 ISSUE 188）
+# 为什么只有 pi-ai：pi-coding-agent / pi-tui 的 dist 每次 install 都从 pi-image-source 复位，
+# 残留不可能存在；pi-ai 没有原版基线（版本号不变时不复位），补丁会叠加在上一次的产物上——
+# 删掉/改写某个 overrides/pi-ai/<f>.js 后，旧补丁仍留在 dist 里继续生效（"改了源码但行为不变"）。
+AI_DIST="$HOME/.local/lib/teyvat/runtime/node_modules/@earendil-works/pi-ai/dist/api"
+OVR_AI="$IMPL/god.frontend.tui/overrides/pi-ai"
+if [ -d "$AI_DIST" ]; then
+  RESIDUE=""
+  for f in "$AI_DIST"/*.js; do
+    [ -f "$f" ] || continue
+    b=$(basename "$f")
+    if grep -q 'teyvat\|genshin' "$f" 2>/dev/null && [ ! -f "$OVR_AI/$b" ]; then
+      RESIDUE="$RESIDUE $b"
+    fi
+  done
+  if [ -n "$RESIDUE" ]; then
+    warn "pi-ai dist 有带 teyvat 补丁但 overrides/pi-ai/ 里已不存在的文件（残留补丁，pi-ai 不复位）:$RESIDUE"
+  else
+    ok "pi-ai patch residue: none"
+  fi
+fi
+
 # 8. 命名规范检查：app 目录的主入口 .ts 文件名必须和目录名一致
 MOBILE_DIR="$IMPL/universe.infotech/local.mobile"
 NAMING_BAD=""

@@ -740,7 +740,7 @@ if [ "$MODE" = "tmux" ]; then
 fi
 
 if [ -z "$NAME" ] && [ -z "$MODE" ]; then
-  printf '\033[2J\033[H'
+  printf '\033[H\033[J'
   node "$PAIMON_LIST_JS" "$PLIST" "$MEMORY_DIR" "$PAIMON_LANG" list
   # 2026-09-11：更新提示（读后台检测缓存，不阻塞）
   _UC="$HOME/.teyvat/RuntimeCache/update-check.json"
@@ -1140,7 +1140,7 @@ case "$MODE" in
       # ( while true; do sleep 300; _bun_detached "$PAIMON_SYNC" heartbeat "$ID" --quiet </dev/null >/dev/null 2>&1; _bun_detached "$PAIMON_SYNC" push --quiet </dev/null >/dev/null 2>&1; _bun_detached "$PAIMON_SYNC" pull --quiet </dev/null >/dev/null 2>&1; done ) </dev/null >/dev/null 2>&1 &
       # SYNC_LOOP_PID=$!
     # 清屏到最上方，再启动 pi
-    printf '\033[2J\033[H'
+    printf '\033[H\033[J'
     # 迭代计数（2026-08-20）：第一次迭代 = 用户新启动（遇 detached → attach 转 TUI）；
     # 后续迭代 = agent /h 退出后 while 循环重启（遇 detached → headless 后台化）。
     LOOP_ITER=0
@@ -1255,7 +1255,7 @@ case "$MODE" in
       break
     done
     # 2026-09-11：退出后清屏（清掉 footer 残留）+ 自动显示 agent 列表
-    printf '\033[2J\033[H'
+    printf '\033[H\033[J'
     # /h 转后台时等 headless 子进程起来（detached 标记出现），否则列表会误显示 offline
     if [ -n "$ID" ]; then
       for _w in $(seq 1 10); do
