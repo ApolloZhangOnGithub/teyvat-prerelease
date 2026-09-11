@@ -279,7 +279,7 @@ const statusStrs = list.map(p => {
 const activeLabel = '';
 // 状态列宽度 = tag + time 整体计算（如 "[A] 2小时36分钟" vs "[O] 1天前"）
 const statusFullStrs = statusStrs.map((s, i) => {
-  const tag = s.tag ? s.tag + ' ' : '[O] ';
+  const tag = s.tag ? s.tag + ' ' : '[O]     ';
   return tag + s.time;
 });
 const tw = Math.max(...statusFullStrs.map(s => vw(s)));
