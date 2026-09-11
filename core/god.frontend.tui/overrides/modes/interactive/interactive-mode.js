@@ -466,6 +466,7 @@ export class InteractiveMode {
         if (this.settingsManager?.globalSettings?.writeExpanded !== undefined) globalThis.__genshinWriteExpanded = this.settingsManager.globalSettings.writeExpanded;
         if (this.settingsManager?.globalSettings?.editExpanded !== undefined) globalThis.__genshinEditExpanded = this.settingsManager.globalSettings.editExpanded;
         globalThis.__genshinThinkingFirstLine = this.settingsManager?.globalSettings?.thinkingFirstLine ?? true;
+        if (this.settingsManager?.globalSettings?.greetOnAttach !== undefined) globalThis.__genshinGreetOnAttach = this.settingsManager.globalSettings.greetOnAttach;
         // Expose session for /m /e commands
         globalThis.__genshinSetModel = (model) => this.session.setModel(model);
         globalThis.__genshinSetThinkingLevel = (level) => this.session.setThinkingLevel(level);

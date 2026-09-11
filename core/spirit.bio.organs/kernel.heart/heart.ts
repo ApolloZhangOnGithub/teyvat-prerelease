@@ -83,7 +83,9 @@ export default function (pi: ExtensionAPI) {
         const mark = join(homedir(), ".teyvat/RuntimeCache", pid, "attached-back");
         if (existsSync(mark)) {
           try { if (existsSync(mark)) unlinkSync(mark); } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
-          sendCustomMessage(pi, "display-shown", "用户已以前台模式进入（attach 回前台 TUI）。用户现在可以看到你的运行过程了，照常工作。");
+          if ((globalThis as any).__genshinGreetOnAttach !== false) {
+            sendCustomMessage(pi, "display-shown", "用户已以前台模式进入（attach 回前台 TUI）。用户现在可以看到你的运行过程了，照常工作。");
+          }
         }
       }
     } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }

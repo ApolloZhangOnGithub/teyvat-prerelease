@@ -68,6 +68,7 @@ export async function viewHandler(_args: any, ctx: any) {
       { id: "codeHighlight", label: T("代码高亮", "Code Highlight"), currentValue: codeHighlight ? T("开", "On") : T("关", "Off"), values: [T("关", "Off"), T("开", "On")] },
       ...toolItems,
       { id: "ctrlC", label: "Ctrl+C", currentValue: ctrlCToBg ? T("转后台", "To Bg") : T("停止", "Stop"), values: [T("转后台", "To Bg"), T("停止", "Stop")] },
+      { id: "greetOnAttach", label: T("回来打招呼", "Greet on attach"), currentValue: ((globalThis as any).__genshinGreetOnAttach ?? true) ? T("开", "On") : T("关", "Off"), values: [T("开", "On"), T("关", "Off")] },
       { id: "footerAge", label: T("Footer 年龄", "Footer Age"), currentValue: footerAge ? T("显示", "Show") : T("隐藏", "Hide"), values: [T("隐藏", "Hide"), T("显示", "Show")] },
       { id: "footerTokens", label: T("Footer 履历", "Footer Tokens"), currentValue: footerTokensValue, values: footerTokensValues },
       { id: "footerProvider", label: T("Footer 供应商", "Footer Provider"), currentValue: footerProvider ? T("显示", "Show") : T("隐藏", "Hide"), values: [T("隐藏", "Hide"), T("显示", "Show")] },
@@ -143,6 +144,12 @@ export async function viewHandler(_args: any, ctx: any) {
         const toBg = value === T("转后台", "To Bg");
         (globalThis as any).__genshinCtrlCToBg = toBg;
         save("ctrlCToBg", toBg);
+        break;
+      }
+      case "greetOnAttach": {
+        const on = value === T("开", "On");
+        (globalThis as any).__genshinGreetOnAttach = on;
+        save("greetOnAttach", on);
         break;
       }
       case "footerAge": {
