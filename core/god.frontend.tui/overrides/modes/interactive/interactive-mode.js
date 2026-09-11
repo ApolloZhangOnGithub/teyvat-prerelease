@@ -467,6 +467,7 @@ export class InteractiveMode {
         if (this.settingsManager?.globalSettings?.editExpanded !== undefined) globalThis.__genshinEditExpanded = this.settingsManager.globalSettings.editExpanded;
         globalThis.__genshinThinkingFirstLine = this.settingsManager?.globalSettings?.thinkingFirstLine ?? true;
         if (this.settingsManager?.globalSettings?.greetOnAttach !== undefined) globalThis.__genshinGreetOnAttach = this.settingsManager.globalSettings.greetOnAttach;
+        if (this.settingsManager?.globalSettings?.unloadMode) globalThis.__genshinUnloadMode = this.settingsManager.globalSettings.unloadMode;
         // Expose session for /m /e commands
         globalThis.__genshinSetModel = (model) => this.session.setModel(model);
         globalThis.__genshinSetThinkingLevel = (level) => this.session.setThinkingLevel(level);
@@ -3242,9 +3243,24 @@ export class InteractiveMode {
     unloadChatForHibernate() {
         if (this._chatUnloaded) return;
         this._chatUnloaded = true;
-        this.chatContainer.clear();
-        this.pendingTools.clear();
-        this.chatContainer.addChild(new Text(theme.fg("dim", _i18n("（长时间休眠，消息区已卸载以释放内存。窗口回到前台或唤醒后自动重建。）", "(Long hibernate — message area unloaded to free memory. It rebuilds automatically when the window regains focus or on wake.)")), 0, 0));
+        const unloadMode = (globalThis.__genshinUnloadMode) || "seamless";
+        if (unloadMode === "classic") {
+            // 传统模式：全清 + 提示文本
+            this.chatContainer.clear();
+            this.pendingTools.clear();
+            this.chatContainer.addChild(new Text(theme.fg("dim", _i18n("（长时间休眠，消息区已卸载以释放内存。窗口回到前台或唤醒后自动重建。）", "(Long hibernate — message area unloaded to free memory. It rebuilds automatically when the window regains focus or on wake.)")), 0, 0));
+        } else {
+            // 无感模式：保留最后 N 个组件（约一屏），释放上面的历史
+            const kids = this.chatContainer.children;
+            const keepLast = Math.min(kids.length, 20);
+            const toRemove = kids.length - keepLast;
+            if (toRemove > 0) {
+                const kept = kids.slice(-keepLast);
+                this.chatContainer.clear();
+                for (const k of kept) this.chatContainer.addChild(k);
+            }
+            this.pendingTools.clear();
+        }
         this.ui.requestRender();
     }
     /** 唤醒后恢复消息区（由 heart-state 在离开 hibernated 时触发） */

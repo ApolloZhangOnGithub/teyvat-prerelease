@@ -8,3 +8,7 @@
 # 它是 install.sh 恢复原版 dist 的输入（rsync --delete 的源），
 # 且第 149 行用 `if [ -d ]` 判断——丢失时会静默跳过恢复，症状隐蔽。
 # 代价：每次 pi 升版增加约 11M。
+
+# prime-agent 的隐藏临时/证据文件：一律不进仓库（用户要求 2026-09-11）
+.prime*
+.prime-agent*
