@@ -813,8 +813,10 @@ export default function (pi: ExtensionAPI) {
 
   // ── session_shutdown ──
   pi.on("session_shutdown", async () => {
-    // hibernated 时不应被 shutdown 覆盖——hibernate 本身通过 terminate:true 触发 shutdown
-    if (heartState() !== "hibernated") {
+    // /h detach 导致的 shutdown 不切 paused——headless 子进程会接管，不应留 paused 标记
+    if ((globalThis as any).__genshinDetaching) {
+      dlog("session_shutdown: detach mode, skip paused transition");
+    } else if (heartState() !== "hibernated") {
       (globalThis as any).__genshinWaitReason = "shutdown";
       transition({ kind: "paused", reason: "shutdown" });
     }

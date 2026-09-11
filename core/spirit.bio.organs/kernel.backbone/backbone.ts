@@ -545,7 +545,14 @@ function outboxDlog(msg: string): void {
 }
 
 function outboxPid(): string {
-  return process.env.PAIMON_AGENT_ID || String((globalThis as any).__genshinPersonId || "unknown");
+  // 2026-09-11（prime-agent）：原来只查 env → 全局，兜底成字面量 "unknown" —— 那是**进程间共享目录**，
+  // 两个都拿不到 id 的 agent 会共用同一个 outbox：A 的消息可能被 B 的 flush 误 ack（at-least-once 变成丢失）。
+  // 证据：RuntimeCache/unknown/ 真实存在（2026-08-20 有代码在这里写过 list-stats.json），说明 id 解析失败
+  // 是会发生的，不是纯理论。现在与 heart-state.personId() 同一条解析链（process.title → env → 全局），
+  // 最后再兜底成**带 pid 的唯一值**，保证不再有共享目录。
+  const fromTitle = process.title.match(/genshin:[^(]+\([^,]+,\s*([^,)]+)/)?.[1];
+  const id = fromTitle || process.env.PAIMON_AGENT_ID || (globalThis as any).__genshinPersonId;
+  return id ? String(id) : `unknown-pid-${process.pid}`;
 }
 
 function outboxDir(): string {

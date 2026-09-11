@@ -3200,8 +3200,9 @@ export class InteractiveMode {
         this.chatContainer.addChild(new Text(text, 1, 0));
     }
     renderInitialMessages() {
-        // 渲染全部 session entries（不只是当前 context window）——恢复/attach 后用户能看到完整历史
+        // 渲染全部 session entries——恢复/attach 后用户能看到完整历史
         const entries = this.sessionManager.getEntries();
+        try { globalThis.__genshinDlog?.(`renderInitialMessages: ${entries.length} entries (types: ${[...new Set(entries.map(e => e.type))].join(",")})`); } catch (e) { /* debug log */ }
         this.renderSessionEntries(entries, {
             updateFooter: true,
             populateHistory: true,
@@ -3294,6 +3295,7 @@ export class InteractiveMode {
                 } catch (e) { console.error("[god.frontend.tui/overrides/modes/interactive/interactive-mode.js] " + (e?.message || e)); }
                 // 通知 agent 已转后台（同 /h 的 display-hidden 消息）
                 try { globalThis.__genshinSendCustomMessage?.("display-hidden", "用户按 Ctrl+C 已把你转换为后台运行模式。用户不会看到你的运行过程，但你的运行一切不变：照常干活、照常收消息、照常回报。"); } catch (e) { console.error("[god.frontend.tui/overrides/modes/interactive/interactive-mode.js] " + (e?.message || e)); }
+                globalThis.__genshinDetaching = true;
             }
             void this.shutdown();
         }

@@ -478,7 +478,21 @@ export default function registerMemory(pi: ExtensionAPI) {
   // estimateTokens 已提取到 paths.ts（唯一真相源），通过 #paths 导入
 
   // ── 模型窗口 ─────────────────────────────────────────────────────
-  const modelMax = parseInt(process.env.PI_MODEL_MAX_TOKENS || "") || 1000000;
+  // 2026-09-11（prime-agent，ISSUE 147 顺带修）：原来只读 PI_MODEL_MAX_TOKENS —— 但全仓没有任何地方
+  // 设置它，于是 modelMax 实际永远是兜底 1M：256K 本地模型也被当成 1M（保护区/容量阈值全按 1M 算）。
+  // 现在优先用 live 模型的 contextWindow（与 status.ts 同源：__genshinGetModel()，TUI 注册），
+  // 其次环境变量，最后 1M 兜底；并允许在每次调用时刷新（TUI 在扩展加载之后才注册该全局，加载时读不到）。
+  let modelMax = 1000000;
+  function _refreshModelMax(): void {
+    let win = 0;
+    try {
+      const w = (globalThis as any).__genshinGetModel?.()?.contextWindow;
+      if (typeof w === "number" && w > 0) win = w;
+    } catch (e) { /* 取不到就用环境变量/兜底 */ }
+    if (!win) win = parseInt(process.env.PI_MODEL_MAX_TOKENS || "") || 0;
+    modelMax = win > 0 ? win : 1000000;
+  }
+  _refreshModelMax();
   let injectedWorkMemLen = 0; // 已注入对话的 work_memory 长度，之后只追加增量
   // 注：铁律【禁止 slice】——没有注入预算、没有切片函数。整份注入，容量靠 sleep/nap 控。
 
@@ -784,7 +798,14 @@ export default function registerMemory(pi: ExtensionAPI) {
   // ── Hash-lock ──
   const _amemSeed = randomBytes(16).toString("hex");
   const _pendingKeys = new Map<string, { ctxHash: string; data: any; ts: number }>();
-  const RECENT_PROTECT_TOKENS = 100000;
+  // 尾部保护区（ISSUE 147）：从硬编码 100K 改成「窗口的 10%，下限 20K」——
+  // 对 1M 模型结果仍是 100K（行为不变），对 256K 本地模型则是 25.6K（原来是 100K = 真实窗口的 39%，等于砍掉一半可用 context）。
+  let RECENT_PROTECT_TOKENS = 100000;
+  function _refreshAmemLimits(): void {
+    _refreshModelMax();
+    RECENT_PROTECT_TOKENS = Math.max(20000, Math.floor(modelMax * 0.1));
+  }
+  _refreshAmemLimits();
 
   // hash 归一化：check→apply 之间 context.md 必然会被追加 agent 自身产生的记录
   // （amem 的 toolCall 压缩记录、assistant 的 think/text、amem 的 toolResult）。
@@ -1165,6 +1186,7 @@ export default function registerMemory(pi: ExtensionAPI) {
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       if (!personDir) return { content: [{ type: "text", text: "ERR: No person directory." }], details: {}, isError: true };
       if (getSessionRole() !== "main") return { content: [{ type: "text", text: "ERR: Only main session." }], details: {}, isError: true };
+      _refreshAmemLimits(); // ISSUE 147：按当前模型窗口刷新保护区/容量阈值（切模型后也能跟上）
 
       const contextPath = path.join(personDir, "context.md");
       const manageDir = path.join(personDir, "ActiveManage");

@@ -27,6 +27,7 @@ export async function detachHandler(_args: any, ctx: any) {
     const pid = (globalThis as any).__genshinPersonId || process.env.PAIMON_AGENT_ID || "";
     if (pid) spawnHeadlessBg(pid, "user-detach");
   } catch (e) { console.error("[god.frontend.tui/commands/detach.ts] " + ((e as any)?.message || e)); }
+  (globalThis as any).__genshinDetaching = true;
   ctx.shutdown();
 }
 
