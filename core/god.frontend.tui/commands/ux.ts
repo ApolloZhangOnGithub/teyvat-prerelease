@@ -48,8 +48,12 @@ export async function viewHandler(_args: any, ctx: any) {
       { id: "toolExpanded", label: T("工具输出", "Tool Output"), currentValue: toolMode, values: [T("摘要", "Summary"), T("完整", "Full")] },
     ];
     if (toolExpanded) {
+      const writeExpanded = (globalThis as any).__genshinWriteExpanded ?? false;
+      const editExpanded = (globalThis as any).__genshinEditExpanded ?? true;
       toolItems.push(
         { id: "readExpanded", label: T("  Read", "  Read"), currentValue: readMode, values: [T("摘要", "Summary"), T("完整", "Full")] },
+        { id: "writeExpanded", label: T("  Write", "  Write"), currentValue: writeExpanded ? T("完整", "Full") : T("摘要", "Summary"), values: [T("摘要", "Summary"), T("完整", "Full")] },
+        { id: "editExpanded", label: T("  Edit", "  Edit"), currentValue: editExpanded ? T("完整", "Full") : T("摘要", "Summary"), values: [T("摘要", "Summary"), T("完整", "Full")] },
         { id: "executeDisplay", label: T("  Execute 调用", "  Execute Call"), currentValue: exeCallMode, values: [T("仅标题", "Title"), T("标题+命令", "Title+Cmd"), T("仅命令", "Cmd")] },
         { id: "compactExecute", label: T("  Execute 结果", "  Execute Result"), currentValue: exeResultMode, values: [T("摘要", "Summary"), T("完整", "Full")] },
       );
@@ -91,15 +95,27 @@ export async function viewHandler(_args: any, ctx: any) {
         break;
       }
       case "toolExpanded": {
-        const expanded = value === T("展开", "Expanded");
+        const expanded = value === T("完整", "Full");
         const handler = (globalThis as any).__genshinToggleToolExpand;
         if (handler) handler(expanded);
         break;
       }
       case "readExpanded": {
-        const expanded = value === T("展开", "Expanded");
+        const expanded = value === T("完整", "Full");
         (globalThis as any).__genshinReadExpanded = expanded;
         save("readExpanded", expanded);
+        break;
+      }
+      case "writeExpanded": {
+        const expanded = value === T("完整", "Full");
+        (globalThis as any).__genshinWriteExpanded = expanded;
+        save("writeExpanded", expanded);
+        break;
+      }
+      case "editExpanded": {
+        const expanded = value === T("完整", "Full");
+        (globalThis as any).__genshinEditExpanded = expanded;
+        save("editExpanded", expanded);
         break;
       }
       case "executeDisplay": {
@@ -109,7 +125,7 @@ export async function viewHandler(_args: any, ctx: any) {
         break;
       }
       case "compactExecute": {
-        const compact = value === "Compact";
+        const compact = value === T("摘要", "Summary");
         (globalThis as any).__genshinCompactExecute = compact;
         save("compactExecute", compact);
         break;

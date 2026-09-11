@@ -462,6 +462,8 @@ export class InteractiveMode {
         if (this.settingsManager?.globalSettings?.executeDisplay !== undefined) globalThis.__genshinExecuteDisplay = this.settingsManager.globalSettings.executeDisplay;
         if (this.settingsManager?.globalSettings?.tokenmaxxedColorful !== undefined) globalThis.__genshinTokenmaxxedColorful = this.settingsManager.globalSettings.tokenmaxxedColorful;
         if (this.settingsManager?.globalSettings?.showPinDev !== undefined) globalThis.__genshinShowPinDev = this.settingsManager.globalSettings.showPinDev;
+        if (this.settingsManager?.globalSettings?.writeExpanded !== undefined) globalThis.__genshinWriteExpanded = this.settingsManager.globalSettings.writeExpanded;
+        if (this.settingsManager?.globalSettings?.editExpanded !== undefined) globalThis.__genshinEditExpanded = this.settingsManager.globalSettings.editExpanded;
         // Expose session for /m /e commands
         globalThis.__genshinSetModel = (model) => this.session.setModel(model);
         globalThis.__genshinSetThinkingLevel = (level) => this.session.setThinkingLevel(level);
