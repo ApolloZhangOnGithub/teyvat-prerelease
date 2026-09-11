@@ -2403,7 +2403,11 @@ export class InteractiveMode {
                 if (this.isExtensionCommand(text)) {
                     await this.session.prompt(text);
                 } else {
-                    this.session.abort();
+                    // 2026-09-11（prime-agent，ISSUE 174 / LESSON 080 的漏网实例）：
+                    // session.abort() 是 async（agent-session.js:1221 `async abort() { ...; await this.waitForIdle(); }`）。
+                    // 这里原来不 await 就立刻 prompt(steer) → abort 信号已发、loop 未停 → steer 被正在 abort 的 turn 吞掉：
+                    // 用户消息静默丢失 / UI 卡死（这正是 ISSUE 174 的根因，下面 normal 分支 2419-2424 已按此修过，这条路径漏了）。
+                    await this.session.abort();
                     await this.session.prompt(text, { streamingBehavior: "steer" });
                 }
                 this.ui.requestRender();

@@ -59,7 +59,7 @@ if command -v python3 >/dev/null 2>&1; then
   else
     warn "未找到 trafilatura — web fetch 正文过滤(auto)不可用，尝试自动安装..."
     if command -v pip3 >/dev/null 2>&1; then
-      if [ "$(id -u)" = "0" ]; then pip3 install trafilatura 2>&1 | tail -2; else sudo pip3 install trafilatura 2>&1 | tail -2; fi
+      if [ "$(id -u)" = "0" ]; then pip3 install trafilatura 2>&1 | tail -2; else pip3 install --user trafilatura 2>&1 | tail -2; fi
     fi
     if python3 -c "import trafilatura" >/dev/null 2>&1; then ok "trafilatura 已自动安装 (正文提取)"; else warn "trafilatura 自动安装失败 — web fetch 将 fallback（手动: pip3 install trafilatura）"; DEP_WARN=1; fi
   fi
@@ -97,7 +97,7 @@ if [ "$(uname)" != "Darwin" ] && command -v python3 >/dev/null 2>&1; then
     warn "未找到 rapidocr — Linux OCR (eyes ocr) 不可用，尝试自动安装..."
     _RAPIDOCR_INSTALL="pip3 install rapidocr_onnxruntime onnxruntime pillow"
     if command -v pip3 >/dev/null 2>&1; then
-      if [ "$(id -u)" = "0" ]; then $_RAPIDOCR_INSTALL 2>&1 | tail -2; else sudo $_RAPIDOCR_INSTALL 2>&1 | tail -2; fi
+      if [ "$(id -u)" = "0" ]; then $_RAPIDOCR_INSTALL 2>&1 | tail -2; else $_RAPIDOCR_INSTALL --user 2>&1 | tail -2; fi
     fi
     if python3 -c "import rapidocr_onnxruntime" >/dev/null 2>&1; then ok "rapidocr 已自动安装 (Linux OCR)"; else warn "rapidocr 自动安装失败 — eyes ocr 在 Linux 不可用（手动: pip3 install rapidocr_onnxruntime onnxruntime pillow）"; DEP_WARN=1; fi
   fi
@@ -114,7 +114,7 @@ if command -v python3 >/dev/null 2>&1; then
   if [ -n "$_OFFICE_MISS" ]; then
     warn "未找到 office 读取包:$_OFFICE_MISS — 自动安装..."
     if command -v pip3 >/dev/null 2>&1; then
-      if [ "$(id -u)" = "0" ]; then pip3 install python-docx python-pptx openpyxl PyMuPDF xlrd 2>&1 | tail -2; else sudo pip3 install python-docx python-pptx openpyxl PyMuPDF xlrd 2>&1 | tail -2; fi
+      if [ "$(id -u)" = "0" ]; then pip3 install python-docx python-pptx openpyxl PyMuPDF xlrd 2>&1 | tail -2; else pip3 install --user python-docx python-pptx openpyxl PyMuPDF xlrd 2>&1 | tail -2; fi
     fi
     _OFFICE_MISS2=""
     for dep in $OFFICE_PYDEPS; do

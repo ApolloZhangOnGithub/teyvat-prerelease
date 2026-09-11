@@ -623,6 +623,24 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
+    // ── Social pending：回合结束必 drain（把"有消息就不允许睡"提成函数，2026-09-11 prime-agent）──
+    // 原实现只有下面一处内联调用，而它在下面阻塞态 `return` 之后 —— resting/hibernated 永远走不到，
+    // 与注释里"无论状态"的说法相反。后果：agent wait 期间到达的 queue 消息要等 wait 跑完才被看见
+    //（实测 wait 工具本身没有任何 pending 消息处理逻辑，hibernate 工具只在"进入休眠前"拒一次）。
+    // 语义边界（与别处保持一致，别扩大）：
+    //   working/resting → drain 并唤醒（resting 唤醒也是 message_start 里 line 214 的既有语义）
+    //   hibernated      → 不唤醒（message_start 注释：queue/deferred 等用户回来；只有 interrupt 唤醒）
+    //   paused          → 不唤醒（不可恢复错误/ESC/用户 /pause 的硬停，最忌讳拿余额不足的 key 重试）
+    const tryDrainPendingEarly = (): boolean => {
+      const intentions0 = getIntentions();
+      const drainedEarly = intentions0 ? drainPendingSocialWithMeta(10, "queue") : drainPendingSocialWithMeta(10);
+      if (!drainedEarly) return false;
+      if (heartState() !== "working") transition({ kind: "working" }); // ISSUE 125：打断 wait（否则注入被吞）
+      dlog(`agent_end: social pending → inject (${drainedEarly.text.length} chars)`);
+      setTimeout(() => { sendCustomMessage(pi, "social-message", drainedEarly.text, drainedEarly.meta); }, 0);
+      return true;
+    };
+
     // 阻塞态不续命（wait/hibernate/pause 的 transition 已在工具里完成）
     // 注意：不调 setWorkingVisible(false)，否则会清掉 wait 的倒计时和 hibernate/pause 的状态文字
     if (heartState() === "hibernated" || heartState() === "paused" || heartState() === "resting") {
@@ -640,6 +658,9 @@ export default function (pi: ExtensionAPI) {
           }
         } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
       }
+      // 2026-09-11 prime-agent：resting（wait 中）也要 drain —— 否则 wait 期间到达的 agent 消息要等
+      // wait 跑完才被看见（wait 工具自身不处理 pending）。hibernated/paused 仍然硬停（见上面的语义边界注释）。
+      if (heartState() === "resting" && tryDrainPendingEarly()) return;
       return;
     }
 
@@ -735,16 +756,7 @@ export default function (pi: ExtensionAPI) {
     // 原 drain 在下方 calledWait/calledHibernate return 之后且要求 working 状态——
     // “回复完就 wait/hibernate”的 agent：回合结束时状态已是 resting/hibernated → drain 被双重跳过 → pending 永远滞留（实测 test-01 重启后 queue 依然 pending）。
     // 修复：有 pending 时无论状态，先打断阻塞态（transition working，否则注入被吞）+ 立即注入开新回合处理——有消息就不允许睡。
-    {
-      const intentions0 = getIntentions();
-      const drainedEarly = intentions0 ? drainPendingSocialWithMeta(10, "queue") : drainPendingSocialWithMeta(10);
-      if (drainedEarly) {
-        if (heartState() !== "working") transition({ kind: "working" }); // ISSUE 125：打断 wait/hibernate（否则注入被吞）
-        dlog(`agent_end: social pending → inject (${drainedEarly.text.length} chars)`);
-        setTimeout(() => { sendCustomMessage(pi, "social-message", drainedEarly.text, drainedEarly.meta); }, 0);
-        return; // 消息已注入开新回合处理，本轮不走续命/wait 路径
-      }
-    }
+    if (tryDrainPendingEarly()) return; // 消息已注入开新回合处理，本轮不走续命/wait 路径
 
     // wait/hibernate 工具已调用 → 状态已转移，不续命（上面的阻塞态检查兜底）
     const calledWait = (last as any).content?.some?.((c: any) => c.type === "toolCall" && c.name === "wait");

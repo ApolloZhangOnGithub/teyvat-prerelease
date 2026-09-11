@@ -1105,7 +1105,7 @@ export class AgentSession {
             this._pendingBatchMessages.push(appMessage);
             clearTimeout(this._batchTimer);
             if (this._isAgentRunActive) {
-                try { this.abort(); } catch (e) { console.error("[god.frontend.tui/overrides/pi-dist/core/agent-session.js] " + (e?.message || e)); }
+                try { this.abort().catch((e) => console.error("[god.frontend.tui/overrides/pi-dist/core/agent-session.js] interrupt: abort() rejected: " + (e?.message || e))); } catch (e) { console.error("[god.frontend.tui/overrides/pi-dist/core/agent-session.js] " + (e?.message || e)); }
             }
             this._batchTimer = setTimeout(() => this._flushBatch(), 30);
         }
