@@ -184,6 +184,7 @@ while [ $# -gt 0 ]; do
     --hippocampus|-hc) MODE="hc"; shift;;
     --web|-w) MODE="web"; shift;;
     --detail|-D) export PAIMON_DETAIL=1; shift;;
+    --silent) export PAIMON_SILENT=1; shift;;
     --settings|-s) MODE="settings"; shift;;
     --help|-h)
       node "$PAIMON_LIST_JS" "$PLIST" "$MEMORY_DIR" "$PAIMON_LANG" help

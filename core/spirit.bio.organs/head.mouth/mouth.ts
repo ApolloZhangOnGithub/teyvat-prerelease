@@ -1,7 +1,7 @@
 // 文档: B.docs/Dev.Common/Wiki/Mouth(Organ).WIKI
 // 文档: B.docs/Dev.Common/Wiki/Dependents(Bio Service Support).WIKI
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { type ChildProcess, spawn, execSync } from "node:child_process";
+import { type ChildProcess, spawn, execSync, execFileSync } from "node:child_process";
 import { writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { platform, homedir } from "node:os";
@@ -17,7 +17,8 @@ function audioPlayer(): { cmd: string; args: string[] } {
     { cmd: "cvlc",   args: ["--play-and-exit", "--quiet"] },
   ];
   for (const c of candidates) {
-    try { execSync(`which ${c.cmd}`, { stdio: "ignore" }); _cachedPlayer = c; return c; } catch (e) { console.error("[spirit.bio.organs/head.mouth/mouth.ts] " + ((e as any)?.message || e)); }
+    // 2026-09-11：which 探测改为 execFileSync（argv 数组，不经 shell）—— 原 execSync(`which ${c.cmd}`) 是拼 shell
+    try { execFileSync("which", [c.cmd], { stdio: "ignore" }); _cachedPlayer = c; return c; } catch (e) { console.error("[spirit.bio.organs/head.mouth/mouth.ts] " + ((e as any)?.message || e)); }
   }
   _cachedPlayer = { cmd: "ffplay", args: ["-nodisp", "-autoexit", "-loglevel", "quiet"] };
   return _cachedPlayer;

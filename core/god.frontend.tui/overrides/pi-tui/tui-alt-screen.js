@@ -405,11 +405,11 @@ export class TuiAltScreen extends TuiBase {
         if (dt <= 0 || dt >= 250) {
             this._wheelVel = 1;
         } else {
-            const r = 16 / Math.max(dt, 8);
-            const inst = Math.min(16, Math.max(1, Math.round(13 * Math.pow(r, 2.5))));
+            // 线性映射 + 平滑（减少突变感）：dt 8ms→8行, 16ms→4行, 32ms→2行, 64ms+→1行
+            const inst = Math.min(10, Math.max(1, Math.round(64 / Math.max(dt, 8))));
             this._wheelVel = inst > this._wheelVel
-                ? Math.round(this._wheelVel + (inst - this._wheelVel) * 0.7)   // 加速快到位
-                : Math.round(this._wheelVel + (inst - this._wheelVel) * 0.3);  // 减速平滑
+                ? Math.round(this._wheelVel + (inst - this._wheelVel) * 0.5)   // 加速平滑
+                : Math.round(this._wheelVel + (inst - this._wheelVel) * 0.4);  // 减速平滑
         }
         let remaining = event.direction * this.wheelScrollLines * this._wheelVel;
         const seen = new Set();

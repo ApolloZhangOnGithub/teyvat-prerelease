@@ -1,6 +1,6 @@
 // arxiv.ts — Arxiv 论文搜索 (MobileApp)
 import type { MobileApp } from "../../system.kernel/kernel.ts";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 
 const TOOL = join(import.meta.dirname || ".", "arxiv-search.py");
@@ -36,7 +36,10 @@ export const app: MobileApp = {
       query = query.trim();
       if (!query) return { screen: "用法: 搜索 <关键词> [-n N]", state };
       try {
-        const r = execSync(`python3 "${TOOL}" "${query}" -n ${n}`, { encoding: "utf8", timeout: 15000 });
+        // 2026-09-11（prime-agent）安全修复：原来是 execSync 拼 shell（`python3 "${TOOL}" "${query}" -n ${n}`）——
+        // query 是 agent 输入，双引号挡不住 `$()`/反引号展开、query 里带 `"` 还能破引号逃逸；
+        // 而且这条路径不经过 validateExecute。改为 argv 数组（不经 shell）。
+        const r = execFileSync("python3", [TOOL, query, "-n", n], { encoding: "utf8", timeout: 15000 });
         return { screen: r || "(无结果)", state };
       } catch (e: any) {
         return { screen: `搜索失败: ${e.stderr || e.message}`, state };

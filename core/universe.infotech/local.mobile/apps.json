@@ -1,12 +1,12 @@
 {
-  "generated": "2026-09-11T16:06:25.387Z",
+  "generated": "2026-09-11T16:15:48.181Z",
   "apps": [
     {
       "name": "amap",
       "dir": "amap",
       "tier": "apps",
-      "build": 2,
-      "md5": "e5bebda3cbc3d8a4897b38bdd0a0151f",
+      "build": 3,
+      "md5": "88992de6869839d4408eb0714922984f",
       "file": "amap.ts",
       "handler": "code"
     },
@@ -23,8 +23,8 @@
       "name": "arxiv",
       "dir": "arxiv",
       "tier": "apps",
-      "build": 4,
-      "md5": "aba8eb5c79431aeb31f5de4499a80f76",
+      "build": 5,
+      "md5": "e654ec82f1b010b79cc66741c1ccbead",
       "file": "arxiv.ts",
       "handler": "code"
     },

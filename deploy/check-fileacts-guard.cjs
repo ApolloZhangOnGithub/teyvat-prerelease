@@ -82,12 +82,25 @@ console.log("FAILS=" + fails);
 const probePath = path.join(os.tmpdir(), "fileacts-guard-probe-" + process.pid + ".ts");
 fs.writeFileSync(probePath, probe);
 let out = "", skipped = false;
+const runProbe = () => execFileSync(process.execPath, ["--experimental-strip-types", probePath], { encoding: "utf8", timeout: 60000 });
 try {
-  out = execFileSync(process.execPath, ["--experimental-strip-types", probePath], { encoding: "utf8", timeout: 60000 });
+  out = runProbe();
 } catch (e) {
   const msg = String(e.stderr || e.message);
   if (/strip-types|Unknown option|bad option/i.test(msg)) skipped = true;
-  else { console.error("[fileacts-guard] FAIL: 探针执行失败: " + msg.split("\n").slice(0, 3).join(" / ")); process.exit(1); }
+  else if (/ERR_MODULE_NOT_FOUND|Cannot find module/.test(msg) && !/\/A\.core\//.test(msg)) {
+    // 部署窗口：别的构建正在跑 install.sh（rsync --delete + patch），此刻从线上 runtime 解析模块会缺文件
+    // —— 属 ISSUE 148 那个"rsync 非原子窗口"，不是本仓库代码坏了 → SKIP（静态检查已通过）。
+    // 但若缺的是 A.core 内部的模块，那就是真坏 → 继续 FAIL。
+    // 先等 5 秒重试一次（并发构建的部署窗口通常几秒就过去），仍失败才 SKIP
+    try {
+      execFileSync("sleep", ["5"]);
+      out = runProbe();
+    } catch {
+      skipped = true;
+      console.log("[fileacts-guard] SKIP 动态用例：命中部署窗口（线上 runtime 模块暂时缺失，已重试一次）——" + msg.split("\n")[0].slice(0, 120));
+    }
+  } else { console.error("[fileacts-guard] FAIL: 探针执行失败: " + msg.split("\n").slice(0, 3).join(" / ")); process.exit(1); }
 } finally { try { fs.unlinkSync(probePath); } catch { /* 清理失败无所谓 */ } }
 
 if (skipped) {

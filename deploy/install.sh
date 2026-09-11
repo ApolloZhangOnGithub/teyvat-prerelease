@@ -484,6 +484,8 @@ LAUNCHER_SRC="$IMPL/god.frontend.cli/launcher.sh"
 if [ -f "$LAUNCHER_SRC" ]; then
   cp "$LAUNCHER_SRC" "$HOME/.local/bin/genshin"
   chmod +x "$HOME/.local/bin/genshin"
+  # 2026-09-12：touch 强制更新 mtime——让快照重建逻辑检测到源比快照新
+  touch "$HOME/.local/bin/genshin"
 fi
 ok "launcher"
 

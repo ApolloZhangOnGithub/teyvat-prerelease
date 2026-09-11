@@ -1,12 +1,18 @@
 // apps/amap/amap.ts — 高德地图 MobileApp
 import type { MobileApp } from "../../system.kernel/kernel.ts";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 
 const SCRIPT = `${__dirname}/amap.ts-support.py`;
 
 function run(cmd: string): string {
   try {
-    return execSync(`python3 ${SCRIPT} ${cmd}`, { timeout: 15000 }).toString().trim();
+    // 2026-09-11（prime-agent）安全修复：原来是 `execSync(`python3 ${SCRIPT} ${cmd}`)` —— **未加引号**地把
+    // agent 通过 mobile 工具传进来的文本拼进 shell：`cmd` 里的 `;` / `$()` / 反引号都会被执行，
+    // 而且这条路径**不经过** validateExecute（execute 工具才走守卫）→ 等于绕过了"禁止 rm / 禁止碰他人数据目录"。
+    // 改为 execFileSync + argv 数组（完全不经 shell）。调用方（onAction）本来就是按空白分词拼 cmd 的，
+    // 所以这里按空白切词与原先的 shell 分词语义等价。
+    const args = cmd.trim().split(/\s+/).filter(Boolean);
+    return execFileSync("python3", [SCRIPT, ...args], { timeout: 15000 }).toString().trim();
   } catch (e: any) {
     return `错误: ${e.message}`;
   }

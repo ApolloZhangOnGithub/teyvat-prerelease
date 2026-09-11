@@ -4,7 +4,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { SYNC_ENDPOINT_DEFAULT, estimateTokens, writeFileAtomic } from '../paths.ts';
 
@@ -372,7 +372,9 @@ function enterAgent(name: string, mode='') {
   // Mobile
   if(mode==='mobile'){
     const devCli=path.join(EXT,'god.frontend.cli','cli.ts');
-    try{ execSync(`node ${devCli} ${mode} ${id} ${pname}`,{stdio:'inherit'}) }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); }
+    // 2026-09-11（prime-agent）：原来是 execSync 拼 shell —— 虽然 id/pname 此刻都受校验（8 位 hex / 名字正则），
+    // 但一旦上游放宽校验就变成注入面。改为 argv 数组（不经 shell），语义一致。
+    try{ spawnSync(process.execPath, [devCli, mode, id as string, pname as string],{stdio:'inherit'}) }catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); }
     process.exit(0);
   }
 
@@ -497,7 +499,10 @@ function cmdSettings() {
 // ═══════════════════════════════════════════════════════════════════
 function cmdNote(id?: string, msg?: string) {
   const nc = path.join(EXT, 'god.frontend.cli/note.cjs');
-  if (!id) { execSync(`node ${JSON.stringify(nc)}`, { stdio: 'inherit' }); return }
+  // 2026-09-11（prime-agent）安全修复：原来用 execSync 拼 shell 执行 `node <脚本> <id> <JSON.stringify(msg)>` ——
+  // JSON 的双引号挡不住 `$()` 与反引号展开，且 id 未加引号 → agent 传的文本会被 shell 解释。
+  // 改为 spawnSync + argv 数组（不经 shell），行为等价。
+  if (!id) { spawnSync(process.execPath, [nc], { stdio: 'inherit' }); return }
   const p = path.join(PAIMON, 'MemoryData');
   if (!fs.existsSync(p + '/' + id)) {
     // agent may be offline — search plist
@@ -507,7 +512,7 @@ function cmdNote(id?: string, msg?: string) {
     id = found.id;
   }
   try {
-    execSync(`node ${JSON.stringify(nc)} ${id} ${msg ? JSON.stringify(msg) : ''}`, { stdio: 'inherit' });
+    spawnSync(process.execPath, msg ? [nc, id as string, msg] : [nc, id as string], { stdio: 'inherit' });
   } catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); }
 }
 
