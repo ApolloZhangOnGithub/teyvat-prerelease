@@ -247,7 +247,7 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
     // → Task title done in X.Xs at HH:MM:SS（exit 0 不显示）
     const exitPart = exitCode !== undefined && exitCode !== 0 ? `, exit ${theme.bold(String(exitCode))}` : "";
     const titlePart = title ? `"${title}" ` : "";
-    const line1 = indent + theme.fg("dim", "→  ") + `${titlePart}Done in ${theme.bold(elapsedFmt)}${exitPart}${remPart}` + theme.fg("dim", ` at ${timeFmt}`);
+    const line1 = theme.fg("dim", "→") + ` ${titlePart}Done in ${theme.bold(elapsedFmt)}${exitPart}${remPart}` + theme.fg("dim", ` at ${timeFmt}`);
     c.addChild(new Text(line1, 0, 0));
     // [PRESERVED] 旧版两行渲染（→ Result 头 + Executed 详情行）：
     // const d = isError ? theme.fg("error", "→") : theme.fg("result", "→");
