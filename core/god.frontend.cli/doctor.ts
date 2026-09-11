@@ -6,7 +6,10 @@ import * as os from 'node:os';
 import { execSync } from 'node:child_process';
 
 const H = os.homedir();
-const PAIMON = path.join(H, '.teyvat');
+// 2026-09-11（prime-agent）：原来硬编码 ~/.teyvat，忽略 PAIMON_HOME —— 后果：用 PAIMON_HOME 指向别处
+// （测试实例/沙箱/多实例排查）跑 doctor 时会**静默检查默认家目录**，报的却不是那套数据；也让 doctor 无法被测试。
+// 现在与 launcher 同源：PAIMON_HOME 优先，缺省 ~/.teyvat。
+const PAIMON = process.env.PAIMON_HOME || path.join(H, '.teyvat');
 const PLIST = path.join(PAIMON, 'MemoryData', 'plist.json');
 
 function vw(s: string): number { let w=0; for(const c of [...String(s)]){ const cp=c.codePointAt(0); w+=(cp&&cp>0x2E7F)?2:1 } return w }
@@ -182,12 +185,32 @@ export function cmdDoctor() {
     try{ psOut=execSync('ps aux',{encoding:'utf8'}) }catch{ /* ps 失败 */ }
     const running=active.filter((p:any)=>psOut.split('\n').some((l:string)=>l.includes('genshin:')&&l.includes('(main,')&&l.includes(p.id)));
     ok('process',`${running.length} 个 agent 正在运行`);
+
+    // dual-instance（2026-09-11 prime-agent，ISSUE 151/182）：同一 sid + 同一角色出现多个存活实例。
+    // 为什么值得单独报：孤儿实例（如 check-session-01 的 26515 跑了 2 天）会抢 trigger / 吞跨设备消息，
+    // 而列表/launcher 只看 main.pid —— 两个实例都"活跃"，从列表上完全看不出来。
+    try {
+      const groups: Record<string, string[]> = {};
+      for (const l of psOut.split('\n')) {
+        const m = l.match(/genshin:[^(]+\(([a-z]+),([0-9a-f]{8}),([0-9a-f]+)\)/);
+        if (!m) continue;
+        const key = `${m[2]}(${m[1]})`;
+        (groups[key] = groups[key] || []).push(`${l.trim().split(/\s+/)[1]}:${m[3].slice(0,8)}`);
+      }
+      const dup = Object.entries(groups).filter(([, v]) => v.length > 1);
+      if (dup.length) {
+        const desc = dup.slice(0,4).map(([k,v])=>`${k} → ${v.join(', ')}`).join(' | ');
+        const msg = `${dup.length} 组同 sid 多实例: ${desc}`;
+        if (!skipIgnored('dual-instance', msg)) warn('dual-instance', `${msg}（残留实例会抢 trigger / 吞消息，见 ISSUE 151/182；确认后 kill 多余 pid）`);
+      } else ok('dual-instance','无同 sid 多实例');
+    } catch (e) { /* ps 解析失败：不阻塞其它检查 */ }
   }
 
   // pid-stale
   {
     const WINDOW_MS = 90 * 1000;
-    let stale=0, recent=0, historical=0, nofile=0;
+    let stale=0, recent=0, historical=0, nofile=0, invalid=0;
+    const invalidList: string[] = [];
     const now = Date.now();
     for(const p of list){
       const pidFile=path.join(PAIMON,'MemoryData',p.id,'main.pid');
@@ -195,18 +218,30 @@ export function cmdDoctor() {
         const st = fs.statSync(pidFile);
         if (now - st.mtimeMs > WINDOW_MS) { historical++; continue; }
         recent++;
-        const pid=parseInt(fs.readFileSync(pidFile,'utf8').trim());
+        const raw=(fs.readFileSync(pidFile,'utf8')||'').trim();
+        const pid=parseInt(raw,10);
+        if(!pid){
+          // 2026-09-11（prime-agent，ISSUE 182）：内容无效但心跳新鲜 = **pid 文件损坏**（不是"进程死了"）。
+          // 原实现落进 kill(NaN) → 报"PID 已死"，方向错、会误导排查；线上 379e262b（0 字节 + 双实例）就是这样被漏掉的。
+          invalid++;
+          if(invalidList.length<5) invalidList.push(`${p.name}(${raw?`内容[${raw.slice(0,20)}]`:'0 字节'})`);
+          continue;
+        }
         try{ process.kill(pid,0) }catch{ stale++ }
       }catch(e: any){
         if (e?.code === 'ENOENT') { nofile++; }
       }
     }
-    const extra = `${historical?`，历史残留 ${historical}`:''}${nofile?`，未运行 ${nofile}`:''}`;
+    const extra = `${historical?`，历史残留 ${historical}`:''}${nofile?`，未运行 ${nofile}`:''}${invalid?`，pid 文件损坏 ${invalid}`:''}`;
+    if(invalid){
+      const msg = `${invalid} 个近期活跃 agent 的 main.pid 内容无效（心跳新鲜 → 文件损坏，不是进程已死）: ${invalidList.join(', ')}`;
+      if(!skipIgnored('pid-invalid', msg)) warn('pid-invalid', `${msg}；确认没有重复实例后 rm -f 对应 main.pid（ISSUE 182）`);
+    }
     if(stale) {
       if (!skipIgnored('pid-stale', `${stale} 个近期活跃 agent 的 PID 已死`)) warn('pid-stale',`${stale} 个近期活跃 PID 已死${extra}`);
     }
-    else if(recent>0) ok('pid-stale',`${recent} 个近期活跃 PID 均有效${extra}`);
-    else ok('pid-stale',`无近期活跃 agent${extra}`);
+    else if(recent>0 && !invalid) ok('pid-stale',`${recent} 个近期活跃 PID 均有效${extra}`);
+    else if(recent===0 && !invalid) ok('pid-stale',`无近期活跃 agent${extra}`);
   }
 
   // org
