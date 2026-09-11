@@ -359,7 +359,8 @@ function cmdNow(): boolean {
   if (ok) {
     console.log(`  ${G}✓${R} ${T('备份完成', 'backup done')} ${D}${secs}s${R}`);
     log(`backup ok ${secs}s`);
-    writeStatus('ok', { snapshots: countSnapshots(bin, conf), last: new Date().toISOString() });
+    const _now = new Date(); const _local = `${_now.getFullYear()}-${String(_now.getMonth()+1).padStart(2,"0")}-${String(_now.getDate()).padStart(2,"0")} ${String(_now.getHours()).padStart(2,"0")}:${String(_now.getMinutes()).padStart(2,"0")}`;
+    writeStatus('ok', { snapshots: countSnapshots(bin, conf), last: _local });
     reportRemote(true, `ok ${secs}s`);
   } else {
     const tail = failDetail.trim().split('\n').slice(-4).join('\n');
@@ -417,6 +418,53 @@ export async function cmdBackup(rest: string[] = []): Promise<void> {
     default:
       console.log(`  ${T('用法', 'usage')}: genshin b [config|init|now|status]`);
   }
+}
+
+// ── 自动备份调度（每小时，有变更才上传）─────────────────────────────
+// 2026-09-12 从 brain.bioclock/bioclock.ts 移入（genshin-v0.3.2-dev-01 误放到 bioclock，
+// 备份调度不属于时间感知器官的职责——bioclock 只管时间戳和日期通知）。
+// 调用方：kernel.core 启动时 import { startAutoBackup } 并调用。
+export function startAutoBackup(): void {
+  const home = process.env.PAIMON_HOME || path.join(os.homedir(), '.teyvat');
+  const stateFile = path.join(home, 'LogData', 'backup-hourly.json');
+  const lockFile = stateFile + '.lock';
+  const extDir = process.env.PAIMON_EXT || path.join(os.homedir(), '.local/lib/teyvat/extensions/teyvat');
+
+  function hourKey(): string {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}T${String(d.getHours()).padStart(2,"0")}`;
+  }
+
+  function tick(): void {
+    try {
+      const h = hourKey();
+      let st: any = {};
+      try { st = JSON.parse(fs.readFileSync(stateFile, 'utf8')); } catch { /* 无/坏 → 空 */ }
+      if (st.lastRun === h) return;
+      // 抢占锁（同机多 agent 去重）
+      try { fs.writeFileSync(lockFile, JSON.stringify({ pid: process.pid, ts: Date.now(), hour: h }), { flag: 'wx' }); } catch {
+        let l: any = {};
+        try { l = JSON.parse(fs.readFileSync(lockFile, 'utf8')); } catch { /* 坏锁 → 可覆盖 */ }
+        if (l.hour === h && Date.now() - (l.ts || 0) < 10 * 60_000) return;
+        try { fs.writeFileSync(lockFile, JSON.stringify({ pid: process.pid, ts: Date.now(), hour: h })); } catch { return; }
+      }
+      try { fs.writeFileSync(stateFile, JSON.stringify({ lastRun: h, at: new Date().toISOString() })); } catch { /* 静默 */ }
+      const conf = getBackupConf();
+      if (!conf) return;
+      const script = path.join(extDir, 'god.frontend.cli', 'backup.ts');
+      if (!fs.existsSync(script)) return;
+      const { spawn } = require('node:child_process');
+      const ch = spawn('bun', [script, 'now'], { detached: true, stdio: 'ignore' });
+      ch.on('error', (e: any) => {
+        console.error("[backup.ts] auto-backup spawn failed: " + (e?.code || e?.message || e));
+        try { fs.writeFileSync(stateFile, JSON.stringify({ lastRun: '', error: String(e?.code || e?.message || e) })); } catch { /* 静默 */ }
+      });
+      ch.unref();
+    } catch (e) { console.error("[backup.ts] auto-backup tick: " + ((e as any)?.message || e)); }
+  }
+
+  tick();
+  setInterval(tick, 30 * 60_000);
 }
 
 // 允许直接 `bun backup.ts` 调用（调试用）

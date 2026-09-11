@@ -107,6 +107,8 @@ function detectRole(sessionFile?: string | null): string {
 }
 
 export default function kernelMain(pi: ExtensionAPI) {
+  // 自动备份调度（从 bioclock 迁入 backup.ts，此处启动）
+  try { const { startAutoBackup } = require("../../god.frontend.cli/backup.ts"); startAutoBackup(); } catch (e) { console.error("[kernel.core] startAutoBackup: " + ((e as any)?.message || e)); }
   // 2026-08-20：全局消息桥——命令层（god.frontend.tui/commands/）拿不到 pi，
   // 但 /h 等命令需要给 agent 注入通知消息（用户设计：/h 转后台时通知 agent，用 Life Restarted 管线渲染）。
   // 这里把 sendCustomMessage 挂到 globalThis 供命令层调用（backbone 强制所有消息走 sendCustomMessage）。

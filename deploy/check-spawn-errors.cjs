@@ -19,8 +19,9 @@ const WINDOW = 30;                                 // 调用点后 30 行内出�
 const EXTRA = [
   // [文件相对路径, 必须存在的字符串, 说明]
   ["spirit.bio.organs/head.ears/ears.ts", "录音进程启动失败", "bun 缺失时给出可读原因"],
-  ["spirit.bio.organs/brain.bioclock/bioclock.ts", 'last: ""', "备份 spawn 失败要把\"今天已处理\"清掉，否则整天不再重试"],
-  ["spirit.bio.organs/brain.bioclock/bioclock.ts", "每日备份 spawn 失败", "备份 spawn 失败要留日志"],
+  // 2026-09-12：备份调度从 bioclock 移至 backup.ts（bioclock 不该管备份——genshin-v0.3.2-dev-01 误放）
+  ["god.frontend.cli/backup.ts", "lastRun: ''", "备份 spawn 失败要把状态清掉，否则本小时不再重试"],
+  ["god.frontend.cli/backup.ts", "auto-backup spawn failed", "备份 spawn 失败要留日志"],
 ];
 
 function walk(dir, out = []) {

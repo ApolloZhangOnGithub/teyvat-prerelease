@@ -236,8 +236,10 @@ const _genshinBuiltinRenderers = {
                     removed++;
                     const p = parseLine(l.slice(1));
                     const ln = p.num || String(++oldLn).padStart(4);
+                    const hlDel = hlLines(p.content, filePath);
+                    const delContent = hlDel ? hlDel[0] || p.content : p.content;
                     rawMinusQueue.push({ content: p.content, ln, entryIdx: entries.length });
-                    entries.push({d: true, lines: buildDiffLines(FG_DEFAULT + p.content, ln, "-", FG_DEL_DECO), bg: BG_REMOVED});
+                    entries.push({d: true, lines: buildDiffLines(delContent, ln, "-", FG_DEL_DECO), bg: BG_REMOVED});
                 } else if (l.startsWith(" ") || l === "") {
                     rawMinusQueue.length = 0; // context 行重置配对队列
                     const p = parseLine(l.slice(1));
