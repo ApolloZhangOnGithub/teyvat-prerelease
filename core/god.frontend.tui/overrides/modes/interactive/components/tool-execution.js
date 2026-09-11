@@ -592,7 +592,7 @@ export class ToolExecutionComponent extends Container {
             }
             else {
                 // 已有 call 行则只更新 dot，不重建（防 updateArgs 二次渲染）
-                if (this.callRendererComponent && !this.result) {
+                if (this.callRendererComponent) {
                     const dot = blockDot(theme, { partial: this.isDotPartial(), error: this.isDotError() });
                     (function replaceDot(node) {
                         if (node && typeof node.text === 'string' && (node.text.includes('•') || node.text.includes('◦'))) {

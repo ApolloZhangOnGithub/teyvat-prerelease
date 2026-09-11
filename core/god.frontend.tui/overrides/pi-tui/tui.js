@@ -136,7 +136,7 @@ export class TuiBase extends Container {
     immediateRenderScheduled = false;
     renderTimer;
     lastRenderAt = 0;
-    static MIN_RENDER_INTERVAL_MS = 16;
+    static MIN_RENDER_INTERVAL_MS = 32;
     showHardwareCursor = process.env.PI_HARDWARE_CURSOR === "1";
     clearOnShrink = process.env.PI_CLEAR_ON_SHRINK === "1";
     fullRedrawCount = 0;

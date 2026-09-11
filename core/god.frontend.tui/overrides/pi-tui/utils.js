@@ -246,21 +246,13 @@ export function visibleWidth(str) {
         clean = clean.replace(/\t/g, "   ");
     }
     if (clean.includes("\x1b")) {
-        // Strip supported ANSI/OSC/APC escape sequences in one pass.
-        // This covers CSI styling/cursor codes, OSC hyperlinks and prompt markers,
-        // and APC sequences like CURSOR_MARKER.
-        let stripped = "";
-        let i = 0;
+        let out = "", seg = 0, i = 0;
         while (i < clean.length) {
             const ansi = extractAnsiCode(clean, i);
-            if (ansi) {
-                i += ansi.length;
-                continue;
-            }
-            stripped += clean[i];
-            i++;
+            if (ansi) { out += clean.slice(seg, i); i += ansi.length; seg = i; }
+            else i++;
         }
-        clean = stripped;
+        clean = seg === 0 ? clean : out + clean.slice(seg);
     }
     // Calculate width
     let width = 0;
