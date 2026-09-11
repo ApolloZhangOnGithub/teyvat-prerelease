@@ -320,8 +320,8 @@ for (let i = 0; i < list.length; i++) {
   // [W]/[F] 前台活跃 = 绿 | [P]/[B] 后台 = 蓝 | [H] 休眠 = 黄 | [O] 离线 = 白（默认色）
   let numIdx, numColor;
   if (p._active) {
-    if (statusFull.includes('[H]')) { numColor = Y; numIdx = bNum++; }
-    else if (statusFull.includes('[B]') || statusFull.includes('[P]')) { numColor = '\x1b[38;2;113;142;244m'; numIdx = bNum++; }
+    if (statusFull.includes('[H]') || statusFull.includes('[P]')) { numColor = Y; numIdx = bNum++; }
+    else if (statusFull.includes('[B]')) { numColor = '\x1b[38;2;113;142;244m'; numIdx = bNum++; }
     else { numColor = G; numIdx = fNum++; }
   } else { numColor = '\x1b[37m'; numIdx = oNum++; } // O 离线 = 白色
   const num = numColor + String(numIdx).padStart(numW) + '. ' + R;
