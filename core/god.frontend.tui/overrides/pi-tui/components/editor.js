@@ -475,7 +475,7 @@ export class Editor {
             if (_e02) {
                 const isFirstLine = result.length === (_e01 ? 1 : 0) && this.scrollOffset === 0;
                 if (isFirstLine && leftPadding.length >= 2) {
-                    result.push(`${this.borderColor("❯")} ${displayText}${padding}${lineRightPadding}`);
+                    result.push(`\x1b[90m❯\x1b[0m ${displayText}${padding}${lineRightPadding}`);
                 } else {
                     result.push(`${leftPadding}${displayText}${padding}${lineRightPadding}`);
                 }

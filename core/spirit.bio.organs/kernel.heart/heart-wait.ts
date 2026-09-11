@@ -18,26 +18,31 @@ export function registerWaitTool(pi: ExtensionAPI) {
     messageDescription:
       "Pause for N seconds before auto-resuming. Use when you need to wait for something or give the user time.\n" +
       "- wait_for_user: true = spend pause listening for user input\n" +
+      "- monitor: shell command to poll — exit 0 = condition met, auto-wake early (e.g. 'test -f /tmp/done')\n" +
+      "- monitor_interval: seconds between monitor polls (default 5)\n" +
       "- next_steps: what to do when you wake up",
-    promptSnippet: "wait({seconds:N}) to pause, wait({seconds:N, wait_for_user:true}) to listen",
+    promptSnippet: "wait({seconds:N}) to pause, wait({seconds:N, monitor:'test -f done.flag'}) to poll a condition, wait({seconds:N, wait_for_user:true}) to listen",
     parameters: Type.Object({
       seconds: Type.Number({ messageDescription: "Seconds to pause (1-86400)" }),
       wait_for_user: Type.Optional(Type.Boolean({ messageDescription: "Listen for user input during wait" })),
+      monitor: Type.Optional(Type.String({ messageDescription: "Shell command to poll during wait — exit 0 means condition met, auto-terminates wait early (e.g. 'test -f /tmp/done', 'pgrep -f training')" })),
+      monitor_interval: Type.Optional(Type.Number({ messageDescription: "Seconds between monitor polls (default 5)" })),
       next_steps: Type.Optional(Type.String({ messageDescription: "What to do when you wake up" })),
       message: Type.Optional(Type.String({ messageDescription: "Optional message shown during wait (e.g. reason)" })),
     }),
     renderCall(args: any, theme: any) {
       const s = args?.seconds ?? "?";
       const wu = args?.wait_for_user ? " (for user)" : "";
+      const mon = args?.monitor ? ` 📡 ${args.monitor}` : "";
       const msg = args?.message ? ` — ${args.message}` : "";
       const ns = args?.next_steps ? ` ${args.next_steps}` : "";
-      return renderToolCall.label(theme, "Wait", `${s}s${wu}${msg}${ns}`);
+      return renderToolCall.label(theme, "Wait", `${s}s${wu}${mon}${msg}${ns}`);
     },
     renderResult(result: any, _options: any, theme: any, ctx: any) {
       return renderMessage.silent();
     },
     async execute(_id, rawParams, _signal, _onUpdate, ctx) {
-      const params = rawParams as { seconds: number; wait_for_user?: boolean; next_steps?: string; message?: string };
+      const params = rawParams as { seconds: number; wait_for_user?: boolean; monitor?: string; monitor_interval?: number; next_steps?: string; message?: string };
       // 已在阻塞态：
       // - resting（自身 wait 造成）→ 接管重新计时：安静清掉旧 timer 后走新 wait，不拒绝。
       //   修复 "Already resting. Ignoring wait." 死循环——terminate:true 依赖外部
@@ -86,6 +91,11 @@ export function registerWaitTool(pi: ExtensionAPI) {
       // 导致 wait for user 被 ESC 打断后用户又发消息仍画红——按 wait 属性判定稳定）
       (globalThis as any).__genshinWaitWasForUser = waiting;
 
+      // monitor：轮询 shell 命令，exit 0 = 条件满足，提前唤醒
+      const monitorCmd = params.monitor;
+      const monitorInterval = Math.max(1, params.monitor_interval || 5);
+      let monitorTick = 0;
+
       const countdownTimer = setInterval(() => {
         if (heartState() !== "resting") { clearInterval(countdownTimer); return; }
         if (globalThis.__piEscJustPressed === true) {
@@ -100,9 +110,27 @@ export function registerWaitTool(pi: ExtensionAPI) {
         }
         remaining--;
         if (remaining <= 0) { clearInterval(countdownTimer); return; }
-        // 倒计时写入 globalThis，由 statebar._restingTick 与后台任务数拼装成一行
-        // （issue 071 附带：原直接 setWorkingMessage 与 _restingTick 的 bg 消息互相覆盖）
-        (globalThis as any).__genshinWaitLabel = label();
+        // monitor 轮询
+        if (monitorCmd && ++monitorTick >= monitorInterval) {
+          monitorTick = 0;
+          try {
+            const { execSync } = require("child_process");
+            execSync(monitorCmd, { timeout: 5000, stdio: "ignore" });
+            // exit 0 = 条件满足
+            dlog(`monitor: condition met (${monitorCmd})`);
+            (globalThis as any).__genshinWaitReason = "system";
+            (globalThis as any).__genshinWaitLabel = null;
+            (globalThis as any).__genshinWaitForUser = false;
+            transition({ kind: "working" });
+            try {
+              let wakeMsg = i18n(`[wait ${secs}s 提前结束 — monitor 条件满足]`, `[wait ${secs}s ended early — monitor condition met]`);
+              if (params.next_steps) wakeMsg += ` (next: ${params.next_steps})`;
+              sendCustomMessage(pi, "continuous-resume", wakeMsg, { resumeType: "wait", noTopSpacer: true });
+            } catch (e) { console.error("[heart-wait.ts] monitor wake msg: " + ((e as any)?.message || e)); }
+            return;
+          } catch (e) { /* exit non-0 = 条件未满足，继续等 */ }
+        }
+        (globalThis as any).__genshinWaitLabel = label() + (monitorCmd ? " 📡" : "");
       }, 1000);
 
       // 立即写入初始倒计时（0s/50s），不等第一个 interval tick——

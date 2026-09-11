@@ -236,6 +236,7 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
     const indent = " ".repeat(GUTTER);
     const title = (message.details as any)?.title;
     const fmtElapsed = (sec: number) => {
+      if (sec < 10) return `${sec.toFixed(1)}s`;
       if (sec < 60) return `${sec}s`;
       if (sec < 3600) { const m = Math.floor(sec / 60); const s2 = sec % 60; return s2 === 0 ? `${m}m` : `${m}m ${s2}s`; }
       return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`;
@@ -249,11 +250,11 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
     const hh = String(ts.getHours()).padStart(2, "0");
     const mm = String(ts.getMinutes()).padStart(2, "0");
     const ss = String(ts.getSeconds()).padStart(2, "0");
-    const timePart = ` [${hh}:${mm}:${ss}]`;
-    // 方案 B：不要 Result 头，直接用折线——title + done in Xs + exit（非 0 才显示）
+    const timeFmt = `${hh}:${mm}:${ss}`;
+    // → Task title done in X.Xs at HH:MM:SS（exit 0 不显示）
     const exitPart = exitCode !== undefined && exitCode !== 0 ? `, ` + theme.bold(theme.fg(statusColor, exitStr)) : "";
-    const titlePart = title ? theme.bold(title) + " " : "";
-    const line1 = indent + theme.fg("dim", "⎿  ") + titlePart + `done in ${theme.fg("accent", elapsedFmt)}${exitPart}${remPart}` + theme.fg("dim", timePart);
+    const titlePart = title ? title + " " : "";
+    const line1 = indent + theme.fg("result", "→") + " " + theme.bold("Task") + " " + titlePart + `done in ${theme.fg("accent", elapsedFmt)}${exitPart}${remPart}` + theme.fg("dim", ` at ${timeFmt}`);
     c.addChild(new Text(line1, 0, 0));
     // [PRESERVED] 旧版两行渲染（→ Result 头 + Executed 详情行）：
     // const d = isError ? theme.fg("error", "→") : theme.fg("result", "→");

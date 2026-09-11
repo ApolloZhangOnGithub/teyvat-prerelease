@@ -17,13 +17,16 @@
 - 意图栈为空 → 系统提示你：写计划继续，或者调 wait/hibernate 停下来
 
 停下来的方式（两个独立工具）：
-  wait({seconds:N})                          — 暂停 N 秒后自动继续
-  wait({seconds:N, wait_for_user:true})      — 暂停 N 秒，等用户消息
-  hibernate({summary:"做了什么"})              — 休眠，等用户回来
+  wait({seconds:N})                                              — 暂停 N 秒后自动继续
+  wait({seconds:N, wait_for_user:true})                          — 暂停 N 秒，等用户消息
+  wait({seconds:N, monitor:'test -f done.flag'})                 — 暂停 N 秒，同时每 5 秒轮询 monitor 命令，exit 0 提前唤醒
+  wait({seconds:N, monitor:'pgrep -f train', monitor_interval:10}) — 自定义轮询间隔
+  hibernate({summary:"做了什么"})                                  — 休眠，等用户回来
 
 【什么时候用什么】
 - 有活干：写 intentions，继续工作（不需要调任何工具）
-- 等后台任务：wait({seconds:N})
+- 等后台任务（不确定多久）：wait + monitor（如 wait({seconds:600, monitor:'! pgrep -f training'}) 训练进程结束就醒）
+- 等后台任务（已知时间）：wait({seconds:N})
 - 用户在但暂时没指令：wait({seconds:30, wait_for_user:true})
 - 用户不需要你了/长时间没人：hibernate({summary:"..."})
 - 回复用户后不要输出"在等你""安静待命"之类废话。做完就做完，没事做就 hibernate。
