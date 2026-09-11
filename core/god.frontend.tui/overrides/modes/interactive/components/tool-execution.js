@@ -39,6 +39,26 @@ function bgLine(text, bgAnsi) {
 }
 // bulletText 容器缩进："  ⎿  " = GUTTER(2) + ⎿(1) + space(1) + separator(1) = 5
 const DIFF_CONTAINER_INDENT = 5;
+// 行内 diff 高亮：找公共前缀/后缀，中间变化部分加粗+下划线（2026-09-11 ISSUE 181D）
+const INLINE_BOLD = "\x1b[1m";
+const INLINE_UNDERLINE = "\x1b[4m";
+const INLINE_RESET_BOLD = "\x1b[22m\x1b[24m";
+function inlineHighlight(text, oldText) {
+    if (!oldText || !text) return text;
+    // 按字符找公共前缀
+    let prefix = 0;
+    const minLen = Math.min(text.length, oldText.length);
+    while (prefix < minLen && text[prefix] === oldText[prefix]) prefix++;
+    // 按字符找公共后缀（不超过前缀）
+    let suffix = 0;
+    while (suffix < minLen - prefix && text[text.length - 1 - suffix] === oldText[oldText.length - 1 - suffix]) suffix++;
+    if (prefix === text.length && suffix === 0) return text; // 完全相同
+    const changedStart = prefix;
+    const changedEnd = text.length - suffix;
+    if (changedStart >= changedEnd) return text; // 无变化区
+    return text.substring(0, changedStart) + INLINE_BOLD + INLINE_UNDERLINE + text.substring(changedStart, changedEnd) + INLINE_RESET_BOLD + text.substring(changedEnd);
+}
+
 function buildDiffLines(content, lineNum, marker, decorFg) {
     const termWidth = process.stdout.columns || 80;
     const lnLen = lineNum.length;
@@ -189,23 +209,30 @@ const _genshinBuiltinRenderers = {
                 return m ? { num: m[1], content: m[2] } : { num: null, content: s };
             };
             const filePath = _opts?.args?.file_path || _opts?.args?.path || "";
+            // 收集原始 -/+ 行用于行内 diff 配对
+            const rawMinusQueue = [];
             for (const l of lines) {
                 const hm = l.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
-                if (hm) { oldLn = parseInt(hm[1]) - 1; newLn = parseInt(hm[3]) - 1; continue; }
+                if (hm) { oldLn = parseInt(hm[1]) - 1; newLn = parseInt(hm[3]) - 1; rawMinusQueue.length = 0; continue; }
                 if (l.startsWith("---") || l.startsWith("+++")) continue;
                 if (l.startsWith("+")) {
                     added++;
                     const p = parseLine(l.slice(1));
                     const ln = p.num || String(++newLn).padStart(4);
                     const hl = hlLines(p.content, filePath);
-                    const content = hl ? hl[0] || p.content : p.content;
+                    let content = hl ? hl[0] || p.content : p.content;
+                    // 行内 diff：如果前面有匹配的 - 行，高亮变化部分
+                    const paired = rawMinusQueue.shift();
+                    if (paired) content = inlineHighlight(content, paired);
                     entries.push({d: true, lines: buildDiffLines(content, ln, "+", FG_ADD_DECO), bg: BG_ADDED});
                 } else if (l.startsWith("-")) {
                     removed++;
                     const p = parseLine(l.slice(1));
                     const ln = p.num || String(++oldLn).padStart(4);
+                    rawMinusQueue.push(p.content);
                     entries.push({d: true, lines: buildDiffLines(FG_DEFAULT + p.content, ln, "-", FG_DEL_DECO), bg: BG_REMOVED});
                 } else if (l.startsWith(" ") || l === "") {
+                    rawMinusQueue.length = 0; // context 行重置配对队列
                     const p = parseLine(l.slice(1));
                     const raw = (p.content || "").trim();
                     if (!raw || raw === "...") continue;

@@ -175,7 +175,10 @@ function graphemeWidth(segment) {
     if (zeroWidthRegex.test(segment)) {
         return 0;
     }
-    // Emoji check with pre-filter
+    // Emoji check with pre-filter（2026-09-11 验证：⚠️/✅/🔄/🟢 等常见 emoji 在 Intl.Segmenter
+    // 下保持为单个 grapheme，couldBeEmoji 通过 0x2600..0x27bf 范围 + VS16 检测正确识别，
+    // rgiEmojiRegex 匹配成功返回 2。圈数字 ①②③ 在下方 0x2460-0x24ff 单独处理。
+    // 如果有终端下 emoji 对齐问题，原因更可能在字体渲染侧而非宽度计算。）
     if (couldBeEmoji(segment) && rgiEmojiRegex.test(segment)) {
         return 2;
     }

@@ -112,11 +112,10 @@ for (const p of list) {
   p._ago = Math.round((now - new Date(p.lastEnded || p.lastSeen).getTime()) / 60000);
   // 2026-08-20 用户需求：先 F（前台 TUI）后 B（后台 headless）——detached 标记存在 = 后台
   p._fb = active && fs.existsSync(PAIMON_HOME + '/RuntimeCache/' + p.id + '/detached') ? 1 : 0;
-  // 2026-09-11：H（hibernated）排到 W/A/P 后面——活跃但休眠的优先级低于活跃工作中的
-  p._hibernated = active && fs.existsSync(PAIMON_HOME + '/RuntimeCache/' + p.id + '/main-hibernate') ? 1 : 0;
 }
-// 排序：active > offline，同为 active 时 非H > H，同 H 级别时 F > B，最后按 ago
-list.sort((a, b) => (b._active ? 1 : 0) - (a._active ? 1 : 0) || (a._hibernated || 0) - (b._hibernated || 0) || (a._fb || 0) - (b._fb || 0) || a._ago - b._ago);
+// 排序：active > offline，同为 active 时 F > B，最后按 ago
+// 注意：不要改排序顺序——launcher 的 _resolve_active_arg 依赖与此一致的序号
+list.sort((a, b) => (b._active ? 1 : 0) - (a._active ? 1 : 0) || (a._fb || 0) - (b._fb || 0) || a._ago - b._ago);
 // 排序结果落盘（原 launcher 里第二个 node 子进程做的事，2026-08-14 收拢进来，省一次 node + ps 开销）
 if (filter === 'list') {
   try {
