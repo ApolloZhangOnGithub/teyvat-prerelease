@@ -101,7 +101,22 @@ export default function (pi: ExtensionAPI) {
     const role = getSessionRole();
     if (role === "main") {
       // ISSUE 117：heart system prompt 冻结——首次组装后复用（前缀逐字稳定）
-      if (_frozenHeartSystemPrompt) return { systemPrompt: _frozenHeartSystemPrompt };
+      if (_frozenHeartSystemPrompt) {
+        // ISSUE 188：即使冻结缓存也检查 context 用量——95%+ 强制 amem
+        let urgentAmem = "";
+        try {
+          const pd: string = (globalThis as any).__genshinPersonDir || "";
+          if (pd) {
+            const gp = join(pd, "monitor/growth.jsonl");
+            if (existsSync(gp)) {
+              const gl = readFileSync(gp, "utf8").trim().split("\n");
+              const lr = JSON.parse(gl[gl.length - 1]).ratio || 0;
+              if (lr >= 95) urgentAmem = i18n(`\n\n[URGENT] context 使用已达 ${lr.toFixed(1)}%，距离 API 限制极近。你必须立即执行 amem archive 清理记忆再做其他任何事。不要忽略。`, `\n\n[URGENT] context usage at ${lr.toFixed(1)}%. You MUST run amem archive immediately before anything else.`);
+            }
+          }
+        } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
+        return { systemPrompt: _frozenHeartSystemPrompt + urgentAmem };
+      }
       let extra = "";
       try {
         const modelId = (event as any).model?.id || "";
@@ -124,7 +139,26 @@ export default function (pi: ExtensionAPI) {
       // 重启前后逐字一致 → 前缀命中缓存（配合 ISSUE 117 冻结 + memory 冻结快照复用）。
       const stableTitle = process.title.replace(/,([0-9a-f]{8,})\)\s*$/, ")");
       _frozenHeartSystemPrompt = event.systemPrompt + "\n\n" + HEARTBEAT_PROMPT + toolChr + "\n\n" + i18n("[系统] 你是 ", "[System] You are ") + stableTitle + extra + langNote;
-      return { systemPrompt: _frozenHeartSystemPrompt };
+      // ISSUE 188：context 95%+ 强制 amem——绕过冻结缓存，每轮检查用量
+      let urgentAmem = "";
+      try {
+        const personDir: string = (globalThis as any).__genshinPersonDir || "";
+        if (personDir) {
+          const growthPath = join(personDir, "monitor/growth.jsonl");
+          if (existsSync(growthPath)) {
+            const gLines = readFileSync(growthPath, "utf8").trim().split("\n");
+            const last = JSON.parse(gLines[gLines.length - 1]);
+            const ratio = last.ratio || 0;
+            if (ratio >= 95) {
+              urgentAmem = i18n(
+                `\n\n[URGENT] context 使用已达 ${ratio.toFixed(1)}%，距离 API 限制极近。你必须立即执行 amem archive 清理记忆再做其他任何事。不要忽略。`,
+                `\n\n[URGENT] context usage at ${ratio.toFixed(1)}%, dangerously close to API limit. You MUST immediately run amem archive to free memory before doing anything else. Do NOT ignore this.`
+              );
+            }
+          }
+        }
+      } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
+      return { systemPrompt: _frozenHeartSystemPrompt + urgentAmem };
     }
     if (role === "metaconsciousness") {
       try {

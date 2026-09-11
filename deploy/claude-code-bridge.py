@@ -3,6 +3,8 @@
 
 从 cnb 项目借鉴 tmux load-buffer + paste-buffer 注入模式。
 启动: python3 claude-code-bridge.py --tmux-session <session> [--sid cc000001]
+# 注意：bridge 的 sid 默认固定为 cc000001（--sid 可改），它**没有 MemoryData/plist 条目**属预期；
+# doctor 的 dir-orphan 已在 ~/.teyvat/config/doctor-whitelist.json 登记豁免（2026-09-11）。
 
 功能:
   1. 维持 SocialData/heartbeat/<sid> 心跳（60s 周期，isAgentActive bridge fallback）

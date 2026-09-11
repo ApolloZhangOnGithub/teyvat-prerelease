@@ -750,7 +750,7 @@ if [ -z "$NAME" ] && [ -z "$MODE" ]; then
   # 2026-09-11：更新提示（读后台检测缓存，不阻塞）
   _UC="$HOME/.teyvat/RuntimeCache/update-check.json"
   if [ -f "$_UC" ]; then
-    _UV=$(node -e "try{const u=JSON.parse(require('fs').readFileSync('$_UC','utf8'));if(u.available&&u.available!==u.current)console.log(u.available+'|'+u.current)}catch{}" 2>/dev/null)
+    _UV=$(node -e "try{const u=JSON.parse(require('fs').readFileSync('$_UC','utf8'));if(u.available&&u.current&&u.available!==u.current){const a=u.available.replace(/^v/,'').split(/[.-]/),c=u.current.replace(/^v/,'').split(/[.-]/);let newer=false;for(let i=0;i<Math.max(a.length,c.length);i++){const av=parseInt(a[i]||'0'),cv=parseInt(c[i]||'0');if(av>cv){newer=true;break}if(av<cv)break}if(newer)console.log(u.available+'|'+u.current)}}catch{}" 2>/dev/null)
     if [ -n "$_UV" ]; then
       _NEW="${_UV%%|*}"; _CUR="${_UV##*|}"
       echo ""
@@ -814,7 +814,7 @@ ENTRY=$(node --input-type=commonjs -e "
     // list.cjs 的编号是：active && ([H] || [P] || [B]) → B 组，其余 active → F 组（见 list.cjs:321-326）；
     // 而 [H]=RuntimeCache/<id>/main-hibernate、[P]=MemoryData/<id>/paused 或 RuntimeCache/<id>/paused、[B]=RuntimeCache/<id>/detached。
     // 原来只判 detached → 前台暂停/休眠（active 且有 paused/hibernate、但没有 detached）会被 launcher 归到 F 组，
-    // 而列表里它显示在 B 组 → 组内序号错位 → `genshin N`/`Nf`/`Nb` 选到错 agent（用户 2026-09-11 报的现象）。
+    // 而列表里它显示在 B 组 → 组内序号错位 → genshin N / Nf / Nb 选到错 agent（用户 2026-09-11 报的现象）。
     // 今天线上 6 个 agent 恰好都是"有 paused/hibernate 就必然有 detached"，所以还没触发；判据统一后这类错位不可能再出现。
     p._b = active && (fs.existsSync(PAIMON_HOME + '/RuntimeCache/' + p.id + '/detached')
       || fs.existsSync(PAIMON_HOME + '/MemoryData/' + p.id + '/paused')

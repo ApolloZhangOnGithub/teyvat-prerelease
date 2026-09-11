@@ -110,6 +110,16 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
   // 2026-08-15 修复"过期快照误导"：容量提醒是触发时的旧值（如清理前 80%），清理后仍显示旧数字——
   // 渲染时动态读当前 context.md 估算实时 token；健康（<80%）显示"健康"而非旧提醒。
   // 2026-08-15 用户要求：标题 "Memory" → "Memory Alert"，菱形+标题黄色（原绿色 success 色像成功状态）。
+  // ── teyvat system message 渲染管线（2026-09-11）──
+  // 轻量单行：dim 三角 + dim 内容，col 2 缩进。不要大菱形/粗体标题/多行。
+  const _sysMsg = (theme: any, text: string, color?: string) => {
+    const { Text: T } = require("@earendil-works/pi-tui");
+    const indent = " ".repeat(GUTTER);
+    const arrow = color ? theme.fg(color, "▸") : theme.fg("dim", "▸");
+    const body = color ? theme.fg(color, text) : theme.fg("dim", text);
+    return new T(indent + arrow + " " + body, 0, 0);
+  };
+
   pi.registerMessageRenderer("memory-capacity", (message: any, _opts: any, theme: any) => {
     let cur = "";
     try {
@@ -119,16 +129,12 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
       for (let i = 0; i < t.length; i++) { const c = t.charCodeAt(i); if ((c >= 0x3400 && c <= 0x9fff) || (c >= 0xf900 && c <= 0xfaff) || (c >= 0x3000 && c <= 0x30ff) || (c >= 0xff00 && c <= 0xffef)) cjk++; }
       const tok = Math.round(cjk * 1.8 + (t.length - cjk) * 0.25);
       const pct = ((tok / 1000000) * 100).toFixed(1);
-      cur = parseFloat(pct) >= 80 ? i18n(`context ${(tok / 1000).toFixed(1)}k tokens / 1.0M (${pct}%) — 建议 amem 整理`, `context ${(tok / 1000).toFixed(1)}k tokens / 1.0M (${pct}%) — consider amem cleanup`) : i18n(`context ${(tok / 1000).toFixed(1)}k tokens / 1.0M (${pct}%) — 健康`, `context ${(tok / 1000).toFixed(1)}k tokens / 1.0M (${pct}%) — healthy`);
+      cur = parseFloat(pct) >= 80 ? i18n(`context ${(tok / 1000).toFixed(1)}k/1.0M (${pct}%) — 建议 amem`, `context ${(tok / 1000).toFixed(1)}k/1.0M (${pct}%) — consider amem`) : i18n(`context ${(tok / 1000).toFixed(1)}k/1.0M (${pct}%)`, `context ${(tok / 1000).toFixed(1)}k/1.0M (${pct}%)`);
     } catch (e) { console.error("[god.frontend.tui/renderers.ts] " + ((e as any)?.message || e)); cur = (message.content ?? "").toString(); }
-    const { Text, Container } = require("@earendil-works/pi-tui");
-    const c = new Container();
-    c.addChild(new Text(theme.fg("warning", "◆") + " " + theme.bold(theme.fg("warning", "Memory Alert")), 0, 0));  // 2026-09-11: "yellow" 不在 theme.colors 里，运行时 Theme.fg() 会抛 Unknown theme color（warning 指向 vars.yellow，同色）
-    c.addChild(new Text(theme.fg("dim", cur), GUTTER, 0));
-    return c;
+    return _sysMsg(theme, cur, parseFloat(cur.match(/\((\d+\.\d+)%\)/)?.[1] || "0") >= 80 ? "warning" : undefined);
   });
   pi.registerMessageRenderer("memory-reminder", (message: any, _opts: any, theme: any) => {
-    return renderMessage.notice(theme, "Reminder", (message.content ?? "").toString());
+    return _sysMsg(theme, (message.content ?? "").toString());
   });
   // 2026-08-20 /h 转后台通知：Life Restarted 同管线（notice 青绿 ✤）——agent 知道自己被转 headless
   pi.registerMessageRenderer("display-hidden", (message: any, _opts: any, theme: any) => {
@@ -139,13 +145,13 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
     return renderMessage.notice(theme, "Shown", (message.content ?? "").toString(), "lifeRestart", undefined, "✤");
   });
   pi.registerMessageRenderer("system-error", (message: any, _opts: any, theme: any) => {
-    return renderMessage.notice(theme, "System", (message.content ?? "").toString());
+    return _sysMsg(theme, (message.content ?? "").toString(), "error");
   });
   pi.registerMessageRenderer("hippocampus-error", (message: any, _opts: any, theme: any) => {
-    return renderMessage.notice(theme, "Hippocampus", (message.content ?? "").toString());
+    return _sysMsg(theme, (message.content ?? "").toString(), "error");
   });
   pi.registerMessageRenderer("continuous-error-retry", (message: any, _opts: any, theme: any) => {
-    return renderMessage.notice(theme, "Error", (message.content ?? "").toString());
+    return _sysMsg(theme, (message.content ?? "").toString(), "warning");
   });
   pi.registerMessageRenderer("continuous-cmd-done", (message: any, _opts: any, theme: any) => {
     const { Text, Container } = require("@earendil-works/pi-tui");

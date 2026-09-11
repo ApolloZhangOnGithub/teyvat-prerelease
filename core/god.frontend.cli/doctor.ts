@@ -190,20 +190,91 @@ export function cmdDoctor() {
     // 为什么值得单独报：孤儿实例（如 check-session-01 的 26515 跑了 2 天）会抢 trigger / 吞跨设备消息，
     // 而列表/launcher 只看 main.pid —— 两个实例都"活跃"，从列表上完全看不出来。
     try {
-      const groups: Record<string, string[]> = {};
+      const groups: Record<string, number[]> = {};
       for (const l of psOut.split('\n')) {
         const m = l.match(/genshin:[^(]+\(([a-z]+),([0-9a-f]{8}),([0-9a-f]+)\)/);
         if (!m) continue;
         const key = `${m[2]}(${m[1]})`;
-        (groups[key] = groups[key] || []).push(`${l.trim().split(/\s+/)[1]}:${m[3].slice(0,8)}`);
+        const pid = parseInt(l.trim().split(/\s+/)[1], 10);
+        if (!pid) continue;
+        (groups[key] = groups[key] || []).push(pid);
       }
+      // 2026-09-11 追补：告警要能直接照着动手 —— 列出 pid + 已运行时长 + 明确哪几个"疑似孤儿（启动更早）"
+      // etime（[[DD-]HH:]MM:SS）→ 秒；用来**真实排序**是哪个实例最早/最新（不依赖 ps 输出顺序）
+      const etimeSecs = (pid: number): number => {
+        try {
+          const s = execSync(`ps -o etime= -p ${pid}`, { encoding: 'utf8' }).trim();
+          const m = s.match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/);
+          if (!m) return -1;
+          const d = parseInt(m[1] || '0', 10), h = parseInt(m[2] || '0', 10), mi = parseInt(m[3], 10), se = parseInt(m[4], 10);
+          return ((d * 24 + h) * 60 + mi) * 60 + se;
+        } catch { return -1; }
+      };
+      const etimeShow = (secs: number): string => {
+        if (secs < 0) return '?';
+        const d = Math.floor(secs / 86400), h = Math.floor((secs % 86400) / 3600), m = Math.floor((secs % 3600) / 60);
+        return d > 0 ? `${d}天${h}小时` : (h > 0 ? `${h}小时${m}分` : `${m}分`);
+      };
       const dup = Object.entries(groups).filter(([, v]) => v.length > 1);
       if (dup.length) {
-        const desc = dup.slice(0,4).map(([k,v])=>`${k} → ${v.join(', ')}`).join(' | ');
-        const msg = `${dup.length} 组同 sid 多实例: ${desc}`;
-        if (!skipIgnored('dual-instance', msg)) warn('dual-instance', `${msg}（残留实例会抢 trigger / 吞消息，见 ISSUE 151/182；确认后 kill 多余 pid）`);
+        const parts: string[] = [];
+        for (const [k, pids] of dup.slice(0, 4)) {
+          // secs = 已运行秒数：**越小越新**。按升序排 → 第 0 个是最新（当前实例），其余是更早启动的疑似孤儿
+          const withTime = pids.map((p) => ({ pid: p, secs: etimeSecs(p) })).sort((a, b) => a.secs - b.secs);
+          const newest = withTime[0];
+          const suspects = withTime.slice(1);
+          const desc = withTime.map((x, i) => `${x.pid}(已运行 ${etimeShow(x.secs)}${i === 0 ? '，最新=当前实例' : ''})`).join(' / ');
+          parts.push(`${k}: ${desc} → 疑似孤儿（更早启动）: ${suspects.map((x) => x.pid).join(' ')}；确认后 kill ${suspects.map((x) => x.pid).join(' ')}`);
+        }
+        const msg = `${dup.length} 组同 sid 多实例: ${parts.join(' | ')}`;
+        if (!skipIgnored('dual-instance', msg)) warn('dual-instance', msg);
       } else ok('dual-instance','无同 sid 多实例');
     } catch (e) { /* ps 解析失败：不阻塞其它检查 */ }
+  }
+
+  // tmux-orphan（2026-09-11 prime-agent 实现；此前的 Doctor WIKI 里写了这条检查，但代码里没有 = 文档-代码漂移）
+  // 语义：hc-<sid>（海马体）/ sc-<sid>（元意识）/ sl-<sid>（睡眠）这些"器官 tmux 会话"必须对应一个**活跃** agent；
+  // 否则就是崩溃/被杀后残留的会话（占资源，也可能抢 trigger）。只报，不自动杀。
+  // 宽限：会话创建超过 5 分钟才算孤儿 —— 刚启动的 agent 可能先建会话、main.pid 心跳还没生效。
+  {
+    let tmuxOut = "";
+    try { tmuxOut = execSync("tmux ls -F '#{session_name} #{session_created}'", { encoding: "utf8", stdio: ["ignore","pipe","ignore"] }); }
+    catch (e) { tmuxOut = ""; }  // 没装 tmux / 没有会话
+    if (!tmuxOut.trim()) { skip('tmux-orphan', '无 tmux 或会话'); }
+    else {
+      const GRACE_SECS = 5 * 60;
+      const nowSecs = Math.floor(Date.now() / 1000);
+      const activeIds = new Set<string>();
+      for (const p of list) {
+        const pidFile = path.join(PAIMON, 'MemoryData', p.id, 'main.pid');
+        try {
+          const st = fs.statSync(pidFile);
+          if (Date.now() - st.mtimeMs > 90 * 1000) continue;
+          const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
+          if (!pid) { activeIds.add(p.id); continue; }   // 内容损坏但心跳新鲜 → 保守当作"有 agent 在"（另有 pid-invalid 报）
+          try { process.kill(pid, 0); activeIds.add(p.id); } catch { /* 进程已死 */ }
+        } catch { /* 无 pid 文件 */ }
+      }
+      const orphans: string[] = [];
+      for (const line of tmuxOut.trim().split('\n')) {
+        const [name, createdStr] = line.trim().split(/\s+/);
+        const m = (name || '').match(/^(hc|sc|sl)-([0-9a-f]{8})$/);
+        if (!m) continue;                                  // 非器官会话（如 bridge 的 cc）不管
+        const sid = m[2];
+        const created = parseInt(createdStr || '0', 10);
+        if (created && nowSecs - created < GRACE_SECS) continue;   // 宽限期内：可能正在启动
+        if (!activeIds.has(sid)) {
+          const known = list.find((p: any) => p.id === sid);
+          orphans.push(`${name}（${known ? `agent「${known.name}」不活跃` : '无 plist 条目'}，创建于 ${new Date(created * 1000).toLocaleString('zh-CN', { hour12: false })}）`);
+        }
+      }
+      const organCount = tmuxOut.trim().split('\n').filter((l) => /^(hc|sc|sl)-[0-9a-f]{8}\s/.test(l.trim())).length;
+      if (organCount === 0) ok('tmux-orphan', '无器官 tmux 会话（hc-/sc-/sl-）');
+      else if (orphans.length) {
+        const msg = `${orphans.length} 个残留器官 tmux 会话: ${orphans.slice(0, 4).join('; ')}`;
+        if (!skipIgnored('tmux-orphan', msg)) warn('tmux-orphan', `${msg}；确认后 tmux kill-session -t <name>`);
+      } else ok('tmux-orphan', `器官 tmux 会话 ${organCount} 个，均有对应活跃 agent（或仍在启动宽限期内）`);
+    }
   }
 
   // pid-stale

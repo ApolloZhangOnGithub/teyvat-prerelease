@@ -9,7 +9,10 @@ import { randomBytes } from 'node:crypto';
 import { SYNC_ENDPOINT_DEFAULT, estimateTokens, writeFileAtomic } from '../paths.ts';
 
 const H = os.homedir();
-const PAIMON = path.join(H, '.teyvat');
+// 2026-09-11（prime-agent）：与 launcher/doctor 同源支持 PAIMON_HOME —— 原来硬编码 ~/.teyvat，
+// 导致 CLI 无法在沙箱/测试实例上运行（改名/克隆等操作会写到默认家目录），也让改名逻辑无法被自动化验证。
+// launcher 始终 export PAIMON_HOME="$HOME/.teyvat"，所以正常使用行为不变。
+const PAIMON = process.env.PAIMON_HOME || path.join(H, '.teyvat');
 const PLIST = path.join(PAIMON, 'MemoryData', 'plist.json');
 const RUNTIME = path.join(H, '.local/lib/teyvat/runtime/node_modules/@earendil-works/pi-coding-agent/dist/cli.js');
 const EXT = process.env.PAIMON_EXT || path.join(H, '.local/lib/teyvat/extensions/teyvat');
