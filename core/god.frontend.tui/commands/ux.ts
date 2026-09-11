@@ -20,9 +20,9 @@ export async function viewHandler(_args: any, ctx: any) {
 
     // pad CJK: 2-col per char, ASCII: 1-col. target 12 visual cols
     const pad = (s: string, w: number) => { let c = 0; for (const ch of s) c += ch.charCodeAt(0) > 127 ? 2 : 1; return s + " ".repeat(Math.max(1, w - c)); };
-    const R = stream => stream === "streaming" ? "streaming" : "line";
+    const RM = (m: string) => m === "streaming" ? "streaming" : m === "block" ? "block" : "line";
     const menu = [
-      pad(T("渲染模式", "Render Mode"), 12) + R(renderMode),
+      pad(T("渲染模式", "Render Mode"), 12) + RM(renderMode),
       pad("Thinking", 12) + (thinkHidden ? T("隐藏", "Hidden") : T("显示", "Visible")),
       pad(T("Tool 输出", "Tool Output"), 12) + (toolExpanded ? T("展开", "Expanded") : T("折叠", "Collapsed")),
       pad("Execute", 12) + (compactExecute ? "Compact" : T("完整", "Full")),
@@ -44,10 +44,11 @@ export async function viewHandler(_args: any, ctx: any) {
       const options = [
         `streaming  ${renderMode === "streaming" ? "●" : "○"}  ${T("逐 token 渲染", "per-token render")}`,
         `line       ${renderMode === "line" ? "●" : "○"}  ${T("逐行渲染（默认）", "per-line render (default)")}`,
+        `block      ${renderMode === "block" ? "●" : "○"}  ${T("逐块渲染（整段完成后显示）", "per-block render (show after block completes)")}`,
       ];
       const choice = await ctx.ui.select(T("渲染模式", "Render Mode"), options);
       if (!choice) continue;
-      const mode = choice.startsWith("streaming") ? "streaming" : "line";
+      const mode = choice.startsWith("streaming") ? "streaming" : choice.startsWith("block") ? "block" : "line";
       (globalThis as any).__piRenderMode = mode;
       const handler = (globalThis as any).__genshinToggleRenderMode;
       if (handler) handler(mode);
@@ -73,23 +74,46 @@ export async function viewHandler(_args: any, ctx: any) {
       const choice = await ctx.ui.select(T("Execute 显示", "Execute View"), options);
       if (!choice) continue;
       (globalThis as any).__genshinExecuteDisplay = choice.startsWith(T("仅标题", "Title only")) ? "title" : choice.startsWith(T("仅命令", "Command only")) ? "command" : "full";
+      try {
+        const sm = (globalThis as any).__genshinSettingsManager;
+        if (sm) { sm.globalSettings.executeDisplay = (globalThis as any).__genshinExecuteDisplay; sm.markModified("executeDisplay"); sm.save(); }
+      } catch (e) { console.error("[god.frontend.tui/commands/ux.ts] " + ((e as any)?.message || e)); }
     } else if (pick.startsWith("Execute")) {
       (globalThis as any).__genshinCompactExecute = !compactExecute;
-    } else if (pick.startsWith("&&")) {
-      (globalThis as any).__genshinExecuteBreakAnd = !breakAnd;
       try {
         const sm = (globalThis as any).__genshinSettingsManager;
         if (sm) { sm.globalSettings.compactExecute = (globalThis as any).__genshinCompactExecute; sm.markModified("compactExecute"); sm.save(); }
       } catch (e) { console.error("[god.frontend.tui/commands/ux.ts] " + ((e as any)?.message || e)); }
+    } else if (pick.startsWith("&&")) {
+      (globalThis as any).__genshinExecuteBreakAnd = !breakAnd;
+      try {
+        const sm = (globalThis as any).__genshinSettingsManager;
+        if (sm) { sm.globalSettings.executeBreakAnd = (globalThis as any).__genshinExecuteBreakAnd; sm.markModified("executeBreakAnd"); sm.save(); }
+      } catch (e) { console.error("[god.frontend.tui/commands/ux.ts] " + ((e as any)?.message || e)); }
     } else if (pick.startsWith(T("代码高亮", "Code Highlight"))) {
       (globalThis as any).__genshinCodeHighlight = !codeHighlight;
+      try {
+        const sm = (globalThis as any).__genshinSettingsManager;
+        if (sm) { sm.globalSettings.codeHighlight = (globalThis as any).__genshinCodeHighlight; sm.markModified("codeHighlight"); sm.save(); }
+      } catch (e) { console.error("[god.frontend.tui/commands/ux.ts] " + ((e as any)?.message || e)); }
     } else if (pick.startsWith("Read")) {
       (globalThis as any).__genshinReadExpanded = !readExpanded;
+      try {
+        const sm = (globalThis as any).__genshinSettingsManager;
+        if (sm) { sm.globalSettings.readExpanded = (globalThis as any).__genshinReadExpanded; sm.markModified("readExpanded"); sm.save(); }
+      } catch (e) { console.error("[god.frontend.tui/commands/ux.ts] " + ((e as any)?.message || e)); }
     } else if (pick.startsWith(T("履历多彩", "Colorful Rank"))) {
       (globalThis as any).__genshinTokenmaxxedColorful = !tokenmaxxedColorful;
+      try {
+        const sm = (globalThis as any).__genshinSettingsManager;
+        if (sm) { sm.globalSettings.tokenmaxxedColorful = (globalThis as any).__genshinTokenmaxxedColorful; sm.markModified("tokenmaxxedColorful"); sm.save(); }
+      } catch (e) { console.error("[god.frontend.tui/commands/ux.ts] " + ((e as any)?.message || e)); }
     } else if (pick.startsWith("Ctrl+C")) {
-      // 2026-08-20 用户需求：Ctrl+C 退出默认转后台（headless）而非停止
       (globalThis as any).__genshinCtrlCToBg = !ctrlCToBg;
+      try {
+        const sm = (globalThis as any).__genshinSettingsManager;
+        if (sm) { sm.globalSettings.ctrlCToBg = (globalThis as any).__genshinCtrlCToBg; sm.markModified("ctrlCToBg"); sm.save(); }
+      } catch (e) { console.error("[god.frontend.tui/commands/ux.ts] " + ((e as any)?.message || e)); }
     } else if (pick.startsWith(T("Footer 年龄", "Footer Age"))) {
       // 2026-09-04 用户需求：footer 年龄（2.8w）显示开关
       (globalThis as any).__genshinFooterAge = !footerAge;

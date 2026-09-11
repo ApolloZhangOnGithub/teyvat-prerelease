@@ -3,18 +3,13 @@
 // headless 模式下不加载此文件，agent 照常运行，只是没有 /xxx 命令。
 // 文档: B.docs/Dev.Common/Wiki/Slash&Tools(Concept).WIKI
 
-import { configHandler } from "./config.ts";
 import { toolsHandler } from "./tools.ts";
 import { authdirHandler, authdirCompletions } from "./authdir.ts";
 import { quitHandler } from "./exit.ts";
 import { detachHandler } from "./detach.ts";
 import { pauseHandler } from "./pause.ts";
-import { identityHandler } from "./infos.ts";
-import { viewHandler } from "./ux.ts";
-import { modelHandler } from "./model.ts";
-import { effortHandler } from "./effort.ts";
 import { experimentalHandler } from "./devs.ts";
-import { bgHandler } from "./bg.ts";
+import { settingsHandler } from "./settings.ts";
 import { i18n } from "#tui_localizations";
 
 // ── 为什么用短名注册 ──────────────────────────────────────────────────────────
@@ -37,9 +32,9 @@ function desc(long: string, zh: string, en: string) {
 }
 
 export function registerGodCommands(pi: any) {
-  pi.registerCommand("c", {
-    description: desc("config", "配置第三方服务 API", "Configure 3rd-party APIs"),
-    handler: configHandler,
+  pi.registerCommand("s", {
+    description: desc("settings", "设置（身份/显示/服务/模型/推理/后台）", "Settings (identity/display/services/model/effort/bg)"),
+    handler: settingsHandler,
   });
   pi.registerCommand("t", {
     description: desc("tools", "列出当前可用工具", "List available tools"),
@@ -66,29 +61,8 @@ export function registerGodCommands(pi: any) {
     description: desc("pause", "暂停/恢复当前 Agent", "Pause/resume agent"),
     handler: pauseHandler,
   });
-  pi.registerCommand("i", {
-    description: desc("infos", "Agent 身份与上下文用量", "Agent identity & context usage"),
-    handler: identityHandler,
-  });
-  pi.registerCommand("u", {
-    description: desc("ux", "渲染方式管理", "Render View Management"),
-    handler: viewHandler,
-  });
-  pi.registerCommand("m", {
-    description: desc("model", "切换模型", "Switch model"),
-    handler: modelHandler,
-  });
-  pi.registerCommand("e", {
-    description: desc("effort", "推理强度", "Reasoning effort"),
-    handler: effortHandler,
-  });
   pi.registerCommand("d", {
     description: desc("devs", "实验性功能", "Experimental features"),
     handler: experimentalHandler,
-  });
-  pi.registerCommand("b", {
-    description: desc("bg", "查看/终止后台任务", "View/kill background tasks"),
-    messageDescription: i18n("/b 查看后台任务 | /b kill @N 终止", "/b list background tasks | /b kill @N"),
-    handler: bgHandler,
   });
 }

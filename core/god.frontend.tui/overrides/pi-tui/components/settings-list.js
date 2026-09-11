@@ -124,6 +124,28 @@ export class SettingsList {
                 return;
             this.selectedIndex = this.selectedIndex === displayItems.length - 1 ? 0 : this.selectedIndex + 1;
         }
+        else if (data === "\x1b[C" || data === "\x1b[1;2C") {
+            // Right arrow: cycle forward through values
+            const item = displayItems[this.selectedIndex];
+            if (item?.values?.length > 1) {
+                const ci = item.values.indexOf(item.currentValue);
+                const ni = (ci + 1) % item.values.length;
+                item.currentValue = item.values[ni];
+                this.onChange(item.id, item.currentValue);
+            } else if (item?.submenu) {
+                this.activateItem();
+            }
+        }
+        else if (data === "\x1b[D" || data === "\x1b[1;2D") {
+            // Left arrow: cycle backward through values
+            const item = displayItems[this.selectedIndex];
+            if (item?.values?.length > 1) {
+                const ci = item.values.indexOf(item.currentValue);
+                const ni = (ci - 1 + item.values.length) % item.values.length;
+                item.currentValue = item.values[ni];
+                this.onChange(item.id, item.currentValue);
+            }
+        }
         else if (kb.matches(data, "tui.select.confirm") ||
             (data === " " && (!this.searchEnabled || this.searchInput?.getValue().length === 0))) {
             this.activateItem();
@@ -175,8 +197,8 @@ export class SettingsList {
     addHintLine(lines, width) {
         lines.push("");
         lines.push(truncateToWidth(this.theme.hint(this.searchEnabled
-            ? "  Type to search · Enter/Space to change · Esc to cancel"
-            : "  Enter/Space to change · Esc to cancel"), width));
+            ? "  Type to search · ←→ switch · Enter to open · Esc to cancel"
+            : "  ←→ switch · Enter/Space to change · Esc to cancel"), width));
     }
 }
 //# sourceMappingURL=settings-list.js.map

@@ -432,7 +432,7 @@ export class InteractiveMode {
         this.outputPad = this.settingsManager.getOutputPad();
         // Load render mode from persisted settings
         const savedRenderMode = this.settingsManager.settings?.renderMode;
-        if (savedRenderMode === "line" || savedRenderMode === "streaming") {
+        if (savedRenderMode === "line" || savedRenderMode === "streaming" || savedRenderMode === "block") {
             this.renderMode = savedRenderMode;
             globalThis.__piRenderMode = savedRenderMode;
         }
@@ -2221,7 +2221,7 @@ export class InteractiveMode {
             return undefined;
         });
         globalThis.__genshinToggleRenderMode = (mode) => {
-            this.renderMode = mode || (this.renderMode === "streaming" ? "line" : "streaming");
+            this.renderMode = mode || (this.renderMode === "streaming" ? "line" : this.renderMode === "line" ? "block" : "streaming");
             globalThis.__piRenderMode = this.renderMode;
 
             if (this.renderMode === "streaming" && this.streamingComponent && this.streamingMessage) {
@@ -2229,7 +2229,8 @@ export class InteractiveMode {
                 this.ui.requestRender();
             }
             this._persistRenderMode();
-            this.showStatus(`Render: ${this.renderMode === "streaming" ? "streaming (token)" : "line-by-line"}`);
+            const modeLabel = this.renderMode === "streaming" ? "streaming (token)" : this.renderMode === "block" ? "block (per-block)" : "line-by-line";
+            this.showStatus(`Render: ${modeLabel}`);
         };
         globalThis.__genshinToggleThinking = (show) => {
             if (show !== undefined) {
@@ -2497,7 +2498,22 @@ export class InteractiveMode {
                             }
                         }
                     }
-                    if (this.renderMode === "line") {
+                    if (this.renderMode === "block") {
+                        // Block mode: only render on block completion events, not during streaming deltas
+                        const evType = event.assistantMessageEvent?.type;
+                        if (evType === "text_end" || evType === "thinking_end" || evType === "message_end") {
+                            this.streamingComponent.updateContent(this.streamingMessage);
+                            this.ui.requestRender();
+                            if (this._transcriptFollowing) {
+                                try { this.transcriptScrollView.scrollToEnd(); } catch (e) { console.error("[interactive-mode.js] block render scroll: " + (e?.message || e)); }
+                            }
+                        }
+                        // Tool calls always render immediately
+                        else if (evType === "tool_use_begin" || evType === "tool_use_delta" || evType === "tool_use_end") {
+                            this.streamingComponent.updateContent(this.streamingMessage);
+                            this.ui.requestRender();
+                        }
+                    } else if (this.renderMode === "line") {
                         const saved = [];
                         // ISSUE 077 真根因修复（2026-08-15）：逐行截断只能作用于"正在流式"的块
                         // （对应 *_delta 事件的块）。此前对每个 message_update 无差别截断——
