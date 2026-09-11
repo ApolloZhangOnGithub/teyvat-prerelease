@@ -3194,7 +3194,8 @@ export class InteractiveMode {
         this.chatContainer.addChild(new Text(text, 1, 0));
     }
     renderInitialMessages() {
-        const entries = this.sessionManager.buildContextEntries();
+        // 渲染全部 session entries（不只是当前 context window）——恢复/attach 后用户能看到完整历史
+        const entries = this.sessionManager.getEntries();
         this.renderSessionEntries(entries, {
             updateFooter: true,
             populateHistory: true,
