@@ -308,12 +308,14 @@ for (let i = 0; i < list.length; i++) {
   // 2026-08-20 用户需求（修正）：B（后台 headless）状态区整体用鲸鱼蓝 #718EF4——"绿色有哪些，蓝色就有哪些"（整段 tag+time 蓝，不再只 [B] 单字母）
   const statusColor = statusFull.includes('[B]') && p._active ? '\x1b[38;2;113;142;244m' : (p._active ? G : '');
   const statusReset = p._active ? R : '';
-  // 2026-08-20 分组编号：offline/front/background 各自独立编号，**不带后缀字母**——颜色区分组（F=绿、B=鲸鱼蓝、O=黄），数字=组内序号（与 1o/1f/1b 管理路由一致）
+  // 2026-09-11 序号颜色重设计：按状态区分
+  // [W]/[F] 前台活跃 = 绿 | [P]/[B] 后台 = 蓝 | [H] 休眠 = 黄 | [O] 离线 = 白（默认色）
   let numIdx, numColor;
   if (p._active) {
-    if (statusFull.includes('[B]')) { numColor = '\x1b[38;2;113;142;244m'; numIdx = bNum++; } // B 后台 = 鲸鱼蓝（result 色）
-    else { numColor = G; numIdx = fNum++; } // F 前台 = 绿
-  } else { numColor = Y; numIdx = oNum++; } // O 离线 = 黄
+    if (statusFull.includes('[H]')) { numColor = Y; numIdx = bNum++; }
+    else if (statusFull.includes('[B]') || statusFull.includes('[P]')) { numColor = '\x1b[38;2;113;142;244m'; numIdx = bNum++; }
+    else { numColor = G; numIdx = fNum++; }
+  } else { numColor = ''; numIdx = oNum++; }
   const num = numColor + String(numIdx).padStart(numW) + '. ' + R;
   const kc = KIND_COLORS[kind] || D;
   const memoir = pad(p._memoir ? '✓' : '✗', 6);
