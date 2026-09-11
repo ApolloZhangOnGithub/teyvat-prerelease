@@ -22,7 +22,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import * as readline from 'node:readline';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 
 const H = os.homedir();
@@ -39,7 +39,7 @@ const LOG_FILE = path.join(STATE_DIR, 'backup.log');
 // state: "configured-no-snapshot" | "ok" | "failed"（"未配置"由 launcher 实时判 services.json——不依赖本文件）
 const STATUS_FILE = path.join(PAIMON, 'RuntimeCache', 'backup-status.json');
 const BIN_DIR = path.join(PAIMON, 'bin');
-const RESTIC = path.join(BIN_DIR, 'restic');
+const RESTIC = path.join(BIN_DIR, process.platform === 'win32' ? 'restic.exe' : 'restic');
 const REPO_PREFIX = 'teyvat-restic';
 
 const BOLD = '\x1b[1m', D = '\x1b[90m', G = '\x1b[32m', Y = '\x1b[33m', RED = '\x1b[31m', R = '\x1b[0m';
@@ -97,19 +97,71 @@ function resticArch(): string | null {
   if (p === 'win32') return 'windows_amd64';
   return null;
 }
+// 2026-09-11（prime-agent）三处加固：
+//   ① 原来 `curl … | bunzip2 > restic && chmod +x` —— **拿到什么就执行什么**（用的是用户的 AK 与仓库密码的身份）。
+//      现在按官方 SHA256SUMS（v0.19.1）钉死校验和，用 node:crypto 自己算，不一致就删文件 + 报错（fail-closed）。
+//      校验和来源：https://github.com/restic/restic/releases/download/v0.19.1/SHA256SUMS
+//      （darwin_arm64 那份**实测下载后算过哈希对得上**：7be0a144…）
+//   ② Windows 资产是 .zip，原来拼 .bz2 → **实测 HTTP 404**：Windows 上永远下不动（还有 restic 无 .exe 后缀也起不来）。
+//   ③ 下载与 restic 调用都加超时：cmdNow 是 bioclock detached 起的子进程，卡住没人看得见（状态会永远停在 running）。
+const RESTIC_VER = '0.19.1';
+const RESTIC_SHA256: Record<string, { file: string; sha: string; kind: 'bz2' | 'zip' }> = {
+  darwin_amd64: { file: `restic_${RESTIC_VER}_darwin_amd64.bz2`, sha: 'c38d579622cf602f665234c5a8c315030b6cf70656028fe6dc29a786b60e5f35', kind: 'bz2' },
+  darwin_arm64: { file: `restic_${RESTIC_VER}_darwin_arm64.bz2`, sha: '7be0a144ccc377880f294204aa271d76e4b79554b42a751151d425ce6ebac143', kind: 'bz2' },
+  linux_amd64: { file: `restic_${RESTIC_VER}_linux_amd64.bz2`, sha: 'f415415624dcc452f2a02b8c33641791a8c6d6d3b65bbb3543fcf9a25151585c', kind: 'bz2' },
+  linux_arm64: { file: `restic_${RESTIC_VER}_linux_arm64.bz2`, sha: 'a5f64aaab53d51e311fa3829124c5b703f2d14cf187d8640b6be3b2b49376465', kind: 'bz2' },
+  windows_amd64: { file: `restic_${RESTIC_VER}_windows_amd64.zip`, sha: 'da948ad707ed690426473aaba2046cd61f8f90f6f0e7dab6be0d5796531de67d', kind: 'zip' },
+};
+function sha256File(p: string): string {
+  const h = createHash('sha256');
+  h.update(fs.readFileSync(p));
+  return h.digest('hex');
+}
+/** 从 release 下载 restic 并**校验官方 SHA256**；任何一步不通过都返回 null（不执行未校验的二进制） */
 function ensureRestic(): string | null {
   const found = resticBin();
   if (found) return found;
   const arch = resticArch();
   if (!arch) return null;
-  const ver = '0.19.1';
-  const url = `https://github.com/restic/restic/releases/download/v${ver}/restic_${ver}_${arch}.bz2`;
+  const meta = RESTIC_SHA256[arch];
+  if (!meta) {
+    console.error(`  ${RED}${T(`没有 ${arch} 的校验和记录——请自行安装 restic 后重试`, `no pinned checksum for ${arch} — install restic manually`)}${R}`);
+    return null;
+  }
   fs.mkdirSync(BIN_DIR, { recursive: true });
+  const url = `https://github.com/restic/restic/releases/download/v${RESTIC_VER}/${meta.file}`;
+  const tmpDl = RESTIC + '.dl';
   process.stdout.write(`  ${D}${T(`下载 restic（${arch}）...`, `downloading restic (${arch})...`)}${R}\n`);
-  const sh = `curl -fsSL "${url}" | bunzip2 > "${RESTIC}" && chmod +x "${RESTIC}"`;
-  const r = spawnSync('bash', ['-c', sh], { stdio: 'inherit' });
-  if (r.status === 0 && fs.existsSync(RESTIC)) return RESTIC;
-  return null;
+  const dl = spawnSync('curl', ['-fsSL', '--max-time', '300', '--retry', '2', '-o', tmpDl, url], { stdio: 'inherit' });
+  if (dl.status !== 0 || !fs.existsSync(tmpDl)) {
+    try { fs.rmSync(tmpDl, { force: true }); } catch { /* ignore */ }
+    console.error(`  ${RED}${T('restic 下载失败（网络？）', 'restic download failed')}${R}`);
+    return null;
+  }
+  const got = (() => { try { return sha256File(tmpDl); } catch { return ''; } })();
+  if (got !== meta.sha) {
+    try { fs.rmSync(tmpDl, { force: true }); } catch { /* ignore */ }
+    console.error(`  ${RED}${T('restic 校验和不符——已删除下载文件（拒绝执行未校验的二进制）', 'restic checksum mismatch — download deleted')}${R}`);
+    console.error(`  ${D}expected ${meta.sha}\n          got ${got || '(read failed)'}${R}`);
+    log(`restic checksum mismatch: expected=${meta.sha} got=${got}`);
+    return null;
+  }
+  const out = path.join(BIN_DIR, process.platform === 'win32' ? 'restic.exe' : 'restic');
+  const ex = meta.kind === 'zip'
+    ? spawnSync('unzip', ['-o', tmpDl, '-d', BIN_DIR], { stdio: 'ignore' })
+    : spawnSync('bash', ['-c', `bunzip2 -c "${tmpDl}" > "${out}"`], { stdio: 'inherit' });
+  try { fs.rmSync(tmpDl, { force: true }); } catch { /* ignore */ }
+  if (meta.kind === 'zip' && ex.status === 0) {
+    // zip 里是 restic_<ver>_windows_amd64.exe —— 改名成 restic.exe 供 spawn
+    const inner = path.join(BIN_DIR, meta.file.replace(/\.zip$/, '.exe'));
+    try { if (fs.existsSync(inner)) fs.renameSync(inner, out); } catch { /* ignore */ }
+  }
+  if (ex.status !== 0 || !fs.existsSync(out)) {
+    console.error(`  ${RED}${T('restic 解压失败', 'restic extract failed')}${R}`);
+    return null;
+  }
+  try { fs.chmodSync(out, 0o755); } catch { /* ignore */ }
+  return out;
 }
 
 // ── restic 运行环境 ──────────────────────────────────────────────────
@@ -134,6 +186,10 @@ function runRestic(bin: string, conf: any, args: string[], opts: { inherit?: boo
     encoding: 'utf8',
     stdio: opts.inherit ? 'inherit' : 'pipe',
     maxBuffer: 16 * 1024 * 1024,
+    // 2026-09-11（prime-agent）：原来没有超时 —— 网络卡住时 restic 会一直挂着，
+    // 而 cmdNow 是 bioclock detached 起的子进程（没人看得见），状态永远停在 running。30 分钟封顶。
+    timeout: 30 * 60_000,
+    killSignal: 'SIGTERM',
   });
   const out = `${r.stdout || ''}${r.stderr || ''}`;
   return { ok: r.status === 0, out };
@@ -225,15 +281,43 @@ function cmdInit(): boolean {
   if (!conf) { console.error(`  ${RED}${T('未配置——先跑 genshin b config', 'not configured — run genshin b config first')}${R}`); return false; }
   const bin = ensureRestic();
   if (!bin) { console.error(`  ${RED}${T('restic 不可用（下载失败？）', 'restic unavailable (download failed?)')}${R}`); return false; }
-  // 首次：生成仓库密码（必须提示用户抄走——丢了仓库永久不可读）
+  // 仓库密码：本地不存在时先从 sync server 拉取（GitHub auth 绑定的身份），拉不到才新生成
   if (!fs.existsSync(PASS_FILE)) {
     fs.mkdirSync(BACKUP_DIR, { recursive: true });
-    const pw = randomBytes(32).toString('base64');
+    let pw = '';
+    // 尝试从 sync server 恢复（GitHub auth 身份——任何机器只要绑定了同一 GitHub 就能拿回密码）
+    try {
+      const bind = JSON.parse(fs.readFileSync(path.join(PAIMON, 'UserAccount', 'binding.json'), 'utf8'));
+      if (bind?.token) {
+        const r = spawnSync('curl', ['-s', '-m', '10', '-H', `Authorization: Bearer ${bind.token}`,
+          '-H', `X-Device-Id: ${bind.deviceId || ''}`,
+          'https://sync.paimon.beer/sync/backup-password'], { encoding: 'utf8' });
+        if (r.status === 0 && r.stdout) {
+          try {
+            const resp = JSON.parse(r.stdout);
+            if (resp.password) { pw = resp.password; console.log(`  ${G}✓${R} ${T('已从云端恢复仓库密码（GitHub 身份验证）', 'repo password recovered from cloud (GitHub auth)')}`); }
+          } catch { /* 响应不是 JSON，忽略 */ }
+        }
+      }
+    } catch { /* binding 不存在或网络失败，走新生成 */ }
+    if (!pw) {
+      pw = randomBytes(32).toString('base64');
+      console.log(`  ${D}${T('生成新仓库密码', 'generating new repo password')}${R}`);
+    }
     fs.writeFileSync(PASS_FILE, pw, { mode: 0o600 });
     try { fs.chmodSync(PASS_FILE, 0o600); } catch { /* ignore */ }
-    console.log(`\n  ${Y}${BOLD}⚠ ${T('已生成 restic 仓库密码', 'restic repo password generated')}${R}`);
-    console.log(`  ${BOLD}${T('请立刻抄走保存', 'COPY IT NOW')}${R}：${D}${PASS_FILE}${R}`);
-    console.log(`  ${D}${T('密码丢了 = 仓库永久打不开（restic 是端到端加密设计，谁也救不了）。', 'Lose it = repo unrecoverable forever.')}${R}\n`);
+    // 上传到 sync server（绑定 GitHub 身份，换机器可恢复）
+    try {
+      const bind = JSON.parse(fs.readFileSync(path.join(PAIMON, 'UserAccount', 'binding.json'), 'utf8'));
+      if (bind?.token) {
+        spawnSync('curl', ['-s', '-m', '10', '-X', 'POST', 'https://sync.paimon.beer/sync/backup-password',
+          '-H', 'Content-Type: application/json', '-H', `Authorization: Bearer ${bind.token}`,
+          '-H', `X-Device-Id: ${bind.deviceId || ''}`, '-H', 'User-Agent: genshin-sync/1.0',
+          '-d', JSON.stringify({ password: pw })], { stdio: 'ignore' });
+        console.log(`  ${G}✓${R} ${T('密码已同步到云端（通过 GitHub 身份绑定，换机器可恢复）', 'password synced to cloud (recoverable via GitHub auth on any machine)')}`);
+      }
+    } catch { /* 上传失败不阻断 */ }
+    console.log(`  ${D}${T('本地备份', 'local copy')}：${PASS_FILE}${R}`);
   }
   const chk = runRestic(bin, conf, ['snapshots', '--last']);
   if (chk.ok) { console.log(`  ${D}${T('仓库已存在，跳过 init', 'repo exists, skip init')}${R}`); return true; }

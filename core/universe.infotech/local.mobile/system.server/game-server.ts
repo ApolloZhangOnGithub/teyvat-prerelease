@@ -182,9 +182,15 @@ const server = createServer(async (req, res) => {
   json(res, 404, { ok: false, error: "not found" });
 });
 
+// 2026-09-11（prime-agent，收口 ISSUE 170 剩下的一半）：
+// 原来 `server.listen(PORT, cb)` **没给 host** → Node 默认绑所有网卡（0.0.0.0/::）→ 局域网内任何设备
+// 扫到端口就能进这局棋（create/join/move 全无鉴权，token 只是对局内的座位号）。
+// 客户端 gomoku 走的是 `http://localhost:${port}`（steam-006_gomoku.ts，另有 GAME_SERVER_URL 覆盖用于远程对局）
+// → 绑 127.0.0.1 零功能损失；真要跨机对局时用 PAIMON_GAME_HOST=0.0.0.0 显式打开（那时请自觉加 token 校验）。
 export function startGameServer() {
   if (server.listening) return;
-  server.listen(PORT, () => {
+  const host = process.env.PAIMON_GAME_HOST || "127.0.0.1";
+  server.listen(PORT, host, () => {
     const actualPort = (server.address() as any)?.port;
     const dir = runtimeCacheBaseDir();
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });

@@ -51,7 +51,13 @@ export const DIRS = {
 } as const;
 
 // ── 目录结构 ──
-export const PAIMON = join(homedir(), ".teyvat");
+// 2026-09-11（prime-agent）：原来硬编码 `join(homedir(), ".teyvat")` —— 与项目自己的教训冲突：
+//   B.docs/Dev.Common/Wiki/Backup(Cloud Snapshot).WIKI 不变量 #2：「路径一律经 PAIMON_HOME —— 禁止硬编码 ~/.teyvat
+//   （doctor.ts 有专门注释记录过这个教训：硬编码会让 PAIMON_HOME 指向别处时静默检查错的家目录，也让功能无法被测试）」
+// 而 launcher 始终 `export PAIMON_HOME="$HOME/.teyvat"` → 正常使用行为**完全不变**；
+// 只有显式设置 PAIMON_HOME 的场景（工具、夹具测试、多部署点）才会走到自定义家目录 —— 正是期望的行为。
+// 同一处约定见 god.frontend.cli/{doctor.ts,backup.ts,mobile.ts}：`process.env.PAIMON_HOME || join(homedir(), ".teyvat")`
+export const PAIMON = process.env.PAIMON_HOME || join(homedir(), ".teyvat");
 export const PROGRAM_FILES_MOBILE = join(PAIMON, "ProgramFiles/Mobile");
 const MEMORY_DATA = join(PAIMON, "MemoryData");
 const SESSION_DATA = join(PAIMON, "SessionData");
