@@ -23,7 +23,7 @@ import { i18n } from "#tui_localizations";
 // tree/trust）—— 撞名的扩展命令会被 interactive-mode.js 直接过滤掉，不是报错而是消失。
 
 // 长名列宽：取最长长名（changelog 类不算，只看我们自己的）+ 2 空格，保证描述列对齐。
-const LABEL_W = 8;
+const LABEL_W = 10;
 
 function desc(long: string, zh: string, en: string) {
   const label = long.padEnd(LABEL_W);
