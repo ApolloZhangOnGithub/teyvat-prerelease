@@ -463,9 +463,9 @@ export class ToolExecutionComponent extends Container {
             return isToolError(this.toolName, t, { isError: this.result?.isError, toolCallId: this.toolCallId });
         } catch { /* 无文本内容 */ }
         if ((this.toolName === "wait" || this.toolName === "hibernate") && this.toolCallId && globalThis.__genshinWaitInterruptedId === this.toolCallId) {
-            // 2026-09-07（WIKI 规范收敛）：wait_for_user:true 被打断 = 用户来了 = 正常恢复 → 绿点（非 error）；
-            // 只有异常中断（esc/命令等）才红点。旧实现无条件红，与 WIKI 判据不一致。
+            const reason = globalThis.__genshinWaitInterruptedReason;
             if (globalThis.__genshinWaitInterruptedForUser === true) return false;
+            if (reason === "system" || reason === "user") return false;
             return true;
         }
         return false;
@@ -558,7 +558,7 @@ export class ToolExecutionComponent extends Container {
             }
             const lines = [];
             if (contentLines.length > 0) {
-                lines.push("");
+                lines.push("", "");
                 lines.push(...contentLines);
             }
             for (let i = 0; i < this.imageComponents.length; i++) {

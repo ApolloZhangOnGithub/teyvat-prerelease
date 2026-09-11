@@ -8,8 +8,7 @@ import { authdirHandler, authdirCompletions } from "./authdir.ts";
 import { quitHandler } from "./exit.ts";
 import { detachHandler } from "./detach.ts";
 import { pauseHandler } from "./pause.ts";
-import { experimentalHandler } from "./devs.ts";
-import { settingsHandler } from "./settings.ts";
+import { settingsHandler, setToolsHandler } from "./settings.ts";
 import { i18n } from "#tui_localizations";
 
 // ── 为什么用短名注册 ──────────────────────────────────────────────────────────
@@ -32,13 +31,13 @@ function desc(long: string, zh: string, en: string) {
 }
 
 export function registerGodCommands(pi: any) {
+  // tools handler 需要 pi 实例——注入到 settings.ts 供 /s 的 Tools 标签页使用
+  const th = toolsHandler(() => pi.getActiveTools() ?? [], (t: string[]) => pi.setActiveTools(t));
+  setToolsHandler(th);
+
   pi.registerCommand("s", {
-    description: desc("settings", "设置（身份/显示/服务/模型/推理/后台）", "Settings (identity/display/services/model/effort/bg)"),
+    description: desc("settings", "设置面板（身份/显示/服务/模型/工具/推理/后台/实验）", "Settings panel"),
     handler: settingsHandler,
-  });
-  pi.registerCommand("t", {
-    description: desc("tools", "列出当前可用工具", "List available tools"),
-    handler: toolsHandler(() => pi.getActiveTools() ?? [], (t) => pi.setActiveTools(t)),
   });
   pi.registerCommand("a", {
     description: desc("authdir", "白名单授权目录 + 工具持久授权", "Whitelist dirs + persistent tool auth"),
@@ -60,9 +59,5 @@ export function registerGodCommands(pi: any) {
   pi.registerCommand("p", {
     description: desc("pause", "暂停/恢复当前 Agent", "Pause/resume agent"),
     handler: pauseHandler,
-  });
-  pi.registerCommand("d", {
-    description: desc("devs", "实验性功能", "Experimental features"),
-    handler: experimentalHandler,
   });
 }

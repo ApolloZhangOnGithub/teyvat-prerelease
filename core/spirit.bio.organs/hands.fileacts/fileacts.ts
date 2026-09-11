@@ -538,8 +538,8 @@ export default function (pi: ExtensionAPI) {
       const cmd = (event.input as any).command;
       if (!cmd) return;
 
-      // 禁止 rm——只能用 remove 工具标记为 .REMOVED，不能直接删
-      if (/\brm\b/.test(cmd) && !cmd.includes("UNREGULATED")) {
+      // 禁止 rm——只能用 remove 工具标记为 .REMOVED，不能直接删（ISSUE 046: 去掉 UNREGULATED 字符串豁免）
+      if (/\brm\b/.test(cmd)) {
         return { block: true, reason: i18n("禁止 rm！用 trash 工具删除文件。", "rm is forbidden! Use the trash tool to delete files.") };
       }
 
@@ -548,9 +548,15 @@ export default function (pi: ExtensionAPI) {
         return { block: true, reason: i18n("禁止 npx/npm install！包管理由 install.sh 统一处理。", "npx/npm install is forbidden! Package management is handled by install.sh.") };
       }
 
-      // 禁止 python -c / python3 -c 直接执行代码——必须先写 .py 文件再运行
+      // 禁止解释器内联代码执行（ISSUE 046: 防 gate 绕过——路径抠不到 fail-open 的根源）
       if (/\bpython[23]?\s+-c\b/.test(cmd) || /\bpython[23]?\s*<</.test(cmd) || /\bpython[23]?\s+-\s*$/.test(cmd)) {
         return { block: true, reason: i18n("禁止直接执行 python 内联代码。请在工作目录下创建 .py 文件，然后用 python <文件名>.py 运行。", "Inline python execution is forbidden. Create a .py file in the workdir, then run it with python <filename>.py.") };
+      }
+      if (/\bnode\s+-e\b/.test(cmd) || /\bnode\s+--eval\b/.test(cmd)) {
+        return { block: true, reason: i18n("禁止 node -e 内联执行。请在工作目录下创建 .js 文件，然后用 node <文件名>.js 运行。", "node -e inline execution is forbidden. Create a .js file in the workdir, then run it with node <filename>.js.") };
+      }
+      if (/\bperl\s+-e\b/.test(cmd) || /\bruby\s+-e\b/.test(cmd)) {
+        return { block: true, reason: i18n("禁止解释器内联代码执行。请先创建脚本文件再运行。", "Inline interpreter execution is forbidden. Create a script file first.") };
       }
 
       // 检查 bash 新建文件——不拦截(管道数据不能丢)，但事后补 .SPEC

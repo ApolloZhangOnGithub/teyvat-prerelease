@@ -161,11 +161,10 @@ function renderContextUsage(): string[] {
 
 export async function identityHandler(args: any, ctx: any) {
   const query = typeof args === "string" ? args.trim() : args?.args?.trim?.() || "";
-  const D = "\x1b[90m"; const R = "\x1b[0m"; const B = "\x1b[1m";
 
   const identityLines = renderIdentity(query);
   const contextLines = renderContextUsage();
 
-  const out = [...identityLines, "", ...contextLines].join("\n");
-  ctx.ui.notify(out, "info");
+  const allLines = [...identityLines, "", ...contextLines];
+  await ctx.ui.select("Identity", allLines);
 }

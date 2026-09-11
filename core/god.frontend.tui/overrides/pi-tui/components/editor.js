@@ -379,7 +379,7 @@ export class Editor {
         const layoutWidth = Math.max(1, contentWidth - (paddingX ? 0 : 1));
         // Store for cursor navigation (must match wrapping width)
         this.lastWidth = layoutWidth;
-        const horizontal = this.borderColor("─");
+        const horizontal = (n) => this.borderColor("─".repeat(n));
         // Layout the text
         const layoutLines = this.layoutText(layoutWidth);
         // Calculate max visible lines: 30% of terminal height, minimum 5 lines
@@ -409,14 +409,28 @@ export class Editor {
         const _e01 = process.env.EDITOR01 !== "0";
         const _e02 = process.env.EDITOR02 !== "0";
         const _e03 = process.env.EDITOR03 !== "0";
-        // Render top border (with scroll indicator if scrolled down)
+        // Render top border (with scroll indicator if scrolled down; right side: #id @session)
         if (_e01) {
             if (this.scrollOffset > 0) {
                 const border = createScrollBorder("↑", this.scrollOffset, width);
                 result.push(this.borderColor(border));
             }
             else {
-                result.push(horizontal.repeat(width));
+                const pid = process.env.PAIMON_AGENT_ID || "";
+                let sessionHash = "";
+                try { const m = process.title.match(/genshin:[^(]+\([^,]+,[^,]+,\s*([^)]+)/); if (m) sessionHash = m[1]; } catch (e) { /* process.title parse */ }
+                const idParts = [];
+                if (pid) idParts.push(`#${pid}`);
+                if (sessionHash) idParts.push(`@${sessionHash}`);
+                if (idParts.length > 0) {
+                    const label = idParts.join(" ");
+                    const labelW = label.length;
+                    const leftLen = Math.max(1, width - labelW - 2);
+                    const rightLen = Math.max(0, width - leftLen - labelW);
+                    result.push(this.borderColor("─".repeat(leftLen) + label + "─".repeat(rightLen)));
+                } else {
+                    result.push(horizontal(width));
+                }
             }
         }
         // Render each visible layout line
@@ -469,7 +483,7 @@ export class Editor {
                 result.push(this.borderColor(border));
             }
             else {
-                result.push(horizontal.repeat(width));
+                result.push(horizontal(width));
             }
         }
         // Add autocomplete list if active

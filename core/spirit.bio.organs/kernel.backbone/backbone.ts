@@ -153,7 +153,7 @@ export const MESSAGE_TYPES: Record<string, MessageTypeDef> = {
     category: "notice",
     source: "heart",
     label: "Alert From System: API error",
-    feed: true, feedAs: "followUp", triggerNewTurn: true,
+    feed: false, feedAs: "followUp", triggerNewTurn: false,
     render: true,
     description: "API 错误后自动重试",
   },

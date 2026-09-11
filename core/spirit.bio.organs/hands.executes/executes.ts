@@ -749,6 +749,16 @@ let _lastBgHash = ""; // @ 缓存：避免相同输出重复占用 context
       running.set(id, { command: cmd, abort: ac, startTime, killedByUser: false, context, accum: "", type: "bg", recId: shortRecId(cmd), title: (params as any).title || "" });
       updateBgCount();
 
+      // ISSUE 081: bg 任务超时保护（默认 30 分钟，execute 参数可覆盖）
+      const bgTimeoutMs = ((params as any).timeout_minutes ?? 30) * 60 * 1000;
+      const bgTimer = setTimeout(() => {
+        const entry = running.get(id);
+        if (entry && !entry.killedByUser) {
+          try { ac.abort(); } catch (e) { console.error("[executes.ts] bg timeout abort: " + ((e as any)?.message || e)); }
+          try { outboxSend(pi, "continuous-cmd-done", i18n(`超时 (${Math.round(bgTimeoutMs / 60000)}min):\n$ ${cmd}\n(自动终止)`, `Timeout (${Math.round(bgTimeoutMs / 60000)}min):\n$ ${cmd}\n(auto-killed)`), { title: entry.title }, { deliverAs: "interrupt" }); } catch (e) { console.error("[executes.ts] bg timeout notify: " + ((e as any)?.message || e)); }
+        }
+      }, bgTimeoutMs);
+
       // 后台/流式：复用 execPromise（race 超时后它仍在运行）。
       // 历史：issue 072 — race 超时后曾 spawn 第二个进程重跑同一命令，
       // 造成双执行 + 首次结果（含注册密钥等）静默丢失；且原 execPromise
@@ -765,6 +775,7 @@ let _lastBgHash = ""; // @ 缓存：避免相同输出重复占用 context
         };
         try {
           const r = await execPromise;
+          clearTimeout(bgTimer);
           const elapsed = Math.round((Date.now() - bgStart) / 1000);
           const fullOut = [r.stdout, r.stderr].filter(Boolean).join("\n");
           const out = fullOut.slice(0, 50000);
@@ -797,6 +808,7 @@ let _lastBgHash = ""; // @ 缓存：避免相同输出重复占用 context
             outboxSend(pi, "continuous-cmd-done", i18n(`完成 (${elapsed}s, exit ${r.code}):\n$ ${cmd}\n${tail || "(no output)"}${recInfo}${remInfo}`, `Done (${elapsed}s, exit ${r.code}):\n$ ${cmd}\n${tail || "(no output)"}${recInfo}${remInfo}`), { title: entry?.title }, { deliverAs: "interrupt" });
           } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
         } catch (err: any) {
+          clearTimeout(bgTimer);
           const elapsed = Math.round((Date.now() - bgStart) / 1000);
           // 失败也落盘记录
           const recId = shortRecId(cmd);

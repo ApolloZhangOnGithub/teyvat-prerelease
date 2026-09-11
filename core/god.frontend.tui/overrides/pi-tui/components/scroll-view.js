@@ -186,7 +186,11 @@ export class ScrollView extends Container {
     render(width) {
         const contentWidth = this.getContentWidth(width);
         const lines = this.child.render(contentWidth);
-        return contentWidth === width ? lines : lines.map((line) => `${line} `);
+        const result = contentWidth === width ? lines : lines.map((line) => `${line} `);
+        if (this.primary && this.followEnd && !this.followingEnd) {
+            result.unshift("");
+        }
+        return result;
     }
     [LAYOUT_NODE]() {
         return { type: "scroll", component: this.child, state: this };

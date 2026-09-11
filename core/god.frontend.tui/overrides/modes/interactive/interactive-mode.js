@@ -717,8 +717,6 @@ export class InteractiveMode {
             overscroll: "chain",
             // teyvat: 滚动跟随提示条 —— 占用 Editor 顶部 border 行（原本的黑行），不额外占行
             onFollowChange: (following) => {
-                // teyvat: 滚动跟随提示条 → footer 第 1 行中间（claude 风格 pill）
-                // 滚出底部显示（含未读数），回到底部消失并清零；无自动隐藏（曾加 scrollbar 式淡出，疑似导致底部黑屏，已去）
                 this._transcriptFollowing = following;
                 if (following) {
                     this._unseenMessages = 0;
@@ -843,7 +841,7 @@ export class InteractiveMode {
                 }
                 catch (error) {
                     const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-                    this.showError(errorMessage);
+                    this.statusBar?.setMessage?.(errorMessage) ?? this.showStatus(errorMessage);
                 }
             }
         }
