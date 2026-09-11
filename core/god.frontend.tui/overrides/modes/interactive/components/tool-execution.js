@@ -666,6 +666,11 @@ export class ToolExecutionComponent extends Container {
                 if (this.result?.details?.loading) {
                     this._showedSpinner = true;
                 }
+                // 缓存已完成的 result 渲染组件——避免每次 updateDisplay 重建导致闪烁
+                if (this._cachedResultComponent && !this.isPartial) {
+                    renderContainer.addChild(this._cachedResultComponent);
+                    hasContent = true;
+                } else {
                 const resultRenderer = this.getResultRenderer();
                 if (!resultRenderer) {
                     if (!this._resultInlined) {
@@ -673,6 +678,7 @@ export class ToolExecutionComponent extends Container {
                         if (component) {
                             renderContainer.addChild(component);
                             hasContent = true;
+                            if (!this.isPartial) this._cachedResultComponent = component;
                         }
                     }
                 }
@@ -684,6 +690,7 @@ export class ToolExecutionComponent extends Container {
                         this.resultRendererComponent = component;
                         renderContainer.addChild(component);
                         hasContent = true;
+                        if (!this.isPartial) this._cachedResultComponent = component;
                     }
                     catch {
                         this.resultRendererComponent = undefined;
@@ -696,6 +703,7 @@ export class ToolExecutionComponent extends Container {
                         } else { hasContent = true; }
                     }
                 }
+                } // end else (no cache)
             }
         }
         else {
