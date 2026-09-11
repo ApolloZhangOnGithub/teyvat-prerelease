@@ -34,19 +34,37 @@ const TABS = [
 
 export async function settingsHandler(args: any, ctx: any) {
   const argStr = typeof args === "string" ? args.trim() : args?.args?.trim?.() || "";
-  // /s <tab> 直接跳到指定标签页
   if (argStr) {
     const tab = TABS.find(t => t.key.startsWith(argStr) || t.label().toLowerCase().startsWith(argStr.toLowerCase()));
     if (tab) { await tab.handler(args, ctx); return; }
   }
 
-  while (true) {
-    const D = "\x1b[90m"; const R = "\x1b[0m"; const B = "\x1b[1m"; const A = "\x1b[96m";
-    const options = TABS.map(t => `${B}${t.label()}${R}  ${D}/${t.shortcut}${R}`);
-    const pick = await ctx.ui.select(`${A}${B}${T("设置", "Settings")}${R}`, options);
-    if (!pick) break;
-    const idx = options.indexOf(pick);
-    if (idx < 0) break;
-    await TABS[idx].handler(args, ctx);
+  const showSettingsList = (globalThis as any).__genshinShowSettingsList;
+  if (!showSettingsList) {
+    // fallback 旧管线
+    while (true) {
+      const options = TABS.map(t => `${t.label()}  /${t.shortcut}`);
+      const pick = await ctx.ui.select(T("设置", "Settings"), options);
+      if (!pick) break;
+      const idx = options.indexOf(pick);
+      if (idx < 0) break;
+      await TABS[idx].handler(args, ctx);
+    }
+    return;
   }
+
+  // 新管线：SettingsList + MenuPanel
+  let selectedTab = "";
+  const getItems = () => TABS.map(t => ({
+    id: t.key,
+    label: `${t.label()}  /${t.shortcut}`,
+    currentValue: "",
+    values: [],
+  }));
+
+  await showSettingsList(T("设置", "Settings"), getItems, async (id: string) => {
+    selectedTab = id;
+    const tab = TABS.find(t => t.key === id);
+    if (tab) await tab.handler(args, ctx);
+  });
 }

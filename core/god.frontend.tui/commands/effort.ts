@@ -1,5 +1,4 @@
 // god.frontend.tui/commands/effort.ts
-// /e 命令 — DeepSeek effort: max/pi=high, high/pi=medium, low/pi=low
 import { i18n } from "#tui_localizations";
 
 const MAP: [string, string][] = [
@@ -12,22 +11,24 @@ export async function effortHandler(_args: any, ctx: any) {
   const setThinking = (globalThis as any).__genshinSetThinkingLevel;
   if (!setThinking) { ctx.ui.notify(i18n("session 未就绪", "session not ready"), "error"); return; }
 
+  const showSettingsList = (globalThis as any).__genshinShowSettingsList;
   const curPi = ((globalThis as any).__genshinGetThinkingLevel?.()) || "high";
   const curDs = MAP.find(([, pi]) => pi === curPi)?.[0] || "max";
 
-  const options = MAP.map(([ds]) => {
-    const prefix = curDs === ds ? "● " : "  ";
-    return `${prefix}${ds}`;
-  });
-
-  const choice = await ctx.ui.select("Effort", options);
-  if (!choice) return;
-
-  const idx = options.indexOf(choice);
-  if (idx < 0) return;
-  const [, piLevel] = MAP[idx];
-  if (MAP[idx][0] === curDs) return;
-
-  setThinking(piLevel);
-  ctx.ui.notify(`Effort: ${MAP[idx][0]}`, "info");
+  if (showSettingsList) {
+    const getItems = () => [
+      { id: "effort", label: "Effort", currentValue: curDs, values: MAP.map(([ds]) => ds) },
+    ];
+    await showSettingsList("Effort", getItems, (id: string, value: string) => {
+      const entry = MAP.find(([ds]) => ds === value);
+      if (entry) setThinking(entry[1]);
+    });
+  } else {
+    const options = MAP.map(([ds]) => `${curDs === ds ? "● " : "  "}${ds}`);
+    const choice = await ctx.ui.select("Effort", options);
+    if (!choice) return;
+    const idx = options.indexOf(choice);
+    if (idx < 0) return;
+    setThinking(MAP[idx][1]);
+  }
 }
