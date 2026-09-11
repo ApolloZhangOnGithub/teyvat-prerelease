@@ -319,7 +319,7 @@ let _lastBgHash = ""; // @ 缓存：避免相同输出重复占用 context
         const timeTok = estTok > 0 ? `[${hh}:${mm}:${ss}, ${estTok} tokens]` : `[${hh}:${mm}:${ss}]`;
         const exitCode = result?.details?.exitCode;
         const exitPart = exitCode !== undefined && exitCode !== 0 ? `, exit ${theme.bold(String(exitCode))}` : "";
-        const line1 = indent + theme.fg("dim", "⎿") + ` Done in ${theme.bold(secStr + "s")}${exitPart}` + theme.fg("dim", ` at ${hh}:${mm}:${ss}`);
+        const line1 = indent + theme.fg("dim", "⎿  ") + `Done in ${theme.bold(secStr + "s")}${exitPart}` + theme.fg("dim", ` at ${hh}:${mm}:${ss}`);
         c.addChild(new Text(line1, 0, 0));
         if (outText) {
           // 行号统一：blocks_nongod.lineNumbered（markdown 同款：右对齐行号 + │ 竖线）

@@ -402,6 +402,7 @@ export class InteractiveMode {
         this.headerContainer = new Container();
         this.loadedResourcesContainer = new Container();
         this.chatContainer = new Container();
+        this.chatContainer.addChild(new Spacer(1));
         this.pendingMessagesContainer = new Container();
         this.statusContainer = new Container();
         this.widgetContainerAbove = new Container();

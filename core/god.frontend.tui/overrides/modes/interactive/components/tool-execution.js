@@ -551,6 +551,16 @@ export class ToolExecutionComponent extends Container {
         if (this.hideComponent) {
             return [];
         }
+        // wait/hibernate 闪烁：每帧重新替换 dot（updateDisplay 不是每帧跑，render 是）
+        if ((this.toolName === "wait" || this.toolName === "hibernate") && this.isDotPartial() && this.callRendererComponent) {
+            const blinkDot = blockDot(theme, { partial: true, blink: true });
+            (function replaceDot(node) {
+                if (node && typeof node.text === 'string' && (node.text.includes('⏺') || node.text.includes(' '))) {
+                    node.text = node.text.replace(/[⏺]| (?=\s)/, blinkDot);
+                }
+                if (node && node.children) { for (const child of node.children) replaceDot(child); }
+            })(this.callRendererComponent);
+        }
         if (this.hasRendererDefinition() && this.getRenderShell() === "self") {
             const contentLines = this.selfRenderContainer.render(width);
             if (contentLines.length === 0 && this.imageComponents.length === 0) {
