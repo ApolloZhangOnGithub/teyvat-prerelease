@@ -2,6 +2,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+
+// 2026-09-11（系统检查）：统一扩展路径获取——install.sh 定义 PAIMON_EXT 环境变量，兼容 Linux/WSL/macOS
+function getExtensionsDir(): string {
+  return process.env.PAIMON_EXT || join(homedir(), ".local/lib/teyvat/extensions");
+}
 import { getSessionRole } from "#kernel_ribosome";
 import { runtimeCacheDir } from "#paths";
 import { debug } from "#gene_riboswitch";
@@ -210,7 +215,7 @@ export function isToolDisabled(toolName: string): boolean {
   try {
     const role = getSessionRole();
     // manifest role 检查
-    const mf = JSON.parse(readFileSync(`${homedir()}/.local/lib/teyvat/extensions/teyvat/spirit.bio.gene/tools.manifest.json`, "utf8"));
+    const mf = JSON.parse(readFileSync(join(getExtensionsDir(), "teyvat/spirit.bio.gene/tools.manifest.json"), "utf8"));
     const roleDef = mf?.roles?.[role];
     if (roleDef && !roleDef.includes(toolName)) return true;
     // settings.json 禁用检查
