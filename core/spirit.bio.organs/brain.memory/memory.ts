@@ -1107,7 +1107,10 @@ export default function registerMemory(pi: ExtensionAPI) {
     renderResult(result: any, _options: any, theme: any, ctx: any) {
       const raw = resultContent(result)?.[0]?.text || "";
       const isErr = ctx?.isError || /^(?:ERR:|amem\s+\w+:\s)/.test(raw);
-      if (!raw || isErr) return renderMessage.summary(theme, { ...ctx, isError: true }, raw);
+      if (!raw || isErr) {
+        const cleaned = raw.replace(/^amem\s+\w+:\s*/, "");
+        return renderMessage.summary(theme, { ...ctx, isError: true }, cleaned);
+      }
       const { Text: Txt, Container: C } = require("@earendil-works/pi-tui");
       const GUTTER = 2;
       const indent = " ".repeat(GUTTER);
