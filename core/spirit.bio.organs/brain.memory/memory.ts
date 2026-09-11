@@ -359,10 +359,29 @@ export default function registerMemory(pi: ExtensionAPI) {
     }
   });
 
-  // ── tool_call: 禁止 main session 直接写记忆文件（海马体领地）─────
+  // ── tool_call: context 95%+ 强制 amem + 禁止直接写记忆文件 ─────
   const MEMORY_FILES = ["work_memory.md", "context.md", "neocortex.md", "deep_cortex.md"];
+  const AMEM_EXEMPT_TOOLS = new Set(["amem", "status", "wait", "hibernate", "intentions"]);
   pi.on("tool_call", async (event) => {
     if (getSessionRole() !== "main") return;
+
+    // context >= 95% 时只允许 amem/status/wait/hibernate/intentions——其他工具一律拦截
+    if (!AMEM_EXEMPT_TOOLS.has(event.toolName)) {
+      try {
+        const gPath = path.join(personDir || "", "monitor/growth.jsonl");
+        if (personDir && require("fs").existsSync(gPath)) {
+          const lines = require("fs").readFileSync(gPath, "utf8").trim().split("\n");
+          const last = JSON.parse(lines[lines.length - 1]);
+          if (last.ratio >= 95) {
+            return { block: true, reason: i18n(
+              `context 使用已达 ${last.ratio.toFixed(1)}%，必须先执行 amem archive 清理记忆再做其他操作。`,
+              `Context usage at ${last.ratio.toFixed(1)}%, you must run amem archive to free memory before any other action.`
+            ) };
+          }
+        }
+      } catch (e) { /* growth.jsonl 读取失败不阻塞 */ }
+    }
+
     if (event.toolName !== "write" && event.toolName !== "edit" && event.toolName !== "bash") return;
 
     // extract target path: write/edit use path/file_path; bash extracts from command

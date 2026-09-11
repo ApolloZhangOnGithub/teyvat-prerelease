@@ -40,7 +40,20 @@ const RESERVED_NAMES = new Set([
   'install','uninstall','doctor','reset',
 ]);
 
-export function cmdDoctor() {
+function writeFileAtomicP(file: string, data: string): void {
+  // 原子写（tmp+rename）：与 paths.ts 的 writeFileAtomic 同语义（doctor 不 import #paths，保持可独立运行）
+  const tmp = file + '.tmp-' + process.pid;
+  fs.writeFileSync(tmp, data, 'utf8');
+  fs.renameSync(tmp, file);
+}
+
+export function cmdDoctor(args: string[] = []) {
+  // 2026-09-11 prime-agent：`genshin doctor [--residual-trash [--yes]]`
+  //   --residual-trash  列出可清理的残留数据（dry-run，默认不删）
+  //   --yes             与 --residual-trash 同用才真正执行：把目录**移动**到
+  //                     ~/.teyvat/.residual-trash/<时间戳>/<区域>/<sid>（可恢复；含未投递数据的 sid 一律跳过）
+  const wantTrash = args.includes('--residual-trash');
+  const confirmed = args.includes('--yes');
   const B=BOLD, R_=R, G_=G, R2='\x1b[31m', YLW='\x1b[33m';
   console.log('\n  '+B+'Teyvat · Doctor'+R_+D+R_+'\n');
 
@@ -232,6 +245,129 @@ export function cmdDoctor() {
     } catch (e) { /* ps 解析失败：不阻塞其它检查 */ }
   }
 
+  // residual-dirs（2026-09-11 prime-agent，ISSUE 197）：**其它数据区**里"已从 plist 删除"的 agent 残留。
+  // 为什么需要：dir-orphan 只查 MemoryData；实测 7 个数据区里有 32 个 sid 在 plist 里根本不存在，
+  // 合计 901MB（最大单个 424MB、2026-07 的旧数据），而 doctor 一直报"磁盘 13G"却指不出这些是该清的。
+  // 注意：归档 agent（159 个）在 plist 里 → 不算残留；只报 plist 完全不认识的 sid。
+  // 安全性（2026-09-11 加）：告警里标注"曾叫谁/是否改名残留/有没有未投递数据"，避免盲目 trash 丢数据。
+  {
+    const AREAS = ['SessionData','RuntimeCache','AgentFileData','BlackboxData','IdentityData','LogData','ErrorData'];
+    const ALLOW_SIDS = new Set(['cc000001']);   // claude-code-bridge 的固定 sid（外部框架接入，本就不进 plist）
+    const idset = new Set(list.map((p: any) => p.id));
+    // name → 持有该名字的 sid[]（含归档：归档 agent 仍占着这个名字，它是"现役 sid"）
+    const byName = new Map<string, string[]>();
+    for (const p of list) {
+      const label = p.archived ? `${p.id}（归档）` : p.id;
+      byName.set(p.name, [...(byName.get(p.name) || []), label]);
+    }
+
+    const found = new Map<string, { mb: number; areas: Set<string> }>();   // sid → 汇总
+    for (const area of AREAS) {
+      const dir = path.join(PAIMON, area);
+      let entries: any[] = [];
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+      for (const e of entries) {
+        if (!e.isDirectory() || !/^[0-9a-f]{8}$/.test(e.name)) continue;
+        if (idset.has(e.name) || ALLOW_SIDS.has(e.name)) continue;
+        // 用 du 取大小：Node 里同步递归 stat 这些目录要 6s+，du 是 C 实现（整段 <1s）
+        let mb = 0;
+        try {
+          const out = execSync(`du -sm "${path.join(dir, e.name)}"`, { encoding: "utf8", stdio: ["ignore","pipe","ignore"] });
+          mb = parseInt(out.trim().split(/\s+/)[0] || "0", 10) || 0;
+        } catch { /* 目录消失/权限：按 0 计 */ }
+        const cur = found.get(e.name) || { mb: 0, areas: new Set<string>() };
+        cur.mb += mb; cur.areas.add(area);
+        found.set(e.name, cur);
+      }
+    }
+
+    const totalMB = [...found.values()].reduce((s, x) => s + x.mb, 0);
+    // 逐个 sid 收集"该不该删"的证据：曾叫什么、是否改名残留、有没有未投递数据
+    const annotate = (sid: string): { label: string; unsafe: boolean } => {
+      const bits: string[] = [];
+      let unsafe = false;
+      try {
+        const idf = path.join(PAIMON, 'IdentityData', sid, 'identity.json');
+        if (fs.existsSync(idf)) {
+          const nm = JSON.parse(fs.readFileSync(idf, 'utf8')).name;
+          if (nm) {
+            bits.push(`曾叫 ${nm}`);
+            const peers = (byName.get(nm) || []).filter((x) => x !== sid);
+            if (peers.length) bits.push(`改名/重建残留 → 还在用的是 ${peers.join(',')}`);
+          }
+        }
+      } catch { /* identity 缺失/损坏：不影响判定 */ }
+      try {
+        const inbox = path.join(PAIMON, 'SocialData', 'inbox', `${sid}.jsonl`);
+        if (fs.existsSync(inbox)) {
+          let n = 0;
+          for (const line of fs.readFileSync(inbox, 'utf8').split('\n')) {
+            const s = line.trim(); if (!s) continue;
+            try { if (!JSON.parse(s).injected) n++; } catch { /* 坏行忽略 */ }
+          }
+          if (n) { bits.push(`含 ${n} 条未投递消息`); unsafe = true; }
+        }
+        const ob = path.join(PAIMON, 'RuntimeCache', sid, 'outbox', 'pending.json');
+        if (fs.existsSync(ob)) {
+          const arr = JSON.parse(fs.readFileSync(ob, 'utf8'));
+          if (Array.isArray(arr) && arr.length) { bits.push(`outbox 待发 ${arr.length} 条`); unsafe = true; }
+        }
+        const tr = path.join(PAIMON, 'RuntimeCache', sid, 'triggers');
+        if (fs.existsSync(tr)) {
+          const k = fs.readdirSync(tr).length;
+          if (k) { bits.push(`残留 trigger ${k} 个`); unsafe = true; }
+        }
+      } catch { /* 证据读取失败：按无未投递数据处理 */ }
+      return { label: bits.length ? `（${bits.join('；')}）` : '', unsafe };
+    };
+
+    const ranked = [...found.entries()].sort((a, b) => b[1].mb - a[1].mb);
+    if (wantTrash) {
+      const safe = ranked.filter(([sid]) => !annotate(sid).unsafe);
+      const unsafe = ranked.filter(([sid]) => annotate(sid).unsafe);
+      console.log(`\n  [residual-trash] 可清理 ${safe.length} 个 sid（无未投递数据/无进程），跳过 ${unsafe.length} 个（含未投递数据）`);
+      for (const [sid, x] of safe.slice(0, 40)) {
+        console.log(`    - ${[...x.areas].join('/')}/${sid}  ${x.mb.toFixed(0)}MB${annotate(sid).label}`);
+      }
+      if (unsafe.length) for (const [sid] of unsafe) console.log(`    ! 跳过 ${sid}${annotate(sid).label}`);
+      if (!confirmed) {
+        console.log('  [residual-trash] dry-run：未删除任何东西。确认后加 --yes 执行（目录会被**移动**到 ~/.teyvat/.residual-trash/<时间戳>/，可恢复）');
+      } else {
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const base = path.join(PAIMON, '.residual-trash', stamp);
+        let moved = 0;
+        for (const [sid] of safe) {
+          for (const area of AREAS) {
+            const src = path.join(PAIMON, area, sid);
+            if (!fs.existsSync(src)) continue;
+            const dst = path.join(base, area, sid);
+            try {
+              fs.mkdirSync(path.dirname(dst), { recursive: true });
+              fs.renameSync(src, dst);
+              moved++;
+            } catch (e) {
+              console.error(`    移动失败 ${area}/${sid}: ${(e as any)?.message || e}`);
+            }
+          }
+        }
+        console.log(`  [residual-trash] 已移动 ${moved} 个目录 → ${base}（确认无用后 trash 掉整个时间戳目录即可）`);
+      }
+    }
+    if (ranked.length >= 10 || totalMB >= 100) {
+      const top = ranked.slice(0, 3).map(([sid, x]) => {
+        const a = annotate(sid);
+        return `${[...x.areas].join('/')}/${sid}(${x.mb.toFixed(0)}MB)${a.label}`;
+      });
+      const unsafeCount = ranked.filter(([sid]) => annotate(sid).unsafe).length;
+      const tail = unsafeCount
+        ? `；其中 ${unsafeCount} 个含未投递数据，**先别删**`
+        : '；均无未投递数据/无进程，确认无用后逐条 trash ~/.teyvat/<区域>/<sid>';
+      const msg = `${ranked.length} 个"plist 里没有的 sid"数据目录，合计 ${totalMB.toFixed(0)}MB；最大: ${top.join(' | ')}${tail}`;
+      if (!skipIgnored('residual-dirs', msg)) warn('residual-dirs', msg);
+    } else if (ranked.length) ok('residual-dirs', `${ranked.length} 个历史 sid 残留（${totalMB.toFixed(0)}MB，未超阈值）`);
+    else ok('residual-dirs', '无孤儿数据目录');
+  }
+
   // tmux-orphan（2026-09-11 prime-agent 实现；此前的 Doctor WIKI 里写了这条检查，但代码里没有 = 文档-代码漂移）
   // 语义：hc-<sid>（海马体）/ sc-<sid>（元意识）/ sl-<sid>（睡眠）这些"器官 tmux 会话"必须对应一个**活跃** agent；
   // 否则就是崩溃/被杀后残留的会话（占资源，也可能抢 trigger）。只报，不自动杀。
@@ -258,7 +394,9 @@ export function cmdDoctor() {
       const orphans: string[] = [];
       for (const line of tmuxOut.trim().split('\n')) {
         const [name, createdStr] = line.trim().split(/\s+/);
-        const m = (name || '').match(/^(hc|sc|sl)-([0-9a-f]{8})$/);
+        // 2026-09-11 更正前缀：代码里实际的器官会话是 hc-（海马体）/ mc-（元意识）/ nav-（nap）/ sl-（睡眠）；
+        // 文档里写的 sc- 已废弃（元意识现在是 mc-），`dev-*` 是 execute 的终端会话、由 execute 自己记账，不在此列。
+        const m = (name || '').match(/^(hc|mc|nav|sl)-([0-9a-f]{8})$/);
         if (!m) continue;                                  // 非器官会话（如 bridge 的 cc）不管
         const sid = m[2];
         const created = parseInt(createdStr || '0', 10);
@@ -268,8 +406,8 @@ export function cmdDoctor() {
           orphans.push(`${name}（${known ? `agent「${known.name}」不活跃` : '无 plist 条目'}，创建于 ${new Date(created * 1000).toLocaleString('zh-CN', { hour12: false })}）`);
         }
       }
-      const organCount = tmuxOut.trim().split('\n').filter((l) => /^(hc|sc|sl)-[0-9a-f]{8}\s/.test(l.trim())).length;
-      if (organCount === 0) ok('tmux-orphan', '无器官 tmux 会话（hc-/sc-/sl-）');
+      const organCount = tmuxOut.trim().split('\n').filter((l) => /^(hc|mc|nav|sl)-[0-9a-f]{8}\s/.test(l.trim())).length;
+      if (organCount === 0) ok('tmux-orphan', '无器官 tmux 会话（hc-/mc-/nav-/sl-）');
       else if (orphans.length) {
         const msg = `${orphans.length} 个残留器官 tmux 会话: ${orphans.slice(0, 4).join('; ')}`;
         if (!skipIgnored('tmux-orphan', msg)) warn('tmux-orphan', `${msg}；确认后 tmux kill-session -t <name>`);
@@ -405,12 +543,30 @@ export function cmdDoctor() {
     }
   }
 
-  // disk
+  // disk（2026-09-11 prime-agent：加 6 小时缓存 —— `du -sh ~/.teyvat` 在 13G/~10 万文件时要 ~6s，
+  // 是全 doctor 最慢的一步；改成写 RuntimeCache/disk-usage-cache.json，过期才重算，常态 doctor 从 ~7s 降到 ~1s）
   {
-    try{
-      const du=execSync(`du -sh "${PAIMON}" 2>/dev/null`,{encoding:'utf8'}).trim().split(/\s/)[0];
-      ok('disk',`总占用 ${du}`);
-    }catch{ skip('disk','无法计算') }
+    const cacheFile = path.join(PAIMON, 'RuntimeCache', 'disk-usage-cache.json');
+    const TTL_MS = 6 * 60 * 60 * 1000;
+    let done = false;
+    try {
+      const c = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+      if (c && typeof c.human === 'string' && typeof c.ts === 'number' && Date.now() - c.ts < TTL_MS) {
+        const ageMin = Math.round((Date.now() - c.ts) / 60000);
+        ok('disk', `总占用 ${c.human}（缓存 ${ageMin} 分钟前）`);
+        done = true;
+      }
+    } catch { /* 无缓存/损坏 → 现算 */ }
+    if (!done) {
+      try {
+        const du = execSync(`du -sh "${PAIMON}" 2>/dev/null`, { encoding: 'utf8' }).trim().split(/\s/)[0];
+        try {
+          fs.mkdirSync(path.join(PAIMON, 'RuntimeCache'), { recursive: true });
+          writeFileAtomicP(cacheFile, JSON.stringify({ ts: Date.now(), human: du }));
+        } catch { /* 写缓存失败不影响结果 */ }
+        ok('disk', `总占用 ${du}`);
+      } catch { skip('disk', '无法计算'); }
+    }
   }
 
   console.log(`\n  ${passed} passed, ${failed} failed, ${warned} warned, ${skipped} skipped\n`);

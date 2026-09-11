@@ -67,6 +67,10 @@ const RESERVED_NAMES = new Set([
   ...Object.keys(SUBCOMMANDS),
   'update','upgrade','config','list','ls','status',
   'install','uninstall','doctor','reset',
+  // 2026-09-11（prime-agent）：CLI WIKI 里曾把 `genshin laptop <name>` 记为命令，但 SUBCOMMANDS 里没有 laptop
+  // → 照那个用法输入会被当成 agent 名字：既报 reserved 又可能真建出一个叫 laptop 的 agent（误导）。
+  // 保留字挡住创建；文档已在 CLI WIKI 标注"已移除/未实现"。
+  'laptop',
 ]);
 
 function confirm(prompt: string): boolean {
@@ -1065,7 +1069,7 @@ async function main() {
         cmdRename(name, rest[1]||''); return;
       case 'clone':
         cmdClone(name); return;
-      case 'doctor': cmdDoctor(); return;
+      case 'doctor': cmdDoctor(rest); return;   // 2026-09-11：把子参数透传给 doctor（--residual-trash / --yes）；rest[0] 就是子命令后的第一个参数
       case 'login': await cmdLogin(); return;
       case 'logout': cmdLogout(); return;
       case 'unbind': cmdUnbind(); return;

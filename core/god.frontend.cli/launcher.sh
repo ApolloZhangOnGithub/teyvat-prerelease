@@ -378,7 +378,17 @@ case "$NAME" in
       fi
     elif [ -d "$SOURCE_DIR/.git" ]; then
       echo "  channel: $CHANNEL (source: $SOURCE_DIR)"
-      cd "$SOURCE_DIR" && git pull --ff-only && bash Codebase/deploy/install.sh
+      cd "$SOURCE_DIR" || { echo "  ERROR: 进不去 $SOURCE_DIR"; exit 1; }
+      git pull --ff-only || { echo "  ERROR: git pull 失败"; exit 1; }
+      # 2026-09-11（prime-agent）：原来是硬编码 `Codebase/deploy/install.sh` —— 那是 Continents 重构**之前**的布局，
+      # 现在源码树是 A.core/ + C.deploy/（见 C.deploy/bootstrap.sh）；照旧路径必然 "No such file"，
+      # 也就是 source 通道的 `genshin update` 一直是坏的。改为按候选探测 + 找不到就明确报错。
+      _INST=""
+      for _cand in "C.deploy/install.sh" "deploy/install.sh" "Codebase/deploy/install.sh"; do
+        [ -f "$SOURCE_DIR/$_cand" ] && { _INST="$SOURCE_DIR/$_cand"; break; }
+      done
+      [ -n "$_INST" ] || { echo "  ERROR: 在 $SOURCE_DIR 里找不到 install.sh（试过 C.deploy/ deploy/ Codebase/deploy/）"; exit 1; }
+      PAIMON_CHANNEL="$CHANNEL" bash "$_INST"
     else
       echo "  ERROR: cannot locate source. reinstall with bootstrap.sh"
       exit 1
@@ -407,7 +417,7 @@ case "$NAME" in
     rm -f "$HOME/.local/bin/genshin" "$HOME/.local/bin/mobile" "$HOME/.local/bin/mobile-runner.mjs" "$HOME/.local/bin/identity"
     rm -rf "$HOME/.local/lib/teyvat/extensions" "$HOME/.local/lib/teyvat/extensions-stable" "$HOME/.local/lib/teyvat/runtime"
     echo -e "  \033[32mOK\033[0m uninstalled. agent data preserved in ~/.teyvat/"
-    echo "  to reinstall: bash <(curl -fsSL https://raw.githubusercontent.com/ApolloZhangOnGithub/teyvat-dev/main/Codebase/deploy/bootstrap.sh)"
+    echo "  to reinstall: bash <(curl -fsSL https://paimon.beer/install-dev)"   # 2026-09-11 更正：旧的 raw.githubusercontent .../Codebase/deploy/bootstrap.sh 已 404（实测），teyvat-dev 里没有该路径；paimon.beer/install-dev 实测 200
     exit 0;;
   archive|a)    MODE="archive"; NAME="$1"; shift 2>/dev/null;;
   unarchive|ua) MODE="unarchive"; NAME="$1"; shift 2>/dev/null;;

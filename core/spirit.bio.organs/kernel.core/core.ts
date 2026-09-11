@@ -599,17 +599,11 @@ export default function kernelMain(pi: ExtensionAPI) {
       } catch (e) { console.error("[spirit.bio.organs/kernel.core/core.ts] " + ((e as any)?.message || e)); }
     }
 
-    // ── 部署检测（仅 dev 模式，deployed 版不探测）──
-    if (IS_DEV) {
-      try {
-        let devRoot = process.env.PI_DEV_ROOT;
-        if (devRoot && !existsSync(join(devRoot, "Codebase/core/spirit.bio.organs"))) devRoot = "";
-        if (!devRoot) {
-          const probe = resolve(DIRS.core, "../..");
-          if (existsSync(join(probe, "Codebase/core/spirit.bio.organs"))) devRoot = probe;
-        }
-      } catch (e) { console.error("[spirit.bio.organs/kernel.core/core.ts] " + ((e as any)?.message || e)); }
-    }
+    // ── 部署检测：已移除（2026-09-11 prime-agent）──
+    // 原实现在 IS_DEV 下探测 `Codebase/core/spirit.bio.organs` —— 那是 Continents 重构**之前**的路径
+    // （现在源码树是 A.core/ + C.deploy/），而且算出来的 devRoot 在函数里**从未被使用**：
+    // 死代码 + 过期路径，双份误导（后来人会以为存在部署检测机制）。真要恢复的话，路径按当前布局
+    // （A.core/spirit.bio.organs）判断，并且必须真正消费这个值。
 
     // ── 反方向健康检查：主意识定时监控 hc/sc 是否存活 ──
     if (role === "main") {
