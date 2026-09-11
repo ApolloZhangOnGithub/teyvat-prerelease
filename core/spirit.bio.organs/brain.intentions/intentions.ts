@@ -6,7 +6,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { registerPaimonTool } from "#kernel_backbone";
-import { renderToolCall, renderMessage, GUTTER, dot } from "#tui_blockrender";
+import { renderToolCall, renderMessage, GUTTER, dot, lineNumbered } from "#tui_blockrender";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
@@ -105,7 +105,16 @@ export default function (_pi: ExtensionAPI) {
       const { generateDiffString } = require("@earendil-works/pi-coding-agent/dist/core/tools/edit-diff.js");
 
       if (result?.details?.action === "read") {
-        return renderMessage.silent();
+        if (!text || text === "(empty)") return renderMessage.silent();
+        const { Text: Txt, Container: CC } = require("@earendil-works/pi-tui");
+        const cc = new CC();
+        const lineCount = text.split("\n").filter((l: string) => l.trim()).length;
+        const indent = " ".repeat(GUTTER);
+        cc.addChild(new Txt(indent + theme.fg("dim", "⎿  ") + `${lineCount} lines`, 0, 0));
+        const rendered = lineNumbered(text, theme);
+        const contIndent = " ".repeat(GUTTER + 3);
+        for (const line of rendered.split("\n")) cc.addChild(new Txt(contIndent + line, 0, 0));
+        return cc;
       }
       if ((ctx?.isError || result?.isError) && text) {
         return renderMessage.summary(theme, { isError: true }, text);

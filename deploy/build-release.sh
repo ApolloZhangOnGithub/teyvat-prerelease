@@ -190,6 +190,9 @@ head.ears/ears-config.json
 *ABANDONED*
 *REMOVED*
 *FUTURE*
+# prime-agent 的隐藏临时/证据文件：这个包会推到公开仓库 teyvat-prerelease，绝不能带上它们（2026-09-11）
+.prime*
+.prime-agent*
 GITEOF
 
   echo "  OK 打包完成"

@@ -1254,7 +1254,8 @@ case "$MODE" in
       fi
       break
     done
-    # 2026-09-11：退出后自动显示 agent 列表
+    # 2026-09-11：退出后清屏（清掉 footer 残留）+ 自动显示 agent 列表
+    printf '\033[2J\033[H'
     # /h 转后台时等 headless 子进程起来（detached 标记出现），否则列表会误显示 offline
     if [ -n "$ID" ]; then
       for _w in $(seq 1 10); do
@@ -1262,7 +1263,8 @@ case "$MODE" in
         sleep 0.1
       done
     fi
-    "$0" 2>/dev/null || true
+    # 自动显示列表：用已部署的 genshin 命令（$0 可能是旧快照，直接用 PATH 里的 genshin）
+    genshin 2>/dev/null || "$0" 2>/dev/null || true
     # 退出后同步段已废弃（2026-09-05，PROPOSAL 036：agent 单机存活；代码保留不删）——以下注释
     # kill $SYNC_LOOP_PID 2>/dev/null; wait $SYNC_LOOP_PID 2>/dev/null
     # if [ -f "$PAIMON_SYNC" ]; then
