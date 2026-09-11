@@ -9,7 +9,7 @@ function scanApps(): string[] {
   try {
     return readdirSync(PROGRAM_FILES_MOBILE).filter(d =>
       !d.startsWith(".") && !d.startsWith("@FUTURE.") && !d.startsWith("@removed.") &&
-      statSync(path.join(PROGRAM_FILES_MOBILE, d)).isDirectory()
+      statSync(path.join(PROGRAM_FILES_MOBILE, d)).isDirectory()   // 只读：d 来自 readdirSync（本目录自己的条目名）
     );
   } catch (e) { console.error("[universe.infotech/local.mobile/apps/appstore/appstore.ts] " + ((e as any)?.message || e)); return []; }
 }
@@ -159,6 +159,7 @@ async function handleUninstall(name: string): Promise<string> {
     return `未找到「${name}」。`;
   }
 
+  // 只读/改名目标：name 已在函数开头经 appDirFor() 校验（非法名提前 return）→ 这里不会穿越
   const removedDir = path.join(PROGRAM_FILES_MOBILE, `@removed.${name}`);
   try {
     renameSync(appDir, removedDir);
@@ -175,7 +176,7 @@ function handleInfo(name: string): string {
   const dir = dirs.find(d => d.toLowerCase() === name.toLowerCase());
   if (!dir) return `未找到「${name}」。`;
 
-  const appDir = path.join(PROGRAM_FILES_MOBILE, dir);
+  const appDir = path.join(PROGRAM_FILES_MOBILE, dir);   // 只读：dir 来自 scanApps()（目录列表）
   const files = readdirSync(appDir).filter(f => f.endsWith(".ts") && !f.includes(".test"));
   const isSymlink = (() => { try { const s = statSync(appDir); return s.isSymbolicLink(); } catch (e) { console.error("[universe.infotech/local.mobile/apps/appstore/appstore.ts] " + ((e as any)?.message || e)); return false; } })();
 

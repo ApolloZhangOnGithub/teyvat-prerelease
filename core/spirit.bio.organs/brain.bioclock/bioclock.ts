@@ -157,7 +157,7 @@ export default function (pi: ExtensionAPI) {
   const _bkLock = _bkState + ".lock";
   const _bkExt = process.env.PAIMON_EXT || _traceJoin(_traceHome(), ".local/lib/teyvat/extensions/teyvat");
   const _day = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
-  function _readJson(p: string): any { try { return JSON.parse(_readF(p, "utf8")); } catch { return null; } }
+  function _readJson(p: string): any { try { return JSON.parse(_readF(p, "utf8")); } catch { return null; /* 无/坏 JSON → null */ } }
   function _dailyBackup(): void {
     try {
       const today = _day();
@@ -170,7 +170,7 @@ export default function (pi: ExtensionAPI) {
         const l = _readJson(_bkLock);
         const stale = !l || !l.ts || l.day !== today || (Date.now() - l.ts > 10 * 60_000);
         if (!stale) return;                                            // 今天的活跃锁——别的 agent 正在处理
-        try { _writeF(_bkLock, JSON.stringify({ pid: process.pid, ts: Date.now(), day: today })); } catch { return; }
+        try { _writeF(_bkLock, JSON.stringify({ pid: process.pid, ts: Date.now(), day: today })); } catch { return; /* 锁不可写 → 跳过本轮 */ }
       }
       // 先落状态（防重复触发），后动作
       try { _writeF(_bkState, JSON.stringify({ last: today, at: new Date().toISOString() })); } catch { /* 静默 */ }
@@ -186,9 +186,7 @@ export default function (pi: ExtensionAPI) {
         }
       } else {
         // 2026-09-12（用户定稿）：不做通知式 tip——未配置态由 launcher 的 genshin 看板状态行实时展示。
-        // 原 tip 日志逻辑注释保留（用户纪律：代码不删）。
-        // _trace("backup_unconfigured_tip");
-        // try { _traceAppend(_traceJoin(_bkHome, "LogData", "backup-tip.log"), `${new Date().toISOString()} backup not configured\n`); } catch { }
+        // 原 tip 日志逻辑（写 backup-tip.log）已废弃；按用户纪律不删，代码见 git 历史（本提交注释前）。
       }
     } catch (e) { console.error("[spirit.bio.organs/brain.bioclock/bioclock.ts] " + ((e as any)?.message || e)); }
   }

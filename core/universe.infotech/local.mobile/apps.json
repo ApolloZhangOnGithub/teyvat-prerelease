@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-11T17:35:44.753Z",
+  "generated": "2026-09-11T17:41:52.838Z",
   "apps": [
     {
       "name": "amap",
@@ -14,8 +14,8 @@
       "name": "appstore",
       "dir": "appstore",
       "tier": "apps",
-      "build": 3,
-      "md5": "2333ad37dd94f5bed5bf972f740ffe52",
+      "build": 4,
+      "md5": "27d1e3d985de99006f92e57f4adc8a54",
       "file": "appstore.ts",
       "handler": "code"
     },

@@ -56,7 +56,7 @@ const BULK = ['AgentWorkDir', 'BlackboxData'];
 // 写：**总是写 UserAccount**（新位置）——否则新环境会把配置永久落在 legacy
 function svcPath(): string { return fs.existsSync(UA_SERVICES) ? UA_SERVICES : LEGACY_SERVICES; }
 function readServices(): Record<string, any> {
-  try { return JSON.parse(fs.readFileSync(svcPath(), 'utf8')); } catch { return {}; }
+  try { return JSON.parse(fs.readFileSync(svcPath(), 'utf8')); } catch { return {}; /* 无配置/坏 JSON → 空对象 */ }
 }
 function writeServices(patch: Record<string, any>): void {
   const svc = readServices();   // 含 legacy 内容（若读的是 legacy）——写入时自然迁移到新位置
@@ -72,7 +72,7 @@ function getBackupConf(): any | null {
   return b;
 }
 function readCred(): any {
-  try { return JSON.parse(fs.readFileSync(CRED_FILE, 'utf8')); } catch { return {}; }
+  try { return JSON.parse(fs.readFileSync(CRED_FILE, 'utf8')); } catch { return {}; /* 无凭证文件 → 空对象 */ }
 }
 function writeCred(c: any): void {
   fs.mkdirSync(BACKUP_DIR, { recursive: true });
@@ -163,7 +163,7 @@ function countSnapshots(bin: string, conf: any): number {
     if (!r.ok) return 0;
     const arr = JSON.parse(r.out.replace(/^[^\[]*/, '') || '[]');
     return Array.isArray(arr) ? arr.length : 0;
-  } catch { return 0; }
+  } catch { return 0; /* snapshots 解析失败 → 按 0 计 */ }
 }
 
 // ── 远端上报（best-effort——照抄 update 遥测：失败静默、绝不阻断）──────
