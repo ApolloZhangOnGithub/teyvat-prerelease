@@ -260,7 +260,7 @@ export class StatusBar {
   }
 
   setToolActivity(name) {
-    const activityNames = { read: 'reading', write: 'writing', edit: 'editing' };
+    const activityNames = { read: 'reading', write: 'writing', edit: 'editing', web: 'fetching', execute: 'executing', amem: 'managing memory', status: 'querying', search: 'searching' };
     this._toolActivity = activityNames[name] || name;
     this._toolStartTime = Date.now();
     // 立即渲染，不等 120ms sparkle tick（write/edit 执行 <120ms 时 tick 来不及显示）
