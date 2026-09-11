@@ -23,7 +23,7 @@ const require = createRequire(import.meta.url);
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
-import { socialDataDir, logerr, runtimeCacheDir, syncEndpoint } from "#paths";
+import { socialDataDir, logerr, runtimeCacheDir, syncEndpoint, SYNC_UA } from "#paths";   // SYNC_UA 统一在 paths.ts（唯一真相源）
 // heart-state：interrupt 唤醒 hibernated 用（communicate → heart-state 无环；heart.ts 反向 import communicate）
 import { transition, heartState } from "../kernel.heart/heart-state.ts";
 
@@ -45,7 +45,7 @@ const HEARTBEAT_DIR = join(SOCIAL_DIR, "heartbeat");
 
 const MAX_MSG_CHARS = 16_384;
 // Cloudflare Bot Management 拦截无/默认 User-Agent（Error 1010）——所有到 sync server 的 fetch 必须带
-const SYNC_UA = "genshin-sync/1.0";
+// SYNC_UA 已移到 paths.ts 统一导出（2026-09-11）：漏 UA 会被 Cloudflare 403 error 1010
 
 interface SocialMsg {
   id: string;

@@ -946,7 +946,7 @@ async function cmdLogin() {
   let startRes: Response;
   try {
     startRes = await fetch(`${endpoint}/auth/device-flow/start`, { method: 'POST',
-      headers: { 'Content-Type': 'application/json' } });
+      headers: { 'Content-Type': 'application/json', 'User-Agent': 'genshin-sync/1.0' } });   // UA 必须带（Cloudflare 1010）
   } catch (e: any) {
     console.error(`  无法连接到同步服务器: ${e.code || e.message}`);
     console.error(`  请先安装 gh CLI 并运行 gh auth login，然后重试 genshin login`);
@@ -973,7 +973,7 @@ async function cmdLogin() {
 
     const pollRes = await fetch(`${endpoint}/auth/device-flow/poll`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'User-Agent': 'genshin-sync/1.0' },   // UA 必须带（Cloudflare 1010）
       body: JSON.stringify({ device_code: startData.device_code }),
     });
 

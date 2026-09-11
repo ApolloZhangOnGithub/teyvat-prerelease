@@ -402,6 +402,10 @@ export class InteractiveMode {
         this.headerContainer = new Container();
         this.loadedResourcesContainer = new Container();
         this.chatContainer = new Container();
+        // 顶部永久空行（滚到最上方时有一行黑色间隔，视觉提示这是历史顶部）
+        // hook clear 保证任何 clear() 后都自动加回
+        const _origClear = this.chatContainer.clear.bind(this.chatContainer);
+        this.chatContainer.clear = () => { _origClear(); this.chatContainer.addChild(new Spacer(1)); };
         this.chatContainer.addChild(new Spacer(1));
         this.pendingMessagesContainer = new Container();
         this.statusContainer = new Container();

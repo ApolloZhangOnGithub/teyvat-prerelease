@@ -20,7 +20,8 @@ execFile(gbin, [], { encoding: "utf8", timeout: 20000, maxBuffer: 4 * 1024 * 102
   try {
     await fetch(ep + "/auth/device-state", {
       method: "POST",
-      headers: { Authorization: "Bearer " + b.token, "X-Device-Id": b.deviceId, "X-Device-Name": os.hostname(), "Content-Type": "application/json" },
+      // User-Agent 必须带：Cloudflare 对无 UA 的请求返回 403 error 1010（2026-09-11 实测）
+      headers: { Authorization: "Bearer " + b.token, "X-Device-Id": b.deviceId, "X-Device-Name": os.hostname(), "User-Agent": "genshin-sync/1.0", "Content-Type": "application/json" },
       body: JSON.stringify({ agents: out }),
     });
     // 本地同步日志（保留最近 30 个活跃日）

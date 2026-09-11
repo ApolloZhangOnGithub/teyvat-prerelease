@@ -22,7 +22,11 @@ const fmt = (s) => { if (!s) return ""; const dt = new Date(String(s).replace(" 
 async function main() {
   const b = readBinding();
   const ep = endpoint();
-  const H = (extra = {}) => ({ Authorization: "Bearer " + b.token, "X-Device-Id": b.deviceId, ...extra });
+  // 2026-09-11（prime-agent）：必须带 User-Agent —— sync.paimon.beer 在 Cloudflare 后面，
+  // 无 UA 会被 Bot Management 拒：实测 `GET /auth/devices` 不带 UA → 403 "error code: 1010"，带 UA → 200。
+  // 09-07 那次修的是 TS 侧（client.ts apiFetch / communicate.ts），漏了这些 .cjs CLI。
+  const SYNC_UA = "genshin-sync/1.0";
+  const H = (extra = {}) => ({ Authorization: "Bearer " + b.token, "X-Device-Id": b.deviceId, "User-Agent": SYNC_UA, ...extra });
   const cmd = process.argv[2] || "";
   const curId = b.deviceId;
 

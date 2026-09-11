@@ -216,6 +216,13 @@ export function estimateTokens(text: string): number {
   return Math.ceil(cjk * 1.8 + (text.length - cjk) / 4);
 }
 
+// ── sync API 的 User-Agent（唯一真相源）──────────────────────────────────────
+// 为什么必须有：sync.paimon.beer 在 Cloudflare 后面，无 UA 的请求会被 Bot Management 拒
+// （实测 `GET /auth/devices`：不带 UA → 403 "error code: 1010"；带 UA → 200）。
+// 2026-09-07 修过一次（TS 侧），2026-09-11 又发现 .cjs CLI（devices.cjs / upload-state.cjs）与
+// cli.ts 的 device-flow 登录漏了 —— 这里是统一出口，apiFetch 会对未显式设置 UA 的调用补默认值。
+export const SYNC_UA = "genshin-sync/1.0";
+
 export async function apiFetch(
   url: string,
   init: RequestInit,
@@ -225,7 +232,10 @@ export async function apiFetch(
   let status = 0;
   let error: string | undefined;
   try {
-    const res = await fetch(url, init);
+    // 2026-09-11（prime-agent）：统一兜底 User-Agent —— 目标是 Cloudflare 后面的 sync.paimon.beer 时，
+    // 无 UA 会被 Bot Management 拒（实测 403 error 1010）。调用方显式设了 UA 就用它的，否则补默认值。
+    const _init: RequestInit = { ...init, headers: { "User-Agent": SYNC_UA, ...(init?.headers ? Object.fromEntries(new Headers(init.headers as any).entries()) : {}) } };
+    const res = await fetch(url, _init);
     status = res.status;
     return res;
   } catch (e: any) {
