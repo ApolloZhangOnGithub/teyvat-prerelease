@@ -269,7 +269,12 @@ let _lastBgHash = ""; // @ 缓存：避免相同输出重复占用 context
       // 显示模式（/ux 管理）：full=标题+命令详情区 / title=仅标题（默认，2026-08-18 用户定稿）/ command=仅命令（老形态）
       const display = (globalThis as any).__genshinExecuteDisplay ?? "title";
       const label = args?.terminal === true ? "Execute(T)" : "Execute";
-      if (display === "title") return renderToolCall.label(theme, label, title);
+      if (display === "title") {
+        if (title) return renderToolCall.label(theme, label, title);
+        // 模型没传 title（虽然 schema required）——fallback 到命令首行截短，灰色表示不是标题
+        const cmdShort = cmd.split("\n")[0].slice(0, 60) + (cmd.length > 60 ? "…" : "");
+        return renderToolCall.label(theme, label, theme.fg("dim", cmdShort));
+      }
       // 命令处理（breakAnd/compact）在模式分支前统一执行，所有展示命令的模式都生效
       if ((globalThis as any).__genshinExecuteBreakAnd && cmd.includes(" && ")) {
         cmd = cmd.split(" && ").join(" &&\n");

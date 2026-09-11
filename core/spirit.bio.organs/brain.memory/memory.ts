@@ -654,10 +654,13 @@ export default function registerMemory(pi: ExtensionAPI) {
     const rawPct = Math.round(usageRatio * 100);
     monitorAppend("growth.jsonl",
       JSON.stringify({ ts: new Date().toISOString(), bytes: context.length, tokens: memTokens, ratio: +(usageRatio * 100).toFixed(1) }) + "\n");
-    // 2026-09-12（ISSUE 203）：此处原写 __genshinContextGauge（est 口径 estimateTokens），
-    // 与 memory.ts:155 的 API 口径（input+cacheRead）双写互相覆盖 → 工具行 gauge 在 60%/85% 间跳变。
-    // 修：gauge 唯一写者归 :155（API ground truth——模型真实收到的 prompt）；本行不再写（保留注释不删，用户纪律）。
-    // (globalThis as any).__genshinContextGauge = `ctx ${rawPct}%`;
+    // 2026-09-12（ISSUE 203）：gauge 唯一真相源是 message_end 的 API 口径（input+cacheRead）。
+    // 但 amem 后 gauge 过期（message_end 在下一轮模型回复后才更新），这里用上一轮的实际 prompt
+    // 刷新一次——同一 API 口径，不会跳变，只是让 gauge 在 before_agent_start 时保持最新。
+    if (_pondSess.prevPrompt !== null) {
+      _refreshModelMax();
+      (globalThis as any).__genshinContextGauge = `ctx ${Math.round((_pondSess.prevPrompt / modelMax) * 100)}%`;
+    }
     // 容量提醒——只在达到 URGE(80%) 真危险时发（用户反馈：这条是垃圾，
     // 1) 清理后屏幕上还留着清理前的旧快照（过期数据） 2) 每次 amem 后用户说话就冒出来。
     // 修：阈值提到 80%；带时间戳（明确是快照不是当前值）；feed:false 不喂模型（模型自主管理）。
