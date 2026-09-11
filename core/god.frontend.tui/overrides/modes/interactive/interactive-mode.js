@@ -4440,7 +4440,9 @@ export class InteractiveMode {
                 }
                 try {
                     await copyToClipboard(text);
-                    this.showStatus("Copied selected message to clipboard");
+                    const chars = text.length;
+                    const lines = text.split("\n").length;
+                    this.showStatus(`copied ${chars} chars, ${lines} lines`);
                 }
                 catch (error) {
                     this.showError(error instanceof Error ? error.message : String(error));
@@ -5186,7 +5188,9 @@ export class InteractiveMode {
         }
         try {
             await copyToClipboard(text);
-            this.showStatus("Copied last agent message to clipboard");
+            const chars = text.length;
+            const lines = text.split("\n").length;
+            this.showStatus(`copied ${chars} chars, ${lines} lines`);
         }
         catch (error) {
             this.showError(error instanceof Error ? error.message : String(error));

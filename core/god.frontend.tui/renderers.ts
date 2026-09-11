@@ -269,20 +269,26 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
       if (compact) {
         display = output.split("\n")[0].slice(0, 200) + (output.length > 200 ? "…" : "");
       } else {
-        // 长输出：…(X lines more) + 末尾 5 行，避免刷屏
         const outLines = output.split("\n");
         if (outLines.length > 6) {
           const tailN = 5;
           const skipped = outLines.length - tailN;
+          const startLine = skipped + 1;
           display = theme.fg("dim", `...(${skipped} lines more)`) + "\n" + outLines.slice(-tailN).join("\n");
+          const contIndent = " ".repeat(GUTTER + 3);
+          // 折叠提示行不带行号，尾部行从实际行号开始
+          const tailDisplay = outLines.slice(-tailN).join("\n");
+          const rendered = lineNumbered(tailDisplay, theme, undefined, startLine);
+          c.addChild(new Text(contIndent + theme.fg("dim", `...(${skipped} lines more)`), 0, 0));
+          for (const line of rendered.split("\n")) c.addChild(new Text(contIndent + line, 0, 0));
+          display = ""; // 已处理，跳过下面的默认渲染
         }
       }
-      // output 区域：缩进对齐到 ⎿ 后内容列（GUTTER+3=5 空格），不带 ⎿——
-      // ⎿ 是结果标记，一个结果块只出现在摘要行（Executed ...），截断提示与末尾内容不带
+      if (display) {
       const contIndent = " ".repeat(GUTTER + 3);
-      // 行号统一：blocks_nongod.lineNumbered（markdown 同款）；每行独立 Text 保证对齐
       const rendered = lineNumbered(display, theme);
       for (const line of rendered.split("\n")) c.addChild(new Text(contIndent + line, 0, 0));
+      }
     }
     return c;
   });

@@ -273,18 +273,20 @@ function bulletText(dotStr, text, cont) {
 // gutterWidth = 总行数位数（自动对齐），fmtLineNo(n) = padStart + " │ "
 // 不手动折行——由 Text/hangWrapText 识别 `\d+\s*│` 前缀自动对齐续行（blocks_nongod bulletText 正则）
 // 复用 globalThis.__genshinHighlightCode（interactive-mode.js 挂载）。execute 输出、social 消息、cmd-done 复用。
-export function lineNumbered(text, theme, lang) {
+export function lineNumbered(text, theme, lang, startLine) {
   const rawText = String(text ?? "");
   if (!rawText) return "";
   const lines = rawText.split("\n");
-  const gutterWidth = String(lines.length).length;
-  const fmtLineNo = (n) => theme.fg("dim", String(n).padStart(gutterWidth) /* + " │ " 竖线（用户：无竖线更漂亮，暂注释）*/ + "  ");
+  const start = startLine || 1;
+  const maxLineNo = start + lines.length - 1;
+  const gutterWidth = String(maxLineNo).length;
+  const fmtLineNo = (n) => theme.fg("dim", String(n).padStart(gutterWidth) + "  ");
   const hl = globalThis.__genshinHighlightCode;
   const hlResult = lang && hl ? hl(rawText, lang) : null;
   const indent = "  ";
   return lines.map((l, i) => {
     const hlLine = hlResult ? hlResult[i] || l : l;
-    return `${indent}${fmtLineNo(i + 1)}${hlLine}`;
+    return `${indent}${fmtLineNo(start + i)}${hlLine}`;
   }).join("\n");
 }
 
