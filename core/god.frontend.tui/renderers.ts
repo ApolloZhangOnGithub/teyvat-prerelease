@@ -232,36 +232,36 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
       }
     }
 
-    const d = isError ? theme.fg("error", "→") : theme.fg("result", "→");
     const c = new Container();
     const indent = " ".repeat(GUTTER);
     const title = (message.details as any)?.title;
-    const mainStr = merged ? "" : d + " " + theme.bold("Result") + (title ? " " + title : "");
     const fmtElapsed = (sec: number) => {
       if (sec < 60) return `${sec}s`;
       if (sec < 3600) { const m = Math.floor(sec / 60); const s2 = sec % 60; return s2 === 0 ? `${m}m` : `${m}m ${s2}s`; }
       return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`;
     };
     const elapsedFmt = elapsed === 0 ? "instantly" : fmtElapsed(elapsed);
-    // remaining：消息附带 [remaining: N]（发送端已算好=本任务外仍在跑的）
     const remMatch = raw.match(/\[remaining:\s*(\d+)\]/);
     const remaining = remMatch ? parseInt(remMatch[1]) : 0;
     if (remMatch) output = output.replace(/\n*\[remaining:.*$/, "");
-    const idPart = idStr ? `process ${idStr} ` : ""; // 笔记规范：process id 不着色
-    // 笔记规范：remaining 数字不着色
     const remPart = remaining > 0 ? ` (${remaining} remaining)` : "";
-    // 时间戳统一行尾（与创建/快命令一致）
     const ts = new Date();
     const hh = String(ts.getHours()).padStart(2, "0");
     const mm = String(ts.getMinutes()).padStart(2, "0");
     const ss = String(ts.getSeconds()).padStart(2, "0");
     const timePart = ` [${hh}:${mm}:${ss}]`;
-    // 20260811 笔记格式规范：这一行用 default 色——id 不着色、耗时不着色不粗体、
-    // 连接词不着色、时间戳全 dim；exit 保留语义色（绿/红粗体，属"高亮"）。
-    // 2026-08-14 用户要求：done in Xs 的数字用蓝色（accent）
-    const line2 = indent + theme.fg("dim", "⎿  ") + `Executed ${idPart}` + `in ${theme.fg("accent", elapsedFmt)}` + `, with ` + theme.bold(theme.fg(statusColor, exitStr)) + remPart + theme.fg("dim", timePart);
-    if (mainStr) c.addChild(new Text(mainStr, 0, 0));
-    c.addChild(new Text(line2, 0, 0));
+    // 方案 B：不要 Result 头，直接用折线——title + done in Xs + exit（非 0 才显示）
+    const exitPart = exitCode !== undefined && exitCode !== 0 ? `, ` + theme.bold(theme.fg(statusColor, exitStr)) : "";
+    const titlePart = title ? theme.bold(title) + " " : "";
+    const line1 = indent + theme.fg("dim", "⎿  ") + titlePart + `done in ${theme.fg("accent", elapsedFmt)}${exitPart}${remPart}` + theme.fg("dim", timePart);
+    c.addChild(new Text(line1, 0, 0));
+    // [PRESERVED] 旧版两行渲染（→ Result 头 + Executed 详情行）：
+    // const d = isError ? theme.fg("error", "→") : theme.fg("result", "→");
+    // const mainStr = merged ? "" : d + " " + theme.bold("Result") + (title ? " " + title : "");
+    // const idPart = idStr ? `process ${idStr} ` : "";
+    // const line2 = indent + theme.fg("dim", "⎿  ") + `Executed ${idPart}` + `in ${theme.fg("accent", elapsedFmt)}` + `, with ` + theme.bold(theme.fg(statusColor, exitStr)) + remPart + theme.fg("dim", timePart);
+    // if (mainStr) c.addChild(new Text(mainStr, 0, 0));
+    // c.addChild(new Text(line2, 0, 0));
     if (output) {
       const compact = (globalThis as any).__genshinCompactExecute;
       let display = output;
