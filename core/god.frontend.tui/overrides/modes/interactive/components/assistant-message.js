@@ -66,7 +66,7 @@ export class AssistantMessageComponent extends Container {
         // 长会话下每次重建全部消息块 = O(n) 卡顿。签名 = 各块 (type, 长度/toolCall id)。
         // 签名包含 viewMode/hideThinkingBlock：视图模式或折叠开关变化时即使内容没变也必须重建
         // （2026-08-14 修复：此前漏掉这两个维度，切 /u 折叠/隐藏 thinking 时早退导致视图不刷新）
-        const sig = `${globalThis.__piViewMode || "full"}|${this.hideThinkingBlock ? 1 : 0}|` + (message?.content || []).map((c) => {
+        const sig = `${globalThis.__piViewMode || "full"}|${this.hideThinkingBlock ? 1 : 0}|${globalThis.__genshinThinkingFirstLine ? "fl" : ""}|` + (message?.content || []).map((c) => {
             if (c.type === "text") return `t:${(c.text || "").length}`;
             if (c.type === "thinking") return `h:${(c.thinking || "").length}`;
             if (c.type === "toolCall") return `c:${c.id}:${c.name}`;
@@ -110,8 +110,23 @@ export class AssistantMessageComponent extends Container {
                 if (viewMode === "fold" || this.hideThinkingBlock) {
                     // Fold/hidden: skip thinking entirely, no spacer needed
                 }
+                else if (globalThis.__genshinThinkingFirstLine) {
+                    // 首行模式：只显示 thinking 第一行
+                    const full = (content.thinking || "").trim();
+                    const firstNL = full.indexOf("\n");
+                    const firstLine = firstNL >= 0 ? full.substring(0, firstNL) + "…" : full;
+                    const md = new Markdown(firstLine, GUTTER, 0, this.markdownTheme, {
+                        color: (text) => theme.fg("thinkingText", text),
+                    });
+                    this.contentContainer.addChild({
+                        render: (w) => markdownBullet(md, theme.fg("thinkingText", "∴"), w),
+                        invalidate: () => { if (md.invalidate) md.invalidate(); },
+                    });
+                    if (hasVisibleContentAfter) {
+                        this.contentContainer.addChild(new Spacer(1));
+                    }
+                }
                 else {
-                    // Thinking traces — 灰点 + 思考内容，同样走 blockrender 统一对齐。
                     const md = new Markdown((content.thinking || "").trim(), GUTTER, 0, this.markdownTheme, {
                         color: (text) => theme.fg("thinkingText", text),
                     });

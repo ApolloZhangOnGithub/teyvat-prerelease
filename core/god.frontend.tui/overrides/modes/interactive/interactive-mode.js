@@ -2608,7 +2608,7 @@ export class InteractiveMode {
                                     saved.push({ block, full });
                                     block.text = full.substring(0, lastNL + 1);
                                 }
-                            } else if (block.type === "thinking" && block.thinking) {
+                            } else if (block.type === "thinking" && block.thinking && !globalThis.__genshinThinkingFirstLine) {
                                 const full = block.thinking;
                                 const lastNL = full.lastIndexOf('\n');
                                 if (lastNL >= 0) {

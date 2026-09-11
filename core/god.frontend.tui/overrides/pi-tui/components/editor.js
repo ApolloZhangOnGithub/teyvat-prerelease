@@ -417,13 +417,15 @@ export class Editor {
             }
             else {
                 const agentName = process.env.PAIMON_AGENT_NAME || "";
+                const showAgentId = globalThis.__genshinShowAgentId ?? false;
+                const showSessionId = globalThis.__genshinShowSessionId ?? false;
                 const pid = process.env.PAIMON_AGENT_ID || "";
                 let sessionHash = "";
                 try { const m = process.title.match(/genshin:[^(]+\([^,]+,[^,]+,\s*([^)]+)/); if (m) sessionHash = m[1]; } catch (e) { /* process.title parse */ }
                 const idParts = [];
                 if (agentName) idParts.push(agentName);
-                if (pid) idParts.push(`#${pid}`);
-                if (sessionHash) idParts.push(`@${sessionHash}`);
+                if (showAgentId && pid) idParts.push(`#${pid}`);
+                if (showSessionId && sessionHash) idParts.push(`@${sessionHash}`);
                 if (idParts.length > 0) {
                     const label = idParts.join(" ");
                     const labelW = label.length;
