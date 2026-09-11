@@ -1106,15 +1106,14 @@ export default function registerMemory(pi: ExtensionAPI) {
     },
     renderResult(result: any, _options: any, theme: any, ctx: any) {
       const raw = resultContent(result)?.[0]?.text || "";
-      if (!raw || ctx?.isError) return renderMessage.summary(theme, ctx, raw);
+      const isErr = ctx?.isError || /^(?:ERR:|amem\s+\w+:\s)/.test(raw);
+      if (!raw || isErr) return renderMessage.summary(theme, { ...ctx, isError: true }, raw);
       const { Text: Txt, Container: C } = require("@earendil-works/pi-tui");
       const GUTTER = 2;
       const indent = " ".repeat(GUTTER);
       const c = new C();
       const lines = raw.split("\n").filter((l: string) => l.trim());
-      // 解析：第一行是动作结果，剩余行是 key: value 参数
       const firstLine = lines[0] || "";
-      // 精简摘要：去掉开头的 "amem action " 重复
       const summary = firstLine.replace(/^amem\s+\w+\s*/, "").replace(/^"[^"]*"\s*→\s*/, "→ ");
       c.addChild(new Txt(indent + theme.fg("dim", "⎿  ") + theme.fg("toolOutput", summary || firstLine), 0, 0));
       // 参数表格：找出所有 key: value 行，key 列对齐
