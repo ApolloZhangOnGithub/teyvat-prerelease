@@ -8,7 +8,10 @@ function poll(){if(_paused)return;try{const out=_pd.replace("/MemoryData/","/Run
 function startPoll(d:string){_pd=d;_lp=0;if(_timer)clearInterval(_timer);_timer=setInterval(poll,2000)}
 function stopPoll(){if(_timer){clearInterval(_timer);_timer=null}const out=_pd?(_pd.replace("/MemoryData/","/RuntimeCache/")+"/ear_output.jsonl"):"";_pd="";_lp=0;if(out)try{if(fs.existsSync(out))fs.unlinkSync(out)}catch (e) { console.error("[universe.infotech/local.mobile/apps/ipod/ipod.ts] " + ((e as any)?.message || e)); }}
 // 相对自身解析——部署副本不会回头执行 DEV 仓库代码
-const R=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"../../../spirit.bio.organs/head.ears/ears-recorder.ts");
+// 2026-09-11（prime-agent）修正相对层级：原写 `../../../spirit.bio.organs/…` ——
+// 从 <A.core>/universe.infotech/local.mobile/apps/ipod 往上三层到 <A.core>/universe.infotech，
+// 需要再往上一层才是 <A.core>（spirit.bio.organs 在那里）→ 录音模块路径一直是错的。
+const R=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"../../../../spirit.bio.organs/head.ears/ears-recorder.ts");
 const BUN=(()=>{try{return execSync("which bun",{encoding:"utf8",stdio:["ignore","pipe","ignore"]}).trim()}catch (e) { console.error("[universe.infotech/local.mobile/apps/ipod/ipod.ts] " + ((e as any)?.message || e)); }const h=process.env.HOME;if(h){const p=`${h}/.bun/bin/bun`;try{execSync(`test -x "${p}"`,{stdio:"ignore"});return p}catch (e) { console.error("[universe.infotech/local.mobile/apps/ipod/ipod.ts] " + ((e as any)?.message || e)); }}return"bun"})();
 interface P{file:string;bk:string;sp:number;ck:number;pos:number;fp:number;dur:number;lines:string[];out:string;}
 function ld(d:string):P{try{return JSON.parse(fs.readFileSync(path.join(d,"ipod.json"),"utf8"))}catch (e) { console.error("[universe.infotech/local.mobile/apps/ipod/ipod.ts] " + ((e as any)?.message || e));return{file:"",bk:"doubao",sp:1,ck:1600,pos:0,fp:0,dur:0,lines:[],out:"ready"}}}

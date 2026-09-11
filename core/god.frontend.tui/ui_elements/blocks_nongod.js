@@ -212,7 +212,7 @@ function bulletText(dotStr, text, cont) {
       const h = { visibleWidth: _visibleWidth, wrapTextWithAnsi: _wrapTextWithAnsi };
       // 先按 \n 拆行，每行独立折行
       const rawLines = this.text.split('\n');
-      const firstPrefix = rawLines[0].replace(/\x1b\[[0-9;]*m/g, '').match(/^(\s*(?:(?:[•◦●○$⎿]|\d+\s*│)\s+|\d+\s*[+\- ]|\s*\d+\t)?)/)?.[0] || '';
+      const firstPrefix = rawLines[0].replace(/\x1b\[[0-9;]*m/g, '').match(/^(\s*(?:(?:[•◦●○$⎿⏺∴▸→]|\d+\s*│)\s+|\d+\s*[+\- ]|\s*\d+\t)?)/)?.[0] || '';
       const indentW = firstPrefix ? _visibleWidth(firstPrefix) : 0;
       // 提取第一行的 ANSI SGR 码注入后续行，避免 \n 后丢失颜色
       const ansiCodes = rawLines[0].match(/\x1b\[[0-9;]*m/g) || [];

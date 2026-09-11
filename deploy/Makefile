@@ -125,6 +125,7 @@ _integrity: _paths
 	@echo "[$$(date +%H:%M:%S)] tool check..." && bash "$(DEPLOY)/check-tools.sh" "$(CORE)" || { echo "  tool check FAILED — 修复后再 make"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] manifest-tools check..." && node "$(DEPLOY)/check-manifest-tools.cjs" "$(CORE)" || { echo "  manifest-tools check FAILED — 已注册工具未进 tools.manifest.json 会被 session_start 过滤静默剔除（LESSON amem），补清单或移除注册后再 make"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] theme-consistency check..." && node "$(DEPLOY)/check-theme-consistency.cjs" "$(CORE)" || { echo "  theme-consistency check FAILED — dark/light 配色键必须一一对应（用户：light 缺键会丢色/回退），补齐后再 make"; exit 1; }
+	@echo "[$$(date +%H:%M:%S)] code-refs check..." && node "$(DEPLOY)/check-code-refs.cjs" "$(CORE)" || { echo "  code-refs check FAILED — 代码里的相对引用指向不存在的文件（运行时 no such file），见 check-code-refs.cjs.SPEC"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] shell-injection check..." && node "$(DEPLOY)/check-shell-injection.cjs" "$(CORE)" || { echo "  shell-injection check FAILED — 外部输入被拼进 shell 字符串（注入面，且绕过 validateExecute），见 check-shell-injection.cjs.SPEC"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] fileacts-guard check..." && node "$(DEPLOY)/check-fileacts-guard.cjs" "$(CORE)" || { echo "  fileacts-guard check FAILED — 权限守卫出绕过或误拦（他人数据目录边界），见 check-fileacts-guard.cjs.SPEC"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] sync-ua check..." && node "$(DEPLOY)/check-sync-ua.cjs" "$(CORE)" || { echo "  sync-ua check FAILED — 打到 sync 服务的请求没带 User-Agent（Cloudflare 会 403 error 1010），见 check-sync-ua.cjs.SPEC"; exit 1; }

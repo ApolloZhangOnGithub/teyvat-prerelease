@@ -32,6 +32,21 @@ function buildAppList(): string {
   return lines.join("\n");
 }
 
+// 2026-09-11（prime-agent）安全修复：app 名有两个来源都是"不可信输入"——
+//   ① appstore 从**下载的代码**里正则提取 `name:`（完全没校验字符）；
+//   ② 卸载/信息等命令的名字直接来自 agent 的 mobile 工具输入。
+// 后果：`name: "../../x"` 会让 writeFileSync 写到 apps 目录之外（还会建目录），卸载则把**任意已存在目录**
+// rename 成 `@removed.…`（等于把数据藏起来）。这里统一收口：
+//   - 名字只允许 [A-Za-z0-9_-]，首字符字母数字，最长 40
+//   - 解析后必须仍在 apps 目录内（防穿越的兜底断言）
+const APP_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;
+function appDirFor(name: string): string | null {
+  if (!APP_NAME_RE.test(name)) return null;
+  const base = path.resolve(PROGRAM_FILES_MOBILE) + path.sep;
+  const dir = path.resolve(PROGRAM_FILES_MOBILE, name);
+  return dir.startsWith(base) ? dir : null;
+}
+
 async function validateAppSource(code: string): Promise<{ valid: boolean; name?: string; error?: string }> {
   // 基本静态检查：文件中是否包含 export const/let app 和必要字段
   if (!code.includes("export const app") && !code.includes("export let app")) {
@@ -46,6 +61,7 @@ async function validateAppSource(code: string): Promise<{ valid: boolean; name?:
   const nameMatch = code.match(/name:\s*["']([^"']+)["']/);
   const name = nameMatch?.[1];
   if (!name) return { valid: false, error: "无法从代码中解析 app name" };
+  if (!APP_NAME_RE.test(name)) return { valid: false, error: `app name 非法（只允许字母数字 _ -，最长 40）: ${name}` };
   return { valid: true, name };
 }
 
@@ -79,7 +95,8 @@ async function handleImportLocal(filePath: string): Promise<string> {
   }
 
   const appName = validation.name!;
-  const appDir = path.join(PROGRAM_FILES_MOBILE, appName);
+  const appDir = appDirFor(appName);
+  if (!appDir) return `app name 非法: ${appName}`;   // 兜底（validateAppSource 已挡，双保险）
 
   if (existsSync(appDir)) {
     return `「${appName}」已存在于 apps/。如需重装，先卸载。`;
@@ -121,7 +138,8 @@ async function handleImportGithub(spec: string): Promise<string> {
   }
 
   const appName = validation.name!;
-  const appDir = path.join(PROGRAM_FILES_MOBILE, appName);
+  const appDir = appDirFor(appName);
+  if (!appDir) return `app name 非法: ${appName}`;   // 兜底（validateAppSource 已挡，双保险）
 
   if (existsSync(appDir)) {
     return `「${appName}」已存在于 apps/。如需重装，先卸载。`;
@@ -135,7 +153,8 @@ async function handleImportGithub(spec: string): Promise<string> {
 }
 
 async function handleUninstall(name: string): Promise<string> {
-  const appDir = path.join(PROGRAM_FILES_MOBILE, name);
+  const appDir = appDirFor(name);
+  if (!appDir) return `app name 非法: ${name}`;   // 防"卸载 ../../x"把任意目录改名（2026-09-11 修复）
   if (!existsSync(appDir)) {
     return `未找到「${name}」。`;
   }

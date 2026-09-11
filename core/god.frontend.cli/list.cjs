@@ -122,6 +122,19 @@ if (filter === 'list') {
     const d = PAIMON_HOME + '/RuntimeCache';
     if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
     fs.writeFileSync(d + '/genshin-order-last.json', JSON.stringify(list.map(p => p.id)));
+    // 分组序号映射——launcher _resolve_active_arg 读这个实现单一真相源（ISSUE 186）
+    const groupMap = {};
+    let _f = 1, _b = 1, _o = 1;
+    for (const p of list) {
+      let g, n;
+      if (p._active) {
+        const rc = PAIMON_HOME + '/RuntimeCache/' + p.id;
+        const isHPB = fs.existsSync(rc + '/main-hibernate') || fs.existsSync(PAIMON_HOME + '/MemoryData/' + p.id + '/paused') || fs.existsSync(rc + '/paused') || fs.existsSync(rc + '/detached');
+        if (isHPB) { g = 'b'; n = _b++; } else { g = 'f'; n = _f++; }
+      } else { g = 'o'; n = _o++; }
+      groupMap[p.id] = { g, n, name: p.name };
+    }
+    fs.writeFileSync(d + '/genshin-group-map.json', JSON.stringify(groupMap));
   } catch (e) { console.error("[god.frontend.cli/list.cjs] " + (e?.message || e)); }
 }
   // 列表统计（磁盘大小 + 记忆 token）：优先读运行时缓存的 list-stats.json

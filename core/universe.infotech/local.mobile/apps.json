@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-11T16:15:48.181Z",
+  "generated": "2026-09-11T16:26:54.159Z",
   "apps": [
     {
       "name": "amap",
@@ -14,8 +14,8 @@
       "name": "appstore",
       "dir": "appstore",
       "tier": "apps",
-      "build": 2,
-      "md5": "425c41f4a539f0fa32513696059352c5",
+      "build": 3,
+      "md5": "2333ad37dd94f5bed5bf972f740ffe52",
       "file": "appstore.ts",
       "handler": "code"
     },
@@ -68,8 +68,8 @@
       "name": "ipod",
       "dir": "ipod",
       "tier": "apps",
-      "build": 12,
-      "md5": "a6aac6a3c5b287d760f2a5907878c7b8",
+      "build": 13,
+      "md5": "42786f275e33bf171b6820b65181ddd9",
       "file": "ipod.ts",
       "handler": "code"
     },
@@ -104,8 +104,8 @@
       "name": "safari",
       "dir": "safari",
       "tier": "apps",
-      "build": 24,
-      "md5": "49c7cff4b1858208f27ec192d1009731",
+      "build": 25,
+      "md5": "3ecbc2aa659a2cd8c2e254ebe9368894",
       "file": "safari.ts",
       "handler": "code"
     },

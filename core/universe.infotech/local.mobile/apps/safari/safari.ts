@@ -91,7 +91,11 @@ async function ensureSvc(): Promise<boolean> {
     }
     const { spawn } = await import("node:child_process");
     const { fileURLToPath } = await import("node:url");
-    const svc = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../universe.infotech/cloud.servers/browser_service.cjs");
+    // 2026-09-11（prime-agent）修正相对层级：原写 `../../../universe.infotech/cloud.servers/…` ——
+    // 从 <A.core>/universe.infotech/local.mobile/apps/safari 往上三层已经是 <A.core>/universe.infotech，
+    // 再拼 `universe.infotech/` 变成 universe.infotech/universe.infotech/…（不存在）→ 浏览器服务起不来。
+    // 正确是往三层直接落到 cloud.servers：
+    const svc = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../cloud.servers/browser_service.cjs");
     const env: Record<string, string> = { ...process.env as Record<string, string>, PORT: "0", CHROMIUM_PATH: chromium };
     env.BROWSER_PORT = env.BROWSER_PORT || "0";
     const child = spawn("node", [svc], { stdio: "ignore", detached: true, env });

@@ -619,37 +619,48 @@ fi
 # ②活跃判定用 ps aux 且排序漏 F前B后，与 list.cjs/ENTRY（main.pid + F前B后）不同源 → B 组序号错位。
 # 本函数与 ENTRY 同口径：main.pid 90s 活跃窗口 + _b(active&&detached) + 排序(F前B后+ago) + 分组路由。
 _resolve_active_arg() {
+  # 2026-09-12（ISSUE 186 单一真相源）：优先读 list.cjs 写的 genshin-group-map.json
+  # fallback 到旧逻辑（group-map 不存在时，如首次使用）
   node --input-type=commonjs -e "
     const fs=require('fs');
     const arg=process.argv[1];
-    const list=JSON.parse(fs.readFileSync('$PLIST','utf8')).filter(p=>!p.archived);
-    const now=Date.now();
     const PH='$PAIMON_HOME';
-    for(const p of list){
-      let a=false;
-      try{const pf=PH+'/MemoryData/'+p.id+'/main.pid';const st=fs.statSync(pf);if(now-st.mtimeMs<=90000){const pid=parseInt(fs.readFileSync(pf,'utf8').trim(),10);if(pid){process.kill(pid,0);a=true;}}}catch{}
-      p._active=a;
-      // 同 ENTRY：与 list.cjs:321-326 的编号判据同源（[H]/[P]/[B] 都算 B 组）——见上方 2026-09-11 说明
-      p._b=a&&(fs.existsSync(PH+'/RuntimeCache/'+p.id+'/detached')||fs.existsSync(PH+'/MemoryData/'+p.id+'/paused')||fs.existsSync(PH+'/RuntimeCache/'+p.id+'/paused')||fs.existsSync(PH+'/RuntimeCache/'+p.id+'/main-hibernate'));
-      p._fb=a&&fs.existsSync(PH+'/RuntimeCache/'+p.id+'/detached')?1:0; // 排序键：与 list.cjs:114/118 同源（只认 detached）
-      p._ago=Math.round((now-new Date(p.lastEnded||p.lastSeen).getTime())/60000);
+    const gmFile=PH+'/RuntimeCache/genshin-group-map.json';
+    // 优先读 list.cjs 落盘的分组映射（单一真相源——与列表显示完全一致）
+    let gm=null;
+    try{gm=JSON.parse(fs.readFileSync(gmFile,'utf8'));}catch{}
+    if(gm){
+      const entries=Object.entries(gm);
+      let m=arg.match(/^(\d+)([fboa])$/),sw=false;
+      if(!m){m=arg.match(/^([fboa])(\d+)$/);sw=!!m;}
+      let hit=null;
+      if(m){
+        const n=parseInt(sw?m[2]:m[1],10),g=sw?m[1]:m[2];
+        const match=entries.find(([id,v])=>v.g===g&&v.n===n);
+        if(match)hit=match[1].name;
+      }else if(/^\d+$/.test(arg)){
+        const n=parseInt(arg,10);
+        const hits=entries.filter(([id,v])=>v.n===n&&(v.g==='f'||v.g==='b'));
+        if(hits.length===1)hit=hits[0][1].name;
+        else if(hits.length>1)console.log('__AMBIG__'+hits.map(([id,v])=>v.n+v.g+'='+v.name).join('|'));
+      }else{
+        const byName=entries.find(([id,v])=>v.name===arg);
+        if(byName)hit=byName[1].name;
+      }
+      if(hit)console.log(hit);
+    }else{
+      // fallback：旧逻辑（group-map 不存在）
+      const list=JSON.parse(fs.readFileSync('$PLIST','utf8')).filter(p=>!p.archived);
+      const now=Date.now();
+      for(const p of list){let a=false;try{const pf=PH+'/MemoryData/'+p.id+'/main.pid';const st=fs.statSync(pf);if(now-st.mtimeMs<=90000){const pid=parseInt(fs.readFileSync(pf,'utf8').trim(),10);if(pid){process.kill(pid,0);a=true;}}}catch{}p._active=a;p._b=a&&(fs.existsSync(PH+'/RuntimeCache/'+p.id+'/detached')||fs.existsSync(PH+'/MemoryData/'+p.id+'/paused')||fs.existsSync(PH+'/RuntimeCache/'+p.id+'/paused')||fs.existsSync(PH+'/RuntimeCache/'+p.id+'/main-hibernate'));p._fb=a&&fs.existsSync(PH+'/RuntimeCache/'+p.id+'/detached')?1:0;p._ago=Math.round((now-new Date(p.lastEnded||p.lastSeen).getTime())/60000);}
+      list.sort((a,b)=>(b._active?1:0)-(a._active?1:0)||((a._fb||0)-(b._fb||0))||a._ago-b._ago);
+      const F=list.filter(p=>p._active&&!p._b),B=list.filter(p=>p._active&&p._b);
+      let m=arg.match(/^(\d+)([fba])$/),sw=false;if(!m){m=arg.match(/^([fba])(\d+)$/);sw=!!m;}
+      let hit=null;
+      if(m){const n=parseInt(sw?m[2]:m[1],10)-1,g=sw?m[1]:m[2];const pool={f:F,b:B,a:[...F,...B]}[g];hit=pool?.[n];}
+      else if(/^\d+$/.test(arg)){const n=parseInt(arg,10)-1;const hits=[];if(F[n])hits.push(['f',F[n]]);if(B[n])hits.push(['b',B[n]]);if(hits.length===1)hit=hits[0][1];else if(hits.length>1)console.log('__AMBIG__'+hits.map(([g,p])=>(n+1)+g+'='+p.name).join('|'));}
+      if(hit)console.log(hit.name);
     }
-    list.sort((a,b)=>(b._active?1:0)-(a._active?1:0)||((a._fb||0)-(b._fb||0))||a._ago-b._ago);
-    const F=list.filter(p=>p._active&&!p._b),B=list.filter(p=>p._active&&p._b),A=list.filter(p=>p._active);
-    let m=arg.match(/^(\d+)([fba])$/),sw=false;
-    if(!m){m=arg.match(/^([fba])(\d+)$/);sw=!!m;}
-    let hit=null;
-    if(m){const n=parseInt(sw?m[2]:m[1],10)-1,g=sw?m[1]:m[2];const pool={f:F,b:B,a:A}[g];hit=pool[n];}
-    else if(/^\d+$/.test(arg)){
-      // 2026-09-07（dev-01 反馈）：纯数字遵循 8/20 分组语义——F/B 两组各取第 N，多候选必须提示歧义（不能静默选 F）
-      const n=parseInt(arg,10)-1;
-      const hits=[];
-      if(F[n])hits.push(['f',F[n]]);
-      if(B[n])hits.push(['b',B[n]]);
-      if(hits.length===1)hit=hits[0][1];
-      else if(hits.length>1)console.log('__AMBIG__'+hits.map(([g,p])=>(n+1)+g+'='+p.name).join('|'));
-    }
-    if(hit)console.log(hit.name);
   " "$NAME"
 }
 
@@ -801,76 +812,59 @@ mkdir -p "$PAIMON_HOME/RuntimeCache"
 ORDER_FILE="$PAIMON_HOME/RuntimeCache/genshin-order.json"
 LAST_ORDER_FILE="$PAIMON_HOME/RuntimeCache/genshin-order-last.json"
 ENTRY=$(node --input-type=commonjs -e "
-  const fs = require('fs'), { execSync } = require('child_process');
+  const fs = require('fs');
   const list = JSON.parse(fs.readFileSync('$PLIST','utf8')).filter(p=>!p.archived);
-  const now = Date.now();
-  // 活跃检测统一用 main.pid（与 list.cjs 一致，不再用 ps aux）
   const PAIMON_HOME = '$PAIMON_HOME';
-  for (const p of list) {
-    let active = false;
-    try {
-      const pf = PAIMON_HOME + '/MemoryData/' + p.id + '/main.pid';
-      const st = fs.statSync(pf);
-      if (now - st.mtimeMs <= 90000) {
-        const pid = parseInt(fs.readFileSync(pf, 'utf8').trim(), 10);
-        if (pid) { process.kill(pid, 0); active = true; }
-      }
-    } catch {}
-    p._active = active;
-    // 2026-08-20 分组：detached 存在 = 后台 headless（_b）——与 list.cjs / archive.cjs 同源（1b/1f 分组路由基础）
-    // 2026-09-05 修复：必须 active && detached——与 list.cjs 的 _fb 一致（offline 不算 B）。
-    //   否则 offline 但残留 detached 标记的 agent（headless 测试遗留）被标 _b=1 → 排序 F前B后 沉底 →
-    //   组内序号与列表显示错位（genshin 3 的 3o 指向错误 agent）
-    // 2026-09-11（prime-agent，ISSUE 192 的分歧点）：分组判据必须与 list.cjs 的**编号**判据同源。
-    // list.cjs 的编号是：active && ([H] || [P] || [B]) → B 组，其余 active → F 组（见 list.cjs:321-326）；
-    // 而 [H]=RuntimeCache/<id>/main-hibernate、[P]=MemoryData/<id>/paused 或 RuntimeCache/<id>/paused、[B]=RuntimeCache/<id>/detached。
-    // 原来只判 detached → 前台暂停/休眠（active 且有 paused/hibernate、但没有 detached）会被 launcher 归到 F 组，
-    // 而列表里它显示在 B 组 → 组内序号错位 → genshin N / Nf / Nb 选到错 agent（用户 2026-09-11 报的现象）。
-    // 今天线上 6 个 agent 恰好都是"有 paused/hibernate 就必然有 detached"，所以还没触发；判据统一后这类错位不可能再出现。
-    p._b = active && (fs.existsSync(PAIMON_HOME + '/RuntimeCache/' + p.id + '/detached')
-      || fs.existsSync(PAIMON_HOME + '/MemoryData/' + p.id + '/paused')
-      || fs.existsSync(PAIMON_HOME + '/RuntimeCache/' + p.id + '/paused')
-      || fs.existsSync(PAIMON_HOME + '/RuntimeCache/' + p.id + '/main-hibernate'));
-    // 排序键单独一个：与 list.cjs:114 的 _fb 完全一致（只认 detached；_b 管分组，_fb 管排序）
-    p._fb = active && fs.existsSync(PAIMON_HOME + '/RuntimeCache/' + p.id + '/detached') ? 1 : 0;
-    p._ago = Math.round((now - new Date(p.lastEnded || p.lastSeen).getTime()) / 60000);
-  }
-  // 排序与 list.cjs 完全一致（活跃优先 + F 前 B 后 + 最近活跃优先）——保证数字路由的组内序号 = 列表显示序号
-  // 2026-09-11（prime-agent）：排序键必须与 list.cjs 一致 —— list.cjs 用 _fb（**只**看 detached）排序，
-  // 而 _b 是"编号分组"用的（[H]/[P]/[B] 都算 B 组）。两者混用会让同组内顺序与列表显示不一致
-  // （check-numbering.cjs 的夹具实测抓出过：hib-foreground 与 detached-bg 的 2b/3b 会互换）。
-  list.sort((a,b) => (b._active?1:0) - (a._active?1:0) || ((a._fb||0) - (b._fb||0)) || a._ago - b._ago);
   const arg = '$NAME';
+  const gmFile = PAIMON_HOME + '/RuntimeCache/genshin-group-map.json';
+  let gm = null;
+  try { gm = JSON.parse(fs.readFileSync(gmFile, 'utf8')); } catch {}
   let e;
-  let grpMatch = arg.match(/^(\d+)([ofba])$/);   // 规范：数字在前（1f/1o/1b/1a，2026-08-20 定稿）
-  let grpSwapped = false;
-  if (!grpMatch) { grpMatch = arg.match(/^([ofba])(\d+)$/); grpSwapped = !!grpMatch; }  // 2026-09-04 兼容字母在前（f1/o1）——旧版歧义提示曾按此格式输出，用户照输会掉进创建流程
-  if (grpMatch) {
-    // 2026-08-20 分组路由：1o=offline 第 N、1f=front 第 N、1b=background 第 N、1a=active（F+B 合并）第 N——与列表分组编号一致
-    const n = parseInt((grpSwapped ? grpMatch[2] : grpMatch[1])) - 1;
-    const g = grpSwapped ? grpMatch[1] : grpMatch[2];
-    const grps = {
-      o: list.filter(p => !p._active),
-      f: list.filter(p => p._active && !p._b),
-      b: list.filter(p => p._active && p._b),
-      a: list.filter(p => p._active),
-    };
-    e = grps[g][n];
-  } else if (/^\d+$/.test(arg)) {
-    // 2026-08-20 纯数字（用户定稿）：候选 = F（前台）第 N + B（后台）第 N + O（离线）第 N——
-    // 只有一个进那个，多个则弹选择（歧义自动处理，如 f1=xxx/o1=yyy）；显式组用 1f/1b/1o/1a
-    const n = parseInt(arg) - 1;
-    const fArr = list.filter(p => p._active && !p._b);
-    const bArr = list.filter(p => p._active && p._b);
-    const oArr = list.filter(p => !p._active);
-    const hits = [];
-    if (fArr[n]) hits.push(['f', fArr[n]]);
-    if (bArr[n]) hits.push(['b', bArr[n]]);
-    if (oArr[n]) hits.push(['o', oArr[n]]);
-    if (hits.length === 1) e = hits[0][1];
-    else if (hits.length > 1) console.log('__AMBIG__' + hits.map(([g, p]) => (n + 1) + g + '=' + p.name).join('|'));  // 2026-09-04 修复：候选标签数字在前（1f/1o，与解析格式一致——旧版输出 f1/o1，用户照提示输入却解析失败掉进创建流程）
+  if (gm) {
+    // 2026-09-12（ISSUE 186）：单一真相源——从 list.cjs 写的 group-map 读分组序号
+    const entries = Object.entries(gm);
+    let grpMatch = arg.match(/^(\d+)([ofba])$/), sw = false;
+    if (!grpMatch) { grpMatch = arg.match(/^([ofba])(\d+)$/); sw = !!grpMatch; }
+    if (grpMatch) {
+      const n = parseInt(sw ? grpMatch[2] : grpMatch[1], 10), g = sw ? grpMatch[1] : grpMatch[2];
+      const match = entries.find(([id, v]) => v.g === g && v.n === n);
+      if (match) e = list.find(p => p.id === match[0]);
+    } else if (/^\d+$/.test(arg)) {
+      const n = parseInt(arg, 10);
+      const hits = entries.filter(([id, v]) => v.n === n && (v.g === 'f' || v.g === 'b' || v.g === 'o'));
+      if (hits.length === 1) e = list.find(p => p.id === hits[0][0]);
+      else if (hits.length > 1) console.log('__AMBIG__' + hits.map(([id, v]) => v.n + v.g + '=' + v.name).join('|'));
+    } else {
+      e = list.find(p => p.name === arg);
+    }
   } else {
-    e = list.find(p => p.name === arg);
+    // fallback：group-map 不存在时用旧逻辑
+    const now = Date.now();
+    for (const p of list) {
+      let active = false;
+      try { const pf = PAIMON_HOME + '/MemoryData/' + p.id + '/main.pid'; const st = fs.statSync(pf); if (now - st.mtimeMs <= 90000) { const pid = parseInt(fs.readFileSync(pf, 'utf8').trim(), 10); if (pid) { process.kill(pid, 0); active = true; } } } catch {}
+      p._active = active;
+      p._b = active && (fs.existsSync(PAIMON_HOME + '/RuntimeCache/' + p.id + '/detached') || fs.existsSync(PAIMON_HOME + '/MemoryData/' + p.id + '/paused') || fs.existsSync(PAIMON_HOME + '/RuntimeCache/' + p.id + '/paused') || fs.existsSync(PAIMON_HOME + '/RuntimeCache/' + p.id + '/main-hibernate'));
+      p._fb = active && fs.existsSync(PAIMON_HOME + '/RuntimeCache/' + p.id + '/detached') ? 1 : 0;
+      p._ago = Math.round((now - new Date(p.lastEnded || p.lastSeen).getTime()) / 60000);
+    }
+    list.sort((a, b) => (b._active ? 1 : 0) - (a._active ? 1 : 0) || ((a._fb || 0) - (b._fb || 0)) || a._ago - b._ago);
+    let grpMatch = arg.match(/^(\d+)([ofba])$/), sw = false;
+    if (!grpMatch) { grpMatch = arg.match(/^([ofba])(\d+)$/); sw = !!grpMatch; }
+    if (grpMatch) {
+      const n = parseInt(sw ? grpMatch[2] : grpMatch[1], 10) - 1, g = sw ? grpMatch[1] : grpMatch[2];
+      const grps = { o: list.filter(p => !p._active), f: list.filter(p => p._active && !p._b), b: list.filter(p => p._active && p._b), a: list.filter(p => p._active) };
+      e = grps[g]?.[n];
+    } else if (/^\d+$/.test(arg)) {
+      const n = parseInt(arg, 10) - 1;
+      const fArr = list.filter(p => p._active && !p._b), bArr = list.filter(p => p._active && p._b), oArr = list.filter(p => !p._active);
+      const hits = [];
+      if (fArr[n]) hits.push(['f', fArr[n]]); if (bArr[n]) hits.push(['b', bArr[n]]); if (oArr[n]) hits.push(['o', oArr[n]]);
+      if (hits.length === 1) e = hits[0][1];
+      else if (hits.length > 1) console.log('__AMBIG__' + hits.map(([g, p]) => (n + 1) + g + '=' + p.name).join('|'));
+    } else {
+      e = list.find(p => p.name === arg);
+    }
   }
   const order = list.map(p => p.id);
   fs.writeFileSync('$ORDER_FILE', JSON.stringify(order));
