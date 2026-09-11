@@ -166,9 +166,9 @@ function ensureRestic(): string | null {
 
 // ── restic 运行环境 ──────────────────────────────────────────────────
 function repoUrl(conf: any): string {
-  // 阿里云 OSS S3 兼容端点：s3.oss-cn-<region>.aliyuncs.com
+  // 阿里云 OSS 要求 virtual hosted style（bucket 作子域名），path style 会报 SecondLevelDomainForbidden
   const ep = String(conf.endpoint).replace(/^https?:\/\//, '').replace(/\/$/, '');
-  return `s3:https://${ep}/${conf.bucket}/${REPO_PREFIX}`;
+  return `s3:https://${conf.bucket}.${ep}/${REPO_PREFIX}`;
 }
 function resticEnv(conf: any): NodeJS.ProcessEnv {
   const cred = readCred();
