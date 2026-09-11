@@ -464,6 +464,7 @@ export class InteractiveMode {
         if (this.settingsManager?.globalSettings?.showPinDev !== undefined) globalThis.__genshinShowPinDev = this.settingsManager.globalSettings.showPinDev;
         if (this.settingsManager?.globalSettings?.writeExpanded !== undefined) globalThis.__genshinWriteExpanded = this.settingsManager.globalSettings.writeExpanded;
         if (this.settingsManager?.globalSettings?.editExpanded !== undefined) globalThis.__genshinEditExpanded = this.settingsManager.globalSettings.editExpanded;
+        globalThis.__genshinThinkingFirstLine = this.settingsManager?.globalSettings?.thinkingFirstLine ?? true;
         // Expose session for /m /e commands
         globalThis.__genshinSetModel = (model) => this.session.setModel(model);
         globalThis.__genshinSetThinkingLevel = (level) => this.session.setThinkingLevel(level);
@@ -2565,7 +2566,25 @@ export class InteractiveMode {
                         for (const block of this.streamingMessage.content) {
                             const isBlockStreaming = (block.type === "text" && evType === "text_delta")
                                 || (block.type === "thinking" && evType === "thinking_delta");
-                            if (!isBlockStreaming) continue; // 已结束的块整块保留
+                            if (!isBlockStreaming) {
+                                // thinking 首行模式：已结束的 thinking block 也截断为第一行
+                                if (block.type === "thinking" && block.thinking && globalThis.__genshinThinkingFirstLine) {
+                                    const firstNL = block.thinking.indexOf("\n");
+                                    if (firstNL >= 0) {
+                                        saved.push({ block, full: block.thinking });
+                                        block.thinking = block.thinking.substring(0, firstNL);
+                                    }
+                                }
+                                continue;
+                            }
+                            // thinking 首行模式：streaming 中也只保留第一行
+                            if (block.type === "thinking" && block.thinking && globalThis.__genshinThinkingFirstLine) {
+                                const firstNL = block.thinking.indexOf("\n");
+                                if (firstNL >= 0) {
+                                    saved.push({ block, full: block.thinking });
+                                    block.thinking = block.thinking.substring(0, firstNL) + "…";
+                                }
+                            }
                             if (block.type === "text" && block.text) {
                                 const full = block.text;
                                 const lastNL = full.lastIndexOf('\n');

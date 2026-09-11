@@ -64,7 +64,7 @@ export async function viewHandler(_args: any, ctx: any) {
 
     return [
       { id: "renderMode", label: T("渲染模式", "Render Mode"), currentValue: renderMode, values: ["line", "streaming", "block"] },
-      { id: "thinking", label: "Thinking", currentValue: thinkHidden ? T("隐藏", "Hidden") : T("显示", "Show"), values: [T("显示", "Show"), T("隐藏", "Hidden")] },
+      { id: "thinking", label: "Thinking", currentValue: thinkHidden ? T("隐藏", "Hidden") : ((globalThis as any).__genshinThinkingFirstLine ? T("首行", "First line") : T("完整", "Full")), values: [T("首行", "First line"), T("完整", "Full"), T("隐藏", "Hidden")] },
       { id: "codeHighlight", label: T("代码高亮", "Code Highlight"), currentValue: codeHighlight ? T("开", "On") : T("关", "Off"), values: [T("关", "Off"), T("开", "On")] },
       ...toolItems,
       { id: "ctrlC", label: "Ctrl+C", currentValue: ctrlCToBg ? T("转后台", "To Bg") : T("停止", "Stop"), values: [T("转后台", "To Bg"), T("停止", "Stop")] },
@@ -83,9 +83,12 @@ export async function viewHandler(_args: any, ctx: any) {
         break;
       }
       case "thinking": {
-        const show = value === T("显示", "Show");
+        const isHidden = value === T("隐藏", "Hidden");
+        const isFirstLine = value === T("首行", "First line");
         const handler = (globalThis as any).__genshinToggleThinking;
-        if (handler) handler(show);
+        if (handler) handler(!isHidden);
+        (globalThis as any).__genshinThinkingFirstLine = isFirstLine;
+        save("thinkingFirstLine", isFirstLine);
         break;
       }
       case "codeHighlight": {
