@@ -351,9 +351,10 @@ function cmdNow(): boolean {
   writeStatus('running', { host, started: new Date().toISOString() });
   const t0 = Date.now();
   let ok = true; let failDetail = '';
-  // pipe 捕获输出：失败时能拿到详情（打到终端尾部 + 上报）
-  if (ex.length) { const r = runRestic(bin, conf, ['backup', '--tag', 'critical', '--host', host, ...ex]); ok = ok && r.ok; if (!r.ok) failDetail += r.out; }
-  if (bx.length) { const r = runRestic(bin, conf, ['backup', '--tag', 'bulk', '--host', host, ...bx]); ok = ok && r.ok; if (!r.ok) failDetail += r.out; }
+  // 交互终端用 inherit（显示 restic 进度条），非交互用 pipe（bioclock 自动备份静默）
+  const isTTY = process.stdout.isTTY;
+  if (ex.length) { const r = runRestic(bin, conf, ['backup', '--tag', 'critical', '--host', host, ...ex], { inherit: !!isTTY }); ok = ok && r.ok; if (!r.ok) failDetail += r.out; }
+  if (bx.length) { const r = runRestic(bin, conf, ['backup', '--tag', 'bulk', '--host', host, ...bx], { inherit: !!isTTY }); ok = ok && r.ok; if (!r.ok) failDetail += r.out; }
   const secs = ((Date.now() - t0) / 1000).toFixed(1);
   if (ok) {
     console.log(`  ${G}✓${R} ${T('备份完成', 'backup done')} ${D}${secs}s${R}`);
