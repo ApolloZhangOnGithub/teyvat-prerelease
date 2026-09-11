@@ -128,7 +128,8 @@ else
     # INDEX 检查：提取 INDEX 中条目编号行（- [NNN] 或 [N] 格式），只匹配行首
     idx_file=$(ls "$doc_dir"/*.INDEX 2>/dev/null | head -1)
     if [ -n "$idx_file" ]; then
-      idx_nums=$(grep -oE '^\s*-?\s*\[[0-9]+' "$idx_file" | grep -oE '[0-9]+' | sort -n | uniq)
+      # 2026-09-11：允许行首有 ⭐/*/- 等标记（实测 '⭐[37] TUI 输入调试…' 会被旧正则漏掉 → 假报"未收录"）
+      idx_nums=$(grep -oE '^[^[]*\[[0-9]+\]' "$idx_file" | grep -oE '[0-9]+' | sort -n | uniq)
       # 只检查 INDEX 里的每个条目号在文件中是否存在（允许 INDEX 有额外编号如 000）
       missing_from_files=""
       for inum in $idx_nums; do

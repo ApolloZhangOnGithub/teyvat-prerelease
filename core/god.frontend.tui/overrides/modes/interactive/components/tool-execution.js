@@ -232,7 +232,13 @@ const _genshinBuiltinRenderers = {
             }
             const elapsed = _opts?.elapsedMs ? ` ${t.fg("muted", `[${elapsedStr(_opts.elapsedMs)}]`)}` : "";
             const summary = `Added ${t.bold(String(added))} ${added !== 1 ? "lines," : "line,"} removed ${t.bold(String(removed))} ${removed !== 1 ? "lines" : "line"}${elapsed}`;
-            return renderMessage.summary(t, ctx, summary + "\n" + body.join("\n"));
+            const { Text: Txt, Container: CC } = require("@earendil-works/pi-tui");
+            const cc = new CC();
+            const indent = " ".repeat(GUTTER);
+            cc.addChild(new Txt(indent + t.fg("dim", "⎿  ") + summary, 0, 0));
+            const contIndent = " ".repeat(GUTTER + 3);
+            for (const l of body) cc.addChild(new Txt(contIndent + l, 0, 0));
+            return cc;
         },
     },
 };
