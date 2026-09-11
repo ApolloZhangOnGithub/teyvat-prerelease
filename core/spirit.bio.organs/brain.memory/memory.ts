@@ -1102,7 +1102,29 @@ export default function registerMemory(pi: ExtensionAPI) {
       const phase = args?.hash_key ? theme.fg("success", "apply") : a === "fetch" || a === "mark_enter" || a === "mark_exit" ? "" : theme.fg("warning", "check");
       return renderToolCall.label(theme, "Amem", phase ? `${a} [${phase}]` : a);
     },
-    renderResult(result: any, _options: any, theme: any, ctx: any) { return renderMessage.summary(theme, ctx, resultContent(result)?.[0]?.text); },
+    renderResult(result: any, _options: any, theme: any, ctx: any) {
+      const raw = resultContent(result)?.[0]?.text || "";
+      if (!raw || ctx?.isError) return renderMessage.summary(theme, ctx, raw);
+      const { Text: T, Container: C } = require("@earendil-works/pi-tui");
+      const GUTTER = 2;
+      const indent = " ".repeat(GUTTER);
+      const c = new C();
+      const lines = raw.split("\n").filter((l: string) => l.trim());
+      // 第一行是摘要（如 'amem archive "标题" → removed 816 entries...'）
+      const summary = lines[0] || raw.slice(0, 120);
+      c.addChild(new T(indent + theme.fg("dim", "⎿  ") + theme.fg("toolOutput", summary), 0, 0));
+      // 剩余行是参数（如 context_length、time_span、context tokens）
+      for (let i = 1; i < lines.length; i++) {
+        const ln = lines[i].trim();
+        const kv = ln.match(/^(\w[\w_]*)\s*[:：]\s*(.+)/);
+        if (kv) {
+          c.addChild(new T(indent + "   " + theme.fg("dim", kv[1] + ": ") + kv[2], 0, 0));
+        } else {
+          c.addChild(new T(indent + "   " + theme.fg("dim", ln), 0, 0));
+        }
+      }
+      return c;
+    },
     parameters: Type.Object({
       action: Type.Union([Type.Literal("manage"), Type.Literal("sweep"), Type.Literal("archive"), Type.Literal("fetch"), Type.Literal("revert"), Type.Literal("mark_enter"), Type.Literal("mark_exit")]),
       anchor_begin: Type.Optional(Type.String({ messageDescription: "[manage/archive] Beginning anchor (text)" })),
