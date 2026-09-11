@@ -167,6 +167,13 @@ if [ "$1" = "n" ]; then
   [ -z "$NID" ] && { echo "agent not found: $1"; exit 1; }
   shift; exec node "$HOME/.local/lib/teyvat/extensions/teyvat/god.frontend.cli/note.cjs" "$NID" "$@"
 fi
+# genshin b / backup — teyvat 云备份（2026-09-12 用户指派）
+# 必须放在 flag 循环前：要透传子命令（config/init/now/status）与 --endpoint= 等参数，
+# 否则 --endpoint= 会被 flag 循环当作未知 POS 参数误吞。
+if [ "$1" = "b" ] || [ "$1" = "backup" ]; then
+  shift
+  cd "$PAIMON_EXT/.." && exec bun "$PAIMON_CLI_TS" backup ${@+"$@"}
+fi
 POS=()
 while [ $# -gt 0 ]; do
   case "$1" in

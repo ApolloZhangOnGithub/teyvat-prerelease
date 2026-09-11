@@ -260,3 +260,9 @@ export async function settingsHandler(args: any, ctx: any) {
 
   await showSettingsList(T("设置", "Settings"), getAllItems, handleChange);
 }
+
+// 带路径的 showSettingsList 包装——子页面使用
+export function settingsPath(...segments: string[]): string[] | string {
+  const root = T("设置", "Settings");
+  return segments.length > 0 ? [root, ...segments] : root;
+}

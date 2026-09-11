@@ -263,7 +263,7 @@ let _lastBgHash = ""; // @ 缓存：避免相同输出重复占用 context
       const display = (globalThis as any).__genshinExecuteDisplay ?? "title";
       const label = args?.terminal === true ? "Execute(T)" : "Execute";
       if (display === "title") return renderToolCall.label(theme, label, title);
-      if (display === "command") return renderToolCall.command(theme, label, cmd);
+      // 命令处理（breakAnd/compact）在模式分支前统一执行，所有展示命令的模式都生效
       if ((globalThis as any).__genshinExecuteBreakAnd && cmd.includes(" && ")) {
         cmd = cmd.split(" && ").join(" &&\n");
       }
@@ -273,7 +273,7 @@ let _lastBgHash = ""; // @ 缓存：避免相同输出重复占用 context
           cmd = lines.slice(0, 3).join("\n") + "\n... +" + (lines.length - 3) + " more";
         }
       }
-      // 标准调用行管线（2026-08-17）：第一行 Execute <title>（意图），下方指令详情区（命令，与 E 对齐）
+      if (display === "command") return renderToolCall.command(theme, label, cmd);
       return renderToolCall.detail(theme, label, title, cmd);
     },
     renderResult(result: any, _options: any, theme: any, ctx: any) {

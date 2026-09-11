@@ -173,6 +173,9 @@ export class SettingsList {
                 this.closeSubmenu();
             });
         }
+        else if (item.onActivate) {
+            item.onActivate(item);
+        }
         else if (item.values && item.values.length > 0) {
             // Cycle through values
             const currentIndex = item.values.indexOf(item.currentValue);
@@ -201,16 +204,19 @@ export class SettingsList {
         const sel = displayItems[this.selectedIndex];
         const hasValues = sel?.values?.length > 1;
         const hasSubmenu = !!sel?.submenu;
+        const hasActivate = !!sel?.onActivate;
         let hint;
         if (this.searchEnabled) {
             hint = hasValues ? "  Type to search · ←→ switch · Enter to confirm · Esc to cancel"
                              : "  Type to search · Enter to open · Esc to cancel";
+        } else if (hasValues && hasActivate) {
+            hint = "  ←→ switch · Enter to configure · Esc to cancel";
         } else if (hasValues) {
             hint = "  ←→ switch · Esc to cancel";
-        } else if (hasSubmenu) {
+        } else if (hasSubmenu || hasActivate) {
             hint = "  Enter to open · Esc to cancel";
         } else {
-            hint = "  Enter to select · Esc to cancel";
+            hint = "  ↑↓ navigate · Esc to cancel";
         }
         lines.push(truncateToWidth(this.theme.hint(hint), width));
     }

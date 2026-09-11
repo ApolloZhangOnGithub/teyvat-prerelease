@@ -19,7 +19,7 @@ export async function effortHandler(_args: any, ctx: any) {
     const getItems = () => [
       { id: "effort", label: "Effort", currentValue: curDs, values: MAP.map(([ds]) => ds) },
     ];
-    await showSettingsList("Effort", getItems, (id: string, value: string) => {
+    await showSettingsList([i18n("设置", "Settings"), "Effort"], getItems, (id: string, value: string) => {
       const entry = MAP.find(([ds]) => ds === value);
       if (entry) setThinking(entry[1]);
     });

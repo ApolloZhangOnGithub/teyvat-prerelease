@@ -128,7 +128,7 @@ export function toolsHandler(getActiveTools: () => string[], setActiveTools?: (t
           values: def.locked ? [] : [T("启用", "On"), T("禁用", "Off")],
         };
       });
-      await showSettingsList("Tools", getItems, (id: string, value: string) => {
+      await showSettingsList([i18n("设置", "Settings"), "Tools"], getItems, (id: string, value: string) => {
         const on = value === T("启用", "On");
         sess[id] = on;
         saveSessionOverrides(sess);

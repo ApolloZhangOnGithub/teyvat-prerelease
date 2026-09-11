@@ -30,7 +30,6 @@ const H = os.homedir();
 const PAIMON = process.env.PAIMON_HOME || path.join(H, '.teyvat');
 const UA_SERVICES = path.join(PAIMON, 'UserAccount', 'services.json');
 const LEGACY_SERVICES = path.join(PAIMON, 'config', 'services.json');
-const SVC_FILE = fs.existsSync(UA_SERVICES) ? UA_SERVICES : LEGACY_SERVICES;
 const BACKUP_DIR = path.join(PAIMON, 'config', 'backup');
 const PASS_FILE = path.join(BACKUP_DIR, 'restic-pass');
 const CRED_FILE = path.join(BACKUP_DIR, 'cred.json');
@@ -50,17 +49,19 @@ const CRITICAL = ['SessionData', 'MemoryData', 'AgentFileData', 'config', 'UserA
 const BULK = ['AgentWorkDir', 'BlackboxData'];
 
 // ── 配置读写 ─────────────────────────────────────────────────────────
+// 读：UserAccount 优先、legacy 回退（动态判断——文件可能后续才建）
+// 写：**总是写 UserAccount**（新位置）——否则新环境会把配置永久落在 legacy
+function svcPath(): string { return fs.existsSync(UA_SERVICES) ? UA_SERVICES : LEGACY_SERVICES; }
 function readServices(): Record<string, any> {
-  try { return JSON.parse(fs.readFileSync(SVC_FILE, 'utf8')); } catch { return {}; }
+  try { return JSON.parse(fs.readFileSync(svcPath(), 'utf8')); } catch { return {}; }
 }
 function writeServices(patch: Record<string, any>): void {
-  const svc = readServices();
+  const svc = readServices();   // 含 legacy 内容（若读的是 legacy）——写入时自然迁移到新位置
   Object.assign(svc, patch);
-  const dir = path.dirname(SVC_FILE);
-  fs.mkdirSync(dir, { recursive: true });
-  const tmp = SVC_FILE + '.tmp';
+  fs.mkdirSync(path.dirname(UA_SERVICES), { recursive: true });
+  const tmp = UA_SERVICES + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(svc, null, 2));
-  fs.renameSync(tmp, SVC_FILE);
+  fs.renameSync(tmp, UA_SERVICES);
 }
 function getBackupConf(): any | null {
   const b = readServices().backup;
@@ -143,6 +144,27 @@ function log(line: string): void {
   } catch { /* 静默 */ }
 }
 
+// ── 远端上报（best-effort——照抄 update 遥测：失败静默、绝不阻断）──────
+// 用 spawnSync curl（同步、可靠——避免 fire-and-forget fetch 随进程退出丢失）
+function reportRemote(ok: boolean, detail: string): void {
+  try {
+    const bind = JSON.parse(fs.readFileSync(path.join(PAIMON, 'UserAccount', 'binding.json'), 'utf8'));
+    if (!bind?.token) return;                                    // 未绑定账号 → 不上报（仅本地日志）
+    const payload = JSON.stringify({
+      ok,
+      detail: String(detail || '').slice(0, 300),
+      host: os.hostname().replace(/\.local$/, ''),
+      ts: new Date().toISOString(),
+    });
+    spawnSync('curl', ['-s', '-m', '8', '-X', 'POST', 'https://sync.paimon.beer/sync/backup-telemetry',
+      '-H', 'Content-Type: application/json',
+      '-H', `Authorization: Bearer ${bind.token}`,
+      '-H', `X-Device-Id: ${bind.deviceId || ''}`,
+      '-H', 'User-Agent: genshin-sync/1.0',
+      '-d', payload], { stdio: 'ignore' });
+  } catch { /* 静默 */ }
+}
+
 // ── 交互问答 ─────────────────────────────────────────────────────────
 function ask(q: string, def = ''): Promise<string> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -171,7 +193,7 @@ async function cmdConfigInteractive(rest: string[]): Promise<boolean> {
   // services.json 只存 bucket/endpoint（不含密钥）；AK 另存 600 文件
   writeServices({ backup: { provider: 'oss', endpoint, bucket, paths: [...CRITICAL], schedule: 'daily' } });
   writeCred({ accessKeyId: akid, accessKeySecret: aksec });
-  console.log(`\n  ${G}✓${R} ${T('配置已写入', 'config written')} ${D}${SVC_FILE}${R}`);
+  console.log(`\n  ${G}✓${R} ${T('配置已写入', 'config written')} ${D}${UA_SERVICES}${R}`);
   console.log(`  ${G}✓${R} ${T('凭证已写入（600）', 'credentials written (600)')} ${D}${CRED_FILE}${R}`);
   return true;
 }
@@ -213,12 +235,22 @@ function cmdNow(): boolean {
   const host = os.hostname().replace(/\.local$/, '');
   console.log(`  ${D}${T('备份', 'backing up')} critical(${ex.length}) + bulk(${bx.length}) → ${host}${R}`);
   const t0 = Date.now();
-  let ok = true;
-  if (ex.length) { const r = runRestic(bin, conf, ['backup', '--tag', 'critical', '--host', host, ...ex], { inherit: true }); ok = ok && r.ok; }
-  if (bx.length) { const r = runRestic(bin, conf, ['backup', '--tag', 'bulk', '--host', host, ...bx], { inherit: true }); ok = ok && r.ok; }
+  let ok = true; let failDetail = '';
+  // pipe 捕获输出：失败时能拿到详情（打到终端尾部 + 上报）
+  if (ex.length) { const r = runRestic(bin, conf, ['backup', '--tag', 'critical', '--host', host, ...ex]); ok = ok && r.ok; if (!r.ok) failDetail += r.out; }
+  if (bx.length) { const r = runRestic(bin, conf, ['backup', '--tag', 'bulk', '--host', host, ...bx]); ok = ok && r.ok; if (!r.ok) failDetail += r.out; }
   const secs = ((Date.now() - t0) / 1000).toFixed(1);
-  if (ok) { console.log(`  ${G}✓${R} ${T('备份完成', 'backup done')} ${D}${secs}s${R}`); log(`backup ok ${secs}s`); }
-  else { console.error(`  ${RED}${T('备份失败（详见日志）', 'backup failed (see log)')}${R}`); log('backup failed'); }
+  if (ok) {
+    console.log(`  ${G}✓${R} ${T('备份完成', 'backup done')} ${D}${secs}s${R}`);
+    log(`backup ok ${secs}s`);
+    reportRemote(true, `ok ${secs}s`);
+  } else {
+    const tail = failDetail.trim().split('\n').slice(-4).join('\n');
+    console.error(`  ${RED}${T('备份失败', 'backup failed')}${R}`);
+    if (tail) console.error(`  ${D}${tail}${R}`);
+    log(`backup failed: ${failDetail.slice(0, 400)}`);
+    reportRemote(false, failDetail || 'restic exit!=0');
+  }
   return ok;
 }
 

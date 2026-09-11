@@ -185,6 +185,17 @@ syncRouter.post("/update-telemetry", async (c) => {
   } catch (e) { console.error("[god.backend.services/sync.ts] " + ((e as any)?.message || e)); return c.json({ error: "bad json" }, 400); }
 });
 
+// 备份事件（2026-09-12：备份成功/失败上报——与 update 遥测同机制）
+syncRouter.post("/backup-telemetry", async (c) => {
+  const user = c.get("user") as AuthUser;
+  try {
+    const b = await c.req.json();
+    const { ok, detail, host, ts } = b || {};
+    stmt.insertBackupEvent.run(user.githubId, user.deviceId || "", ok ? 1 : 0, String(detail || ""), String(host || ""), String(ts || new Date().toISOString()));
+    return c.json({ ok: true });
+  } catch (e) { console.error("[god.backend.services/sync.ts] " + ((e as any)?.message || e)); return c.json({ error: "bad json" }, 400); }
+});
+
 syncRouter.post("/lock/:personId", (c) => {
   const user = c.get("user") as AuthUser;
   const personId = c.req.param("personId");

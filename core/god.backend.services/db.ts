@@ -116,6 +116,17 @@ db.exec(`
     ts        TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_update_history_dev ON update_history(device_id, ts);
+  -- 备份事件（2026-09-12 云备份任务：备份成功/失败上报——与 update 遥测同机制）
+  CREATE TABLE IF NOT EXISTS backup_events (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    github_id INTEGER NOT NULL,
+    device_id TEXT NOT NULL,
+    ok        INTEGER NOT NULL,
+    detail    TEXT NOT NULL DEFAULT '',
+    host      TEXT NOT NULL DEFAULT '',
+    ts        TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_backup_events_dev ON backup_events(device_id, ts);
 `);
 
 // 迁移（2026-09-05）：devices 表补 created_at（首次绑定时间——存量设备此前未记录，置 NULL 用 last_seen 近似）
@@ -304,5 +315,10 @@ export const stmt = {
   listUpdateHistory: db.prepare(`
     SELECT device_id, from_ver, to_ver, channel, trigger_by, ts FROM update_history
     WHERE github_id = ? ORDER BY id DESC LIMIT ?
+  `),
+  // 备份事件（2026-09-12）
+  insertBackupEvent: db.prepare(`
+    INSERT INTO backup_events (github_id, device_id, ok, detail, host, ts)
+    VALUES (?, ?, ?, ?, ?, ?)
   `),
 };

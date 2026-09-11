@@ -25,7 +25,6 @@ export async function viewHandler(_args: any, ctx: any) {
     const executeDisplay = (globalThis as any).__genshinExecuteDisplay ?? "full";
     const compactExecute = (globalThis as any).__genshinCompactExecute ?? false;
     const breakAnd = (globalThis as any).__genshinExecuteBreakAnd ?? false;
-    const ctrlCToBg = (globalThis as any).__genshinCtrlCToBg ?? true;
     const tokenmaxxedColorful = (globalThis as any).__genshinTokenmaxxedColorful ?? false;
     const footerAge = (globalThis as any).__genshinFooterAge ?? false;
     const footerTokenmaxxed = (globalThis as any).__genshinFooterTokenmaxxed ?? false;
@@ -67,9 +66,6 @@ export async function viewHandler(_args: any, ctx: any) {
       { id: "thinking", label: "Thinking", currentValue: thinkHidden ? T("隐藏", "Hidden") : ((globalThis as any).__genshinThinkingFirstLine ? T("首行", "First line") : T("完整", "Full")), values: [T("首行", "First line"), T("完整", "Full"), T("隐藏", "Hidden")] },
       { id: "codeHighlight", label: T("代码高亮", "Code Highlight"), currentValue: codeHighlight ? T("开", "On") : T("关", "Off"), values: [T("关", "Off"), T("开", "On")] },
       ...toolItems,
-      { id: "ctrlC", label: "Ctrl+C", currentValue: ctrlCToBg ? T("转后台", "To Bg") : T("停止", "Stop"), values: [T("转后台", "To Bg"), T("停止", "Stop")] },
-      { id: "greetOnAttach", label: T("回来打招呼", "Greet on attach"), currentValue: ((globalThis as any).__genshinGreetOnAttach ?? true) ? T("开", "On") : T("关", "Off"), values: [T("开", "On"), T("关", "Off")] },
-      { id: "unloadMode", label: T("休眠卸载", "Hibernate unload"), currentValue: ((globalThis as any).__genshinUnloadMode || "seamless") === "classic" ? T("传统", "Classic") : T("无感", "Seamless"), values: [T("无感", "Seamless"), T("传统", "Classic")] },
       { id: "footerAge", label: T("Footer 年龄", "Footer Age"), currentValue: footerAge ? T("显示", "Show") : T("隐藏", "Hide"), values: [T("隐藏", "Hide"), T("显示", "Show")] },
       { id: "footerTokens", label: T("Footer 履历", "Footer Tokens"), currentValue: footerTokensValue, values: footerTokensValues },
       { id: "footerProvider", label: T("Footer 供应商", "Footer Provider"), currentValue: footerProvider ? T("显示", "Show") : T("隐藏", "Hide"), values: [T("隐藏", "Hide"), T("显示", "Show")] },
@@ -141,24 +137,6 @@ export async function viewHandler(_args: any, ctx: any) {
         save("executeBreakAnd", on);
         break;
       }
-      case "ctrlC": {
-        const toBg = value === T("转后台", "To Bg");
-        (globalThis as any).__genshinCtrlCToBg = toBg;
-        save("ctrlCToBg", toBg);
-        break;
-      }
-      case "greetOnAttach": {
-        const on = value === T("开", "On");
-        (globalThis as any).__genshinGreetOnAttach = on;
-        save("greetOnAttach", on);
-        break;
-      }
-      case "unloadMode": {
-        const mode = value === T("传统", "Classic") ? "classic" : "seamless";
-        (globalThis as any).__genshinUnloadMode = mode;
-        save("unloadMode", mode);
-        break;
-      }
       case "footerAge": {
         const show = value === T("显示", "Show");
         (globalThis as any).__genshinFooterAge = show;
@@ -190,5 +168,5 @@ export async function viewHandler(_args: any, ctx: any) {
     }
   };
 
-  await showSettingsList(T("显示设置", "Display Settings"), getItems, onChange);
+  await showSettingsList([T("设置", "Settings"), T("显示", "Display")], getItems, onChange);
 }

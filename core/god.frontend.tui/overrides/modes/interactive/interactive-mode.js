@@ -2282,6 +2282,8 @@ export class InteractiveMode {
                 const { MenuPanel, getEditorBackgroundColor } = require("./components/menu-panel.js");
                 const bg = getEditorBackgroundColor();
                 const items = typeof getItems === "function" ? getItems() : getItems;
+                // 多级路径支持：title 可以是字符串或数组，数组用 " > " 连接显示面包屑
+                const displayTitle = Array.isArray(title) ? title.join(" > ") : title;
                 const list = new SettingsList(items, 14, {
                     cursor: theme.fg("accent", "→") + " ",
                     label: (text, selected) => selected ? theme.bold(text) : text,
@@ -2302,7 +2304,7 @@ export class InteractiveMode {
                     this.ui.requestRender();
                     resolve(undefined);
                 });
-                const panel = new MenuPanel({ title });
+                const panel = new MenuPanel({ title: displayTitle });
                 const wrapper = {
                     render: (w) => {
                         panel.clear();

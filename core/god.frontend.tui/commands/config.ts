@@ -167,25 +167,40 @@ export async function configHandler(_args: any, ctx: any) {
     const getItems = () => displayKeys.map(key => {
       const svc = services[key] || {};
       const cn = DEFAULTS[key]?.name || key; const en = DEFAULTS[key]?.en || "";
-      const isProvider = "enabled" in (DEFAULTS[key]?.fields || {});
-      const fields = Object.keys(DEFAULTS[key]?.fields || svc);
+      const fields = Object.keys(DEFAULTS[key]?.fields || svc).filter((f: string) => f !== "enabled");
       const allSet = fields.every((f: string) => typeof svc[f] === "string" && svc[f].trim());
       const icon = allSet ? "✓" : "○";
       const label = i18n(cn, en);
-      if (isProvider) {
-        const on = String(svc.enabled ?? "y").trim().toLowerCase() !== "n";
-        return { id: key, label: `${icon} ${label}`, currentValue: on ? T("启用", "On") : T("停用", "Off"), values: [T("启用", "On"), T("停用", "Off")] };
-      }
-      return { id: key, label: `${icon} ${label}`, currentValue: allSet ? T("已配置", "Set") : T("未配置", "Unset"), values: [] };
+      // 未配置的服务默认停用，已配置的默认启用（enabled 字段明确设置时以设置为准）
+      const hasExplicitEnabled = svc.enabled !== undefined && svc.enabled !== "";
+      const on = hasExplicitEnabled ? String(svc.enabled).trim().toLowerCase() !== "n" : allSet;
+      return {
+        id: key, label: `${icon} ${label}`,
+        currentValue: on ? T("启用", "On") : T("停用", "Off"),
+        values: [T("启用", "On"), T("停用", "Off")],
+        onActivate: async () => {
+          // Enter 进入字段编辑
+          const display = i18n(cn, en);
+          for (const field of fields) {
+            const cur = (typeof svc[field] === "string" && svc[field].trim()) ? svc[field].slice(0, 8) + "..." : T("(未设置)", "(not set)");
+            const newVal = await ctx.ui.input(`${display}.${field} [${cur}]`);
+            if (newVal !== undefined && newVal !== null) {
+              svc[field] = newVal.trim();
+              services[key] = svc;
+              saveServices(services);
+              syncAfterChange(key, svc, services);
+            }
+          }
+        },
+      };
     });
-    await showSettingsList(T("服务配置", "Service Config"), getItems, (id: string, value: string) => {
+    await showSettingsList([T("设置", "Settings"), T("服务配置", "Service Config")], getItems, (id: string, value: string) => {
       const svc = services[id] || {};
-      if ("enabled" in (DEFAULTS[id]?.fields || {})) {
-        svc.enabled = value === T("启用", "On") ? "y" : "n";
-        services[id] = svc;
-        saveServices(services);
-        syncAfterChange(id, svc, services);
-      }
+      svc.enabled = value === T("启用", "On") ? "y" : "n";
+      if (!svc.enabled) svc.enabled = "n";
+      services[id] = svc;
+      saveServices(services);
+      syncAfterChange(id, svc, services);
     });
     return;
   }

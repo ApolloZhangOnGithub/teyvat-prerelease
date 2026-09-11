@@ -444,6 +444,8 @@ if (filter === 'archived') {
     hdr('诊断');
     row('help, h',               '显示此帮助信息');
     row('doctor',                '运行系统诊断，检查配置和健康状态');
+    row('backup, b [config|init|now|status]',
+                                 '云备份到对象存储（restic 快照；无子命令=状态）');
 
     hdr('账户');
     row('login',                 '通过 GitHub 登录并绑定账户');
@@ -488,6 +490,8 @@ if (filter === 'archived') {
     hdr('Diagnose');
     row('help, h',              'Show this help message');
     row('doctor',               'Run system diagnostics and health checks');
+    row('backup, b [config|init|now|status]',
+                                 'Cloud backup to object storage (restic snapshots; no arg = status)');
 
     hdr('Account');
     row('login',                         'Log in with GitHub account');

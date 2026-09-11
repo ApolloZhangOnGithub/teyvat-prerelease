@@ -57,7 +57,7 @@ export function registerGodCommands(pi: any) {
     handler: quitHandler,
   });
   pi.registerCommand("h", {
-    description: desc("hide", "隐藏显示但保持运行（转后台 headless，/h）", "Hide display, keep running (background, /h)"),
+    description: desc("hide", "转后台 headless 运行", "Move to background (headless)"),
     handler: detachHandler,
   });
   pi.registerCommand("p", {

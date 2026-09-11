@@ -59,7 +59,7 @@ export async function experimentalHandler(_args: any, ctx: any) {
         { id: "research", label: T("RESEARCH logits 记录", "RESEARCH logits recording"), currentValue: researchOn ? T("开", "On") : T("关", "Off"), values: [T("关", "Off"), T("开", "On")] },
       ];
     };
-    await showSettingsList(T("实验性功能", "Experimental"), getItems, (id: string, value: string) => {
+    await showSettingsList([T("设置", "Settings"), T("实验性功能", "Experimental")], getItems, (id: string, value: string) => {
       const on = value === T("开", "On");
       if (id === "xattr") {
         expFlag = on ? (expFlag | 0x0001) : (expFlag & ~0x0001);
