@@ -22,10 +22,12 @@ export const GUTTER = 2; // 内容列：bullet "• " 占 2 列，内容从第 2
 export function dot(theme, opts) {
   const o = opts || {};
   if (o.partial) {
-    // 进行中/等待中：闪烁灰点（亮灰/暗灰交替，跟随 sparkle 帧计数器）
-    const frame = globalThis.__genshinSparkleFrame || 0;
-    const dim = frame % 2 === 0;
-    return dim ? theme.fg("dim", "⏺") : theme.fg("border", "⏺");
+    if (o.blink) {
+      const frame = globalThis.__genshinSparkleFrame || 0;
+      const visible = Math.floor(frame / 3) % 2 === 0;
+      return visible ? theme.fg("dim", "⏺") : " ";
+    }
+    return theme.fg("warning", "⏺");
   }
   if (o.error) return theme.fg("error", "⏺");
   return theme.fg("success", "⏺");
@@ -35,11 +37,7 @@ export function dot(theme, opts) {
 // 视觉区分：主动调用的工具行用圆点 dot，被动收到的消息用菱形 diamond。
 export function diamond(theme, opts) {
   const o = opts || {};
-  if (o.partial) {
-    const frame = globalThis.__genshinSparkleFrame || 0;
-    const dim = frame % 2 === 0;
-    return dim ? theme.fg("dim", "◇") : theme.fg("border", "◇");
-  }
+  if (o.partial) return theme.fg("accent", "◇");
   if (o.error) return theme.fg("error", "◆"); // ◆
   return theme.fg("success", "◆"); // ◆
 }

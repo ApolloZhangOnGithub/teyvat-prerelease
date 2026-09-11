@@ -73,17 +73,10 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
       const secs = match?.[2] || "?";
       const indent = " ".repeat(GUTTER);
       const { Text } = require("@earendil-works/pi-tui");
-      if (interrupted) {
-        // 2026-08-14 用户要求：被打断必须显示折线结果（此前 height:0 隐藏）
-        // 2026-08-18 用户定稿 + 2026-09-07 纠正：按打断 reason 判色——reason=user（用户消息打断，任何 wait 都算"用户来了"）→ 绿；
-        // esc/command 等（用户主动取消/命令）→ 红。与 wait 是否 forUser 无关。
-        const reasonStr = intrReason ? ` (${reasonLabel[intrReason] || intrReason})` : "";
-        const color = (intrReason === "user" || intrReason === "system") ? "success" : "error";
-        const label = resumeType === "wait" ? "Waited" : "Hibernated";
-        return new Text(indent + "⎿  " + theme.fg(color, `${label} ${secs}s (interrupted by ${(reasonLabel[intrReason] || intrReason || "interrupt")})`), 0, 0);
-      }
-      const verb = resumeType === "wait" ? "Waited" : "Hibernated";
-      return new Text(indent + "⎿  " + theme.fg("success", verb + ` ${secs}s`), 0, 0);
+      // 2026-09-11：wait/hibernate 结果已在 tool-execution.js 的 call 行追加渲染（→ Waited Xs），
+      // continuous-resume 消息不再独立渲染折线——否则 Waited 显示两遍。
+      const { Container: C } = require("@earendil-works/pi-tui");
+      return new C();
     }
     switch (resumeType) {
       case "restart":
@@ -252,9 +245,8 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
     const ss = String(ts.getSeconds()).padStart(2, "0");
     const timeFmt = `${hh}:${mm}:${ss}`;
     // → Task title done in X.Xs at HH:MM:SS（exit 0 不显示）
-    const exitPart = exitCode !== undefined && exitCode !== 0 ? `, ` + theme.bold(theme.fg(statusColor, exitStr)) : "";
-    const titlePart = title ? title + " " : "";
-    const line1 = indent + theme.fg("result", "→") + " " + theme.bold("Task") + " " + titlePart + `done in ${theme.fg("accent", elapsedFmt)}${exitPart}${remPart}` + theme.fg("dim", ` at ${timeFmt}`);
+    const exitPart = exitCode !== undefined && exitCode !== 0 ? `, exit ${theme.bold(String(exitCode))}` : "";
+    const line1 = indent + theme.fg("dim", "⎿") + ` done in ${theme.bold(elapsedFmt)}${exitPart}${remPart}` + theme.fg("dim", ` at ${timeFmt}`);
     c.addChild(new Text(line1, 0, 0));
     // [PRESERVED] 旧版两行渲染（→ Result 头 + Executed 详情行）：
     // const d = isError ? theme.fg("error", "→") : theme.fg("result", "→");

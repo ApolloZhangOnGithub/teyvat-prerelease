@@ -416,10 +416,12 @@ export class Editor {
                 result.push(this.borderColor(border));
             }
             else {
+                const agentName = process.env.PAIMON_AGENT_NAME || "";
                 const pid = process.env.PAIMON_AGENT_ID || "";
                 let sessionHash = "";
                 try { const m = process.title.match(/genshin:[^(]+\([^,]+,[^,]+,\s*([^)]+)/); if (m) sessionHash = m[1]; } catch (e) { /* process.title parse */ }
                 const idParts = [];
+                if (agentName) idParts.push(agentName);
                 if (pid) idParts.push(`#${pid}`);
                 if (sessionHash) idParts.push(`@${sessionHash}`);
                 if (idParts.length > 0) {
@@ -474,8 +476,8 @@ export class Editor {
             const lineRightPadding = cursorInPadding ? rightPadding.slice(1) : rightPadding;
             if (_e02) {
                 const isFirstLine = result.length === (_e01 ? 1 : 0) && this.scrollOffset === 0;
-                if (isFirstLine && leftPadding.length >= 2) {
-                    result.push(`\x1b[90m❯\x1b[0m ${displayText}${padding}${lineRightPadding}`);
+                if (isFirstLine) {
+                    result.push(`\x1b[90m❯\x1b[0m${leftPadding.length > 1 ? leftPadding.slice(2) : " "}${displayText}${padding}${lineRightPadding}`);
                 } else {
                     result.push(`${leftPadding}${displayText}${padding}${lineRightPadding}`);
                 }

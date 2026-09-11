@@ -96,9 +96,10 @@ try {
 try {
   const { dot } = await import("./pi-tui/blocks_nongod.js");
   const t = { fg: (k, s) => `${k}:${s}` };
-  // 2026-09-11：partial 改为闪烁灰⏺（dim/border 交替），error 红⏺，成功绿⏺
-  const partialDot = dot(t, { partial: true });
-  check("D1 partial 点 = 灰闪烁⏺", partialDot === "dim:⏺" || partialDot === "border:⏺");
+  // 2026-09-11：partial 默认黄⏺，blink=true 时灰/消失闪烁（仅 wait/hibernate）
+  check("D1 partial 点 = warning 黄⏺", dot(t, { partial: true }) === "warning:⏺");
+  const blinkDot = dot(t, { partial: true, blink: true });
+  check("D1 partial blink = 灰⏺或空格", blinkDot === "dim:⏺" || blinkDot === " ");
   check("D1b error 点 = error 红", dot(t, { error: true }) === "error:⏺");
   check("D1c 成功点 = success 绿", dot(t, {}) === "success:⏺");
 } catch (e) {

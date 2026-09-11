@@ -210,7 +210,7 @@ export function isToolDisabled(toolName: string): boolean {
   try {
     const role = getSessionRole();
     // manifest role 检查
-    const mf = JSON.parse(readFileSync(`${homedir()}/.teyvat/agent/extensions/teyvat/spirit.bio.gene/tools.manifest.json`, "utf8"));
+    const mf = JSON.parse(readFileSync(`${homedir()}/.local/lib/teyvat/extensions/teyvat/spirit.bio.gene/tools.manifest.json`, "utf8"));
     const roleDef = mf?.roles?.[role];
     if (roleDef && !roleDef.includes(toolName)) return true;
     // settings.json 禁用检查

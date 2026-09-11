@@ -393,28 +393,19 @@ export class FooterComponent {
           modelDisplay = `${modelDisplay}  ${theme.fg("muted", _cachedDevVer)}`;
         }
         const modelDisplayW = visibleWidth(modelDisplay);
-        let line1;
-        const modelRight = theme.fg("dim", modelDisplay);
-        if (modelDisplayW <= width) {
-            line1 = " ".repeat(width - modelDisplayW) + modelRight;
-        } else {
-            line1 = theme.fg("dim", truncateToWidth(modelDisplay, width, "..."));
-        }
+        // line1: model+版本（左）+ 记忆%+age+tokenmaxxed（右）——合并为一行
+        const modelLeft = theme.fg("dim", modelDisplay);
+        const modelLeftW = modelDisplayW;
 
-        // followHint 叠加在 line1 左侧
+        // followHint 放在 model 和记忆之间
+        let followPill = "";
+        let followPillW = 0;
         if (this._followHint) {
             const text = this._followCount > 0 ? `${this._followCount} new message${this._followCount === 1 ? "" : "s"} ↓` : "ctrl+shift+down to follow ↓";
-            const hint = ` ${text} `;
-            const hintW = visibleWidth(hint);
-            if (width - modelDisplayW >= hintW + 4) {
-                const pill = theme.bg("userMessageBg", theme.fg("dim", hint));
-                line1 = pill + " ".repeat(Math.max(0, width - hintW - modelDisplayW)) + modelRight;
-            }
+            followPill = ` ${text} `;
+            followPillW = visibleWidth(followPill);
+            followPill = theme.bg("userMessageBg", theme.fg("dim", followPill));
         }
-
-        // line2: agent name(左) + age · tokenmaxxed · 记忆(右)——#id @session 已在 editor 上边框
-        const line2Left = theme.fg("dim", personName || "genshin");
-        const idW = visibleWidth(line2Left);
         // 2026-09-04 用户需求：footer 年龄/tokenmaxxed 可在 /u 分别开关；2026-09-06 定稿默认隐藏（持久化 settingsManager.globalSettings.footerAge/footerTokenmaxxed，interactive-mode 初始化默认 false）
         const showAge = globalThis.__genshinFooterAge !== false;
         const ageStr = showAge ? formatAge(getBirthTs(fullId)) : "";
@@ -435,34 +426,36 @@ export class FooterComponent {
             } catch (e) { console.error("[god.frontend.tui/ui_elements/footer.js] " + (e?.message || e)); }
         }
         const rightParts = [ageStr, tokenmaxxedStr, memStr].filter(Boolean);
-        const rightLine2 = rightParts.map((s, i) => i < rightParts.length - 1 ? theme.fg("dim", s) : s).join(" · ");
-        const rightLine2W = visibleWidth(rightLine2);
-        let line2;
-        if (idW + 4 + rightLine2W <= width) {
-            line2 = line2Left + " ".repeat(width - idW - rightLine2W) + rightLine2;
-        } else if (rightLine2W + 4 <= width) {
-            const maxName = width - rightLine2W - 4;
-            const truncName = truncateToWidth(personName || "genshin", maxName, "...");
-            line2 = theme.fg("dim", truncName) + " ".repeat(width - visibleWidth(truncName) - rightLine2W) + rightLine2;
+        const rightLine1 = rightParts.map((s, i) => i < rightParts.length - 1 ? theme.fg("dim", s) : s).join(" · ");
+        const rightLine1W = visibleWidth(rightLine1);
+        let line1;
+        if (modelLeftW + 2 + rightLine1W <= width) {
+            const middleSpace = width - modelLeftW - rightLine1W;
+            if (followPillW > 0 && middleSpace >= followPillW + 4) {
+                const leftPad = Math.floor((middleSpace - followPillW) / 2);
+                const rightPad = middleSpace - followPillW - leftPad;
+                line1 = modelLeft + " ".repeat(leftPad) + followPill + " ".repeat(rightPad) + rightLine1;
+            } else {
+                line1 = modelLeft + " ".repeat(middleSpace) + rightLine1;
+            }
         } else {
-            line2 = " ".repeat(Math.max(0, width - rightLine2W)) + rightLine2;
+            line1 = truncateToWidth(modelDisplay, Math.floor(width / 2), "...") + "  " + truncateToWidth(rightLine1, width - Math.floor(width / 2) - 2, "...");
         }
 
-        // line3: spinner / extension statuses
-        let line3 = " ".repeat(width);
+        // line2: spinner / extension statuses
+        let line2 = " ".repeat(width);
         if (this._spinnerText) {
-            line3 = truncateToWidth(this._spinnerText, width, theme.fg("dim", "..."));
+            line2 = truncateToWidth(this._spinnerText, width, theme.fg("dim", "..."));
         } else {
             const extensionStatuses = this.footerData.getExtensionStatuses();
             if (extensionStatuses.size > 0) {
                 const sortedStatuses = Array.from(extensionStatuses.entries())
                     .sort(([a], [b]) => a.localeCompare(b))
                     .map(([, text]) => sanitizeStatusText(text));
-                line3 = truncateToWidth(sortedStatuses.join(" "), width, theme.fg("dim", "..."));
+                line2 = truncateToWidth(sortedStatuses.join(" "), width, theme.fg("dim", "..."));
             }
         }
-        // FOOTER01=name行 FOOTER02=#id+记忆行 FOOTER03=spinner/status行
-        // 设 FOOTERXX=0 关闭对应行，默认全开
+        // FOOTER01=model+记忆行 FOOTER02=spinner/status行
         // ── 窗口标题：仅变化时设，避免每帧刷 OSC 码 ──
         // 窗口标题：异步写到 render cycle 之后（不在 render() 同步路径内，不在 synchronized block 内）。
         // 内联 OSC 到 footer 行会破坏 iTerm2 的 alt screen 渲染（2026-09-09 回滚）。
@@ -479,7 +472,6 @@ export class FooterComponent {
         const lines = [];
         if (process.env.FOOTER01 !== "0") lines.push(line1);
         if (process.env.FOOTER02 !== "0") lines.push(line2);
-        if (process.env.FOOTER03 !== "0") lines.push(line3);
         return lines;
         } catch(e) {
             try { appendFileSync((process.env.HOME||"")+"/.teyvat/LogData/genshin-footer-error.log", `[${new Date().toISOString()}] ${e?.stack||e}\n`); } catch(e) { try { require("fs").appendFileSync((process.env.HOME||"")+"/.teyvat/LogData/genshin-catch-errors.log", "[??] " + (e?.stack||e) + "\n"); } catch (e) { console.error("[god.frontend.tui/ui_elements/footer.js] " + (e?.message || e)); } }

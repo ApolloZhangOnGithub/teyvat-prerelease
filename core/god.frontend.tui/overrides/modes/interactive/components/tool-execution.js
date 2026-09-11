@@ -373,7 +373,7 @@ export class ToolExecutionComponent extends Container {
         return '';
     }
     createCallFallback() {
-        const dot = blockDot(theme, { partial: this.isDotPartial(), error: this.isDotError() });
+        const dot = blockDot(theme, { partial: this.isDotPartial(), error: this.isDotError(), blink: (this.toolName === "wait" || this.toolName === "hibernate") && this.isDotPartial() });
         const displayName = this.toolName.charAt(0).toUpperCase() + this.toolName.slice(1);
         let text = dot + " " + theme.fg("toolTitle", theme.bold(displayName));
         // 显示文件名/路径
@@ -536,7 +536,7 @@ export class ToolExecutionComponent extends Container {
         if (viewMode === "clean") return [];
         if (viewMode === "fold" && !this.expanded) {
             const args = this.args || {};
-            const dot = blockDot(theme, { partial: this.isDotPartial(), error: this.isDotError() });
+            const dot = blockDot(theme, { partial: this.isDotPartial(), error: this.isDotError(), blink: (this.toolName === "wait" || this.toolName === "hibernate") && this.isDotPartial() });
             const capName = this.toolName.charAt(0).toUpperCase() + this.toolName.slice(1);
             let summary = dot + " " + capName;
             if (args.command) summary += ' ' + String(args.command).split("\n")[0].slice(0, 80);
@@ -593,7 +593,7 @@ export class ToolExecutionComponent extends Container {
             else {
                 // 已有 call 行则只更新 dot，不重建（防 updateArgs 二次渲染）
                 if (this.callRendererComponent && !this.result) {
-                    const dot = blockDot(theme, { partial: this.isDotPartial(), error: this.isDotError() });
+                    const dot = blockDot(theme, { partial: this.isDotPartial(), error: this.isDotError(), blink: (this.toolName === "wait" || this.toolName === "hibernate") && this.isDotPartial() });
                     (function replaceDot(node) {
                         if (node && typeof node.text === 'string' && (node.text.includes('•') || node.text.includes('◦') || node.text.includes('⏺'))) {
                             node.text = node.text.replace(/[•◦⏺]/, dot);
@@ -609,7 +609,7 @@ export class ToolExecutionComponent extends Container {
                     const component = callRenderer(this.args, theme, this.getRenderContext(this.callRendererComponent));
                     this.callRendererComponent = component;
                     // 展开视图：把 • 替换成带状态颜色的版本（递归处理 Text 和 Box 子节点）
-                    const dot = blockDot(theme, { partial: this.isDotPartial(), error: this.isDotError() });
+                    const dot = blockDot(theme, { partial: this.isDotPartial(), error: this.isDotError(), blink: (this.toolName === "wait" || this.toolName === "hibernate") && this.isDotPartial() });
                     (function replaceDot(node) {
                         if (node && typeof node.text === 'string' && (node.text.includes('•') || node.text.includes('◦') || node.text.includes('⏺'))) {
                             node.text = node.text.replace(/[•◦⏺]/, dot);
@@ -646,7 +646,7 @@ export class ToolExecutionComponent extends Container {
                 const reasonStr = reason ? ` (${reasonLabel[reason] || reason})` : "";
                 const forUser = globalThis.__genshinWaitInterruptedForUser === true;
                 const color = (forUser || reason === "system" || reason === "user") ? "success" : "error";
-                const suffix = " → " + theme.fg(color, `Waited ${secs}s${reasonStr}`);
+                const suffix = " → " + `Waited ${secs}s${reasonStr}`;
                 (function appendToLastText(node) {
                     if (node && typeof node.text === "string" && !node._waitSuffixed) {
                         node.text += suffix;
@@ -663,12 +663,15 @@ export class ToolExecutionComponent extends Container {
                 })(this.callRendererComponent);
             }
             // wait/hibernate 正常结束（未被打断）：追加 → Waited Xs
+            // 条件：result 已到 + 不再 resting/hibernated（wait 真的结束了，不是刚开始 terminate:true 返回）
+            const hs = globalThis.__genshinHeartState;
             if ((this.toolName === "wait" || this.toolName === "hibernate")
                 && this.result && !this.isPartial
+                && hs !== "resting" && hs !== "hibernated"
                 && this.callRendererComponent && !this.callRendererComponent._waitSuffixed
                 && !(this.toolCallId && globalThis.__genshinWaitInterruptedId === this.toolCallId)) {
                 const waitSecs = this.result?.details?.wait || this.args?.seconds || "?";
-                const suffix = " → " + theme.fg("success", `Waited ${waitSecs}s`);
+                const suffix = " → " + `Waited ${waitSecs}s`;
                 (function appendToLastText(node) {
                     if (node && typeof node.text === "string" && !node._waitSuffixed) {
                         node.text += suffix;
@@ -687,7 +690,7 @@ export class ToolExecutionComponent extends Container {
             if (this.result) {
                 // 结果到达 → 把 call 行的 ◦（partial）换成正确的状态点
                 if (this.callRendererComponent) {
-                    const fixDot = blockDot(theme, { error: this.isDotError(), partial: this.isDotPartial() });
+                    const fixDot = blockDot(theme, { error: this.isDotError(), partial: this.isDotPartial(), blink: (this.toolName === "wait" || this.toolName === "hibernate") && this.isDotPartial() });
                     (function replaceDot(node) {
                         if (node && typeof node.text === 'string' && (node.text.includes('•') || node.text.includes('◦') || node.text.includes('⏺'))) {
                             node.text = node.text.replace(/[•◦⏺]/, fixDot);
