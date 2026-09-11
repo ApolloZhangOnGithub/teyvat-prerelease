@@ -98,8 +98,7 @@ try {
   const t = { fg: (k, s) => `${k}:${s}` };
   // 2026-09-11：partial 默认黄⏺，blink=true 时灰/消失闪烁（仅 wait/hibernate）
   check("D1 partial 点 = warning 黄⏺", dot(t, { partial: true }) === "warning:⏺");
-  const blinkDot = dot(t, { partial: true, blink: true });
-  check("D1 partial blink = 灰⏺或空格", blinkDot === "dim:⏺" || blinkDot === " ");
+  check("D1 partial blink = 灰⏺", dot(t, { partial: true, blink: true }) === "dim:⏺");
   check("D1b error 点 = error 红", dot(t, { error: true }) === "error:⏺");
   check("D1c 成功点 = success 绿", dot(t, {}) === "success:⏺");
 } catch (e) {

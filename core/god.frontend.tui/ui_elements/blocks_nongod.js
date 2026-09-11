@@ -22,11 +22,8 @@ export const GUTTER = 2; // 内容列：bullet "• " 占 2 列，内容从第 2
 export function dot(theme, opts) {
   const o = opts || {};
   if (o.partial) {
-    if (o.blink) {
-      const frame = globalThis.__genshinSparkleFrame || 0;
-      const visible = Math.floor(frame / 3) % 2 === 0;
-      return visible ? theme.fg("dim", "⏺") : " ";
-    }
+    // wait/hibernate 用灰色（闪烁实现困难——line render 优化跳过未变行导致闪烁不可见，暂用稳定灰替代）
+    if (o.blink) return theme.fg("dim", "⏺");
     return theme.fg("warning", "⏺");
   }
   if (o.error) return theme.fg("error", "⏺");
