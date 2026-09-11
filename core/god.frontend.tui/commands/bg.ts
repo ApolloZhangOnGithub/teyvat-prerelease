@@ -48,53 +48,67 @@ export async function bgHandler(args: string, ctx: any) {
     return;
   }
 
+  const showSettingsList = (globalThis as any).__genshinShowSettingsList;
+  if (showSettingsList) {
+    // 新管线：SettingsList（只读展示，Enter 进子操作）
+    const getItems = () => tasks.map((t) => {
+      const elapsed = fmtDuration((Date.now() - t.startTime) / 1000);
+      const tag = t.type === "tty" ? "tty" : "bg";
+      const cmd = t.title || (t.command.length > 50 ? t.command.slice(0, 47) + "..." : t.command);
+      return { id: String(t.id), label: `@${t.id} ${tag} ${cmd}`, currentValue: elapsed, values: [] };
+    });
+    // SettingsList 的 onChange 在无 values 时不触发，这里用它展示列表，用户按 Enter 后走子操作
+    await showSettingsList(T(`后台任务 (${tasks.length})`, `Background (${tasks.length})`), getItems, async (id: string) => {
+      const tid = parseInt(id);
+      const t = tasks.find((x) => x.id === tid);
+      if (!t) return;
+      const act = await ctx.ui.select(T(`@${tid}`, `@${tid}`), [T("终止", "Kill"), T("详情", "Details")]);
+      if (!act) return;
+      if (act.startsWith(T("终止", "Kill"))) {
+        const kill = (globalThis as any).__genshinKillBg;
+        if (typeof kill === "function") {
+          const r = await kill(tid);
+          ctx.ui.notify(r, r.includes("not found") ? "warning" : "info");
+          const idx = tasks.findIndex((x) => x.id === tid);
+          if (idx >= 0) tasks.splice(idx, 1);
+        }
+      } else if (act.startsWith(T("详情", "Details"))) {
+        const started = new Date(t.startTime).toLocaleString();
+        ctx.ui.notify([`@${tid} ${t.type === "tty" ? "tty" : "bg"}`, t.title || "", t.command, `${started} (${fmtDuration((Date.now() - t.startTime) / 1000)})`].filter(Boolean).join("\n"), "info");
+      }
+    });
+    return;
+  }
+
+  // [FALLBACK] 旧管线
   while (true) {
     const items = tasks.map((t) => {
       const elapsed = fmtDuration((Date.now() - t.startTime) / 1000);
       const tag = t.type === "tty" ? "tty" : "bg ";
-      // 有标题优先显示标题（人类可读），无则截断命令
       const cmd = t.title || (t.command.length > 70 ? t.command.slice(0, 67) + "..." : t.command);
       return `@${t.id}  ${elapsed}  ${tag}  ${cmd}`;
     });
     const pick = await ctx.ui.select(T(`后台任务 (${tasks.length})`, `Background tasks (${tasks.length})`), items);
-    if (!pick) return; // esc 退出
-
+    if (!pick) return;
     const m = pick.match(/@(\d+)/);
     if (!m) return;
     const id = parseInt(m[1]);
     const t = tasks.find((x) => x.id === id);
     if (!t) continue;
-
     const act = await ctx.ui.select(T(`管理 @${id}`, `Manage @${id}`), [T(`详情 @${id}`, `Details @${id}`), T(`终止 @${id}`, `Kill @${id}`), T("返回列表", "Back to list")]);
     if (!act) return;
-
     if (act.startsWith(T("详情", "Details"))) {
       const started = new Date(t.startTime).toLocaleString();
-      const lines = [
-        `@${id}  ${t.type === "tty" ? "tty(tmux)" : "background"}`,
-        t.title ? T(`标题: ${t.title}`, `Title: ${t.title}`) : "",
-        T(`命令: ${t.command}`, `Command: ${t.command}`),
-        T(`启动: ${started}（已运行 ${fmtDuration((Date.now() - t.startTime) / 1000)}）`, `Started: ${started} (running ${fmtDuration((Date.now() - t.startTime) / 1000)})`),
-        t.type === "tty" && t.tmuxSession ? `tmux: ${t.tmuxSession}` : "",
-        t.tail ? T(`输出尾部: ${t.tail}`, `Output tail: ${t.tail}`) : "",
-        t.recId ? T(`记录: ~/.teyvat/ExecuteData/<personId>/${t.recId}.json`, `Record: ~/.teyvat/ExecuteData/<personId>/${t.recId}.json`) : "",
-      ].filter(Boolean);
-      ctx.ui.notify(lines.join("\n"), "info");
+      ctx.ui.notify([`@${id} ${t.type === "tty" ? "tty(tmux)" : "background"}`, t.title || "", t.command, `${started} (${fmtDuration((Date.now() - t.startTime) / 1000)})`].filter(Boolean).join("\n"), "info");
     } else if (act.startsWith(T("终止", "Kill"))) {
-      const ok = await ctx.ui.confirm(T("终止后台任务", "Kill background task"), T(`确定终止 @${id}？`, `Kill @${id}?`), {});
-      if (!ok) continue;
       const kill = (globalThis as any).__genshinKillBg;
-      if (typeof kill !== "function") {
-        ctx.ui.notify(T("后台任务模块未加载（扩展未就绪）", "Background task module not loaded (extension not ready)"), "error");
-        return;
+      if (typeof kill === "function") {
+        const r = await kill(id);
+        ctx.ui.notify(r, r.includes("not found") ? "warning" : "info");
+        const idx = tasks.findIndex((x) => x.id === id);
+        if (idx >= 0) tasks.splice(idx, 1);
+        if (tasks.length === 0) return;
       }
-      const r = await kill(id);
-      ctx.ui.notify(r, r.includes("not found") ? "warning" : "info");
-      // 杀掉后从本地快照移除，列表即时反映
-      const idx = tasks.findIndex((x) => x.id === id);
-      if (idx >= 0) tasks.splice(idx, 1);
-      if (tasks.length === 0) return;
     }
-    // "返回列表" → 继续循环
   }
 }

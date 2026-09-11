@@ -740,9 +740,18 @@ if [ "$MODE" = "tmux" ]; then
 fi
 
 if [ -z "$NAME" ] && [ -z "$MODE" ]; then
-  # 2026-09-11：软 clear（清屏保留 scrollback）+ 列表
   printf '\033[2J\033[H'
   node "$PAIMON_LIST_JS" "$PLIST" "$MEMORY_DIR" "$PAIMON_LANG" list
+  # 2026-09-11：更新提示（读后台检测缓存，不阻塞）
+  _UC="$HOME/.teyvat/RuntimeCache/update-check.json"
+  if [ -f "$_UC" ]; then
+    _UV=$(node -e "try{const u=JSON.parse(require('fs').readFileSync('$_UC','utf8'));if(u.available&&u.available!==u.current)console.log(u.available+'|'+u.current)}catch{}" 2>/dev/null)
+    if [ -n "$_UV" ]; then
+      _NEW="${_UV%%|*}"; _CUR="${_UV##*|}"
+      echo ""
+      echo -e "  \033[33m⚡\033[0m 新版本可用: \033[1m$_NEW\033[0m (当前 $_CUR)  运行 \033[1mgenshin update\033[0m 更新"
+    fi
+  fi
   exit 0
 fi
 
@@ -1028,6 +1037,9 @@ case "$MODE" in
     echo $$ > "$PIDFILE"
     BLACKBOX="$EXT_DIR/god.frontend.cli/_debug_blackbox.sh"
     PAIMON_COMPRESS="$EXT_DIR/god.frontend.cli/compress.cjs"
+    # 2026-09-11：后台轻量版本检测（不阻塞 agent 启动）
+    _UPCHK="$EXT_DIR/god.frontend.cli/update-check.sh"
+    [ -x "$_UPCHK" ] && bash "$_UPCHK" </dev/null >/dev/null 2>&1 &
     cleanup() {
       rm -rf "$LOCKDIR" 2>/dev/null
       rm -f "$PIDFILE"
@@ -1242,7 +1254,14 @@ case "$MODE" in
       fi
       break
     done
-    # 2026-09-11：退出后自动显示 agent 列表（方便继续操作，不用手动打 genshin）
+    # 2026-09-11：退出后自动显示 agent 列表
+    # /h 转后台时等 headless 子进程起来（detached 标记出现），否则列表会误显示 offline
+    if [ -n "$ID" ]; then
+      for _w in $(seq 1 10); do
+        [ -f "$HOME/.teyvat/RuntimeCache/$ID/detached" ] && break
+        sleep 0.1
+      done
+    fi
     "$0" 2>/dev/null || true
     # 退出后同步段已废弃（2026-09-05，PROPOSAL 036：agent 单机存活；代码保留不删）——以下注释
     # kill $SYNC_LOOP_PID 2>/dev/null; wait $SYNC_LOOP_PID 2>/dev/null

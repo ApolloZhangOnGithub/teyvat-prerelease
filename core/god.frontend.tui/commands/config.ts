@@ -133,29 +133,64 @@ function syncProviderRegistration(key: string, svc: Record<string, any>): void {
   else unregisterFromM(key);
 }
 
-export async function configHandler(_args: any, ctx: any) {
+function ensureServices(): Record<string, any> {
   const sf = existsSync(UA_FILE) ? UA_FILE : existsSync(LEGACY_FILE) ? LEGACY_FILE : UA_FILE;
   let services: Record<string, any> = {};
-  try { services = JSON.parse(readFileSync(sf, "utf8")); } catch (e) { console.error("[god.frontend.tui/commands/config.ts] " + ((e as any)?.message || e)); }
-  const keys = Object.keys(services);
-  if (!keys.length) {
-    mkdirSync(UA_DIR, { recursive: true });
-    services = defaultFields();
-    writeFileSync(UA_FILE, JSON.stringify(services, null, 2));
-  }
-  // 确保所有 DEFAULTS key 与字段都存在（向后兼容：svc 存在但缺新字段如 enabled 时补默认值，
-  // 否则显示「未设置」且 isEnabled 判定依赖散落——2026-09-04 用户报 enabled 显示 bug）
+  try { services = JSON.parse(readFileSync(sf, "utf8")); } catch (e) { console.error("[config.ts] " + ((e as any)?.message || e)); }
+  if (!Object.keys(services).length) { mkdirSync(UA_DIR, { recursive: true }); services = defaultFields(); writeFileSync(UA_FILE, JSON.stringify(services, null, 2)); }
   let patched = false;
   for (const k of Object.keys(DEFAULTS)) {
     if (!services[k]) { services[k] = { ...DEFAULTS[k].fields }; patched = true; }
-    else {
-      for (const [fk, fv] of Object.entries(DEFAULTS[k].fields)) {
-        if (services[k][fk] === undefined) { services[k][fk] = fv; patched = true; }
-      }
-    }
+    else { for (const [fk, fv] of Object.entries(DEFAULTS[k].fields)) { if (services[k][fk] === undefined) { services[k][fk] = fv; patched = true; } } }
   }
-  if (patched) { try { mkdirSync(UA_DIR, { recursive: true }); writeFileSync(UA_FILE, JSON.stringify(services, null, 2)); } catch (e) { console.error("[god.frontend.tui/commands/config.ts] " + ((e as any)?.message || e)); } }
+  if (patched) { try { mkdirSync(UA_DIR, { recursive: true }); writeFileSync(UA_FILE, JSON.stringify(services, null, 2)); } catch (e) { console.error("[config.ts] " + ((e as any)?.message || e)); } }
+  return services;
+}
+function saveServices(services: Record<string, any>) { try { mkdirSync(UA_DIR, { recursive: true }); writeFileSync(UA_FILE, JSON.stringify(services, null, 2)); } catch (e) { console.error("[config.ts] " + ((e as any)?.message || e)); } }
+function syncAfterChange(key: string, svc: Record<string, any>, services: Record<string, any>) {
+  if (key === "bigmodel") { syncModelsJson(services); syncProviderRegistration(key, svc); }
+  else if (PROVIDER_ENV_KEYS[key]) { syncProviderEnvKey(key, services); syncProviderRegistration(key, svc); }
+  else if (key === "qwen") syncProviderRegistration(key, svc);
+}
 
+export async function configHandler(_args: any, ctx: any) {
+  const services = ensureServices();
+  const showSettingsList = (globalThis as any).__genshinShowSettingsList;
+
+  // 新管线：SettingsList + MenuPanel
+  if (showSettingsList) {
+    const displayKeys = Object.keys(services).sort((a, b) => {
+      const ga = DEFAULTS[a]?.group || ""; const gb = DEFAULTS[b]?.group || "";
+      if (ga !== gb) return ga.localeCompare(gb);
+      return (DEFAULTS[a]?.name || a).localeCompare(DEFAULTS[b]?.name || b, "zh-CN");
+    });
+    const getItems = () => displayKeys.map(key => {
+      const svc = services[key] || {};
+      const cn = DEFAULTS[key]?.name || key; const en = DEFAULTS[key]?.en || "";
+      const isProvider = "enabled" in (DEFAULTS[key]?.fields || {});
+      const fields = Object.keys(DEFAULTS[key]?.fields || svc);
+      const allSet = fields.every((f: string) => typeof svc[f] === "string" && svc[f].trim());
+      const icon = allSet ? "✓" : "○";
+      const label = i18n(cn, en);
+      if (isProvider) {
+        const on = String(svc.enabled ?? "y").trim().toLowerCase() !== "n";
+        return { id: key, label: `${icon} ${label}`, currentValue: on ? T("启用", "On") : T("停用", "Off"), values: [T("启用", "On"), T("停用", "Off")] };
+      }
+      return { id: key, label: `${icon} ${label}`, currentValue: allSet ? T("已配置", "Set") : T("未配置", "Unset"), values: [] };
+    });
+    await showSettingsList(T("服务配置", "Service Config"), getItems, (id: string, value: string) => {
+      const svc = services[id] || {};
+      if ("enabled" in (DEFAULTS[id]?.fields || {})) {
+        svc.enabled = value === T("启用", "On") ? "y" : "n";
+        services[id] = svc;
+        saveServices(services);
+        syncAfterChange(id, svc, services);
+      }
+    });
+    return;
+  }
+
+  // [FALLBACK] 旧管线
   while (true) {
     const displayKeys = Object.keys(services).sort((a, b) => {
       const ga = DEFAULTS[a]?.group || "";

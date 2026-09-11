@@ -105,38 +105,65 @@ export function toolsHandler(getActiveTools: () => string[], setActiveTools?: (t
       return;
     }
 
-    // ── 列表模式：foot 区交互式 select（对齐 /c 管线），持续交互 ──
-    // toggle 后不关窗口，回到循环顶部重新读取 activeTools 并渲染，esc 才退出。
-    // 状态表达只保留一种（●/○ 前缀），去掉末尾重复的 (on)/(off)。
+    // ── 列表模式 ──
     const names = Object.keys(manifestTools).sort();
     const sess = sessionOverrides();
-    // 2026-08-15 对齐修复：工具名 padEnd 到最长宽度，标记（[model]/[locked]/[sess]）统一列对齐；
-    // 无标记的工具（help/status/web 等）名字后补空格到同一列，避免列表错乱。
+
+    const showSettingsList = (globalThis as any).__genshinShowSettingsList;
+    if (showSettingsList) {
+      // 新管线：SettingsList 左右键切启用/禁用
+      const getItems = () => names.map((n: string) => {
+        const def = manifestTools[n];
+        const activeNow: string[] = getActiveTools() ?? [];
+        const isActive = activeNow.includes(n) || activeNow.some((t: string) => t.toLowerCase() === n);
+        const flags: string[] = [];
+        if (def.locked) flags.push("locked");
+        if (n in sess) flags.push("sess");
+        else if (n in modelOverrides) flags.push("model");
+        const flagStr = flags.length ? ` [${flags.join(",")}]` : "";
+        return {
+          id: n,
+          label: `${n}${flagStr}`,
+          currentValue: isActive ? T("启用", "On") : T("禁用", "Off"),
+          values: def.locked ? [] : [T("启用", "On"), T("禁用", "Off")],
+        };
+      });
+      await showSettingsList("Tools", getItems, (id: string, value: string) => {
+        const on = value === T("启用", "On");
+        sess[id] = on;
+        saveSessionOverrides(sess);
+        if (setActiveTools) {
+          const cur = getActiveTools() ?? [];
+          const next = [...cur];
+          const idx = next.findIndex((t: string) => t.toLowerCase() === id);
+          if (on && idx < 0) next.push(id);
+          if (!on && idx >= 0) next.splice(idx, 1);
+          setActiveTools(next);
+        }
+      });
+      return;
+    }
+
+    // [FALLBACK] 旧管线
     const nameW = Math.max(4, ...names.map((n: string) => n.length));
     for (;;) {
       const activeNow: string[] = getActiveTools() ?? [];
       const opts: string[] = [];
       for (const n of names) {
         const def = manifestTools[n];
-        const modelOv = n in modelOverrides ? modelOverrides[n] : null;
-        const sessOv = n in sess ? sess[n] : null;
         const isActive = activeNow.includes(n) || activeNow.some((t) => t.toLowerCase() === n);
-        let state: "on" | "off" = def.default ? "on" : "off";
-        if (modelOv !== null) state = modelOv ? "on" : "off";
-        if (sessOv !== null) state = sessOv ? "on" : "off";
         const flags: string[] = [];
         if (def.locked) flags.push("locked");
-        if (sessOv !== null) flags.push("sess");
-        else if (modelOv !== null) flags.push("model");
+        if (n in sess) flags.push("sess");
+        else if (n in modelOverrides) flags.push("model");
         const flagStr = flags.length ? `[${flags.join(",")}]` : "";
-        opts.push(`${state === "on" ? "●" : "○"} ${n.padEnd(nameW)}${flagStr ? " " + flagStr : ""}`);
+        opts.push(`${isActive ? "●" : "○"} ${n.padEnd(nameW)}${flagStr ? " " + flagStr : ""}`);
       }
       const choice = await ctx.ui.select("Tools", opts);
-      if (!choice) break; // esc 关闭
+      if (!choice) break;
       const idx = opts.indexOf(choice);
       const name = names[idx];
       if (!name) continue;
-      // 选中即 toggle（会话级），完成后回到循环顶部重新渲染（持续交互）
       const currentlyActive = activeNow.includes(name) || activeNow.some((t) => t.toLowerCase() === name);
       sess[name] = !currentlyActive;
       saveSessionOverrides(sess);
