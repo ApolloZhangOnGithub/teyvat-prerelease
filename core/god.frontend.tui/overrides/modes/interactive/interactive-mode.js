@@ -2388,9 +2388,12 @@ export class InteractiveMode {
                 this.onInputCallback(text);
             }
             else {
-                // genshin: 不排队，直接 steer 打断
-                this.session.abort();
-                await this.session.prompt(text, { streamingBehavior: "steer" });
+                // ISSUE 174 修复：用户在 execute 期间发消息——先 await abort 确保 agent loop
+                // 完全停止，再发新 prompt（不用 steer，因为 abort 后 isStreaming=false）。
+                // 旧代码不 await abort 导致 abort/prompt 竞态：abort 信号已发但 loop 未停，
+                // prompt 走 steer 路径，steer 被 abort 吞掉或 agent_end 后心跳不续命。
+                await this.session.abort();
+                await this.session.prompt(text);
             }
             this.editor.addToHistory?.(text);
         };

@@ -672,8 +672,15 @@ export default function (pi: ExtensionAPI) {
         transition({ kind: "paused", reason: "esc" });
         return;
       }
-      // 非 ESC 的 abort（steer 消息被 abort）→ 不续命，等下次触发
-      dlog("agent_end: aborted (non-ESC)");
+      // 用户 steer 打断（hasUserMessage 已消费）→ 不需要心跳续命——steer 已经把用户消息
+      // 注入到了 agent loop，pi 会自动用 steer 消息开新 turn。这里直接放行让主循环继续。
+      // 修复 ISSUE 174：之前无条件 return 导致 steer 后心跳停止、prefilling 状态不出现。
+      if (hadUserMessage) {
+        dlog("agent_end: aborted by user steer (continuing — steer delivered)");
+        return;
+      }
+      // 非 ESC 非用户的 abort（内部 abort/reload 等）→ 不续命，等下次触发
+      dlog("agent_end: aborted (non-ESC, non-user)");
       return;
     }
 
