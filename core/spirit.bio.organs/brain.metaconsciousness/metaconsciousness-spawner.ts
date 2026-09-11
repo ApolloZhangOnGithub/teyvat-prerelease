@@ -72,7 +72,11 @@ else
   stat_size()  { stat -c %s "$1" 2>/dev/null || echo 0; }
 fi
 export NODE_OPTIONS="\${NODE_OPTIONS:+\$NODE_OPTIONS }--no-inspect --experimental-transform-types"
-export NODE_PATH="$HOME/.local/lib/teyvat/runtime/node_modules"
+
+# 2026-09-11：扩展/runtime 根路径统一（PAIMON_EXT/PAIMON_RUNTIME 由 launcher 导出，缺省回退标准安装路径，兼容 Linux/WSL/macOS）
+export TEYVAT_EXT="\${PAIMON_EXT:-\$HOME/.local/lib/teyvat/extensions/teyvat}"
+export TEYVAT_RUNTIME="\${PAIMON_RUNTIME:-\$HOME/.local/lib/teyvat/runtime}"
+export NODE_PATH="$TEYVAT_RUNTIME/node_modules"
 export PI_CODING_AGENT_DIR="$HOME/.teyvat/agent"
 export PAIMON_CODING_AGENT_DIR="$HOME/.teyvat/agent"
 export PI_CODING_AGENT_SESSION_DIR="$HOME/.teyvat/sessions"
@@ -106,12 +110,12 @@ while true; do
   python3 -c "import json; open('$SESSION_DIR/conv.json','w').write(json.dumps({'messages':[{'role':'system','content':open('$PROMPT_FILE').read()}]}))" 2>/dev/null
   START=$(date +%s)
   MAX_RUNTIME=1800
-  BLACKBOX="$HOME/.local/lib/teyvat/extensions/teyvat/god.frontend.cli/_debug_blackbox.sh"
-  EXT_FLAGS="-ne -e $HOME/.local/lib/teyvat/extensions/teyvat/index.ts"
+  BLACKBOX="$TEYVAT_EXT/god.frontend.cli/_debug_blackbox.sh"
+  EXT_FLAGS="-ne -e $TEYVAT_EXT/index.ts"
   if [ -x "$BLACKBOX" ]; then
-    "$BLACKBOX" "${personId}" "mc-${personId}" "metaconsciousness" -- $HOME/.local/lib/teyvat/runtime/node_modules/@earendil-works/pi-coding-agent/dist/cli.js $EXT_FLAGS --session-dir "$SESSION_DIR" "$INITIAL" &
+    "$BLACKBOX" "${personId}" "mc-${personId}" "metaconsciousness" -- $TEYVAT_RUNTIME/node_modules/@earendil-works/pi-coding-agent/dist/cli.js $EXT_FLAGS --session-dir "$SESSION_DIR" "$INITIAL" &
   else
-    $HOME/.local/lib/teyvat/runtime/node_modules/@earendil-works/pi-coding-agent/dist/cli.js $EXT_FLAGS --session-dir "$SESSION_DIR" "$INITIAL" &
+    $TEYVAT_RUNTIME/node_modules/@earendil-works/pi-coding-agent/dist/cli.js $EXT_FLAGS --session-dir "$SESSION_DIR" "$INITIAL" &
   fi
   PI_PID=$!
   ( sleep "$MAX_RUNTIME"; kill "$PI_PID" 2>/dev/null ) &

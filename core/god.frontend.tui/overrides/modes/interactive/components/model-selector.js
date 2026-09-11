@@ -170,10 +170,9 @@ export class ModelSelectorComponent extends Container {
             // openWeights 数据源：open-weights.json（从 OpenRouter API 抓取维护的权威映射）> models.dev catalog > 未知
             let owMap = {};
             try {
-                // model-selector.js 部署在 pi dist（runtime/），open-weights.json 在 extensions/teyvat/——用绝对路径
+                // model-selector.js 部署在 pi dist（runtime/），open-weights.json 在 extensions/teyvat/——用 PAIMON_EXT（launcher 导出）+ fallback
                 const owCandidates = [
-                    join(homedir(), ".local/lib/teyvat/extensions/teyvat/spirit.bio.gene/open-weights.json"),
-                    join(homedir(), ".teyvat/agent/extensions/teyvat/spirit.bio.gene/open-weights.json"),
+                    join(process.env.PAIMON_EXT || join(homedir(), ".local/lib/teyvat/extensions/teyvat"), "spirit.bio.gene/open-weights.json"),
                 ];
                 for (const p of owCandidates) { if (existsSync(p)) { owMap = JSON.parse(readFileSync(p, "utf8")); break; } }
             } catch { /* open-weights.json 缺失 → 全部未知 */ }

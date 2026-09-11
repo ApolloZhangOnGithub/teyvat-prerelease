@@ -1,9 +1,8 @@
 // 文档: B.docs/Dev.Common/Wiki/Heart(Organ&Kernel).WIKI
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { homedir } from "node:os";
 import { getSessionRole } from "#kernel_ribosome";
-import { runtimeCacheDir, DIRS } from "#paths";
+import { runtimeCacheDir, DIRS, userFile } from "#paths";
 import { debug } from "#gene_riboswitch";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
@@ -216,9 +215,10 @@ export function isToolDisabled(toolName: string): boolean {
     const mf = JSON.parse(readFileSync(join(DIRS.core, "spirit.bio.gene/tools.manifest.json"), "utf8"));
     const roleDef = mf?.roles?.[role];
     if (roleDef && !roleDef.includes(toolName)) return true;
-    // settings.json 禁用检查
+    // settings.json 禁用检查（2026-09-11 系统检查：原硬编码 ~/.teyvat/agent/config/settings.json 是陈旧安装模板，
+    // 改为 userFile("settings.json")——与 core.ts:431 同一真相源，UserAccount 优先、legacy config 兼容）
     try {
-      const sf = JSON.parse(readFileSync(`${homedir()}/.teyvat/agent/config/settings.json`, "utf8"));
+      const sf = JSON.parse(readFileSync(userFile("settings.json"), "utf8"));
       if ((sf.tools?.disabled || []).includes(toolName)) return true;
     } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart-state.ts] " + ((e as any)?.message || e)); }
     // 元意识 hibernate 额外条件：主意识必须先 hibernate

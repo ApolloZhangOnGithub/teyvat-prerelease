@@ -42,7 +42,7 @@ export function spawnHeadlessBg(pid: string, reason: string): void {
   // （与 launcher 启动命令一致；--mode rpc = 不实例化 TUI，rpc 常驻 + fifo 输入防 EOF）
   const nodeBin = process.execPath;
   const argvIdx = process.argv.findIndex((a: string) => a.endsWith("index.ts"));
-  const indexTs = argvIdx >= 0 ? process.argv[argvIdx] : join(process.env.PAIMON_EXT || "", "index.ts");
+  const indexTs = argvIdx >= 0 ? process.argv[argvIdx] : join(process.env.PAIMON_EXT || join(home, ".local/lib/teyvat/extensions/teyvat"), "index.ts");
   const sessionDir = join(home, ".teyvat/SessionData", pid);
   const fifoDir = join(home, ".teyvat/AgentFileData", pid);
   const logDir = join(home, ".teyvat/LogData", pid);

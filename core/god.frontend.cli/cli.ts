@@ -12,7 +12,7 @@ const H = os.homedir();
 const PAIMON = path.join(H, '.teyvat');
 const PLIST = path.join(PAIMON, 'MemoryData', 'plist.json');
 const RUNTIME = path.join(H, '.local/lib/teyvat/runtime/node_modules/@earendil-works/pi-coding-agent/dist/cli.js');
-const EXT = path.join(H, '.local/lib/teyvat/extensions/teyvat');
+const EXT = process.env.PAIMON_EXT || path.join(H, '.local/lib/teyvat/extensions/teyvat');
 const LANG = process.env.PAIMON_LANG || (process.env.LANG?.includes('zh_CN') ? 'zh' : 'en');
 const ZH = LANG === 'zh';
 const _uaSettings = path.join(PAIMON, 'UserAccount', 'settings.json');

@@ -181,7 +181,7 @@ export class TuiMainScreen extends TuiBase {
             let buffer = "\x1b[?2026h"; // Begin synchronized output
             if (clear) {
                 buffer += this.deleteKittyImages(this.previousKittyImageIds);
-                buffer += "\x1b[2J\x1b[H\x1b[3J"; // Clear screen, home, then clear scrollback
+                buffer += "\x1b[2J\x1b[H"; // Clear screen + home (不清 scrollback——\x1b[3J 会导致用户无法回看历史)
             }
             for (let i = 0; i < newLines.length; i++) {
                 if (i > 0)
