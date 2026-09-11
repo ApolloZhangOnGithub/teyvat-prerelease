@@ -99,6 +99,8 @@ async function ensureSvc(): Promise<boolean> {
     const env: Record<string, string> = { ...process.env as Record<string, string>, PORT: "0", CHROMIUM_PATH: chromium };
     env.BROWSER_PORT = env.BROWSER_PORT || "0";
     const child = spawn("node", [svc], { stdio: "ignore", detached: true, env });
+    // 2026-09-11（prime-agent）：spawn 失败是异步 error 事件，无监听 → 未处理 'error' → agent 闪退。
+    child.on("error", (e: any) => { _svcError = `browser-service spawn 失败: ${e?.code || e?.message || e}`; safariLog("ensureSvc spawn error: " + _svcError); });
     child.unref();
     for (let i = 0; i < 10; i++) { await new Promise(r => setTimeout(r, 500)); try { const url = getBrowserUrl(); const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "ping" }), signal: AbortSignal.timeout(500) }); if (r.ok) return true; } catch (e: any) { if (i === 9) safariLog("ensureSvc failed after 10 retries: " + e.message); } }
     _svcError = "browser-service 启动超时（10 次重试均失败）";

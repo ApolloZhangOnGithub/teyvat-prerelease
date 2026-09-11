@@ -181,6 +181,13 @@ export default function (pi: ExtensionAPI) {
         const script = _traceJoin(_bkExt, "god.frontend.cli", "backup.ts");
         if (_existsF(script)) {
           const ch = _spawn("bun", [script, "now"], { detached: true, stdio: "ignore" });
+          // 2026-09-11（prime-agent）：无 error 监听时，bun 缺失（ENOENT）会抛未处理 'error' → 进程 exit(1)。
+          // 这段在 agent **启动时**就会跑（L193）→ 没装 bun 的机器一启动就闪退。失败时还要把状态改回"未处理"，
+          // 否则"先落状态后动作"的设计会让今天再也不重试（静默跳过一整天的备份）。
+          ch.on("error", (e: any) => {
+            console.error("[spirit.bio.organs/brain.bioclock/bioclock.ts] 每日备份 spawn 失败: " + (e?.code || e?.message || e));
+            try { _writeF(_bkState, JSON.stringify({ last: "", at: new Date().toISOString(), error: String(e?.code || e?.message || e) })); } catch (e2) { console.error("[spirit.bio.organs/brain.bioclock/bioclock.ts] " + ((e2 as any)?.message || e2)); }
+          });
           ch.unref();
           _trace("backup_daily_spawn");
         }

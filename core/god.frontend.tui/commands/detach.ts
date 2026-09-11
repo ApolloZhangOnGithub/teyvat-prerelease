@@ -78,6 +78,11 @@ export function spawnHeadlessBg(pid: string, reason: string): void {
     env: { ...process.env, PI_ALIVE_RESTART_LOOP: "1", PAIMON_HEADLESS_DAEMON: "1" },
   });
   child.unref(); // 父进程（本 TUI）退出后子进程独立存活
+  // 2026-09-11（prime-agent）：spawn 失败是异步 error 事件，无监听 → 未处理 'error' → 进程闪退。
+  // 这里失败时至少留一条明确日志（否则用户以为"已转后台"，实际什么都没起）。
+  child.on("error", (e: any) => {
+    console.error("[god.frontend.tui/commands/detach.ts] 后台 headless 启动失败: " + (e?.code || e?.message || e));
+  });
   (globalThis as any).__genshinSpawnedHeadless = child.pid; // 记录供 attach 杀残留
 }
 

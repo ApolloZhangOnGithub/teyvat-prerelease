@@ -77,6 +77,16 @@ export default function (pi: ExtensionAPI) {
     }
     writeSync(logFd, `${new Date().toISOString()} [keep-alive] spawn ${args.join(' ')}\n`);
     recorderProc = spawn(BUN, args, { detached: true, stdio: ["ignore", logFd, logFd] });
+    // 2026-09-11（prime-agent）：spawn 失败（ENOENT）是**异步 error 事件**，没有监听 → Node 抛未处理 'error'
+    // → SDK uncaughtCrash → process.exit(1)（本仓注释已记过这个链）→ 录音没录上还顺手把 agent 弄闪退。
+    // BUN 在 `which bun` 失败时会回落成字面量 "bun"（L23）→ bun 未安装时必现。
+    recorderProc.on("error", (e: any) => {
+      const msg = `录音进程启动失败（bun 未安装？BUN=${BUN}）: ${e?.code || e?.message || e}`;
+      console.error("[spirit.bio.organs/head.ears/ears.ts] " + msg);
+      try { writeSync(logFd, `${new Date().toISOString()} [keep-alive] spawn FAILED ${msg}\n`); } catch (e2) { console.error("[spirit.bio.organs/head.ears/ears.ts] " + ((e2 as any)?.message || e2)); }
+      state.listening = false;      // 别让 keep-alive 以为"在录"（它会每 5s 重试，这里只标注状态）
+      recorderProc = null;
+    });
     recorderProc.unref();
   }
 
