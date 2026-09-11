@@ -149,6 +149,7 @@ _integrity: _paths
 		[ -d "$$pkg" ] || continue; \
 		[ -d "$$pkg/node_modules/marked" ] || ( echo "  fixing pi-tui deps..." && cd "$$pkg" && npm install --silent 2>&1 ); \
 	done )
+	@echo "[$$(date +%H:%M:%S)] local-time check..." && node "$(DEPLOY)/check-local-time.cjs" "$(CORE)"
 	@echo "[$$(date +%H:%M:%S)] boundary check..." && bash "$(DEPLOY)/check-boundaries.sh" "$(CORE)"
 	@echo "[$$(date +%H:%M:%S)] deploy check..." && bash "$(DEPLOY)/check-deploy.sh" "$(DEV)"
 	@echo "[$$(date +%H:%M:%S)] help check..." && bash "$(DEPLOY)/check-help.sh" "$(CORE)/god.frontend.cli/cli.ts"

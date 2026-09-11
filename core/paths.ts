@@ -229,6 +229,19 @@ export function estimateTokens(text: string): number {
 // cli.ts 的 device-flow 登录漏了 —— 这里是统一出口，apiFetch 会对未显式设置 UA 的调用补默认值。
 export const SYNC_UA = "genshin-sync/1.0";
 
+// ── 本地时间格式化（唯一真相源）──────────────────────────────────────
+// 所有面向用户的时间显示必须用这个，不要用 toISOString()（UTC，用户看不懂 +8h 偏移）。
+// 内部日志/数据落盘仍可用 toISOString()（机器读，时区无所谓）。
+// make check-local-time 门禁会扫描面向用户的 toISOString 使用。
+export function localTime(date?: Date | number): string {
+  const d = date instanceof Date ? date : new Date(date ?? Date.now());
+  const p2 = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
+}
+export function localTimeShort(date?: Date | number): string {
+  return localTime(date).slice(0, 16);
+}
+
 export async function apiFetch(
   url: string,
   init: RequestInit,
