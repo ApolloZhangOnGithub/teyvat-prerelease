@@ -802,6 +802,7 @@ if [ -z "$NAME" ] && [ -z "$MODE" ]; then
     if(!conf){ console.log(T("backup not configured!! · 运行 genshin b 配置","backup not configured!! · run genshin b to set up")); process.exit(0); }
     let st=null; try{ st=JSON.parse(fs.readFileSync(path.join(P,"RuntimeCache/backup-status.json"),"utf8")); }catch(e){}
     if(!st||!st.state){ console.log(T("已配置，尚无快照 · 运行 genshin b now","configured, no snapshot yet · run genshin b now")); process.exit(0); }
+    if(st.state==="running"){ const t=String(st.started||"").replace("T"," ").slice(11,19); console.log(T("备份中… 开始于 "+t,"backing up… started "+t)); process.exit(0); }
     if(st.state==="failed"){ console.log(T("备份失败："+(st.error||"未知")+" · 运行 genshin b status","backup failed: "+(st.error||"unknown")+" · run genshin b status")); process.exit(0); }
     if(st.state==="ok"){ const t=String(st.last||"").replace("T"," ").slice(0,16); console.log(T("已备份 · "+(st.snapshots||0)+" 个快照 · 最近 "+t, "backed up · "+(st.snapshots||0)+" snapshots · last "+t)); process.exit(0); }
     console.log(T("已配置，尚无快照 · 运行 genshin b now","configured, no snapshot yet · run genshin b now"));

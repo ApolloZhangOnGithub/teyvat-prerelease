@@ -347,7 +347,8 @@ function cmdNow(): boolean {
   const bx: string[] = [];
   for (const p of BULK) { const fp = path.join(PAIMON, p); if (fs.existsSync(fp)) bx.push(fp); }
   const host = os.hostname().replace(/\.local$/, '');
-  console.log(`  ${D}${T('备份', 'backing up')} critical(${ex.length}) + bulk(${bx.length}) → ${host}${R}`);
+  console.log(`  ${T('备份中…', 'backing up…')} critical(${ex.length}) + bulk(${bx.length}) → ${host}`);
+  writeStatus('running', { host, started: new Date().toISOString() });
   const t0 = Date.now();
   let ok = true; let failDetail = '';
   // pipe 捕获输出：失败时能拿到详情（打到终端尾部 + 上报）
