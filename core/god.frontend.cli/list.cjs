@@ -315,7 +315,7 @@ for (let i = 0; i < list.length; i++) {
     if (statusFull.includes('[H]')) { numColor = Y; numIdx = bNum++; }
     else if (statusFull.includes('[B]') || statusFull.includes('[P]')) { numColor = '\x1b[38;2;113;142;244m'; numIdx = bNum++; }
     else { numColor = G; numIdx = fNum++; }
-  } else { numColor = ''; numIdx = oNum++; }
+  } else { numColor = '\x1b[37m'; numIdx = oNum++; } // O 离线 = 白色
   const num = numColor + String(numIdx).padStart(numW) + '. ' + R;
   const kc = KIND_COLORS[kind] || D;
   const memoir = pad(p._memoir ? '✓' : '✗', 6);
