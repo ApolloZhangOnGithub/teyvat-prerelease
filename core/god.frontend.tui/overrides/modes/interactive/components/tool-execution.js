@@ -636,18 +636,53 @@ export class ToolExecutionComponent extends Container {
                 }
                 } // end else-try-catch
             }
-            // 2026-08-14：被打断的折线由组件自己画——位置天然跟在 wait 调用行后面，
-            // 秒数取组件自己的参数（此前发自定义消息会漂移成旧 wait 的秒数、插到错误位置）。
+            // wait/hibernate 打断：把结果追加到 call 行末尾（单行渲染）
             if ((this.toolName === "wait" || this.toolName === "hibernate")
-                && this.toolCallId && globalThis.__genshinWaitInterruptedId === this.toolCallId) {
+                && this.toolCallId && globalThis.__genshinWaitInterruptedId === this.toolCallId
+                && this.callRendererComponent) {
                 const secs = globalThis.__genshinWaitInterruptedSecs ?? this.args?.seconds ?? "?";
                 const reason = globalThis.__genshinWaitInterruptedReason;
                 const reasonLabel = { esc: "ESC", user: "user message", system: "task completed", sleep: "sleep cycle", reload: "reload", shutdown: "shutdown", command: "/pause" };
                 const reasonStr = reason ? ` (${reasonLabel[reason] || reason})` : "";
                 const forUser = globalThis.__genshinWaitInterruptedForUser === true;
                 const color = (forUser || reason === "system" || reason === "user") ? "success" : "error";
-                renderContainer.addChild(new Text(" ".repeat(GUTTER) + theme.fg(color, `⎿  Waited ${secs}s${reasonStr}`), 0, 0));
-                hasContent = true;
+                const suffix = " → " + theme.fg(color, `Waited ${secs}s${reasonStr}`);
+                (function appendToLastText(node) {
+                    if (node && typeof node.text === "string" && !node._waitSuffixed) {
+                        node.text += suffix;
+                        node._waitSuffixed = true;
+                        if (typeof node.invalidate === "function") node.invalidate();
+                        return true;
+                    }
+                    if (node && node.children) {
+                        for (let i = node.children.length - 1; i >= 0; i--) {
+                            if (appendToLastText(node.children[i])) return true;
+                        }
+                    }
+                    return false;
+                })(this.callRendererComponent);
+            }
+            // wait/hibernate 正常结束（未被打断）：追加 → Waited Xs
+            if ((this.toolName === "wait" || this.toolName === "hibernate")
+                && this.result && !this.isPartial
+                && this.callRendererComponent && !this.callRendererComponent._waitSuffixed
+                && !(this.toolCallId && globalThis.__genshinWaitInterruptedId === this.toolCallId)) {
+                const waitSecs = this.result?.details?.wait || this.args?.seconds || "?";
+                const suffix = " → " + theme.fg("success", `Waited ${waitSecs}s`);
+                (function appendToLastText(node) {
+                    if (node && typeof node.text === "string" && !node._waitSuffixed) {
+                        node.text += suffix;
+                        node._waitSuffixed = true;
+                        if (typeof node.invalidate === "function") node.invalidate();
+                        return true;
+                    }
+                    if (node && node.children) {
+                        for (let i = node.children.length - 1; i >= 0; i--) {
+                            if (appendToLastText(node.children[i])) return true;
+                        }
+                    }
+                    return false;
+                })(this.callRendererComponent);
             }
             if (this.result) {
                 // 结果到达 → 把 call 行的 ◦（partial）换成正确的状态点

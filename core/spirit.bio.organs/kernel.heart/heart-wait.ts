@@ -34,7 +34,6 @@ export function registerWaitTool(pi: ExtensionAPI) {
       return renderToolCall.label(theme, "Wait", `${s}s${wu}${msg}${ns}`);
     },
     renderResult(result: any, _options: any, theme: any, ctx: any) {
-      // wait 由 spinner 系统接管显示，结束后由 continuous-resume 消息渲染 "• Waited XXs"
       return renderMessage.silent();
     },
     async execute(_id, rawParams, _signal, _onUpdate, ctx) {
