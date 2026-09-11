@@ -2258,6 +2258,36 @@ export class InteractiveMode {
         };
         globalThis.__genshinGetToolExpanded = () => this.toolOutputExpanded;
         globalThis.__genshinHandleModelCommand = (searchTerm) => this.handleModelCommand(searchTerm);
+        globalThis.__genshinShowSettingsList = (title, getItems, onChange) => {
+            return new Promise((resolve) => {
+                const { SettingsList } = require("@earendil-works/pi-tui");
+                const items = typeof getItems === "function" ? getItems() : getItems;
+                const list = new SettingsList(items, 14, {
+                    cursor: theme.cursor || "> ",
+                    label: (text, selected) => selected ? theme.bold(text) : text,
+                    value: (text, selected) => selected ? theme.bold(text) : theme.fg("dim", text),
+                    hint: (text) => theme.fg("dim", text),
+                    description: (text) => theme.fg("dim", text),
+                }, (id, value) => {
+                    onChange(id, value);
+                    if (typeof getItems === "function") {
+                        const fresh = getItems();
+                        for (const fi of fresh) list.updateValue(fi.id, fi.currentValue);
+                    }
+                    this.ui.requestRender();
+                }, () => {
+                    this.editorContainer.clear();
+                    this.editorContainer.addChild(this.editor);
+                    this.ui.setFocus(this.editor);
+                    this.ui.requestRender();
+                    resolve(undefined);
+                });
+                this.editorContainer.clear();
+                this.editorContainer.addChild({ render: (w) => [title, ...list.render(w)], invalidate: () => list.invalidate?.(), handleInput: (d) => list.handleInput(d) });
+                this.ui.setFocus(this.editorContainer.children[0]);
+                this.ui.requestRender();
+            });
+        };
         this.defaultEditor.onAction("app.editor.external", () => this.openExternalEditor());
         this.defaultEditor.onAction("app.message.copy", () => void this.handleCopyCommand());
         this.defaultEditor.onAction("app.message.followUp", () => this.handleFollowUp());
