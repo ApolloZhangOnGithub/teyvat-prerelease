@@ -190,11 +190,18 @@ function updateBgCount() {
 /** 终止第 id 个后台任务（/b kill 与 @N kill 共用同一路径） */
 // 2026-09-04（test-01 反馈）：字符串任务 ID（recId，如 "260904-154249-9fca9e02"）→ running Map 的 number 键。
 // action show/kill 的 id 此前只收 number（schema 与解析都是），但任务 ID 实际全是 recId 字符串——支持完整 ID 或前缀匹配。
-function recIdToKey(s: string): number | null {
+// 2026-09-11（prime-agent）：前缀命中**多条**时不再静默取第一条 —— 与 historical show 的处理对齐（那边会列候选）。
+// 否则 `kill id:"2609"` 可能杀掉当天第一个匹配的任务（例如正在跑的训练），而 agent 以为自己杀的是另一个。
+function recIdsMatching(s: string): number[] {
+  const out: number[] = [];
   for (const [key, rc] of running) {
-    if (rc.recId === s || (rc.recId && rc.recId.startsWith(s))) return key;
+    if (rc.recId === s || (rc.recId && rc.recId.startsWith(s))) out.push(key);
   }
-  return null;
+  return out;
+}
+function recIdToKey(s: string): number | null {
+  const hits = recIdsMatching(s);
+  return hits.length === 1 ? hits[0] : null;   // 歧义（>1）返回 null，由调用方报候选
 }
 
 export async function killBackgroundTask(id: number): Promise<string> {
@@ -423,15 +430,28 @@ let _lastBgHash = ""; // @ 缓存：避免相同输出重复占用 context
           if (key == null) return { content: [{ type: "text", text: `show (historical): no record matches id ${JSON.stringify(idStr)} in ExecuteData (use action:'list' for running tasks)` }], isError: true };
           // 查无落盘记录但 running 里有 → 落到下方 running 查询
         } else if (key == null) {
+          const hits2 = (typeof idParam === "string" && !/^\d+$/.test(idParam.trim())) ? recIdsMatching(idParam.trim()) : [];
+          if (hits2.length > 1) {
+            const cands2 = hits2.map((k) => `  @${k}  ${running.get(k)?.recId}  ${String(running.get(k)?.title || running.get(k)?.command || "").slice(0, 60)}`).join("\n");
+            return { content: [{ type: "text", text: `show: id 前缀 ${JSON.stringify(idParam)} 命中 ${hits2.length} 个任务，请给完整 id：\n${cands2}` }] };
+          }
           return { content: [{ type: "text", text: `show: no task matches id ${JSON.stringify(idParam)} (use action:'list' to see current ids; finished tasks: add historical:true)` }], isError: true };
         }
         cmd = "@" + key;
       }
       if (action === "kill") {
-        const killIds = (Array.isArray(idParam) ? idParam : idParam != null ? [idParam] : []).map(toTaskKey);
-        if (killIds.length === 0) return { content: [{ type: "text", text: "kill: missing id — execute({action:'kill', id: 33}) or id:[33, 34] or id:'260904-154249-9fca9e02'" }], isError: true };
+        const rawIds = Array.isArray(idParam) ? idParam : idParam != null ? [idParam] : [];
+        if (rawIds.length === 0) return { content: [{ type: "text", text: "kill: missing id — execute({action:'kill', id: 33}) or id:[33, 34] or id:'260904-154249-9fca9e02'" }], isError: true };
         const results: string[] = [];
-        for (const kid of killIds) {
+        for (const raw of rawIds) {
+          // 2026-09-11：字符串前缀命中多条 → 报候选（不静默杀第一个）
+          const hits = (typeof raw === "string" && !/^\d+$/.test(String(raw).trim())) ? recIdsMatching(String(raw).trim()) : [];
+          if (hits.length > 1) {
+            const cands = hits.map((k) => `  @${k}  ${running.get(k)?.recId}  ${String(running.get(k)?.title || running.get(k)?.command || "").slice(0, 60)}`).join("\n");
+            results.push(`kill: id 前缀 ${JSON.stringify(raw)} 命中 ${hits.length} 个任务，请给完整 id：\n${cands}`);
+            continue;
+          }
+          const kid = toTaskKey(raw);
           results.push(kid == null ? `kill: no task matches id (use action:'list')` : await killBackgroundTask(kid));
         }
         return { content: [{ type: "text", text: results.join("\n") }] };

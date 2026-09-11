@@ -211,6 +211,8 @@ export class FooterComponent {
                 totalCacheWrite += entry.message.usage.cacheWrite;
                 totalCost += entry.message.usage.cost.total;
                 latestPromptTokens = entry.message.usage.input + entry.message.usage.cacheRead + entry.message.usage.cacheWrite;
+                // cacheHitRate 定义 = 「prompt 中有多大比例由缓存提供」= cacheRead / 完整 prompt（含 cacheWrite）。
+                // 2026-09-12（ISSUE 203 nit，debug-01 复核确认）：分母与 memory.ts:137 的 gauge 同公式；DeepSeek（cacheWrite=0）下等价旧值。
                 latestCacheHitRate =
                     latestPromptTokens > 0 ? (entry.message.usage.cacheRead / latestPromptTokens) * 100 : undefined;
             }

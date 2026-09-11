@@ -138,7 +138,10 @@ export default function registerMemory(pi: ExtensionAPI) {
     const u = msg.usage;
     if (u) {
       // ISSUE 107 delta：只计"真正新增"（prompt 相对上轮的增长 - 上轮 output 回显）
-      const prompt = (u.input || 0) + (u.cacheRead || 0);
+      // 2026-09-12（ISSUE 203 nit，debug-01 复核指出）：prompt 总量含 cacheWrite 才完整
+      // （与 footer.js 的 latestPromptTokens 同公式——否则换到有 cacheWrite 的 provider 又会出现两个 API 值不等）；
+      // deepseek 实测 cacheWrite=0，行为不变。
+      const prompt = (u.input || 0) + (u.cacheRead || 0) + (u.cacheWrite || 0);
       const out = u.output || 0;
       const reasoning = u.reasoning || 0;
       const prevPrompt = _pondSess.prevPrompt;
