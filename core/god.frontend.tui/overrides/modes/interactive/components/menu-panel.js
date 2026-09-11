@@ -92,9 +92,9 @@ function applyBackground(text, background) {
     return text.split(ANSI_RESET).map((segment) => background(segment)).join(ANSI_RESET);
 }
 
-// 面板背景色（深蓝灰，区分于终端默认黑色）
-const editorBg = (text) => `\x1b[48;2;30;30;46m${text}\x1b[49m`;
-const selectionBg = (text) => `\x1b[48;2;42;45;62m${text}\x1b[49m`;
+// 面板背景色（浅灰，区分于终端默认黑色但不刺眼）
+const editorBg = (text) => `\x1b[48;2;38;38;38m${text}\x1b[49m`;
+const selectionBg = (text) => `\x1b[48;2;58;58;58m${text}\x1b[49m`;
 
 export function getEditorBackgroundColor() { return editorBg; }
 export function getSelectionBackgroundColor() { return selectionBg; }
