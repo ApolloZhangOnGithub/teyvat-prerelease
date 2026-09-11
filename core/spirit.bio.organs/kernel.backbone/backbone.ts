@@ -565,10 +565,12 @@ function outboxAckedFile(): string { return join(outboxDir(), "acked.log"); }
 function outboxFailedFile(): string { return join(outboxDir(), "failed.json"); }
 
 function readPending(): OutboxEntry[] {
+  // 2026-09-12（系统检查，ISSUE 181 同族）：pending.json 首次发送前不存在 = 正常（读侧默认空）；
+  // 原对 ENOENT 也 console.error → 未发送过的 agent 每次 flush 都刷屏（lovely-paimon 实测 238×）。仅非 ENOENT 记录。
   try {
     const arr = JSON.parse(readFileSync(outboxPendingFile(), "utf8"));
     return Array.isArray(arr) ? arr : [];
-  } catch (e) { console.error("[spirit.bio.organs/kernel.backbone/backbone.ts] " + ((e as any)?.message || e));
+  } catch (e) { if ((e as any)?.code !== "ENOENT") console.error("[spirit.bio.organs/kernel.backbone/backbone.ts] " + ((e as any)?.message || e));
     return [];
   }
 }
@@ -580,10 +582,11 @@ function writePending(entries: OutboxEntry[]): void {
 }
 
 function ackedIds(): Set<string> {
+  // 2026-09-12（系统检查，ISSUE 181 同族）：acked.log 尚无 ack 记录时不存在 = 正常；原对 ENOENT 也打日志 → 刷屏。仅非 ENOENT 记录。
   try {
     const lines = readFileSync(outboxAckedFile(), "utf8").split("\n").filter(Boolean);
     return new Set(lines.map(l => l.split("\t")[0]));
-  } catch (e) { console.error("[spirit.bio.organs/kernel.backbone/backbone.ts] " + ((e as any)?.message || e));
+  } catch (e) { if ((e as any)?.code !== "ENOENT") console.error("[spirit.bio.organs/kernel.backbone/backbone.ts] " + ((e as any)?.message || e));
     return new Set();
   }
 }

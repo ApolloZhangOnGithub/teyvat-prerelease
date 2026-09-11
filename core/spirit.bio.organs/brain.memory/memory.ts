@@ -1226,6 +1226,16 @@ export default function registerMemory(pi: ExtensionAPI) {
       const contextPath = path.join(personDir, "context.md");
       const manageDir = path.join(personDir, "ActiveManage");
       const indexPath = path.join(personDir, "ActiveManageMemoryIndex.json");
+      // 2026-09-11（prime-agent）：`id` 来自 agent 参数，之前**直接拼进路径**（join(manageDir, id + ".json")）——
+      // `id: "../../../config/authorize"` 就能读/写 manageDir 之外的**任意 .json**（revert 末尾还会 writeFile 回写同一路径；
+      // fetch 有 entries 命中校验、revert 没有）。收口：①只接受内部生成格式 am-<epochMs> ②解析后必须仍在 manageDir 内。
+      const _amemManageFile = (id: string): string | null => {
+        const clean = String(id).trim().replace(/\.json$/, "");   // 容忍 agent 从索引里抄来的 "am-….json" 写法
+        if (!/^am-\d+$/.test(clean)) return null;
+        const base = path.resolve(manageDir) + path.sep;
+        const f = path.resolve(manageDir, `${clean}.json`);
+        return f.startsWith(base) ? f : null;
+      };
 
       // ── fetch (read-only, no hash) ─────────────────────────────────
       if (params.action === "fetch") {
@@ -1316,7 +1326,7 @@ export default function registerMemory(pi: ExtensionAPI) {
         if (params.id) {
           const e = entries.find((x: any) => x.id === params.id);
           if (!e) return { content: [{ type: "text", text: `amem fetch: ${params.id} not found.` }], details: {} };
-          let d: any = null; try { d = JSON.parse(readFile(path.join(manageDir, `${params.id}.json`))); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
+          let d: any = null; { const _mf = _amemManageFile(String(params.id)); try { d = _mf ? JSON.parse(readFile(_mf)) : null; } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); } }
           if (!d) return { content: [{ type: "text", text: `amem fetch: file not readable.` }], details: {} };
           const ts = d.time_span || {};
           const tsE = ts.earliest || (ts.latest ? null : d.timestamp);
@@ -1717,7 +1727,9 @@ export default function registerMemory(pi: ExtensionAPI) {
       // ── revert ─────────────────────────────────────────────────────
       if (params.action === "revert") {
         if (!params.id) return { content: [{ type: "text", text: "ERR: id required." }], details: {}, isError: true };
-        let d: any = null; try { d = JSON.parse(readFile(path.join(manageDir, `${params.id}.json`))); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
+        const _mf = _amemManageFile(String(params.id));
+        if (!_mf) return { content: [{ type: "text", text: `ERR: invalid id ${JSON.stringify(params.id)}（只接受本会话 am-<数字> 归档 ID）` }], details: {}, isError: true };
+        let d: any = null; try { d = JSON.parse(readFile(_mf)); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
         if (!d) return { content: [{ type: "text", text: `ERR: ${params.id} not found.` }], details: {}, isError: true };
         if (d.reverted) return { content: [{ type: "text", text: `ERR: ${params.id} already reverted.` }], details: {}, isError: true };
 
@@ -1759,7 +1771,7 @@ export default function registerMemory(pi: ExtensionAPI) {
         const newCtx = ctx.slice(0, mIdx) + restoreText + ctx.slice(mIdx + mLen);
         writeFile(contextPath, newCtx);
         d.reverted = true; d.reverted_at = new Date().toISOString();
-        writeFile(path.join(manageDir, `${params.id}.json`), JSON.stringify(d, null, 2));
+        writeFile(_mf, JSON.stringify(d, null, 2));   // 回写同一路径（_mf 已确认在 manageDir 内）
 
         let idx: any = { entries: [] }; try { idx = JSON.parse(readFile(indexPath) || "{}"); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
         const ie = (idx.entries || []).find((e: any) => e.id === params.id);

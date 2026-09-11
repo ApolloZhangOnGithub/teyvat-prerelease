@@ -1,4 +1,4 @@
-import { runtimeCacheDir, DIRS, PROGRAM_FILES_MOBILE, appPersonDir, setApiAgent, writeFileAtomic } from "#paths";
+import { runtimeCacheDir, DIRS, PROGRAM_FILES_MOBILE, appPersonDir, setApiAgent, writeFileAtomic, userFile } from "#paths";
 import { Text } from "@earendil-works/pi-tui";
 // system.kernel/kernel.ts - 手机内核 // 2026-06-20-0841
 // 唯一注册的 tool: mobile。状态机 + app 路由 + 通知 + 提醒检查。
@@ -26,7 +26,8 @@ import { exec, execSync } from "node:child_process";
 const BROWSER_PORT = process.env.BROWSER_PORT ? Number(process.env.BROWSER_PORT) : 0;
 const PORT_FILE = `${homedir()}/.teyvat/browser-service.port`;
 function readBrowserUrl(): string {
-  try { const port = readFileSync(PORT_FILE, "utf8").trim(); if (port) return `http://127.0.0.1:${port}`; } catch (e) { console.error("[universe.infotech/local.mobile/system.kernel/kernel.ts] " + ((e as any)?.message || e)); }
+  // 2026-09-12（系统检查，ISSUE 181 同族）：browser-service.port 未启动时不存在 = 正常，不再当日志刷屏；仅非 ENOENT 记录
+  try { const port = readFileSync(PORT_FILE, "utf8").trim(); if (port) return `http://127.0.0.1:${port}`; } catch (e) { if ((e as any)?.code !== "ENOENT") console.error("[universe.infotech/local.mobile/system.kernel/kernel.ts] " + ((e as any)?.message || e)); }
   return `http://127.0.0.1:${BROWSER_PORT}`;
 }
 let _browserPid: number | null = null;
@@ -114,7 +115,8 @@ function loadState() {
     state.notifications = saved.notifications ?? [];
     state.notificationMode = saved.notificationMode ?? "normal";
     state.devMode = saved.devMode ?? false;
-  } catch (e) { console.error("[universe.infotech/local.mobile/system.kernel/kernel.ts] " + ((e as any)?.message || e)); }
+  } catch (e) { /* 2026-09-12（ISSUE 181 同族）：mobile-state.json 首次不存在 = 正常（默认状态）；仅非 ENOENT 记录 */
+    if ((e as any)?.code !== "ENOENT") console.error("[universe.infotech/local.mobile/system.kernel/kernel.ts] " + ((e as any)?.message || e)); }
 }
 
 function saveState(screen?: string) {
@@ -144,7 +146,8 @@ function loadAgentApps(id: string) {
   _agentAppsFile = path.join(appPersonDir(id, "mobile"), "apps.json");
   try {
     _agentAppList = JSON.parse(readFileSync(_agentAppsFile, "utf8")).apps;
-  } catch (e) { console.error("[universe.infotech/local.mobile/system.kernel/kernel.ts] " + ((e as any)?.message || e));
+  } catch (e) { /* 2026-09-12（ISSUE 181 同族）：apps.json 尚未保存时不存在 = 正常；仅非 ENOENT 记录 */
+    if ((e as any)?.code !== "ENOENT") console.error("[universe.infotech/local.mobile/system.kernel/kernel.ts] " + ((e as any)?.message || e));
     _agentAppList = null;
   }
 }
@@ -177,7 +180,8 @@ export function removeAgentApp(dirName: string) {
 async function loadApp(name: string): Promise<MobileApp | undefined> {
   // devMode 从 settings.json 实时读取，不用 state（state 是启动快照）
   let dm = false;
-  try { const sf = JSON.parse(readFileSync(path.join(homedir(), ".teyvat/agent/config/settings.json"), "utf8")); dm = !!sf.developerMode; } catch (e) { console.error("[universe.infotech/local.mobile/system.kernel/kernel.ts] " + ((e as any)?.message || e)); }
+  // 2026-09-12（系统检查，ISSUE 180 同族）：原硬编码 ~/.teyvat/agent/config/settings.json（陈旧安装模板）→ 改用 userFile("settings.json")（与 core.ts/heart-state.ts 同源）
+  try { const sf = JSON.parse(readFileSync(userFile("settings.json"), "utf8")); dm = !!sf.developerMode; } catch (e) { console.error("[universe.infotech/local.mobile/system.kernel/kernel.ts] " + ((e as any)?.message || e)); }
   if (!dm) return apps.get(name);
   // Session 级缓存：5s TTL，超时重新加载
   const hit = _loadCache.get(name);
