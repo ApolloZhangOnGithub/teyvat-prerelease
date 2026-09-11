@@ -381,6 +381,29 @@ export default function (pi: ExtensionAPI) {
       return undefined;
     }
 
+    // ── AgentWorkDir 公共目录写入重定向：误写 ~/.teyvat/AgentWorkDir/<file> 自动重定向到 Individual/<id>/ ──
+    if (authPath && (event.toolName === "write" || event.toolName === "edit")) {
+      const abs = resolve(authPath);
+      const awdRoot = join(homedir(), ".teyvat/AgentWorkDir");
+      if (abs.startsWith(awdRoot + "/") && !abs.startsWith(join(awdRoot, "Individual") + "/")) {
+        const relToAwd = abs.slice(awdRoot.length + 1);
+        const redirected = join(agentWorkDir(), relToAwd);
+        if (event.toolName === "write" && (event.input as any)?.content != null) {
+          await mkdir(dirname(redirected), { recursive: true }).catch(() => {});
+          const { writeFileSync } = await import("node:fs");
+          writeFileSync(redirected, String((event.input as any).content), "utf8");
+          return { block: true, reason: i18n(
+            `已自动重定向：文件已写入你的个人工作目录 ${redirected}（不能写公共 AgentWorkDir，以后请直接写 ${agentWorkDir()}/ 下）`,
+            `Auto-redirected: file written to your personal workdir ${redirected} (cannot write shared AgentWorkDir, use ${agentWorkDir()}/ directly next time)`
+          ) };
+        }
+        return { block: true, reason: i18n(
+          `${authPath} 是公共目录，不能直接写。你的个人工作目录是 ${agentWorkDir()}/，请改用这个路径。`,
+          `${authPath} is a shared directory, cannot write directly. Your personal workdir is ${agentWorkDir()}/. Use that path instead.`
+        ) };
+      }
+    }
+
     // ── /tmp 禁止（2026-08-20 用户定稿）：write 默认禁 /tmp（临时文件应写 AgentWorkDir），force:true 才放行；
     //    bash 写 /tmp 一律禁（bash 无 force 参数，危险操作不留口子）。macOS /tmp → /private/tmp 一并拦。──
     if (authPath && (authPath.startsWith("/tmp/") || authPath === "/tmp" || authPath.startsWith("/private/tmp/"))) {

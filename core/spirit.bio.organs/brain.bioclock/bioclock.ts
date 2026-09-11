@@ -35,7 +35,8 @@ export default function (pi: ExtensionAPI) {
     const ts = (msg as any).timestamp;
     if (!ts || typeof ts !== "number") return;
 
-    const tag = ` [${fmt(ts)}]`;
+    const gauge = (globalThis as any).__genshinContextGauge || "";
+    const tag = ` [${fmt(ts)}${gauge ? " | " + gauge : ""}]`;
     const content = (msg as any).content;
 
     if (typeof content === "string") {
@@ -87,7 +88,8 @@ export default function (pi: ExtensionAPI) {
     const p2 = (n: number) => String(n).padStart(2, "0");
     const time = `${p2(now.getHours())}:${p2(now.getMinutes())}:${p2(now.getSeconds())}.${String(now.getMilliseconds()).padStart(3,'0')}`;
     const dur = start ? ` +${((Date.now() - start) / 1000).toFixed(1)}s` : "";
-    const tag = `\n[${time}${dur}]`;
+    const gauge = (globalThis as any).__genshinContextGauge || "";
+    const tag = `\n[${time}${dur}${gauge ? " | " + gauge : ""}]`;
 
     const content = (event as any).content;
     if (!Array.isArray(content)) return;

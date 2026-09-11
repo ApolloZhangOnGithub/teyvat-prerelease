@@ -149,6 +149,10 @@ export default function registerMemory(pi: ExtensionAPI) {
       _pondSess.tokens += novel + out;
       _pondSess.prevPrompt = prompt;
       _pondSess.prevOut = Math.max(0, out - reasoning);
+      // 实时更新 context gauge（纯想/聊天时 bioclock 注入 ground truth，对抗 off-policy bias）
+      _refreshModelMax();
+      const promptPct = Math.round((prompt / modelMax) * 100);
+      (globalThis as any).__genshinContextGauge = `ctx ${promptPct}%`;
       // ISSUE 106：每轮实时落盘（入账后清零，footer/status 读文件即实时值）
       flushTokenmaxxed();
     }
@@ -647,6 +651,8 @@ export default function registerMemory(pi: ExtensionAPI) {
     const rawPct = Math.round(usageRatio * 100);
     monitorAppend("growth.jsonl",
       JSON.stringify({ ts: new Date().toISOString(), bytes: context.length, tokens: memTokens, ratio: +(usageRatio * 100).toFixed(1) }) + "\n");
+    // context gauge 暴露给 bioclock 注入（纯想时模型也能看到 ground truth）
+    (globalThis as any).__genshinContextGauge = `ctx ${rawPct}%`;
     // 容量提醒——只在达到 URGE(80%) 真危险时发（用户反馈：这条是垃圾，
     // 1) 清理后屏幕上还留着清理前的旧快照（过期数据） 2) 每次 amem 后用户说话就冒出来。
     // 修：阈值提到 80%；带时间戳（明确是快照不是当前值）；feed:false 不喂模型（模型自主管理）。

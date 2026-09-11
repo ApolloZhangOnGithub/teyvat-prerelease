@@ -2966,10 +2966,25 @@ export class InteractiveMode {
             if (!pid) return;
             const rcDir = path.join(os.homedir(), ".teyvat/RuntimeCache", pid);
             const marker = path.join(rcDir, "restart-session.json");
-            if (!fs.existsSync(marker)) return;
             let sessionFile = "";
-            try { sessionFile = JSON.parse(fs.readFileSync(marker, "utf8")).sessionFile || ""; } catch (e) { console.error("[god.frontend.tui/overrides/modes/interactive/interactive-mode.js] " + (e?.message || e)); }
-            try { fs.unlinkSync(marker); } catch (e) { console.error("[god.frontend.tui/overrides/modes/interactive/interactive-mode.js] " + (e?.message || e)); } // 一次性消费（下次 self-reboot 会重写）
+            if (fs.existsSync(marker)) {
+                try { sessionFile = JSON.parse(fs.readFileSync(marker, "utf8")).sessionFile || ""; } catch (e) { console.error("[god.frontend.tui/overrides/modes/interactive/interactive-mode.js] " + (e?.message || e)); }
+                try { fs.unlinkSync(marker); } catch (e) { console.error("[god.frontend.tui/overrides/modes/interactive/interactive-mode.js] " + (e?.message || e)); }
+            }
+            // fallback: 无 marker 时自动找 SESSION_DIR 最近的 session 文件（re-attach/正常重启都能看到历史）
+            if (!sessionFile || !fs.existsSync(sessionFile)) {
+                const sessDir = process.env.PI_CODING_AGENT_SESSION_DIR || path.join(os.homedir(), ".teyvat/SessionData", pid);
+                if (fs.existsSync(sessDir)) {
+                    const curSessionFile = this.sessionManager?.getSessionFile?.() || "";
+                    const files = fs.readdirSync(sessDir).filter(f => f.endsWith(".jsonl")).map(f => {
+                        const fp = path.join(sessDir, f);
+                        if (fp === curSessionFile) return null;
+                        try { return { path: fp, mtime: fs.statSync(fp).mtimeMs }; } catch { return null; }
+                    }).filter(Boolean);
+                    files.sort((a, b) => b.mtime - a.mtime);
+                    if (files.length > 0) sessionFile = files[0].path;
+                }
+            }
             if (!sessionFile || !fs.existsSync(sessionFile)) return;
             const PREV_LIMIT = 50; // 只重放最近 50 条渲染类 entry（参考 prime-agent limitTranscript，防大 session 卡顿）
             const lines = fs.readFileSync(sessionFile, "utf8").split("\n").filter(Boolean);

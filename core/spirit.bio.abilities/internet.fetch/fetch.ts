@@ -127,7 +127,8 @@ export class NodeFetchBackend implements FetchBackend {
       // 2026-09-07（用户反馈）：截断时自动把完整内容写 AgentWorkDir 并给出路径——agent 可 read 取全文（不再丢内容）
       if (truncated) {
         try {
-          const dir = join(homedir(), ".teyvat", "AgentWorkDir", "web-fetch");
+          const _aid = (globalThis as any).__genshinAgentWorkDir || join(homedir(), ".teyvat", "AgentWorkDir", "Individual", "unknown");
+          const dir = join(_aid, "web-fetch");
           mkdirSync(dir, { recursive: true });
           const fp = join(dir, `fetch-${Date.now()}.txt`);
           writeFileSync(fp, text);
