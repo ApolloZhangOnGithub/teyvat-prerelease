@@ -310,14 +310,19 @@ export default function (pi: ExtensionAPI) {
     } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
     if (sessionPersonId && !isWorkerSession(ctx)) {
       const pidFile = join(memoryDir(sessionPersonId), "main.pid");
+      // 2026-09-11（ISSUE 182）：①读 main.pid 容忍 ENOENT/空（首次启动/损坏均预期）——原 readFileSync 抛 ENOENT
+      // 走外层 catch 报错刷屏（实测 102×）；②写入改原子（tmp+rename）——原 writeFileSync 先截断再写，双实例交错
+      // 会留下 0 字节 → 活跃判定 parseInt("")=NaN → 重复启动（check-session-01 双实例实例）。
+      let _rawPid = ""; try { _rawPid = readFileSync(pidFile, "utf8").trim(); } catch (e: any) { if (e?.code !== "ENOENT") console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
       try {
-        const oldPid = parseInt(readFileSync(pidFile, "utf8").trim(), 10);
+        const oldPid = parseInt(_rawPid, 10);
+        if (!oldPid && _rawPid === "" && existsSync(pidFile)) dlog("main.pid 为空（损坏）——按无旧主进程处理（ISSUE 182）");
         if (oldPid && oldPid !== process.pid) {
           // 2026-08-20：kill 0 是存在性探测——ESRCH（进程已退出）是预期结果，不报错（console-error.log 实测）
           try { process.kill(oldPid, 0); dlog(`旧主进程 ${oldPid} 还在，杀掉`); process.kill(oldPid); } catch (e: any) { if (e?.code !== "ESRCH") console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
         }
       } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
-      try { writeFileSync(pidFile, String(process.pid), "utf8"); } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
+      try { const _pidTmp = pidFile + ".tmp-" + process.pid; writeFileSync(_pidTmp, String(process.pid), "utf8"); require("fs").renameSync(_pidTmp, pidFile); } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
       // ── 列表统计（agent-stats.cjs）：运行时计算并缓存，list.cjs 查询只读缓存 ──
       // 2026-08-13 用户要求：大小/token 运行时实时运算储存、查询时获取即可。
       // 2026-08-20 修复：statsDir 必须传父层 MemoryData（memoryDir 已带 id——computeAgentStats 内部
