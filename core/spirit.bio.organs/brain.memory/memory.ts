@@ -107,7 +107,7 @@ export default function registerMemory(pi: ExtensionAPI) {
       try {
         // 2026-08-20 修复：空/截断文件安全解析（竞态截断是暂时性的，下次写入自动修复——用默认值不刷日志）
         let raw: any = null;
-        try { raw = JSON.parse(readFile(tokenmaxxedPath) || "{}"); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); /* 截断/损坏：用默认值，不刷日志 */ }
+        try { raw = JSON.parse(readFile(tokenmaxxedPath) || "{}"); } catch {  /* 截断/损坏：用默认值，不刷日志 */ }
         pond = {
           tokenmaxxed: raw?.tokenmaxxed || 0,
           sessions: raw?.sessions || 0,
@@ -200,7 +200,7 @@ export default function registerMemory(pi: ExtensionAPI) {
     const wmNow = readFile(path.join(personDir, "work_memory.md"));
     let frozen = readFile(frozenPath);
     let meta = { ctxLen: 0, wmLen: 0 };
-    try { meta = { ...meta, ...JSON.parse(readFile(metaPath) || "{}") }; } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); /* 冻结 meta 竞态截断：默认值不刷（同 .54 快照截断行处理，数据损坏暂时性）*/ }
+    try { meta = { ...meta, ...JSON.parse(readFile(metaPath) || "{}") }; } catch {  /* 冻结 meta 竞态截断：默认值不刷（同 .54 快照截断行处理，数据损坏暂时性）*/ }
     const dCtx = ctxNow.length - meta.ctxLen;
     const dWm = wmNow.length - meta.wmLen;
     if (!frozen || dCtx > REFREEZE_DELTA || dCtx < 0 || dWm < 0) {
@@ -415,7 +415,7 @@ export default function registerMemory(pi: ExtensionAPI) {
           const costPath = path.join(personDir, `cost-${role}.json`);
           if (!fs.existsSync(costPath)) continue; // 该角色无消费记录（新 agent/未启用）——不存在不刷 ENOENT
           let d: any = null;
-          try { d = JSON.parse(readFile(costPath)); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); /* 竞态截断：按 0 计不刷（下次写入自动修复）*/ }
+          try { d = JSON.parse(readFile(costPath)); } catch {  /* 竞态截断：按 0 计不刷（下次写入自动修复）*/ }
           if (role === "main") sessMain = d?.cost || 0;
           else if (role === "hippocampus") sessHippo = d?.cost || 0;
           else if (role === "metaconsciousness") sessSub = d?.cost || 0;
@@ -427,7 +427,7 @@ export default function registerMemory(pi: ExtensionAPI) {
       // 2026-08-20 修复：costTotalPath（AgentFileData/../MonitorData/<id>/cost_total.json）目录通常不存在——
       // readFile 返回空串 → JSON.parse("") 每次 flush 报 Unexpected end（Unexpected end 刷屏的真正来源）——
       // 不存在跳过（与 cost-role 的 existsSync 同模式），截断用默认值
-      try { if (fs.existsSync(costTotalPath)) total = JSON.parse(readFile(costTotalPath)); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); /* 截断用默认值 */ }
+      try { if (fs.existsSync(costTotalPath)) total = JSON.parse(readFile(costTotalPath)); } catch {  /* 截断用默认值 */ }
       total.main = (total.main || 0) + sessMain;
       total.hippocampus = (total.hippocampus || 0) + sessHippo;
       total.metaconsciousness = (total.metaconsciousness || 0) + sessSub;
@@ -448,7 +448,7 @@ export default function registerMemory(pi: ExtensionAPI) {
         try {
           // 2026-08-20 修复：空/截断文件安全解析（同 flushTokenmaxxed——竞态截断用默认值不刷日志）
           let raw: any = null;
-          try { raw = JSON.parse(readFile(tokenmaxxedPath) || "{}"); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); /* 截断/损坏：用默认值 */ }
+          try { raw = JSON.parse(readFile(tokenmaxxedPath) || "{}"); } catch {  /* 截断/损坏：用默认值 */ }
           pond = {
             tokenmaxxed: raw?.tokenmaxxed || 0,
             sessions: raw?.sessions || 0,
@@ -591,7 +591,7 @@ export default function registerMemory(pi: ExtensionAPI) {
     const wmNow2 = readFile(path.join(personDir, "work_memory.md"));
     const metaPath2 = (global.__genshinChannelDir || personDir.replace("MemoryData", "RuntimeCache")) + "/snapshot.frozen.meta.json";
     let meta2 = { ctxLen: 0, wmLen: 0 };
-    try { meta2 = { ...meta2, ...JSON.parse(readFile(metaPath2) || "{}") }; } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
+    try { meta2 = { ...meta2, ...JSON.parse(readFile(metaPath2) || "{}") }; } catch { /* meta2 竞态截断：默认值静默（须留注释，空 catch 触 LESSON 024 门禁）*/ }
     if (ctxNow2.length < meta2.ctxLen || wmNow2.length < meta2.wmLen) {
       const frozenPath = (global.__genshinChannelDir || personDir.replace("MemoryData", "RuntimeCache")) + "/snapshot.frozen.txt";
       const fresh = buildSnapshot();
@@ -641,7 +641,7 @@ export default function registerMemory(pi: ExtensionAPI) {
     const _rcDir = global.__genshinChannelDir || personDir.replace("MemoryData", "RuntimeCache");
     const frozenMetaPath = _rcDir + "/snapshot.frozen.meta.json";
     let frozenMeta = { ctxLen: 0, wmLen: 0 };
-    try { frozenMeta = { ...frozenMeta, ...JSON.parse(readFile(frozenMetaPath) || "{}") }; } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
+    try { frozenMeta = { ...frozenMeta, ...JSON.parse(readFile(frozenMetaPath) || "{}") }; } catch { /* frozenMeta 竞态截断：默认值静默（须留注释，空 catch 触 LESSON 024 门禁）*/ }
     if (context.length < frozenMeta.ctxLen - 5000) {
       // context 显著缩水（sleep/nap done掉了大量生肉）→ 重建快照 + 重置 work_memory 注入游标
       const freshFrozen = buildSnapshot();
