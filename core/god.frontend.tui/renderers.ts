@@ -211,7 +211,7 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
     output = output.replace(/\n*\[\d{2}:\d{2}:\d{2}\.\d{3}\s*\+\d+(?:\.\d+)?s\]\s*$/, "").trimEnd();
     const exitStr = exitCode !== undefined ? `exit ${exitCode}` : (elapsed === 0 ? "instantly" : `${elapsed}s`);
     const statusColor = isError ? "error" : "success";
-    const d = isError ? theme.fg("error", "⎿") : theme.fg("result", "⎿");
+    const d = isError ? theme.fg("error", "→") : theme.fg("result", "→");
     const c = new Container();
     const indent = " ".repeat(GUTTER);
     // Result 目标形态：主行 • Result[: title]，第二行 ⎿ Executed process <id> in Xs, with exit X (X remaining)
