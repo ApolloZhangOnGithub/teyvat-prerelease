@@ -111,7 +111,7 @@ export function markdownBullet(md, dotStr, width) {
 export function hangWrapText(text, width, h) {
   const { visibleWidth, wrapTextWithAnsi } = h;
   const stripped = String(text).replace(new RegExp(String.fromCharCode(27) + "\\[[0-9;]*m", "g"), "");
-  const pm = stripped.match(/^(\s*(?:(?:[•◦●○$⎿]|\d+\s*│)\s+|\d+\s*[+\- ]|\s*\d+\t)?)/);
+  const pm = stripped.match(/^(\s*(?:(?:[•◦●○$⎿⏺∴▸→◆◇]|\d+\s*│)\s+|\d+\s*[+\- ]|\s*\d+\t)?)/);
   const indW = (pm && pm[1]) ? visibleWidth(pm[1]) : 0;
   if (indW <= 0 || indW >= width) return wrapTextWithAnsi(text, width);
   if (visibleWidth(text) <= width) return wrapTextWithAnsi(text, width);
@@ -150,7 +150,7 @@ export function wrapHanging(lines, width, h) {
   for (const line of lines) {
     if (typeof line !== "string" || isImageLine(line) || visibleWidth(line) <= width) { out.push(line); continue; }
     const stripped = line.replace(new RegExp(String.fromCharCode(27) + "\\[[0-9;]*m", "g"), "");
-    const pm = stripped.match(/^(\s*(?:(?:[•◦●○$⎿]|\d+\s*│)\s+|\d+\s*[+\- ]|\s*\d+\t)?)/);
+    const pm = stripped.match(/^(\s*(?:(?:[•◦●○$⎿⏺∴▸→◆◇]|\d+\s*│)\s+|\d+\s*[+\- ]|\s*\d+\t)?)/);
     const indW = pm && pm[1] ? visibleWidth(pm[1]) : 0;
     const indent = (indW > 0 && indW < width) ? " ".repeat(indW) : "";
     let col = 0; const total = visibleWidth(line); let first = true;
