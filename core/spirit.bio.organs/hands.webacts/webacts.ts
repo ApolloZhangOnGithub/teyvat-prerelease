@@ -21,6 +21,39 @@ const BG_THRESHOLD_MS = 2000;        // fetch 阈值（不变）
 const SEARCH_THRESHOLD_MS = 8000;    // ISSUE 119：search 阈值 2s→8s（brave 常态 1-3s，内联返回）
 const BG_HARD_TIMEOUT_MS = 90_000;   // ISSUE 119：后台推送硬超时——必有推送（成功/失败/超时三选一）
 
+// ── upload 的路径策略（2026-09-11 prime-agent）─────────────────────────────────
+// 为什么加：`upload` 原来是"读任意本地文件 → POST /auth/files → 打印 24h 链接+密码"，
+// **没有任何路径限制** —— agent（或它刚读进来的网页内容，提示注入）可以把
+//   `~/.ssh/id_rsa`（私钥）、`~/.teyvat/UserAccount/binding.json`（sync token）、
+//   `~/.codex/auth.json`、别的 agent 的 MemoryData/… 传到服务器并拿到可分享链接 = **数据外泄**。
+// 策略（与项目既有的"他人数据目录"权限模型同源）：
+//   1) 凭据类路径**一律禁止**（私钥/密钥/授权文件/binding/gh 配置…）—— 连 root agent 也不放行
+//   2) 别的 agent 的私有数据目录禁止（除非本 agent 在 authorize.json 里 all/root —— 与 execute 守卫同口径）
+//   3) 其余照旧允许（工作目录、/tmp、Documents…，保持"网盘式分享"的用途）
+const UPLOAD_DENY_PATTERNS = [
+  /(^|\/)\.ssh\//i, /(^|\/)\.aws\//i, /(^|\/)\.config\/gh\//i,
+  /(^|\/)\.gnupg\//i, /(^|\/)\.codex\//i, /(^|\/)\.claude[^\/]*($|\/)/i,
+  /(^|\/)\.teyvat\/UserAccount\//i, /(^|\/)\.teyvat\/config\/(authorize|auth|env-keys)/i,
+  /(^|\/)(id_rsa|id_ed25519|authorized_keys|known_hosts)$/i,
+  /\.(pem|key|p12|pfx|keystore)$/i,
+  /(^|\/)(binding|auth|credentials|token|secrets)\.json$/i,
+  /(^|\/)\.env(\..*)?$/i,
+];
+const PRIVATE_DATA_RE = /(?:^|\/)\.teyvat\/(?:MemoryData|SessionData|RuntimeCache|BlackboxData|IdentityData|AgentFileData|AppData|ExecuteData|LogData|ErrorData)\/([0-9a-f]{8})\//i;
+
+export function uploadPathVerdict(resolved: string, selfId?: string, selfTrusted = false): { ok: boolean; reason?: string } {
+  for (const re of UPLOAD_DENY_PATTERNS) {
+    if (re.test(resolved)) return { ok: false, reason: "凭据/密钥类文件不允许上传（防外泄）" };
+  }
+  const m = resolved.match(PRIVATE_DATA_RE);
+  if (m) {
+    const owner = m[1].toLowerCase();
+    const me = (selfId || "").toLowerCase();
+    if (owner !== me && !selfTrusted) return { ok: false, reason: "不允许上传其他 agent 的私有数据目录" };
+  }
+  return { ok: true };
+}
+
 export default function (pi: ExtensionAPI) {
   const fetchBackend = createFetchBackend("node")!;
   const searchBackend = createSearchBackend("brave")!;
@@ -176,6 +209,16 @@ export default function (pi: ExtensionAPI) {
           const { join } = await import("node:path");
           const { homedir } = await import("node:os");
           const resolved = path.startsWith("/") ? path : join(process.cwd(), path);
+          let _selfTrusted = false;
+          try {
+            const _auth = JSON.parse(nfs.readFileSync(join(homedir(), ".teyvat", "config", "authorize.json"), "utf8"));
+            const me = String(params?.__selfId || (globalThis as any).__genshinPersonId || process.env.PAIMON_AGENT_ID || "");
+            _selfTrusted = !!(me && (_auth.agents?.[me]?.all || _auth.agents?.[me]?.root));
+          } catch { /* 无 authorize.json → 不信任 */ }
+          const _verdict = uploadPathVerdict(resolved, String((globalThis as any).__genshinPersonId || process.env.PAIMON_AGENT_ID || ""), _selfTrusted);
+          if (!_verdict.ok) {
+            return { content: [{ type: "text", text: i18n(`上传被拒: ${_verdict.reason}（路径 ${resolved}）`, `upload refused: ${_verdict.reason} (${resolved})`) }], details: { blocked: true }, isError: true };
+          }
           const data = nfs.readFileSync(resolved);
           const MAX = 1024 * 1024;
           if (data.length > MAX) {

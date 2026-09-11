@@ -2973,7 +2973,7 @@ export class InteractiveMode {
                 try { sessionFile = JSON.parse(fs.readFileSync(marker, "utf8")).sessionFile || ""; } catch (e) { console.error("[god.frontend.tui/overrides/modes/interactive/interactive-mode.js] " + (e?.message || e)); }
                 try { fs.unlinkSync(marker); } catch (e) { console.error("[god.frontend.tui/overrides/modes/interactive/interactive-mode.js] " + (e?.message || e)); }
             }
-            // fallback: 无 marker 时自动找 SESSION_DIR 最近的 session 文件（re-attach/正常重启都能看到历史）
+            // fallback: 无 marker 时自动找 SESSION_DIR 最近的有实质内容的 session 文件
             if (!sessionFile || !fs.existsSync(sessionFile)) {
                 const sessDir = process.env.PI_CODING_AGENT_SESSION_DIR || path.join(os.homedir(), ".teyvat/SessionData", pid);
                 if (fs.existsSync(sessDir)) {
@@ -2981,10 +2981,15 @@ export class InteractiveMode {
                     const files = fs.readdirSync(sessDir).filter(f => f.endsWith(".jsonl")).map(f => {
                         const fp = path.join(sessDir, f);
                         if (fp === curSessionFile) return null;
-                        try { return { path: fp, mtime: fs.statSync(fp).mtimeMs }; } catch { return null; }
+                        try { return { path: fp, mtime: fs.statSync(fp).mtimeMs, size: fs.statSync(fp).size }; } catch { return null; }
                     }).filter(Boolean);
                     files.sort((a, b) => b.mtime - a.mtime);
-                    if (files.length > 0) sessionFile = files[0].path;
+                    // 跳过只有几行的垃圾 session（如只有 /login 的短 session），找有实质内容的
+                    for (const f of files) {
+                        if (f.size < 2000) continue; // 小于 2KB 的 session 跳过
+                        sessionFile = f.path;
+                        break;
+                    }
                 }
             }
             if (!sessionFile || !fs.existsSync(sessionFile)) return;

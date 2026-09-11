@@ -365,7 +365,7 @@ export class TuiAltScreen extends TuiBase {
         return undefined;
     }
     parseWheelEvent(data) {
-        const sgr = /^\x1b\[<(\d+);(\d+);(\d+)[Mm]$/.exec(data);
+        const sgr = /^(?:\x1b\[<)?(\d+);(\d+);(\d+)[Mm]$/.exec(data);
         if (sgr) {
             const button = Number.parseInt(sgr[1], 10);
             if ((button & 64) === 0)
@@ -426,7 +426,7 @@ export class TuiAltScreen extends TuiBase {
         this.requestRender();
     }
     parseSgrMouseEvent(data) {
-        const match = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/.exec(data);
+        const match = /^(?:\x1b\[<)?(\d+);(\d+);(\d+)([Mm])$/.exec(data);
         if (!match)
             return undefined;
         return {
@@ -925,7 +925,13 @@ export class TuiAltScreen extends TuiBase {
         });
     }
     isMouseSequence(data) {
-        return /^\x1b\[<\d+;\d+;\d+[Mm]$/.test(data) || (data.length === 6 && data.startsWith("\x1b[M"));
+        // 2026-09-12（用户报终端出现垃圾串 `65;85;20M`）：原正则硬要求 `\x1b[<` 前缀——
+        // 当序列被 stdin 分片 / 前缀丢失（只剩 "65;85;20M"）时，本函数与 parseSgrMouseEvent/parseWheelEvent
+        // 三者全不匹配 → 残片落到普通文本、被当输入回显成垃圾。
+        // 补一条"无前缀尾巴"识别（与解析器同步接受可选前缀）。
+        return /^\x1b\[<\d+;\d+;\d+[Mm]$/.test(data)
+            || /^\d+;\d+;\d+[Mm]$/.test(data)
+            || (data.length === 6 && data.startsWith("\x1b[M"));
     }
     compositeFlashes(screen, width, height) {
         const flashLines = this.flashes.render(width).slice(-height);

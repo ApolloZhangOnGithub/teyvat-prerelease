@@ -803,9 +803,9 @@ function getEndpoint(): string {
   try {
     const svc = JSON.parse(fs.readFileSync(path.join(USER_ACCOUNT, 'services.json'), 'utf8'));
     if (svc['genshin-sync']?.endpoint) return svc['genshin-sync'].endpoint;
-  } catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); }
+  } catch { /* 2026-09-12：无 services.json / 坏 JSON → 未配置是正常态，静默降级（原打 console.error 刷日志） */ }
   // SSH 隧道优先（绕过 ICP），探测是否可用
-  try { execSync('curl -sf --connect-timeout 1 ' + SYNC_TUNNEL + '/health', { stdio: 'ignore' }); return SYNC_TUNNEL; } catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); }
+  try { execSync('curl -sf --connect-timeout 1 ' + SYNC_TUNNEL + '/health', { stdio: 'ignore' }); return SYNC_TUNNEL; } catch { /* 无隧道是正常态 → 静默（原打 console.error） */ }
   return SYNC_ENDPOINT_DEFAULT;
 }
 

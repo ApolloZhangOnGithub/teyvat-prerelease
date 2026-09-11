@@ -172,7 +172,9 @@ fi
 # 否则 --endpoint= 会被 flag 循环当作未知 POS 参数误吞。
 if [ "$1" = "b" ] || [ "$1" = "backup" ]; then
   shift
-  cd "$PAIMON_EXT/.." && exec bun "$PAIMON_CLI_TS" backup ${@+"$@"}
+  # 注意：此处必须用 L20 已定义的 $PAIMON_CLI（不能用 $PAIMON_CLI_TS——那个在 L277 子命令路由区才定义，
+  # 在此处展开为空 → bun "" → 只打印 usage。2026-09-12 修）
+  cd "$PAIMON_EXT/.." && exec bun "$PAIMON_CLI/cli.ts" backup ${@+"$@"}
 fi
 POS=()
 while [ $# -gt 0 ]; do

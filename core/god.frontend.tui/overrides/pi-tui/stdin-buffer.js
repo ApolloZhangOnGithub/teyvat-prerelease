@@ -336,7 +336,14 @@ export class StdinBuffer extends EventEmitter {
         if (this.buffer.length === 0) {
             return [];
         }
-        const sequences = [this.buffer];
+        // 不完整的 CSI 序列超时：丢弃而非发给编辑器（常见于 CPU 忙时鼠标序列分片）
+        if (this.buffer.startsWith("\x1b[") || this.buffer.startsWith("\x1b]") || this.buffer.startsWith("\x1bP") || this.buffer.startsWith("\x1b_")) {
+            this.buffer = "";
+            this.pendingKittyPrintableCodepoint = undefined;
+            return [];
+        }
+        // 单独 ESC：合法（用户按了 Escape）
+        const sequences = this.buffer === "\x1b" ? [this.buffer] : [this.buffer];
         this.buffer = "";
         this.pendingKittyPrintableCodepoint = undefined;
         return sequences;
