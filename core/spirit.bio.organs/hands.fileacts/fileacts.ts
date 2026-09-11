@@ -44,7 +44,7 @@ function readMeta(filePath: string): XattrFileMeta | null {
   try {
     const raw = execSync(`xattr -p ${XATTR_KEY} "${filePath}"`, { encoding: "utf8", timeout: 2000, stdio: ["ignore","pipe","ignore"] });
     return JSON.parse(raw.trim());
-  } catch (e) { console.error("[spirit.bio.organs/hands.fileacts/fileacts.ts] " + ((e as any)?.message || e));
+  } catch { /* 2026-09-11（系统检查）：无 com.genshin.meta 属性 = 正常（绝大多数文件无 meta），xattr -p 非零退出不该打日志（原 → 50× spam）；返回 null 由调用方按无元数据处理 */
     return null;
   }
 }
@@ -208,7 +208,9 @@ function fmt(): string {
 }
 
 async function exists(path: string): Promise<boolean> {
-  try { await access(path); return true; } catch (e) { console.error("[spirit.bio.organs/hands.fileacts/fileacts.ts] " + ((e as any)?.message || e)); return false; }
+  // 2026-09-11（系统检查）：存在性谓词——ENOENT 是正常结果（返回 false），不该打日志；
+  // 原实现对每次"文件不存在"都 console.error → dir.README 检测刷屏 431×。非 ENOENT（如 EACCES）仍记录。
+  try { await access(path); return true; } catch (e) { if ((e as any)?.code !== "ENOENT") console.error("[spirit.bio.organs/hands.fileacts/fileacts.ts] " + ((e as any)?.message || e)); return false; }
 }
 
 // 沿着路径往上找到第一个【真实存在】的目录（要落进去的那个环境）。
