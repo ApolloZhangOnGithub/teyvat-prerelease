@@ -111,16 +111,15 @@ export class AssistantMessageComponent extends Container {
                     // Fold/hidden: skip thinking entirely, no spacer needed
                 }
                 else if (globalThis.__genshinThinkingFirstLine) {
-                    // 首行模式：只显示 thinking 第一行
-                    const full = (content.thinking || "").trim();
-                    const firstNL = full.indexOf("\n");
-                    const firstLine = firstNL >= 0 ? full.substring(0, firstNL) + "…" : full;
-                    const md = new Markdown(firstLine, GUTTER, 0, this.markdownTheme, {
-                        color: (text) => theme.fg("thinkingText", text),
-                    });
+                    // 折叠模式：所有换行替换为空格拼成一行，截断到终端宽度——比真首行能多显示内容
+                    const full = (content.thinking || "").trim().replace(/\n+/g, " ").replace(/\s+/g, " ");
                     this.contentContainer.addChild({
-                        render: (w) => markdownBullet(md, theme.fg("thinkingText", "∴"), w),
-                        invalidate: () => { if (md.invalidate) md.invalidate(); },
+                        render: (w) => {
+                            const maxW = Math.max(10, w - GUTTER - 4);
+                            const truncated = full.length > maxW ? full.substring(0, maxW) + "…" : full;
+                            return [theme.fg("thinkingText", "∴") + " " + theme.fg("thinkingText", truncated)];
+                        },
+                        invalidate: () => {},
                     });
                     if (hasVisibleContentAfter) {
                         this.contentContainer.addChild(new Spacer(1));

@@ -2583,22 +2583,20 @@ export class InteractiveMode {
                             const isBlockStreaming = (block.type === "text" && evType === "text_delta")
                                 || (block.type === "thinking" && evType === "thinking_delta");
                             if (!isBlockStreaming) {
-                                // thinking 首行模式：已结束的 thinking block 也截断为第一行
+                                // thinking 折叠模式：换行替换为空格拼成一行
                                 if (block.type === "thinking" && block.thinking && globalThis.__genshinThinkingFirstLine) {
-                                    const firstNL = block.thinking.indexOf("\n");
-                                    if (firstNL >= 0) {
+                                    if (block.thinking.includes("\n")) {
                                         saved.push({ block, full: block.thinking });
-                                        block.thinking = block.thinking.substring(0, firstNL);
+                                        block.thinking = block.thinking.replace(/\n+/g, " ").replace(/\s+/g, " ");
                                     }
                                 }
                                 continue;
                             }
-                            // thinking 首行模式：streaming 中也只保留第一行
+                            // thinking 折叠模式：streaming 中也拼成一行
                             if (block.type === "thinking" && block.thinking && globalThis.__genshinThinkingFirstLine) {
-                                const firstNL = block.thinking.indexOf("\n");
-                                if (firstNL >= 0) {
+                                if (block.thinking.includes("\n")) {
                                     saved.push({ block, full: block.thinking });
-                                    block.thinking = block.thinking.substring(0, firstNL) + "…";
+                                    block.thinking = block.thinking.replace(/\n+/g, " ").replace(/\s+/g, " ");
                                 }
                             }
                             if (block.type === "text" && block.text) {
