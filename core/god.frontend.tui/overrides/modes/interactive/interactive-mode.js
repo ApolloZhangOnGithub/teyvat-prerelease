@@ -454,7 +454,14 @@ export class InteractiveMode {
         globalThis.__genshinFooterTokenmaxxed = this.settingsManager?.globalSettings?.footerTokenmaxxed ?? false;
         // 2026-09-04：footer 模型名左侧具体 provider 显示（/u 的 Footer 供应商开关，默认 true）；2026-09-06 默认隐藏
         globalThis.__genshinFooterProvider = this.settingsManager?.globalSettings?.footerProvider ?? false;
-        // __genshinShowPinDev 开关已废弃：prerelease 直接显示 dev 号（alpha 号对用户无意义）
+        // /u 持久化的行为偏好恢复
+        if (this.settingsManager?.globalSettings?.ctrlCToBg !== undefined) globalThis.__genshinCtrlCToBg = this.settingsManager.globalSettings.ctrlCToBg;
+        if (this.settingsManager?.globalSettings?.codeHighlight !== undefined) globalThis.__genshinCodeHighlight = this.settingsManager.globalSettings.codeHighlight;
+        if (this.settingsManager?.globalSettings?.readExpanded !== undefined) globalThis.__genshinReadExpanded = this.settingsManager.globalSettings.readExpanded;
+        if (this.settingsManager?.globalSettings?.executeBreakAnd !== undefined) globalThis.__genshinExecuteBreakAnd = this.settingsManager.globalSettings.executeBreakAnd;
+        if (this.settingsManager?.globalSettings?.executeDisplay !== undefined) globalThis.__genshinExecuteDisplay = this.settingsManager.globalSettings.executeDisplay;
+        if (this.settingsManager?.globalSettings?.tokenmaxxedColorful !== undefined) globalThis.__genshinTokenmaxxedColorful = this.settingsManager.globalSettings.tokenmaxxedColorful;
+        if (this.settingsManager?.globalSettings?.showPinDev !== undefined) globalThis.__genshinShowPinDev = this.settingsManager.globalSettings.showPinDev;
         // Expose session for /m /e commands
         globalThis.__genshinSetModel = (model) => this.session.setModel(model);
         globalThis.__genshinSetThinkingLevel = (level) => this.session.setThinkingLevel(level);
