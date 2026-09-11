@@ -269,14 +269,29 @@ export function validateExecute(cmd: string, selfId?: string): { blocked: boolea
   if (/\bpython[23]?\s*<</.test(cmd) || /\bpython[23]?\s+-\s*$/.test(cmd)) return { blocked: true, message: i18n(`禁止直接执行 python 内联代码。请在你的工作目录 ${agentWorkDir()}/ 下创建 .py 文件，然后用 python <文件名>.py 运行。`, `Inline python code is forbidden. Create a .py file in your workdir ${agentWorkDir()}/ then run it with python <filename>.py.`) };
   if (/(kill|pkill|killall)\s.*genshin/i.test(cmd)) return { blocked: true, message: i18n("禁止杀掉 genshin 进程。用 genshin -k <序号> 或 /stop 正常终止。", "Killing the genshin process is forbidden. Use genshin -k <index> or /stop to terminate normally.") };
   // 禁止访问其他人数据目录；自己 ID 的 MemoryData/AgentFileData/ExecuteData 等放行
-  if (/(?:~\/\.local\/lib\/genshin\/|~\/\.teyvat\/|\$HOME\/\.teyvat\/)(?:extensions|extensions-stable|MemoryData|SessionData|RuntimeCache|BlackboxData|IdentityData|AgentFileData|AppData|ExecuteData|LogData|config|UserAccount)/i.test(cmd)) {
-    if (selfId && new RegExp(String.raw`(?:MemoryData|AgentFileData|SessionData|RuntimeCache|BlackboxData|IdentityData|AppData|ExecuteData|LogData)/${selfId}`).test(cmd)) {
-      return { blocked: false };
-    }
-    // 放行 AppData/shared（跨 agent 共享数据）
-    if (/AppData\/shared\//i.test(cmd)) {
-      return { blocked: false };
-    }
+  //
+  // 2026-09-11（prime-agent）修三个实测绕过（对非 root agent，用真实 validateExecute 跑出来的）：
+  //   绕过A 绝对路径：守卫只认 `~/` 与 `$HOME/` 写法，`/Users/<user>/.teyvat/...` 直接放行 →
+  //          现在先把字面 home 路径归一化成 `~` 再匹配。
+  //   绕过B 自己+他人混在同一条命令：只要出现自己的数据目录就整条放行（`cat <self>/x; cat <other>/ctx` 混过）→
+  //          现在先抽出命令里**所有** agent id，只有"没有任何外来 id"时才走自 id 放行。
+  //   绕过C 夹带 AppData/shared：只要出现 shared 就整条放行（`ls AppData/shared; cat <other>/ctx` 混过）→
+  //          同上，外来 id 优先判定为拦截。
+  {
+    const _home = homedir();
+    const norm = _home ? cmd.split(_home).join("~") : cmd;   // 绝对路径 → ~，与既有写法统一
+    const PRIVATE_RE = /(?:~\/\.local\/lib\/genshin\/|~\/\.teyvat\/|\$HOME\/\.teyvat\/)(?:extensions|extensions-stable|MemoryData|SessionData|RuntimeCache|BlackboxData|IdentityData|AgentFileData|AppData|ExecuteData|LogData|config|UserAccount)/i;
+    if (PRIVATE_RE.test(norm)) {
+      const ids = new Set(
+        [...norm.matchAll(/(?:MemoryData|AgentFileData|SessionData|RuntimeCache|BlackboxData|IdentityData|AppData|ExecuteData|LogData)\/([0-9a-f]{8})\b/gi)]
+          .map((m) => m[1].toLowerCase())
+      );
+      const me = (selfId || "").toLowerCase();
+      const foreign = [...ids].filter((id) => id !== me);
+      if (foreign.length === 0) {
+        if (me && ids.has(me)) return { blocked: false };              // 只碰自己的目录
+        if (/AppData\/shared\//i.test(norm)) return { blocked: false }; // 共享区（且没碰别人私有目录）
+      }
     // 如果 authorize.json 中当前 agent 有 root: true，全部放行
     try {
       const auth = JSON.parse(readFileSync(join(homedir(), ".teyvat/config/authorize.json"), "utf8"));
@@ -285,7 +300,8 @@ export function validateExecute(cmd: string, selfId?: string): { blocked: boolea
       }
     } catch (e) { console.error("[spirit.bio.organs/hands.fileacts/fileacts.ts] " + ((e as any)?.message || e)); }
     return { blocked: true, message: i18n("禁止 Execute 操作他人数据目录。要读源码请用 Read 指定 DEV 路径。", "Execute on other agents' data dirs is forbidden. To read source, use Read with the DEV path.") };
-  }
+    }   // ← if (PRIVATE_RE.test(norm))
+  }     // ← 归一化块（_home / norm / PRIVATE_RE 作用域）
   if (/^\s*mv\s/i.test(cmd)) {
     const parsed = parseMv(cmd);
     if (!parsed) return { blocked: true, message: i18n("mv 格式不对。用法: mv <旧名> <新名>", "mv format invalid. Usage: mv <old-name> <new-name>") };

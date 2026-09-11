@@ -2428,7 +2428,8 @@ export class InteractiveMode {
                 // 完全停止，再发新 prompt（不用 steer，因为 abort 后 isStreaming=false）。
                 // 旧代码不 await abort 导致 abort/prompt 竞态：abort 信号已发但 loop 未停，
                 // prompt 走 steer 路径，steer 被 abort 吞掉或 agent_end 后心跳不续命。
-                await this.session.abort();
+                // await abort 但限时 200ms——wait/resting 态下没有活跃 API 请求，不需要等很久
+                await Promise.race([this.session.abort(), new Promise(r => setTimeout(r, 200))]);
                 await this.session.prompt(text);
             }
             this.editor.addToHistory?.(text);
