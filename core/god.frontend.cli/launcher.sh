@@ -727,7 +727,8 @@ if [ "$MODE" = "tmux" ]; then
 fi
 
 if [ -z "$NAME" ] && [ -z "$MODE" ]; then
-  # 空态文案 + 排序落盘都已收进 list.cjs，这里只跑一次 node（2026-08-14 提速）
+  # 2026-09-11：软 clear（清屏保留 scrollback）+ 列表
+  printf '\033[2J\033[H'
   node "$PAIMON_LIST_JS" "$PLIST" "$MEMORY_DIR" "$PAIMON_LANG" list
   exit 0
 fi
