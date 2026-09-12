@@ -120,28 +120,8 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
     return new T(arrow + " " + body, 0, 0);
   };
 
-  pi.registerMessageRenderer("memory-capacity", (message: any, _opts: any, theme: any) => {
-    let cur = "";
-    try {
-      // 2026-09-12（ISSUE 203，房东定调“以 API 报的为准”）：
-      // 主值改用 API 真实值 —— __genshinContextGauge（memory.ts:155 写，input+cacheRead，唯一写者）；
-      // est(context.md) 降级为“是否正在截断”预警（>70% = buildSnapshot 已在丢最旧记忆）。
-      const gauge = (globalThis as any).__genshinContextGauge || "";
-      const apiPct = parseFloat((gauge.match(/(\d+(?:\.\d+)?)%/) || [])[1] || "0");
-      const ctxPath = join(global.__genshinPersonDir || "", "context.md");
-      const t = readFileSync(ctxPath, "utf8");
-      let cjk = 0;
-      for (let i = 0; i < t.length; i++) { const c = t.charCodeAt(i); if ((c >= 0x3400 && c <= 0x9fff) || (c >= 0xf900 && c <= 0xfaff) || (c >= 0x3000 && c <= 0x30ff) || (c >= 0xff00 && c <= 0xffef)) cjk++; }
-      const estTok = Math.round(cjk * 1.8 + (t.length - cjk) * 0.25);
-      const modelMax = ((globalThis as any).__genshinGetModel?.()?.contextWindow) || 1000000;
-      const estPct = modelMax > 0 ? (estTok / modelMax) * 100 : 0;
-      const main = apiPct > 0
-        ? `${(gauge.trim() || `ctx ${apiPct}%`)}${estPct > 70 ? ` · 记忆体量 ${estPct.toFixed(0)}%（正在截断旧记忆）` : ""}`
-        : `ctx ~${estPct.toFixed(1)}% (est)`;
-      cur = estPct > 70 ? i18n(`${main} — 建议 amem`, `${main} — consider amem`) : main;
-    } catch (e) { console.error("[god.frontend.tui/renderers.ts] " + ((e as any)?.message || e)); cur = (message.content ?? "").toString(); }
-    return _sysMsg(theme, cur, parseFloat((cur.match(/记忆体量\s*(\d+(?:\.\d+)?)%/) || [])[1] || "0") > 70 ? "warning" : undefined);
-  });
+  // memory-capacity: not rendered (user feedback: "garbage"). ctx % shown in bioclock timestamps + footer.
+  pi.registerMessageRenderer("memory-capacity", () => { const { Container: C } = require("@earendil-works/pi-tui"); return new C(); });
   pi.registerMessageRenderer("memory-reminder", (message: any, _opts: any, theme: any) => {
     return _sysMsg(theme, (message.content ?? "").toString());
   });
