@@ -277,8 +277,17 @@ function bulletText(dotStr, text, cont) {
 // 不手动折行——由 Text/hangWrapText 识别 `\d+\s*│` 前缀自动对齐续行（blocks_nongod bulletText 正则）
 // 复用 globalThis.__genshinHighlightCode（interactive-mode.js 挂载）。execute 输出、social 消息、cmd-done 复用。
 export function lineNumbered(text, theme, lang, startLine) {
-  const rawText = String(text ?? "");
+  let rawText = String(text ?? "");
   if (!rawText) return "";
+  // 清掉 \r（进度条回车覆写）——\r 让终端光标回行首，把行号覆盖掉
+  // 含 \r 的行只保留最后一段（\r 后的内容覆盖 \r 前的，模拟终端行为）
+  rawText = rawText.split("\n").map(line => {
+    if (line.includes("\r")) {
+      const parts = line.split("\r");
+      return parts[parts.length - 1];
+    }
+    return line;
+  }).join("\n");
   const lines = rawText.split("\n");
   const start = startLine || 1;
   const maxLineNo = start + lines.length - 1;
