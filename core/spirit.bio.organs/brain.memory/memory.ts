@@ -165,8 +165,8 @@ export default function registerMemory(pi: ExtensionAPI) {
   // amem 后 gauge 暂时过期（到下一个 model response 才更新），但不再用另一个口径覆盖——
   // 之前用 memTokens 估算覆盖导致 gauge 在两个口径之间来回跳（30% vs 65%）。
   function _refreshGaugeAfterContextChange(_newCtx: string): void {
-    // amem 改了 context.md → 通知 heart 重建 system prompt（让新快照进前缀，context % 立刻降）
-    (globalThis as any).__genshinSnapshotDirty = true;
+    // amem 改了 context.md → before_agent_start 会检测缩水并替换对话中的旧快照消息
+    // （不需要 snapshotDirty flag——快照在对话消息里不在 system prompt 里）
   }
 
   // ── session_start: 注入"记忆快照"一次（稳定前缀 = 缓存命中的关键）────────────
@@ -698,14 +698,27 @@ export default function registerMemory(pi: ExtensionAPI) {
     let frozenMeta = { ctxLen: 0, wmLen: 0 };
     try { frozenMeta = { ...frozenMeta, ...JSON.parse(readFile(frozenMetaPath) || "{}") }; } catch { /* frozenMeta 竞态截断：默认值静默（须留注释，空 catch 触 LESSON 024 门禁）*/ }
     if (context.length < frozenMeta.ctxLen - 5000) {
-      // context 显著缩水（sleep/nap done掉了大量生肉）→ 重建快照 + 重置 work_memory 注入游标
+      // context 显著缩水（amem/sleep done掉内容）→ 重建快照 + 替换对话中的旧快照消息
       const freshFrozen = buildSnapshot();
       writeFile(_rcDir + "/snapshot.frozen.txt", freshFrozen);
       writeFile(frozenMetaPath, JSON.stringify({ ctxLen: context.length, wmLen: workMem.length }));
       injectedWorkMemLen = workMem.length;
-      sendCustomMessage(pi, "memory-snapshot", freshFrozen);
-      // 通知 heart 重建 system prompt（amem 后快照变了，heart 的冻结前缀需要更新）
-      (globalThis as any).__genshinSnapshotDirty = true;
+      // 替换对话历史中的旧 memory-snapshot 消息（不是追加——追加会导致旧+新共存，prompt 变大）
+      let replaced = false;
+      try {
+        const msgs = (pi as any).agent?.state?.messages;
+        if (Array.isArray(msgs)) {
+          for (const m of msgs) {
+            if (m.customType === "memory-snapshot" && typeof m.content === "string") {
+              m.content = freshFrozen;
+              replaced = true;
+              break;
+            }
+          }
+        }
+      } catch (e) { console.error("[memory.ts] replace snapshot: " + ((e as any)?.message || e)); }
+      // 替换成功就不再 sendCustomMessage（避免追加第二份）；替换失败才追加（fallback）
+      if (!replaced) sendCustomMessage(pi, "memory-snapshot", freshFrozen);
     }
 
     // [DISABLED 2026-08-15] cortex 自动沉降已禁用，由 amem 工具替代主动记忆管理。
