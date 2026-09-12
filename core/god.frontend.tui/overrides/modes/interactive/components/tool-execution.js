@@ -468,9 +468,9 @@ export class ToolExecutionComponent extends Container {
         this.ui.requestRender();
     }
     markExecutionStarted() {
-        if (!this.executionStarted) {
-            this._execStartTime = Date.now();
-        }
+        // 总是重置计时——从实际执行开始算，不算模型流式输出参数的时间
+        // （edit/write 模型花 10s 流式输出 old_string/new_string，实际执行瞬间完成，用户不想看 11s）
+        this._execStartTime = Date.now();
         this.executionStarted = true;
         this.updateDisplay();
         this.ui.requestRender();
