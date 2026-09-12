@@ -2985,9 +2985,15 @@ export class InteractiveMode {
                         try { return { path: fp, mtime: fs.statSync(fp).mtimeMs, size: fs.statSync(fp).size }; } catch { return null; }
                     }).filter(Boolean);
                     files.sort((a, b) => b.mtime - a.mtime);
-                    // 跳过只有几行的垃圾 session（如只有 /login 的短 session），找有实质内容的
+                    // 按行数判断 session 是否有实质内容（大文件可能只有几行巨型 entry，没有对话历史）
                     for (const f of files) {
-                        if (f.size < 2000) continue; // 小于 2KB 的 session 跳过
+                        if (f.size < 2000) continue;
+                        // 快速计行数（不解析 JSON，只数换行符）
+                        try {
+                            const buf = fs.readFileSync(f.path, "utf8");
+                            const lineCount = buf.split("\n").filter(Boolean).length;
+                            if (lineCount < 15) { _rlog("SKIP " + path.basename(f.path) + ": only " + lineCount + " lines"); continue; }
+                        } catch { continue; }
                         sessionFile = f.path;
                         break;
                     }
