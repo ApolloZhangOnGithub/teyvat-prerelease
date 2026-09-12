@@ -502,13 +502,15 @@ export class ToolExecutionComponent extends Container {
      *    Read 正常文件内容里出现这些词就把点染红——猜测只保留给 isError 不可靠的 Paimon 工具，
      *    且用行首锚定的精确模式。 */
     isDotError() {
+        // wait 永远不红（用户定稿）——等待/被打断都是正常行为
+        if (this.toolName === "wait") return false;
         try {
             const t = (this.result?.content || []).filter((c) => c.type === "text").map((c) => c.text).join("");
             return isToolError(this.toolName, t, { isError: this.result?.isError, toolCallId: this.toolCallId });
         } catch { /* 无文本内容 */ }
-        if ((this.toolName === "wait" || this.toolName === "hibernate") && this.toolCallId && globalThis.__genshinWaitInterruptedId === this.toolCallId) {
-            const reason = globalThis.__genshinWaitInterruptedReason;
+        if (this.toolName === "hibernate" && this.toolCallId && globalThis.__genshinWaitInterruptedId === this.toolCallId) {
             if (globalThis.__genshinWaitInterruptedForUser === true) return false;
+            const reason = globalThis.__genshinWaitInterruptedReason;
             if (reason === "system" || reason === "user") return false;
             return true;
         }
