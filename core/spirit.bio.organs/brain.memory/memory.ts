@@ -161,18 +161,11 @@ export default function registerMemory(pi: ExtensionAPI) {
     }
   });
 
-  // amem 修改 context.md 后刷新 gauge（否则 gauge 到下一个 message_end 才更新，中间显示过期值）
-  function _refreshGaugeAfterContextChange(newCtx: string): void {
-    if (_pondSess.prevPrompt === null) return;
-    _refreshModelMax();
-    const ctxTokens = estimateTokens(newCtx);
-    const dna = readFile(path.join(personDir!, "dna/index.md"));
-    const dlc = readFile(path.join(personDir!, `dna/${dnaState}.dlc`));
-    const cortex = readFile(path.join(personDir!, "neocortex.md"));
-    const workMem = readFile(path.join(personDir!, "work_memory.md"));
-    const memTokens = estimateTokens(dna) + estimateTokens(dlc) + ctxTokens + estimateTokens(workMem) + estimateTokens(cortex);
-    const pct = Math.round((memTokens / modelMax) * 100);
-    (globalThis as any).__genshinContextGauge = `ctx ${pct}%`;
+  // 2026-09-12：gauge 唯一写入者是 message_end（L158，API prompt 真值）。
+  // amem 后 gauge 暂时过期（到下一个 model response 才更新），但不再用另一个口径覆盖——
+  // 之前用 memTokens 估算覆盖导致 gauge 在两个口径之间来回跳（30% vs 65%）。
+  function _refreshGaugeAfterContextChange(_newCtx: string): void {
+    // no-op: 不再写 gauge，避免口径打架
   }
 
   // ── session_start: 注入"记忆快照"一次（稳定前缀 = 缓存命中的关键）────────────
@@ -668,13 +661,8 @@ export default function registerMemory(pi: ExtensionAPI) {
     const rawPct = Math.round(usageRatio * 100);
     monitorAppend("growth.jsonl",
       JSON.stringify({ ts: new Date().toISOString(), bytes: context.length, tokens: memTokens, ratio: +(usageRatio * 100).toFixed(1) }) + "\n");
-    // 2026-09-12（ISSUE 203）：gauge 唯一真相源是 message_end 的 API 口径（input+cacheRead）。
-    // 但 amem 后 gauge 过期（message_end 在下一轮模型回复后才更新），这里用上一轮的实际 prompt
-    // 刷新一次——同一 API 口径，不会跳变，只是让 gauge 在 before_agent_start 时保持最新。
-    if (_pondSess.prevPrompt !== null) {
-      _refreshModelMax();
-      (globalThis as any).__genshinContextGauge = `ctx ${Math.round((_pondSess.prevPrompt / modelMax) * 100)}%`;
-    }
+    // 2026-09-12：gauge 唯一写入者是 message_end（API prompt 真值）。
+    // before_agent_start 和 _refreshGaugeAfterContextChange 都不写——避免多写入者口径打架导致跳变。
     // 容量提醒——只在达到 URGE(80%) 真危险时发（用户反馈：这条是垃圾，
     // 1) 清理后屏幕上还留着清理前的旧快照（过期数据） 2) 每次 amem 后用户说话就冒出来。
     // 修：阈值提到 80%；带时间戳（明确是快照不是当前值）；feed:false 不喂模型（模型自主管理）。
