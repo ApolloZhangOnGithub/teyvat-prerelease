@@ -112,12 +112,12 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
   // 2026-08-15 用户要求：标题 "Memory" → "Memory Alert"，菱形+标题黄色（原绿色 success 色像成功状态）。
   // ── teyvat system message 渲染管线（2026-09-11）──
   // 轻量单行：dim 三角 + dim 内容，col 2 缩进。不要大菱形/粗体标题/多行。
+  // 系统消息：arrow 在 col 0（和 dot ⏺ 对齐），内容从 col GUTTER(2) 开始
   const _sysMsg = (theme: any, text: string, color?: string) => {
     const { Text: T } = require("@earendil-works/pi-tui");
-    const indent = " ".repeat(GUTTER);
     const arrow = color ? theme.fg(color, SYM.arrow) : theme.fg("dim", SYM.arrow);
     const body = color ? theme.fg(color, text) : theme.fg("dim", text);
-    return new T(indent + arrow + " " + body, 0, 0);
+    return new T(arrow + " " + body, 0, 0);
   };
 
   pi.registerMessageRenderer("memory-capacity", (message: any, _opts: any, theme: any) => {
