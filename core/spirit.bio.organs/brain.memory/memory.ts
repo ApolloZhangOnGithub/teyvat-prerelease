@@ -165,7 +165,8 @@ export default function registerMemory(pi: ExtensionAPI) {
   // amem 后 gauge 暂时过期（到下一个 model response 才更新），但不再用另一个口径覆盖——
   // 之前用 memTokens 估算覆盖导致 gauge 在两个口径之间来回跳（30% vs 65%）。
   function _refreshGaugeAfterContextChange(_newCtx: string): void {
-    // no-op: 不再写 gauge，避免口径打架
+    // amem 改了 context.md → 通知 heart 重建 system prompt（让新快照进前缀，context % 立刻降）
+    (globalThis as any).__genshinSnapshotDirty = true;
   }
 
   // ── session_start: 注入"记忆快照"一次（稳定前缀 = 缓存命中的关键）────────────
