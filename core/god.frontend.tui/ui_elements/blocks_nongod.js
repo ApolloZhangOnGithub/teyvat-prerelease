@@ -16,27 +16,35 @@
 
 export const GUTTER = 2; // 内容列：bullet "• " 占 2 列，内容从第 2 列起
 
+// WSL 检测：Windows Terminal 字体缺 Unicode 符号→乱码，用 ASCII 回退
+const _isWSL = process.platform === "linux" && !!(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP);
+globalThis.__genshinSYM = _isWSL
+  ? { dot: "*", diamond: "+", diamondOpen: "o", result: "|", star: "*", snow: "*", prompt: ">", arrow: ">" }
+  : { dot: "⏺", diamond: "◆", diamondOpen: "◇", result: "⎿", star: "✤", snow: "❄", prompt: "❯", arrow: "▸" };
+export const SYM = _isWSL
+  ? { dot: "*", diamond: "+", diamondOpen: "o", result: "|", star: "*", snow: "*", prompt: ">", arrow: ">" }
+  : { dot: "⏺", diamond: "◆", diamondOpen: "◇", result: "⎿", star: "✤", snow: "❄", prompt: "❯", arrow: "▸" };
+
 // 状态点（工具用）：进行=◦(accent) / 错=•(error) / 成功=•(success)。统一在这里，别各处各写。
 // 2026-08-14 用户定稿：进行中/等待中（partial）本身是空心黄 ◦，为美观统一用实心黄 •。
 // 空心语义保留在此注释：未完成=空心，完成/出错=实心。
 export function dot(theme, opts) {
   const o = opts || {};
   if (o.partial) {
-    // wait/hibernate 用灰色（闪烁实现困难——line render 优化跳过未变行导致闪烁不可见，暂用稳定灰替代）
-    if (o.blink) return theme.fg("dim", "⏺");
-    return theme.fg("warning", "⏺");
+    if (o.blink) return theme.fg("dim", SYM.dot);
+    return theme.fg("warning", SYM.dot);
   }
-  if (o.error) return theme.fg("error", "⏺");
-  return theme.fg("success", "⏺");
+  if (o.error) return theme.fg("error", SYM.dot);
+  return theme.fg("success", SYM.dot);
 }
 
 // 菱形标记（收到的消息用：Result 推送 / Social Message / 通知类）。与 dot 同语义：进行=◇ / 错=◆ / 成功=◆。
 // 视觉区分：主动调用的工具行用圆点 dot，被动收到的消息用菱形 diamond。
 export function diamond(theme, opts) {
   const o = opts || {};
-  if (o.partial) return theme.fg("accent", "◇");
-  if (o.error) return theme.fg("error", "◆"); // ◆
-  return theme.fg("success", "◆"); // ◆
+  if (o.partial) return theme.fg("accent", SYM.diamondOpen);
+  if (o.error) return theme.fg("error", SYM.diamond);
+  return theme.fg("success", SYM.diamond);
 }
 
 // ── 统一错误判定（红点 + 红色内容共用一条管线）───────────────────────
@@ -360,7 +368,7 @@ export const renderMessage = {
     if (!text) return C();
     const err = isToolError(ctx?.toolName, text, ctx);
     const indent = " ".repeat(GUTTER);
-    const prefix = indent + (err ? theme.fg("error", "⎿  ") : theme.fg("dim", "⎿  "));
+    const prefix = indent + (err ? theme.fg("error", SYM.result + "  ") : theme.fg("dim", SYM.result + "  "));
     return bulletText(prefix, err ? theme.fg("error", text) : theme.fg("toolOutput", text));
   },
 
@@ -372,7 +380,7 @@ export const renderMessage = {
     if (!str) return C();
     const err = isToolError(ctx?.toolName, String(text), ctx);
     const indent = " ".repeat(GUTTER);
-    const prefix = indent + (err ? theme.fg("error", "⎿  ") : theme.fg("dim", "⎿  "));
+    const prefix = indent + (err ? theme.fg("error", SYM.result + "  ") : theme.fg("dim", SYM.result + "  "));
     const hasAnsi = /\x1b\[/.test(str);
     return bulletText(prefix, hasAnsi ? str : (err ? theme.fg("error", str) : theme.fg("dim", str)));
   },

@@ -9,7 +9,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { GUTTER, renderMessage, lineNumbered } from "#tui_blockrender";
+import { GUTTER, renderMessage, lineNumbered, SYM } from "#tui_blockrender";
 import { i18n } from "#tui_localizations";
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -86,7 +86,7 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
         // 样式：空格分隔 + dim 小字（工具调用行风格，无冒号无点），非英文
         const selfRebootFlag = (globalThis as any).__genshinSelfRebooted === true;
         const restartSubtitle = selfRebootFlag ? "自己重启" : "用户重启";
-        return renderMessage.notice(theme, "Life Restarted", clean, "lifeRestart", restartSubtitle, "✤"); // 2026-08-18 用户定稿：事件 ✤ / 消息 ➤ / Result ●
+        return renderMessage.notice(theme, "Life Restarted", clean, "lifeRestart", restartSubtitle, SYM.star); // 2026-08-18 用户定稿：事件 ✤ / 消息 ➤ / Result ●
       default: {
         // 兼容旧格式（无 resumeType 时尝试从内容推断）
         const waitMatch = clean.match(/\[wait\s+(\d+)s/);
@@ -115,7 +115,7 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
   const _sysMsg = (theme: any, text: string, color?: string) => {
     const { Text: T } = require("@earendil-works/pi-tui");
     const indent = " ".repeat(GUTTER);
-    const arrow = color ? theme.fg(color, "▸") : theme.fg("dim", "▸");
+    const arrow = color ? theme.fg(color, SYM.arrow) : theme.fg("dim", SYM.arrow);
     const body = color ? theme.fg(color, text) : theme.fg("dim", text);
     return new T(indent + arrow + " " + body, 0, 0);
   };
@@ -147,11 +147,11 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
   });
   // 2026-08-20 /h 转后台通知：Life Restarted 同管线（notice 青绿 ✤）——agent 知道自己被转 headless
   pi.registerMessageRenderer("display-hidden", (message: any, _opts: any, theme: any) => {
-    return renderMessage.notice(theme, "Hidden", (message.content ?? "").toString(), "lifeRestart", undefined, "✤");
+    return renderMessage.notice(theme, "Hidden", (message.content ?? "").toString(), "lifeRestart", undefined, SYM.star);
   });
   // 2026-08-20 attach 回前台通知：用户已以前台模式进入（display-shown，青绿同款 ✤）
   pi.registerMessageRenderer("display-shown", (message: any, _opts: any, theme: any) => {
-    return renderMessage.notice(theme, "Shown", (message.content ?? "").toString(), "lifeRestart", undefined, "✤");
+    return renderMessage.notice(theme, "Shown", (message.content ?? "").toString(), "lifeRestart", undefined, SYM.star);
   });
   pi.registerMessageRenderer("system-error", (message: any, _opts: any, theme: any) => {
     return _sysMsg(theme, (message.content ?? "").toString(), "error");
