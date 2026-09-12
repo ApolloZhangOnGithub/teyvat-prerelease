@@ -124,7 +124,10 @@ export class StatusBar {
       this._sparkleFrame = (this._sparkleFrame + 1) % SPARKLE_FRAMES.length;
       globalThis.__genshinSparkleFrame = this._sparkleFrame;
       this._tickFn?.();
-      this._requestRender?.();
+      // 只 invalidate footer 区域，不触发全屏 requestRender（LESSON 061：动画不降帧，优化走局部重绘）。
+      // 全屏 requestRender 每 120ms 遍历所有组件（200+ 历史消息）= CPU 爆炸（82% vs Claude 3%）。
+      // footer 的 invalidate 会在下一个真正的 render cycle（text_delta/用户输入触发的）中一并重绘。
+      this._footer?.invalidate?.();
     }, SPARKLE_INTERVAL);
   }
 
