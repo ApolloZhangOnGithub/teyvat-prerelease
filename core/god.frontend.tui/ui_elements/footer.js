@@ -229,7 +229,7 @@ export class FooterComponent {
             const est = (t) => { let cjk=0; for(let i=0;i<t.length;i++){const c=t.charCodeAt(i);if((c>=0x3400&&c<=0x9fff)||(c>=0xf900&&c<=0xfaff)||(c>=0x3000&&c<=0x30ff)||(c>=0xff00&&c<=0xffef))cjk++} return Math.round(cjk*1.8+(t.length-cjk)*0.25); };
             diskTokens = { ctx: est(ctxTxt), work: est(wmTxt), cx: est(cxTxt) };
         } catch(e) { try { require("fs").appendFileSync((process.env.HOME||"")+"/.teyvat/LogData/genshin-catch-errors.log", "[??] " + (e?.stack||e) + "\n"); } catch (e) { console.error("[god.frontend.tui/ui_elements/footer.js] " + (e?.message || e)); } }
-        const contextWindow = state.model?.contextWindow ?? 200000;
+        const contextWindow = state.model?.contextWindow ?? 1000000;
         // 2026-09-12（ISSUE 203，房东定调“以 API 报的为准”）：窗口实占改用 API 真实 prompt（input+cacheRead+cacheWrite）。
         // 原 est(context.md+work+cx) 是“记忆文件全量体量”（非窗口实占，且 CJK×1.8 系数偏高 ~1.3×，>70% 时实注入还只tai tail）——
         // 现在：有 API 值就用真实值；无（首轮/无 assistant 消息）才回退 est。diskTokens 保留（ctxPct 等仍用）。
