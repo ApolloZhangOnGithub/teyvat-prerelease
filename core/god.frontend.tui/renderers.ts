@@ -262,8 +262,10 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
     // → Task title done in X.Xs at HH:MM:SS（exit 0 不显示）
     const exitPart = exitCode !== undefined && exitCode !== 0 ? `, exit ${theme.bold(String(exitCode))}` : "";
     const titlePart = title ? `${title} ` : "";
-    // merged/非merged 都用 ⎿ 折线缩进（统一结果行风格）
-    const prefix = indent + (isError ? theme.fg("error", SYM.result + "  ") : theme.fg("dim", SYM.result + "  "));
+    // merged = 紧挨 Created 调用行 → ⎿ 折线；非 merged（async background 完成）→ dot 独立行
+    const prefix = merged
+      ? indent + (isError ? theme.fg("error", SYM.result + "  ") : theme.fg("dim", SYM.result + "  "))
+      : (isError ? theme.fg("error", SYM.dot) : theme.fg("success", SYM.dot)) + " ";
     const line1 = prefix + `${titlePart}Done in ${theme.bold(elapsedFmt)}${exitPart}${remPart}` + theme.fg("dim", ` at ${timeFmt}`);
     c.addChild(new Text(line1, 0, 0));
     // [PRESERVED] 旧版两行渲染（→ Result 头 + Executed 详情行）：

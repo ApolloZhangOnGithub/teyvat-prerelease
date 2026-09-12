@@ -2965,7 +2965,8 @@ export class InteractiveMode {
     _replayPreviousSession() {
         try {
             const pid = globalThis.__genshinPersonId || process.env.PAIMON_AGENT_ID || "";
-            if (!pid) return;
+            const _rlog = (msg) => { try { fs.appendFileSync(os.homedir() + "/.teyvat/LogData/replay-debug.log", `[${new Date().toISOString()}] ${pid || "nopid"}: ${msg}\n`); } catch { /* 静默 */ } };
+            if (!pid) { _rlog("SKIP: no pid"); return; }
             const rcDir = path.join(os.homedir(), ".teyvat/RuntimeCache", pid);
             const marker = path.join(rcDir, "restart-session.json");
             let sessionFile = "";
@@ -2992,7 +2993,8 @@ export class InteractiveMode {
                     }
                 }
             }
-            if (!sessionFile || !fs.existsSync(sessionFile)) return;
+            if (!sessionFile || !fs.existsSync(sessionFile)) { _rlog("SKIP: no sessionFile found"); return; }
+            _rlog(`REPLAY: ${path.basename(sessionFile)} (${fs.statSync(sessionFile).size} bytes)`);
             const PREV_LIMIT = 50; // 只重放最近 50 条渲染类 entry（参考 prime-agent limitTranscript，防大 session 卡顿）
             const lines = fs.readFileSync(sessionFile, "utf8").split("\n").filter(Boolean);
             const renderable = [];
@@ -3003,7 +3005,8 @@ export class InteractiveMode {
                 renderable.push(entry);
             }
             const tail = renderable.slice(Math.max(0, renderable.length - PREV_LIMIT));
-            if (tail.length === 0) return;
+            _rlog(`renderable=${renderable.length} tail=${tail.length} types=[${[...new Set(tail.map(e => e.type))].join(",")}]`);
+            if (tail.length === 0) { _rlog("SKIP: 0 renderable"); return; }
             // 2026-09-04 渲染修复：走 renderSessionEntries 完整管线（toolCall 调用行/Result 行/custom 消息
             // 全部正确渲染）。原 addMessageToChat 路径丢 toolCall 块——AssistantMessageComponent 只渲染
             // text/thinking，toolCall 由 renderSessionItems 单独建 ToolExecutionComponent、toolResult 匹配 updateResult。
