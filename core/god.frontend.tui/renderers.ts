@@ -262,10 +262,10 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
     // → Task title done in X.Xs at HH:MM:SS（exit 0 不显示）
     const exitPart = exitCode !== undefined && exitCode !== 0 ? `, exit ${theme.bold(String(exitCode))}` : "";
     const titlePart = title ? `${title} ` : "";
-    // merged = 紧挨 Created 调用行 → ⎿ 折线；非 merged（async background 完成）→ dot 独立行
+    // merged = 紧挨 Created 调用行 → ⎿ 折线；非 merged（async background 完成）→ ▸ 箭头独立行
     const prefix = merged
       ? indent + (isError ? theme.fg("error", SYM.result + "  ") : theme.fg("dim", SYM.result + "  "))
-      : (isError ? theme.fg("error", SYM.dot) : theme.fg("success", SYM.dot)) + " ";
+      : (isError ? theme.fg("error", SYM.arrow) : theme.fg("success", SYM.arrow)) + " ";
     const line1 = prefix + `${titlePart}Done in ${theme.bold(elapsedFmt)}${exitPart}${remPart}` + theme.fg("dim", ` at ${timeFmt}`);
     c.addChild(new Text(line1, 0, 0));
     // [PRESERVED] 旧版两行渲染（→ Result 头 + Executed 详情行）：
@@ -278,22 +278,24 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
     if (output) {
       const compact = (globalThis as any).__genshinCompactExecute;
       let display = output;
+      // 非合并时输出用 ⎿ 折线连接（和 tool result 一致）
+      const resultPrefix = indent + theme.fg("dim", SYM.result + "  ");
       if (compact) {
-        display = output.split("\n")[0].slice(0, 200) + (output.length > 200 ? "…" : "");
+        const line = output.split("\n")[0].slice(0, 200) + (output.length > 200 ? "…" : "");
+        c.addChild(new Text(resultPrefix + theme.fg("toolOutput", line), 0, 0));
+        display = "";
       } else {
         const outLines = output.split("\n");
         if (outLines.length > 6) {
           const tailN = 5;
           const skipped = outLines.length - tailN;
           const startLine = skipped + 1;
-          display = theme.fg("dim", `...(${skipped} lines more)`) + "\n" + outLines.slice(-tailN).join("\n");
           const contIndent = " ".repeat(GUTTER + 3);
-          // 折叠提示行不带行号，尾部行从实际行号开始
+          c.addChild(new Text(contIndent + theme.fg("dim", `...(${skipped} lines more)`), 0, 0));
           const tailDisplay = outLines.slice(-tailN).join("\n");
           const rendered = lineNumbered(tailDisplay, theme, undefined, startLine);
-          c.addChild(new Text(contIndent + theme.fg("dim", `...(${skipped} lines more)`), 0, 0));
           for (const line of rendered.split("\n")) c.addChild(new Text(contIndent + line, 0, 0));
-          display = ""; // 已处理，跳过下面的默认渲染
+          display = "";
         }
       }
       if (display) {
