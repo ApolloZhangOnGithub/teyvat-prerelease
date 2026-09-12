@@ -2976,7 +2976,8 @@ export class InteractiveMode {
             }
             // fallback: 无 marker 时自动找 SESSION_DIR 最近的有实质内容的 session 文件
             if (!sessionFile || !fs.existsSync(sessionFile)) {
-                const sessDir = process.env.PI_CODING_AGENT_SESSION_DIR || path.join(os.homedir(), ".teyvat/SessionData", pid);
+                // 不用 PI_CODING_AGENT_SESSION_DIR（指向全局 sessions/，不是 per-agent 目录）
+                const sessDir = path.join(os.homedir(), ".teyvat/SessionData", pid);
                 if (fs.existsSync(sessDir)) {
                     const curSessionFile = this.sessionManager?.getSessionFile?.() || "";
                     const files = fs.readdirSync(sessDir).filter(f => f.endsWith(".jsonl")).map(f => {
