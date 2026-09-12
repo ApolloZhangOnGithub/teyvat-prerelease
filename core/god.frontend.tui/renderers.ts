@@ -93,7 +93,7 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
         if (waitMatch) {
           const indent = " ".repeat(GUTTER);
           const { Text } = require("@earendil-works/pi-tui");
-          return new Text(indent + "⎿  " + theme.fg("success", `${waitMatch[1]}s`), 0, 0);
+          return new Text(indent + SYM.result + "  " + theme.fg("success", `${waitMatch[1]}s`), 0, 0);
         }
         return renderMessage.notice(theme, "Resumed From History Sessions", clean);
       }
@@ -201,7 +201,7 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
       elapsed = parseInt(hwMatch[2]);
       const nextSteps = (hwMatch[3] || "").trim();
       const indent = " ".repeat(GUTTER);
-      const prefix = indent + "⎿  ";
+      const prefix = indent + SYM.result + "  ";
       // 数字统一白色粗体，单位 s 保持 success 色（与 Result 行 in Xs 一致）
       let text = elapsed === 0
         ? prefix + theme.fg("success", "Instantly")
@@ -263,14 +263,14 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
     const exitPart = exitCode !== undefined && exitCode !== 0 ? `, exit ${theme.bold(String(exitCode))}` : "";
     const titlePart = title ? `${title} ` : "";
     // merged/非merged 都用 ⎿ 折线缩进（统一结果行风格）
-    const prefix = indent + (isError ? theme.fg("error", "⎿  ") : theme.fg("dim", "⎿  "));
+    const prefix = indent + (isError ? theme.fg("error", SYM.result + "  ") : theme.fg("dim", SYM.result + "  "));
     const line1 = prefix + `${titlePart}Done in ${theme.bold(elapsedFmt)}${exitPart}${remPart}` + theme.fg("dim", ` at ${timeFmt}`);
     c.addChild(new Text(line1, 0, 0));
     // [PRESERVED] 旧版两行渲染（→ Result 头 + Executed 详情行）：
     // const d = isError ? theme.fg("error", "→") : theme.fg("result", "→");
     // const mainStr = merged ? "" : d + " " + theme.bold("Result") + (title ? " " + title : "");
     // const idPart = idStr ? `process ${idStr} ` : "";
-    // const line2 = indent + theme.fg("dim", "⎿  ") + `Executed ${idPart}` + `in ${theme.fg("accent", elapsedFmt)}` + `, with ` + theme.bold(theme.fg(statusColor, exitStr)) + remPart + theme.fg("dim", timePart);
+    // const line2 = indent + theme.fg("dim", SYM.result + "  ") + `Executed ${idPart}` + `in ${theme.fg("accent", elapsedFmt)}` + `, with ` + theme.bold(theme.fg(statusColor, exitStr)) + remPart + theme.fg("dim", timePart);
     // if (mainStr) c.addChild(new Text(mainStr, 0, 0));
     // c.addChild(new Text(line2, 0, 0));
     if (output) {

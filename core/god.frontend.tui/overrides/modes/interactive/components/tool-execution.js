@@ -271,7 +271,7 @@ const _genshinBuiltinRenderers = {
             const { Text: Txt, Container: CC } = require("@earendil-works/pi-tui");
             const cc = new CC();
             const indent = " ".repeat(GUTTER);
-            cc.addChild(new Txt(indent + t.fg("dim", "⎿  ") + summary, 0, 0));
+            cc.addChild(new Txt(indent + t.fg("dim", (globalThis.__genshinSYM?.result || "⎿") + "  ") + summary, 0, 0));
             const contIndent = " ".repeat(GUTTER + 3);
             for (const l of body) cc.addChild(new Txt(contIndent + l, 0, 0));
             return cc;
