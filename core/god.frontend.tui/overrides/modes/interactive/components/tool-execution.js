@@ -225,8 +225,10 @@ const _genshinBuiltinRenderers = {
                     const pairedInfo = rawMinusQueue.shift();
                     if (pairedInfo) {
                         content = inlineHighlight(content, pairedInfo.content, "add");
-                        // 回溯更新对应 - 行的 entries（加高亮）
-                        const delContent = inlineHighlight(FG_DEFAULT + pairedInfo.content, content, "del");
+                        // 回溯更新对应 - 行的 entries（加高亮）——用 hlLines 而非 FG_DEFAULT（与绿色行对称）
+                        const hlPaired = hlLines(pairedInfo.content, filePath);
+                        const pairedBase = hlPaired ? hlPaired[0] || pairedInfo.content : pairedInfo.content;
+                        const delContent = inlineHighlight(pairedBase, content, "del");
                         if (pairedInfo.entryIdx >= 0 && pairedInfo.entryIdx < entries.length) {
                             entries[pairedInfo.entryIdx].lines = buildDiffLines(delContent, pairedInfo.ln, "-", FG_DEL_DECO);
                         }
