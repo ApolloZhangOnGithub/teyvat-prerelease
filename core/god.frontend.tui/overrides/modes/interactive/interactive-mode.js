@@ -3234,6 +3234,12 @@ export class InteractiveMode {
             updateFooter: true,
             populateHistory: true,
         });
+        // --continue 恢复的 session 有历史 → 加分隔线让用户分清旧历史和新活动
+        if (entries.length > 3) {
+            this.chatContainer.addChild(new Spacer(1));
+            this.chatContainer.addChild(new DynamicBorder());
+            this.chatContainer.addChild(new Spacer(1));
+        }
         this.renderProjectTrustWarningIfNeeded();
         // Show compaction info if session was compacted
         const allEntries = this.sessionManager.getEntries();
