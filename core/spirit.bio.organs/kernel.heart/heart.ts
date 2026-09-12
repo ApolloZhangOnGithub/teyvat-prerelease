@@ -101,6 +101,11 @@ export default function (pi: ExtensionAPI) {
     const role = getSessionRole();
     if (role === "main") {
       // ISSUE 117：heart system prompt 冻结——首次组装后复用（前缀逐字稳定）
+      // amem 后快照重建 → 清掉冻结缓存让下一轮重建（新快照进 system prompt，context % 立刻降）
+      if ((globalThis as any).__genshinSnapshotDirty) {
+        (globalThis as any).__genshinSnapshotDirty = false;
+        _frozenHeartSystemPrompt = "";
+      }
       if (_frozenHeartSystemPrompt) {
         // ISSUE 188：即使冻结缓存也检查 context 用量——95%+ 强制 amem
         let urgentAmem = "";

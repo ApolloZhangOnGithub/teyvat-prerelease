@@ -703,6 +703,8 @@ export default function registerMemory(pi: ExtensionAPI) {
       writeFile(frozenMetaPath, JSON.stringify({ ctxLen: context.length, wmLen: workMem.length }));
       injectedWorkMemLen = workMem.length;
       sendCustomMessage(pi, "memory-snapshot", freshFrozen);
+      // 通知 heart 重建 system prompt（amem 后快照变了，heart 的冻结前缀需要更新）
+      (globalThis as any).__genshinSnapshotDirty = true;
     }
 
     // [DISABLED 2026-08-15] cortex 自动沉降已禁用，由 amem 工具替代主动记忆管理。
