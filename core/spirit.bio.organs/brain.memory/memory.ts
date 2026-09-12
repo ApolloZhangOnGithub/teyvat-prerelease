@@ -1045,9 +1045,11 @@ export default function registerMemory(pi: ExtensionAPI) {
   }
 
   function _ctxStats(ctxContent: string): string {
-    const tok = estimateTokens(ctxContent);
+    const ctxTok = estimateTokens(ctxContent);
     const ft = (n: number) => n < 1000 ? n + "" : n < 1e6 ? (n / 1000).toFixed(1) + "k" : (n / 1e6).toFixed(1) + "M";
-    return `context ${ft(tok)} tokens / ${ft(modelMax)}`;
+    // 显示 context.md 的 token + gauge 的窗口占比（两个维度都有用：context.md 是可编辑的，gauge 是实际占用）
+    const gauge = ((globalThis as any).__genshinContextGauge || "").replace("ctx ", "");
+    return `context ${ft(ctxTok)} tokens / ${ft(modelMax)}` + (gauge ? ` (${gauge} window)` : "");
   }
 
   // context 概览：JSONL 条目类型分布 + 可编辑范围提示（fetch 无 id 时附上，解决"盲人摸象"）
