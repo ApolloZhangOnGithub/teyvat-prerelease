@@ -27,6 +27,7 @@ export function registerWaitTool(pi: ExtensionAPI) {
       title: Type.Optional(Type.String({ messageDescription: "REQUIRED. Purpose of this wait (why), shows in call line. e.g. '等待训练完成', '等 GPU 资源'" })),
       wait_for_user: Type.Optional(Type.Boolean({ messageDescription: "Listen for user input during wait" })),
       monitor: Type.Optional(Type.String({ messageDescription: "Shell command to poll during wait — exit 0 means condition met, auto-terminates wait early (e.g. 'test -f /tmp/done', '! pgrep -f training')" })),
+      monitor_title: Type.Optional(Type.String({ messageDescription: "REQUIRED when monitor is set. Human-readable description of what monitor checks (e.g. '等待评估完成', 'GPU 释放'). Shows in footer status bar." })),
       monitor_interval: Type.Optional(Type.Number({ messageDescription: "Seconds between monitor polls (default 5)" })),
       next_steps: Type.Optional(Type.String({ messageDescription: "What to do when you wake up" })),
       message: Type.Optional(Type.String({ messageDescription: "Optional message shown during wait (e.g. reason)" })),
@@ -35,16 +36,16 @@ export function registerWaitTool(pi: ExtensionAPI) {
       const s = args?.seconds ?? "?";
       const title = args?.title || "";
       const wu = args?.wait_for_user ? " (for user)" : "";
-      const mon = args?.monitor ? ` monitor: ${args.monitor}` : "";
+      const monDisplay = args?.monitor ? (args?.monitor_title ? ` monitor: ${args.monitor_title}` : ` monitor: ${args.monitor}`) : "";
       const msg = args?.message ? ` — ${args.message}` : "";
-      const detail = title ? `${title} ${s}s${wu}${mon}${msg}` : `${s}s${wu}${mon}${msg}`;
+      const detail = title ? `${title} ${s}s${wu}${monDisplay}${msg}` : `${s}s${wu}${monDisplay}${msg}`;
       return renderToolCall.label(theme, "Wait", detail);
     },
     renderResult(result: any, _options: any, theme: any, ctx: any) {
       return renderMessage.silent();
     },
     async execute(_id, rawParams, _signal, _onUpdate, ctx) {
-      const params = rawParams as { seconds: number; wait_for_user?: boolean; monitor?: string; monitor_interval?: number; next_steps?: string; message?: string };
+      const params = rawParams as { seconds: number; wait_for_user?: boolean; monitor?: string; monitor_title?: string; monitor_interval?: number; next_steps?: string; message?: string };
       // 已在阻塞态：
       // - resting（自身 wait 造成）→ 接管重新计时：安静清掉旧 timer 后走新 wait，不拒绝。
       //   修复 "Already resting. Ignoring wait." 死循环——terminate:true 依赖外部
@@ -89,6 +90,7 @@ export function registerWaitTool(pi: ExtensionAPI) {
         return `${fmt(elapsed)}/${fmt(secs)}`;
       };
       (globalThis as any).__genshinWaitForUser = waiting;
+      (globalThis as any).__genshinWaitMonitorTitle = params.monitor_title || "";
       // 2026-09-07（wait 折线颜色稳定化）：记本次 wait 是否 forUser（不随打断清——ESC/Ctrl+C 打断会清 ForUser，
       // 导致 wait for user 被 ESC 打断后用户又发消息仍画红——按 wait 属性判定稳定）
       (globalThis as any).__genshinWaitWasForUser = waiting;
@@ -106,6 +108,7 @@ export function registerWaitTool(pi: ExtensionAPI) {
           dlog("countdown: ESC → paused");
           (globalThis as any).__genshinWaitLabel = null;
           (globalThis as any).__genshinWaitForUser = false;
+          (globalThis as any).__genshinWaitMonitorTitle = "";
           transition({ kind: "paused", reason: "esc" });
           setHasUserMessage(false);
           return;
@@ -147,6 +150,7 @@ export function registerWaitTool(pi: ExtensionAPI) {
           dlog("resumeTimer: ESC → paused");
           (globalThis as any).__genshinWaitLabel = null;
           (globalThis as any).__genshinWaitForUser = false;
+          (globalThis as any).__genshinWaitMonitorTitle = "";
           transition({ kind: "paused", reason: "esc" });
           return;
         }

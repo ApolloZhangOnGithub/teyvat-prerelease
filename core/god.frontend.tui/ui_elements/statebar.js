@@ -330,8 +330,11 @@ export class StatusBar {
     const msgLabel = socialPendingLabel();
     if (msgLabel) parts.push(msgLabel);
     if (parts.length > 0) {
+      const monTitle = (globalThis.__genshinWaitMonitorTitle || "").trim();
       const label = waitForUser ? "Waiting for user..." : "Waiting...";
-      this._footer?.updateSpinnerText(theme.fg(def.color, "❄") + " " + theme.fg(def.color, label) + " (" + theme.fg(def.color, parts.join(" · ")) + ")");
+      const detail = theme.fg(def.color, parts.join(" · "));
+      const monPart = monTitle ? " " + theme.fg("dim", monTitle) : "";
+      this._footer?.updateSpinnerText(theme.fg(def.color, "❄") + " " + theme.fg(def.color, label) + " (" + detail + ")" + monPart);
     }
   }
 
