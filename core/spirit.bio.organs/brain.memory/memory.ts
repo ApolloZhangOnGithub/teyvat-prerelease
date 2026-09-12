@@ -161,6 +161,20 @@ export default function registerMemory(pi: ExtensionAPI) {
     }
   });
 
+  // amem 修改 context.md 后刷新 gauge（否则 gauge 到下一个 message_end 才更新，中间显示过期值）
+  function _refreshGaugeAfterContextChange(newCtx: string): void {
+    if (_pondSess.prevPrompt === null) return;
+    _refreshModelMax();
+    const ctxTokens = estimateTokens(newCtx);
+    const dna = readFile(path.join(personDir!, "dna/index.md"));
+    const dlc = readFile(path.join(personDir!, `dna/${dnaState}.dlc`));
+    const cortex = readFile(path.join(personDir!, "neocortex.md"));
+    const workMem = readFile(path.join(personDir!, "work_memory.md"));
+    const memTokens = estimateTokens(dna) + estimateTokens(dlc) + ctxTokens + estimateTokens(workMem) + estimateTokens(cortex);
+    const pct = Math.round((memTokens / modelMax) * 100);
+    (globalThis as any).__genshinContextGauge = `ctx ${pct}%`;
+  }
+
   // ── session_start: 注入"记忆快照"一次（稳定前缀 = 缓存命中的关键）────────────
   // 醒来时把 DNA + cortex + work_memory + context(按预算切尾部) 揉成一份快照，注入一次。
   // 本会话中绝不再重发（见 before_agent_start）；新内容一律往「后面」append → 前缀不变 → 每轮命中缓存。
@@ -1508,6 +1522,7 @@ export default function registerMemory(pi: ExtensionAPI) {
         idx.last_updated = entry.timestamp;
         writeFile(indexPath, JSON.stringify(idx, null, 2));
         writeFile(contextPath, newCtx);
+        _refreshGaugeAfterContextChange(newCtx);
 
         const rel = `MemoryData/${path.basename(personDir)}/ActiveManage/${amId}.json`;
         return { content: [{ type: "text", text:
@@ -1719,6 +1734,7 @@ export default function registerMemory(pi: ExtensionAPI) {
         idx.last_updated = entry.timestamp;
         writeFile(indexPath, JSON.stringify(idx, null, 2));
         writeFile(contextPath, newCtx);
+        _refreshGaugeAfterContextChange(newCtx);
 
         return { content: [{ type: "text", text:
           `amem ${actName} ${JSON.stringify(params.title)} → removed ${swept2.length} entries (${sweptText2.length}c), archived ${amId}\n` +
@@ -1773,6 +1789,7 @@ export default function registerMemory(pi: ExtensionAPI) {
 
         const newCtx = ctx.slice(0, mIdx) + restoreText + ctx.slice(mIdx + mLen);
         writeFile(contextPath, newCtx);
+        _refreshGaugeAfterContextChange(newCtx);
         d.reverted = true; d.reverted_at = new Date().toISOString();
         writeFile(_mf, JSON.stringify(d, null, 2));   // 回写同一路径（_mf 已确认在 manageDir 内）
 
@@ -1868,6 +1885,7 @@ export default function registerMemory(pi: ExtensionAPI) {
         idx.last_updated = entry.timestamp;
         writeFile(indexPath, JSON.stringify(idx, null, 2));
         writeFile(contextPath, newCtx);
+        _refreshGaugeAfterContextChange(newCtx);
 
         _activeMark = null;
         try { fs.unlinkSync(markPath); } catch (e) { logerr("MEM005", e, markPath); } // mark_exit 删持久化失败
