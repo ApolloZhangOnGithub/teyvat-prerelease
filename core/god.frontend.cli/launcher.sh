@@ -493,7 +493,7 @@ if [ "$MODE" = "web" ]; then
   # Kill any existing genshin-server (only node server.js, not other processes on the port)
   OLD_PIDS=$(pgrep -f "node.*genshin-server/server.js" 2>/dev/null)
   [ -n "$OLD_PIDS" ] && echo "$OLD_PIDS" | xargs kill 2>/dev/null && sleep 0.5
-  cd "$PAIMON_SERVER_DIR" && PAIMON_PORT="$PAIMON_PORT" node server.js > /tmp/genshin-web.log 2>&1 &
+  cd "$PAIMON_SERVER_DIR" && PAIMON_PORT="$PAIMON_PORT" node server.js </dev/null > /tmp/genshin-web.log 2>&1 &
   SERVER_PID=$!
   disown $SERVER_PID
   ACTUAL_PORT=""
