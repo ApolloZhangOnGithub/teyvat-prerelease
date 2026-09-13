@@ -62,6 +62,7 @@ function getAllItems() {
   const executeSummary = g.__genshinExecuteSummary === true;
   const executeResult = g.__genshinExecuteResult ?? "full";
   const waitShow = g.__genshinWaitShow === true;
+  const toolElapsed = g.__genshinToolElapsed === true;
   const breakAnd = g.__genshinExecuteBreakAnd ?? false;
 
   const toolMode = toolExpanded ? T("完整", "Full") : T("摘要", "Summary");
@@ -80,6 +81,8 @@ function getAllItems() {
     // 2026-09-13（房东）：Intention 工具输出——隐藏 / 显示（默认隐藏）
     { id: "intention", label: T("Intention 输出", "Intention Output"), currentValue: ((g as any).__genshinIntentionShow ?? false) ? T("显示", "Show") : T("隐藏", "Hide"), values: [T("隐藏", "Hide"), T("显示", "Show")] },
     { id: "toolExpanded", label: T("工具输出", "Tool Output"), currentValue: toolMode, values: [T("摘要", "Summary"), T("完整", "Full")] },
+    // 2026-09-13（房东）：工具结果耗时戳 [0.009s] 默认隐藏
+    { id: "toolElapsed", label: T("工具耗时", "Tool Elapsed"), currentValue: toolElapsed ? T("显示", "Show") : T("隐藏", "Hide"), values: [T("隐藏", "Hide"), T("显示", "Show")] },
   ];
 
   if (toolExpanded) {
@@ -209,6 +212,13 @@ function handleChange(id: string, value: string) {
       const on = value === T("显示", "Show");
       g.__genshinWaitShow = on;
       save("waitShow", on);
+      break;
+    }
+    case "toolElapsed": {
+      // 2026-09-13（房东）：工具结果耗时戳 [0.009s] 默认隐藏
+      const on = value === T("显示", "Show");
+      g.__genshinToolElapsed = on;
+      save("toolElapsed", on);
       break;
     }
     case "breakAnd":

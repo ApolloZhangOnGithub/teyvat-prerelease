@@ -454,6 +454,8 @@ export class InteractiveMode {
         if (s0?.executeSummary !== undefined) globalThis.__genshinExecuteSummary = s0.executeSummary;
         if (s0?.executeResult !== undefined) globalThis.__genshinExecuteResult = s0.executeResult;
         if (s0?.waitShow !== undefined) globalThis.__genshinWaitShow = s0.waitShow;
+        // 2026-09-13（房东）：工具结果耗时戳 [0.009s] 默认隐藏
+        if (s0?.toolElapsed !== undefined) globalThis.__genshinToolElapsed = s0.toolElapsed;
         // Load tool expanded from persisted settings
         const savedToolExpanded = this.settingsManager.settings?.toolExpanded;
         if (savedToolExpanded !== undefined) {

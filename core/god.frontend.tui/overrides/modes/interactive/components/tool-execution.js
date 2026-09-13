@@ -85,7 +85,7 @@ const _genshinBuiltinRenderers = {
         renderResult: (result, _opts, t, ctx) => {
             if (ctx?.isError) return renderMessage.summary(t, { isError: true }, (result?.content || [])[0]?.text);
             const raw = (result?.content || [])[0]?.text || "";
-            const elapsed = _opts?.elapsedMs ? ` ${t.fg("muted", `[${elapsedStr(_opts.elapsedMs)}]`)}` : "";
+            const elapsed = toolElapsed(t, _opts);
             const filePath = _opts?.args?.file_path || _opts?.args?.path || "";
             // 解析 "Read  XX lines (lines YYY-ZZZ)" → 高亮数字
             const m = raw.match(/^Read\s+(\d+)\s+lines\s+\(lines\s+(\d+)-(\d+)\)/);
@@ -180,7 +180,7 @@ const _genshinBuiltinRenderers = {
                     return `${t.fg("dim", ln)}  ${wl}`;
                 }).join("\n");
             }).join("\n");
-            const elapsed = _opts?.elapsedMs ? ` ${t.fg("muted", `[${elapsedStr(_opts.elapsedMs)}]`)}` : "";
+            const elapsed = toolElapsed(t, _opts);
             const summary = `Wrote ${t.bold(String(num))} ${num !== 1 ? "lines" : "line"}${elapsed}`;
             return renderMessage.summary(t, ctx, summary + "\n" + numbered);
         },
@@ -268,7 +268,7 @@ const _genshinBuiltinRenderers = {
                     body.push(e.line);
                 }
             }
-            const elapsed = _opts?.elapsedMs ? ` ${t.fg("muted", `[${elapsedStr(_opts.elapsedMs)}]`)}` : "";
+            const elapsed = toolElapsed(t, _opts);
             const summary = `Added ${t.bold(String(added))} ${added !== 1 ? "lines," : "line,"} removed ${t.bold(String(removed))} ${removed !== 1 ? "lines" : "line"}${elapsed}`;
             const { Text: Txt, Container: CC } = require("@earendil-works/pi-tui");
             const cc = new CC();
@@ -281,6 +281,11 @@ const _genshinBuiltinRenderers = {
     },
 };
 
+// 2026-09-13（房东）：工具结果耗时戳 [0.009s] 默认隐藏——/s 面板「工具耗时」开关控制（__genshinToolElapsed）
+function toolElapsed(t, opts) {
+  if (!globalThis.__genshinToolElapsed) return "";
+  return opts?.elapsedMs ? ` ${t.fg("muted", `[${elapsedStr(opts.elapsedMs)}]`)}` : "";
+}
 function elapsedStr(ms) {
   const s = ms / 1000;
   if (s < 1) return `${s.toPrecision(1)}s`;

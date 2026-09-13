@@ -205,16 +205,23 @@ export class FooterComponent {
         let latestPromptTokens = 0;
         for (const entry of this.session.sessionManager.getEntries()) {
             if (entry.type === "message" && entry.message.role === "assistant") {
-                totalInput += entry.message.usage.input;
-                totalOutput += entry.message.usage.output;
-                totalCacheRead += entry.message.usage.cacheRead;
-                totalCacheWrite += entry.message.usage.cacheWrite;
-                totalCost += entry.message.usage.cost.total;
-                latestPromptTokens = entry.message.usage.input + entry.message.usage.cacheRead + entry.message.usage.cacheWrite;
-                // cacheHitRate 定义 = 「prompt 中有多大比例由缓存提供」= cacheRead / 完整 prompt（含 cacheWrite）。
-                // 2026-09-12（ISSUE 203 nit，debug-01 复核确认）：分母与 memory.ts:137 的 gauge 同公式；DeepSeek（cacheWrite=0）下等价旧值。
-                latestCacheHitRate =
-                    latestPromptTokens > 0 ? (entry.message.usage.cacheRead / latestPromptTokens) * 100 : undefined;
+                const u = entry.message.usage;
+                if (!u) continue; // 无 usage（被打断/异常的消息）——之前直接 .input 会抛 TypeError，整个 footer 被外层 catch 吞成空白行
+                totalInput += u.input || 0;
+                totalOutput += u.output || 0;
+                totalCacheRead += u.cacheRead || 0;
+                totalCacheWrite += u.cacheWrite || 0;
+                totalCost += u.cost?.total || 0;
+                // 2026-09-13：aborted/error 的 assistant 消息 usage 全 0（memory.ts ISSUE 109 同样跳过它们）。
+                // 之前无条件覆盖 latestPromptTokens → 打断一次就归零 → 下面回退成磁盘估算 → footer 在 API 值与估算值之间来回跳（用户报"乱跳"）。
+                const p = (u.input || 0) + (u.cacheRead || 0) + (u.cacheWrite || 0);
+                const sr = entry.message.stopReason;
+                if (p > 0 && sr !== "aborted" && sr !== "error") {
+                    latestPromptTokens = p;
+                    // cacheHitRate 定义 = 「prompt 中有多大比例由缓存提供」= cacheRead / 完整 prompt（含 cacheWrite）。
+                    // 2026-09-12（ISSUE 203 nit，debug-01 复核确认）：分母与 memory.ts 的 gauge 同公式；DeepSeek（cacheWrite=0）下等价旧值。
+                    latestCacheHitRate = ((u.cacheRead || 0) / p) * 100;
+                }
             }
         }
         // Calculate context usage from session (handles compaction correctly).
@@ -300,13 +307,12 @@ export class FooterComponent {
         // 区域3: 记忆占比
         const ctxWindowStr = `${formatTokens(contextWindow)}`;
         let memStr;
-        if (ctxPct !== "?") {
+        {
           const tp = totalPercent.toFixed(1);
           // [DISABLED 2026-08-15] 括号内分项暂时不显示，由 amem 工具提供细粒度感知
           // memStr = `记忆${tp}% [对话${ctxPct} 工作${workPct} 新皮层${cxPct}]/${ctxWindowStr}`;
-          memStr = `contexted ${tp}%/${ctxWindowStr}`;
-        } else {
-          memStr = `contexted ?/${ctxWindowStr}`;
+          // 2026-09-13：无 API 值（首轮/重启后尚无成功回复）时回退磁盘估算，显式标 est——否则与 API 值口径不同却长得一样，看起来像乱跳
+          memStr = latestPromptTokens > 0 ? `contexted ${tp}%/${ctxWindowStr}` : `contexted ${tp}% est/${ctxWindowStr}`;
         }
         if (totalPercent > 90) {
           memStr = theme.fg("error", memStr);

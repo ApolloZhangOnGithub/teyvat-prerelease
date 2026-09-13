@@ -351,6 +351,16 @@ export default function registerMemory(pi: ExtensionAPI) {
         else if (e.text) e.text = truncated;
         else if (e.think) e.think = truncated;
       }
+      // 2026-09-13：toolCall 参数同样受单条上限约束——write/edit 大文件时 content 整份进 context.md，快照又不压缩 toolCall 行（实测单行最大 43KB）。
+      // 注意 args 与 pi 消息里的 arguments 是同一个对象引用，必须浅拷贝后再截断，否则会改掉模型/会话里的真实参数。
+      if (e.type === "toolCall" && (e as any).tool?.args && typeof (e as any).tool.args === "object") {
+        const src = (e as any).tool.args; let changed = false; const args: any = { ...src };
+        for (const k of Object.keys(args)) {
+          const v = args[k];
+          if (typeof v === "string" && v.length > MAX_ENTRY) { args[k] = v.slice(0, MAX_ENTRY * 0.7) + "\n...[truncated " + v.length + " → " + MAX_ENTRY + "]...\n" + v.slice(-MAX_ENTRY * 0.2); changed = true; }
+        }
+        if (changed) (e as any).tool = { ...(e as any).tool, args };
+      }
 
       const jsonl = JSON.stringify(e) + "\n";
       // 连续去重：与上一条签名相同则跳过（防自噬膨胀）
@@ -667,8 +677,11 @@ export default function registerMemory(pi: ExtensionAPI) {
     const memTokens = estimateTokens(dna) + estimateTokens(dlc) + estimateTokens(context) + estimateTokens(workMem) + estimateTokens(cortex);
     const usageRatio = memTokens / modelMax;
     const rawPct = Math.round(usageRatio * 100);
+    // ratio = 记忆文件体量估算（est）——门禁/告警必须用它：amem 归档后立刻下降，agent 才能从 95% 拦截里出来；
+    // API 活窗口（api_tokens/api_ratio）只作记录：amem 后它不会立刻降（ISSUE 204），若拿它做门禁会把 agent 锁死在"必须先 amem"里。
+    const _apiTokNow = _pondSess.prevPrompt ?? 0;
     monitorAppend("growth.jsonl",
-      JSON.stringify({ ts: new Date().toISOString(), bytes: context.length, tokens: memTokens, ratio: +(usageRatio * 100).toFixed(1) }) + "\n");
+      JSON.stringify({ ts: new Date().toISOString(), bytes: context.length, tokens: memTokens, ratio: +(usageRatio * 100).toFixed(1), api_tokens: _apiTokNow, api_ratio: _apiTokNow ? +((_apiTokNow / modelMax) * 100).toFixed(1) : null }) + "\n");
     // 2026-09-12：gauge 唯一写入者是 message_end（API prompt 真值）。
     // before_agent_start 和 _refreshGaugeAfterContextChange 都不写——避免多写入者口径打架导致跳变。
     // 容量提醒——只在达到 URGE(80%) 真危险时发（用户反馈：这条是垃圾，
@@ -740,7 +753,9 @@ export default function registerMemory(pi: ExtensionAPI) {
     const eventRaw = readFile(eventPath);
     if (eventRaw) {
       const lines = eventRaw.trim().split("\n");
-      if (lines.length > 300) writeFile(eventPath, lines.slice(-200).join("\n") + "\n");
+      // 2026-09-13：修剪必须原地写（同 inode）。之前用 writeFile（tmp+rename）——而追加走 nerves 流池（进程启动时 open 的 WriteStream），
+      // rename 后流仍指向旧 inode → 第一次修剪之后所有事件都写进孤儿文件，文件里再也不会有新事件（ISSUE 152 同类根因，当时只修了 context.md）。
+      if (lines.length > 300) { try { fs.writeFileSync(eventPath, lines.slice(-200).join("\n") + "\n", "utf-8"); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] events trim: " + ((e as any)?.message || e)); } }
     }
 
     // 5) 到期提醒 → 追加一条消息（时间敏感，append 不破缓存）
