@@ -52,6 +52,14 @@ _check_opt ffprobe   "iPod 播放器获取音频时长需要 ffprobe (随 ffmpeg
 _check_opt python3   "元意识和睡眠的 session 初始化需要 python3"
 _check_opt curl      "同步服务和隧道检测需要 curl"
 
+# typescript（2026-09-13 用户：全局 tsc 默认装——agent 编辑代码时的 npx tsc 语法检查依赖；缺了 npx 会拉到 npm 同名假包打“This is not the tsc command”）
+if ! command -v tsc >/dev/null 2>&1; then
+  if command -v npm >/dev/null 2>&1; then
+    npm install -g typescript 2>&1 | tail -1
+    command -v tsc >/dev/null 2>&1 && echo "    ✓ typescript 已自动安装 (tsc 语法检查)" || warn "typescript 自动安装失败 — 手动: npm install -g typescript"
+  fi
+fi
+
 # trafilatura（web fetch 正文过滤需要；python3 已有时检查 Python 包）
 if command -v python3 >/dev/null 2>&1; then
   if python3 -c "import trafilatura" >/dev/null 2>&1; then
