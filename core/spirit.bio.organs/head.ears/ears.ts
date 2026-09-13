@@ -3,7 +3,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { openSync, readFileSync, statSync, unlinkSync, writeSync, writeFileSync, watch, mkdirSync } from "node:fs";
+import { openSync, closeSync, appendFileSync, readFileSync, statSync, unlinkSync, writeSync, writeFileSync, watch, mkdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, resolve, dirname } from "node:path";
 import { homedir } from "node:os";
@@ -59,6 +59,7 @@ export default function (pi: ExtensionAPI) {
     ? `${state.personDir.replace('/MemoryData/', '/RuntimeCache/')}/ear_output.jsonl`
     : voiceRc('ear_output.jsonl'));
 
+  let _rapidExits = 0; // 录音进程连续秒退计数（见 startRecorder 的 exit 处理）
   function startRecorder(filePath: string = '') {
     if (isRecorderAlive()) return;
     recorderProc = null;
@@ -76,16 +77,32 @@ export default function (pi: ExtensionAPI) {
       args = [RECORDER_SCRIPT, file];
     }
     writeSync(logFd, `${new Date().toISOString()} [keep-alive] spawn ${args.join(' ')}\n`);
+    const spawnedAt = Date.now();
     recorderProc = spawn(BUN, args, { detached: true, stdio: ["ignore", logFd, logFd] });
+    // 2026-09-13：子进程已 dup 了这个 fd，父进程这份必须关——之前每次 keep-alive 重启都泄漏 1 个 fd（录音进程秒退时每 5s 一个，约 20 分钟打满 ulimit 256 → EMFILE 波及整个 agent）
+    try { closeSync(logFd); } catch (e) { console.error("[spirit.bio.organs/head.ears/ears.ts] closeSync(logFd): " + ((e as any)?.message || e)); }
     // 2026-09-11（prime-agent）：spawn 失败（ENOENT）是**异步 error 事件**，没有监听 → Node 抛未处理 'error'
     // → SDK uncaughtCrash → process.exit(1)（本仓注释已记过这个链）→ 录音没录上还顺手把 agent 弄闪退。
     // BUN 在 `which bun` 失败时会回落成字面量 "bun"（L23）→ bun 未安装时必现。
     recorderProc.on("error", (e: any) => {
       const msg = `录音进程启动失败（bun 未安装？BUN=${BUN}）: ${e?.code || e?.message || e}`;
       console.error("[spirit.bio.organs/head.ears/ears.ts] " + msg);
-      try { writeSync(logFd, `${new Date().toISOString()} [keep-alive] spawn FAILED ${msg}\n`); } catch (e2) { console.error("[spirit.bio.organs/head.ears/ears.ts] " + ((e2 as any)?.message || e2)); }
+      try { appendFileSync(logFile, `${new Date().toISOString()} [keep-alive] spawn FAILED ${msg}\n`); } catch (e2) { console.error("[spirit.bio.organs/head.ears/ears.ts] " + ((e2 as any)?.message || e2)); }
       state.listening = false;      // 别让 keep-alive 以为"在录"（它会每 5s 重试，这里只标注状态）
       recorderProc = null;
+    });
+    // 2026-09-13：录音进程启动后立即退出（凭证缺失 process.exit(1)、ffmpeg 打不开麦克风）不触发 error 事件——keep-alive 每 5s 无限重启。
+    // 连续 3 次秒退就停下并告知，而不是无限循环刷日志。
+    recorderProc.on("exit", (code: number | null, sig: string | null) => {
+      const quick = Date.now() - spawnedAt < 3000;
+      if (quick) { _rapidExits++; } else { _rapidExits = 0; }
+      if (quick && _rapidExits >= 3 && state.listening) {
+        const msg = `录音进程连续 ${_rapidExits} 次启动后立即退出（code=${code} sig=${sig}），已停止自动重试——看 ${logFile}（常见：doubao 凭证缺失 / 麦克风被占用）`;
+        console.error("[spirit.bio.organs/head.ears/ears.ts] " + msg);
+        try { appendFileSync(logFile, `${new Date().toISOString()} [keep-alive] ${msg}\n`); } catch (e2) { /* 日志写不了不影响 */ }
+        state.listening = false;
+        _rapidExits = 0;
+      }
     });
     recorderProc.unref();
   }

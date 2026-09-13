@@ -22,23 +22,23 @@ def extract(path):
     for i, page in enumerate(doc):
         text = page.get_text("text").strip()
         if text:
-            blocks.append(("page", text))
+            blocks.append(("page", text, i + 1))  # 2026-09-13：带真实页号——空白/扫描页被跳过后，之前用 cut 的下标当页号，后面全部错位
 
     truncated = False
     cut = []
-    for typ, text in blocks:
+    for typ, text, pno in blocks:
         if len(text) > MAX_BLOCK_CHARS:
             text = text[:MAX_BLOCK_CHARS] + "\n… [truncated]"
             truncated = True
-        cut.append((typ, text))
+        cut.append((typ, text, pno))
 
     lines = []
-    for i, (typ, text) in enumerate(cut):
+    for typ, text, pno in cut:
         if typ == "section":
             lines.append(f"\n===== {text} =====")
         else:
-            lines.append(f"----- page {i+1} -----\n{text}")
-    return "\n".join(lines).strip(), [{"type": t, "text": x} for t, x in cut], page_count, truncated
+            lines.append(f"----- page {pno} -----\n{text}")
+    return "\n".join(lines).strip(), [{"type": t, "text": x, "page": p} for t, x, p in cut], page_count, truncated
 
 
 def main():

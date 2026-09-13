@@ -48,6 +48,11 @@ export function registerWaitTool(pi: ExtensionAPI) {
     },
     async execute(_id, rawParams, _signal, _onUpdate, ctx) {
       const params = rawParams as { seconds: number; wait_for_user?: boolean; monitor?: string; monitor_title?: string; monitor_interval?: number; next_steps?: string; message?: string };
+      // 2026-09-13：monitor 已被禁用（下方 monitorCmd 恒 undefined），但参数说明仍在宣传"exit 0 提前唤醒"——模型按文档传 monitor 会白等满 seconds 且毫无提示。
+      // 在改任何状态之前直接拒绝，告诉它现在没有这个功能。
+      if (params.monitor) {
+        return { content: [{ type: "text", text: i18n(`ERR: wait 的 monitor 参数暂时禁用（不会提前唤醒）。去掉 monitor：用 seconds 定时等待，或让后台任务完成时通知你（execute 会推送 cmd-done）。`, `ERR: wait's monitor parameter is temporarily disabled (it would not wake you early). Drop monitor: use seconds, or rely on background-task completion notices (execute pushes cmd-done).`) }], details: {}, isError: true };
+      }
       // 已在阻塞态：
       // - resting（自身 wait 造成）→ 接管重新计时：安静清掉旧 timer 后走新 wait，不拒绝。
       //   修复 "Already resting. Ignoring wait." 死循环——terminate:true 依赖外部

@@ -135,7 +135,9 @@ export function writeFileAtomic(file: string, data: string): void {
 
 export function logerr(code: string, e: unknown, ctx?: string) {
   const ts = new Date().toISOString();
-  const msg = `[${ts}] [${code}]${ctx ? ' ' + ctx : ''} ${(e as any)?.stack || e}\n`;
+  // 2026-09-13：e 为 undefined/null 时不再打出字面 "undefined"（历史日志 80 条 `[reportPresence(up): fetch failed] undefined`），用 ctx 顶上
+  const detail = e == null ? "(no error object)" : ((e as any)?.stack || String(e));
+  const msg = `[${ts}] [${code}]${ctx ? ' ' + ctx : ''} ${detail}\n`;
   try {
     const dir = join(PAIMON, 'ErrorData');
     const file = join(dir, 'catch-errors.log');

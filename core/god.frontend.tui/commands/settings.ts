@@ -126,12 +126,16 @@ function getAllItems() {
   const footerTokenmaxxed = g.__genshinFooterTokenmaxxed ?? false;
   const tokenmaxxedColorful = g.__genshinTokenmaxxedColorful ?? false;
   const footerProvider = g.__genshinFooterProvider ?? false;
+  const footerModel = g.__genshinFooterModel ?? true;
+  const footerVersion = g.__genshinFooterVersion ?? true;
   const footerTokensValue = !footerTokenmaxxed ? T("隐藏", "Hide") : tokenmaxxedColorful ? T("多彩", "Colorful") : T("显示", "Show");
   items.push(
     { id: "_hdr_footer", label: T("── 底栏 ──", "── Footer ──"), currentValue: "", values: [] },
     { id: "footerAge", label: T("年龄", "Age"), currentValue: footerAge ? T("显示", "Show") : T("隐藏", "Hide"), values: [T("隐藏", "Hide"), T("显示", "Show")] },
     { id: "footerTokens", label: T("履历", "Tokens"), currentValue: footerTokensValue, values: [T("隐藏", "Hide"), T("显示", "Show"), T("多彩", "Colorful")] },
     { id: "footerProvider", label: T("供应商", "Provider"), currentValue: footerProvider ? T("显示", "Show") : T("隐藏", "Hide"), values: [T("隐藏", "Hide"), T("显示", "Show")] },
+    { id: "footerModel", label: T("模型", "Model"), currentValue: footerModel ? T("显示", "Show") : T("隐藏", "Hide"), values: [T("隐藏", "Hide"), T("显示", "Show")] },
+    { id: "footerVersion", label: T("版本号", "Version"), currentValue: footerVersion ? T("显示", "Show") : T("隐藏", "Hide"), values: [T("隐藏", "Hide"), T("显示", "Show")] },
   );
 
   // ── 实验 ──
@@ -270,6 +274,14 @@ function handleChange(id: string, value: string) {
     case "footerProvider":
       g.__genshinFooterProvider = value === T("显示", "Show");
       save("footerProvider", g.__genshinFooterProvider);
+      break;
+    case "footerModel":
+      g.__genshinFooterModel = value === T("显示", "Show");
+      save("footerModel", g.__genshinFooterModel);
+      break;
+    case "footerVersion":
+      g.__genshinFooterVersion = value === T("显示", "Show");
+      save("footerVersion", g.__genshinFooterVersion);
       break;
     case "xattr": {
       const on = value === T("开", "On");

@@ -20,7 +20,7 @@ import { renderToolCall, renderMessage, GUTTER, lineNumbered } from "#tui_blockr
 import { i18n } from "#tui_localizations";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { socialDataDir, logerr, runtimeCacheDir, syncEndpoint, SYNC_UA } from "#paths";   // SYNC_UA 统一在 paths.ts（唯一真相源）
@@ -160,7 +160,7 @@ async function reportPresence(kind: "up" | "down"): Promise<void> {
   if (_reportInFlight) return;
   try {
     let b: any = null;
-    try { b = JSON.parse(readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8")); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return; }
+    try { b = JSON.parse(readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8")); } catch (e) { if ((e as any)?.code !== "ENOENT") console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return; } // 未登录（无 binding.json）是正常态，不每 45s 刷一条
     if (!b?.token || !b?.deviceId) return;
     const sid = getMySid();
     if (!/^[a-f0-9]{8}$/.test(sid)) return;
@@ -175,18 +175,29 @@ async function reportPresence(kind: "up" | "down"): Promise<void> {
       try { agentsHeader = JSON.stringify(listAgents().map((a: any) => ({ sid: a.sid, name: a.name, version: a.version, model: a.model, focus: a.focus, state: agentLocalState(a.sid) }))); } catch { /* 清单构造失败不阻塞 presence 上报 */ }
       const headers: Record<string, string> = { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "Content-Type": "application/json", "User-Agent": SYNC_UA, "X-Device-Name": require("os").hostname() };
       if (agentsHeader) headers["X-Device-Agents"] = agentsHeader;
-      await fetch(ep + "/sync/agent-presence", { method: "POST", headers, body: JSON.stringify(body) });
+      // 2026-09-13：加超时——之前无超时，fetch 挂起时 _reportInFlight 一直为 true，后续所有 tick 静默跳过，直到 OS 断连才恢复
+      await fetch(ep + "/sync/agent-presence", { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(10_000) });
     } else {
-      await fetch(`${ep}/sync/agent-presence/${sid}`, { method: "DELETE", headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "User-Agent": SYNC_UA } });
+      await fetch(`${ep}/sync/agent-presence/${sid}`, { method: "DELETE", headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "User-Agent": SYNC_UA }, signal: AbortSignal.timeout(10_000) });
     }
   } catch (e) {
     const now = Date.now();
-    if (now - (_presenceErrAt[kind] || 0) > PRESENCE_ERR_QUIET_MS) {
+    // 2026-09-13：限流改为跨进程——进程内变量各记各的，6 个 agent 进程各自 45s tick，同一网络抖动被记 6 遍（实证 235 条）。
+    // 用 ErrorData/presence-err.<kind> 标记文件的 mtime 做全局 5 分钟节流；日志附 undici 的 cause code（"fetch failed" 本身不带原因）。
+    if (now - (_presenceErrAt[kind] || 0) > PRESENCE_ERR_QUIET_MS && !_presenceQuietGlobal(kind, now)) {
       _presenceErrAt[kind] = now;
-      logerr("SOC-PRESENCE", e, "reportPresence(" + kind + ")（网络抖动类失败 5 分钟最多记一条，不是每次 45s 都记）");
+      const cause = (e as any)?.cause?.code || (e as any)?.name || "";
+      logerr("SOC-PRESENCE", e, "reportPresence(" + kind + ")" + (cause ? ` cause=${cause}` : "") + " pid=" + process.pid + "（网络抖动类失败全机 5 分钟最多记一条）");
     }
   }
   finally { _reportInFlight = false; }
+}
+function _presenceQuietGlobal(kind: string, now: number): boolean {
+  const dir = join(homedir(), ".teyvat", "ErrorData");
+  const f = join(dir, `presence-err.${kind}`);
+  try { if (now - statSync(f).mtimeMs < PRESENCE_ERR_QUIET_MS) return true; } catch { /* 无标记 = 不安静 */ }
+  try { mkdirSync(dir, { recursive: true }); writeFileSync(f, String(now)); } catch { /* 写不了标记就退回进程内限流 */ }
+  return false;
 }
 
 export async function reportOffline(): Promise<void> { await reportPresence("down"); } // 优雅退出上报 offline（heart 退出钩子调）
@@ -542,12 +553,19 @@ async function remoteSendOne(toSid: string, text: string, mode: SocialMode, from
 }
 
 /** 拉 server pending 的 agent-social 消息 → 写本地 inbox（复用注入机制）。heart 周期经 touchPresence 节流 fire。 */
+// 2026-09-13：in-flight 保护 + 超时——之前 server 挂起时每 45s（+30s）叠加一个悬挂请求，无上限
+let _pullInFlight = false;
 export async function pullRemoteMessages(): Promise<number> {
+  if (_pullInFlight) return 0;
+  _pullInFlight = true;
+  try { return await _pullRemoteMessagesImpl(); } finally { _pullInFlight = false; }
+}
+async function _pullRemoteMessagesImpl(): Promise<number> {
   const b = loadBinding();
   const sid = getMySid();
   if (!b || !/^[a-f0-9]{8}$/.test(sid)) return 0;
   try {
-    const res = await fetch(syncEndpoint() + `/messages/pending/${sid}`, { headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "User-Agent": SYNC_UA } });
+    const res = await fetch(syncEndpoint() + `/messages/pending/${sid}`, { headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "User-Agent": SYNC_UA }, signal: AbortSignal.timeout(10_000) });
     if (!res.ok) return 0;
     const j = await res.json().catch(() => ({ messages: [] }));
     let added = 0;
@@ -754,6 +772,9 @@ function watchInterruptTriggers(pi: ExtensionAPI): void {
         // queue 且非 resting → 留给 agent_end 轮后注入（不打断进行中的工作）
       } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* 注入异常 → 消息留在 inbox（injected:false——2026-09-08 已改为注入成功才标记），agent_end 轮询仍能兑底 */ }
     };
+    // 2026-09-13：/reload 重跑本函数——之前旧 watcher/timer 没句柄、只 unref 不清理，每 reload 一次触发文件被并发处理 N 次（unlink 争夺保证只注入一次，但落败方各打一条错误）
+    if (_trigWatcher) { try { _trigWatcher.close(); } catch { /* 已关 */ } _trigWatcher = null; }
+    if (_trigTimer) { try { clearInterval(_trigTimer); } catch { /* 已清 */ } _trigTimer = null; }
     const watcher = require("fs").watch(TRIGGERS_DIR, (_evt: string, filename: string | null) => {
       if (!filename || !filename.endsWith(".json")) return;
       const mySid = getMySid();
@@ -761,6 +782,7 @@ function watchInterruptTriggers(pi: ExtensionAPI): void {
       handleTrigger(join(TRIGGERS_DIR, filename));
     });
     watcher.unref?.();
+    _trigWatcher = watcher;
     // 2026-08-18 兑底扫描：fs.watch 丢事件时（macOS 已知问题）触发文件会滞留，wait 挂起期间 agent_end 不触发，
     // 此定时器是唯一兑底——保证 interrupt/queue 消息最多延迟一个扫描周期（8s），不会永久丢失。
     const timer = setInterval(() => {
@@ -773,8 +795,11 @@ function watchInterruptTriggers(pi: ExtensionAPI): void {
       } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); }
     }, 8000);
     timer.unref?.();
+    _trigTimer = timer;
   } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* fs.watch 不可用 → 降级为 agent_end 轮后注入（原行为） */ }
 }
+let _trigWatcher: any = null;
+let _trigTimer: ReturnType<typeof setInterval> | null = null;
 
 // ── 工具：单一 social 工具，action 参数区分操作 ─────────────────────
 function registerSocialTools(pi: ExtensionAPI): void {
@@ -1261,6 +1286,9 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     try {
       const sf = (ctx as any).sessionManager?.getSessionFile?.();
+      // 2026-09-13：元意识/海马体/睡眠子进程也加载本器官——它们的 session 路径含主 agent 的 id，之前会用主 agent 的 sid registerSelf、
+      // 跑自己的 presence/pull、并争抢同一个 triggers/<sid>.json（谁先 unlink 谁把消息注进自己的 session → 主 agent 收不到）。子会话直接不参与。
+      if (sf && /metaconsciousnessSessions|HippocampusSessions|SleepSessions|NapSessions/.test(sf)) return;
       if (sf) {
         const m = sf.match(/([a-f0-9]{8})\//);
         if (m) {
@@ -1279,9 +1307,17 @@ export default function (pi: ExtensionAPI) {
   // wait/hibernate/无消息时永不触发 → server presence 掉线 + 远端消息不拉）。独立 45s timer：
   // reportPresence(up) 维持 server presence + pullRemoteMessages 拉远端消息写本地 inbox。
   // 与 touchPresence 30s 节流互补（消息活跃时双保险）。unref：不阻止 agent 进程正常退出。
-  const _netTick = setInterval(() => {
+  // 2026-09-13：/reload 会再次执行本入口——之前每次多一套 45s timer 且从不清理（presence/pull 频率 ×N）。句柄放模块级，重入先清；shutdown 也清并上报 offline。
+  if (_netTickHandle) { try { clearInterval(_netTickHandle); } catch { /* 已清 */ } }
+  _netTickHandle = setInterval(() => {
     try { reportPresence("up").catch(() => {}); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* 静默 */ }
     try { pullRemoteMessages().catch(() => {}); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* 静默 */ }
   }, 45_000);
-  if (typeof (_netTick as any)?.unref === "function") (_netTick as any).unref();
+  if (typeof (_netTickHandle as any)?.unref === "function") (_netTickHandle as any).unref();
+  pi.on("session_shutdown", async () => {
+    try { if (_netTickHandle) clearInterval(_netTickHandle); } catch { /* 已清 */ }
+    // reportOffline 之前从未被调用（注释说 heart 退出钩子调，实际没有）→ 退出后 server 端最多 5 分钟仍显示在线并向其投递
+    try { await Promise.race([reportOffline(), new Promise((r) => setTimeout(r, 3000))]); } catch { /* 网络失败不阻塞退出 */ }
+  });
 }
+let _netTickHandle: ReturnType<typeof setInterval> | null = null;

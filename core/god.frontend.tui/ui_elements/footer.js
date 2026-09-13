@@ -402,13 +402,16 @@ export class FooterComponent {
                 : (state.model.provider || "");
             if (prov) modelDisplay = `${prov}:${modelDisplay}`;
         }
-        if (_cachedDevVer) {
+        // 2026-09-13（用户）：footer 版本号可隐藏（/u 开关，默认显示）
+        if (globalThis.__genshinFooterVersion !== false && _cachedDevVer) {
           modelDisplay = `${modelDisplay}  ${theme.fg("muted", _cachedDevVer)}`;
         }
         const modelDisplayW = visibleWidth(modelDisplay);
+        // 2026-09-13（用户）：footer 模型名可隐藏（/u 开关，默认显示）
+        const showModel = globalThis.__genshinFooterModel !== false;
         // line1: model+版本（左）+ 记忆%+age+tokenmaxxed（右）——合并为一行
-        const modelLeft = theme.fg("dim", modelDisplay);
-        const modelLeftW = modelDisplayW;
+        const modelLeft = showModel ? theme.fg("dim", modelDisplay) : "";
+        const modelLeftW = showModel ? modelDisplayW : 0;
 
         // followHint 放在 model 和记忆之间
         let followPill = "";
@@ -417,7 +420,8 @@ export class FooterComponent {
             const text = this._followCount > 0 ? `${this._followCount} new message${this._followCount === 1 ? "" : "s"} ↓` : "ctrl+shift+down to follow ↓";
             followPill = ` ${text} `;
             followPillW = visibleWidth(followPill);
-            followPill = theme.bg("userMessageBg", theme.fg("dim", followPill));
+            // 2026-09-13（用户）：x new message 用白色（默认前景）而不是灰色 dim
+            followPill = theme.bg("userMessageBg", followPill);
         }
         // 2026-09-04 用户需求：footer 年龄/tokenmaxxed 可在 /u 分别开关；2026-09-06 定稿默认隐藏（持久化 settingsManager.globalSettings.footerAge/footerTokenmaxxed，interactive-mode 初始化默认 false）
         const showAge = globalThis.__genshinFooterAge !== false;
@@ -441,8 +445,12 @@ export class FooterComponent {
         const rightParts = [ageStr, tokenmaxxedStr, memStr].filter(Boolean);
         const rightLine1 = rightParts.map((s, i) => i < rightParts.length - 1 ? theme.fg("dim", s) : s).join(" · ");
         const rightLine1W = visibleWidth(rightLine1);
+        // 2026-09-13（用户）：footer 只剩 contexted（模型/年龄/履历全隐藏）→ contexted 移到底行(statebar)右侧，footer 只一行（去掉中间空行）
+        const onlyContexted = !showModel && !ageStr && !tokenmaxxedStr && !!memStr;
         let line1;
-        if (modelLeftW + 2 + rightLine1W <= width) {
+        if (onlyContexted) {
+            line1 = ""; // line1 不显示，contexted 由 line2 右对齐承担
+        } else if (modelLeftW + 2 + rightLine1W <= width) {
             const middleSpace = width - modelLeftW - rightLine1W;
             if (followPillW > 0 && middleSpace >= followPillW + 4) {
                 const leftPad = Math.floor((middleSpace - followPillW) / 2);
@@ -468,6 +476,17 @@ export class FooterComponent {
                 line2 = truncateToWidth(sortedStatuses.join(" "), width, theme.fg("dim", "..."));
             }
         }
+        // 2026-09-13（用户）：只剩 contexted 时，contexted 右对齐到 line2（statebar 右侧）
+        if (onlyContexted) {
+            const ctxW = visibleWidth(memStr);
+            const avail = width - ctxW - 1;
+            if (avail > 0) {
+                const base = truncateToWidth(line2, avail, "");
+                line2 = base + " ".repeat(avail - visibleWidth(base)) + " " + memStr;
+            } else {
+                line2 = truncateToWidth(memStr, width, "");
+            }
+        }
         // FOOTER01=model+记忆行 FOOTER02=spinner/status行
         // ── 窗口标题：仅变化时设，避免每帧刷 OSC 码 ──
         // 窗口标题：异步写到 render cycle 之后（不在 render() 同步路径内，不在 synchronized block 内）。
@@ -483,7 +502,7 @@ export class FooterComponent {
         } catch(e) { try { require("fs").appendFileSync((process.env.HOME||"")+"/.teyvat/LogData/genshin-catch-errors.log", "[title] " + (e?.stack||e) + "\n"); } catch (e) { console.error("[god.frontend.tui/ui_elements/footer.js] " + (e?.message || e)); } }
 
         const lines = [];
-        if (process.env.FOOTER01 !== "0") lines.push(line1);
+        if (process.env.FOOTER01 !== "0" && !onlyContexted) lines.push(line1);
         if (process.env.FOOTER02 !== "0") lines.push(line2);
         return lines;
         } catch(e) {

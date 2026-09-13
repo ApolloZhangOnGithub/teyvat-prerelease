@@ -38,7 +38,8 @@ export function isValidHttpUrl(url: string): boolean {
     return false;
   }
   if (u.protocol !== "http:" && u.protocol !== "https:") return false;
-  const host = u.hostname.toLowerCase();
+  // 2026-09-13：IPv6 字面量 hostname 带方括号（"[::1]"、"[::ffff:7f00:1]"）——下面所有 IPv6 判断都不含 "["，永远不匹配 → http://[::1]:port/ 直通本机服务（SSRF）。先剥括号。
+  const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (host === "localhost" || host.endsWith(".localhost")) return false;
   // IPv4：回环/私有/链路本地全拦
   const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);

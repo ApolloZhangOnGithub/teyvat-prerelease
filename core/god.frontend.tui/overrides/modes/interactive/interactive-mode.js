@@ -470,6 +470,9 @@ export class InteractiveMode {
         globalThis.__genshinFooterTokenmaxxed = this.settingsManager?.globalSettings?.footerTokenmaxxed ?? false;
         // 2026-09-04：footer 模型名左侧具体 provider 显示（/u 的 Footer 供应商开关，默认 true）；2026-09-06 默认隐藏
         globalThis.__genshinFooterProvider = this.settingsManager?.globalSettings?.footerProvider ?? false;
+        // 2026-09-13（用户）：footer 模型名/版本号可隐藏（默认显示）
+        globalThis.__genshinFooterModel = this.settingsManager?.globalSettings?.footerModel ?? true;
+        globalThis.__genshinFooterVersion = this.settingsManager?.globalSettings?.footerVersion ?? true;
         // /u 持久化的行为偏好恢复
         if (this.settingsManager?.globalSettings?.ctrlCToBg !== undefined) globalThis.__genshinCtrlCToBg = this.settingsManager.globalSettings.ctrlCToBg;
         if (this.settingsManager?.globalSettings?.codeHighlight !== undefined) globalThis.__genshinCodeHighlight = this.settingsManager.globalSettings.codeHighlight;

@@ -10,7 +10,8 @@ export function createReadConscious(pi: ExtensionAPI, getTranscriptPath: () => s
   const derivePersonId = () => {
     const p = getTranscriptPath();
     if (!p) return "?";
-    const m = p.match(/memory\/([a-f0-9]+)\//);
+    // 2026-09-13：feed 路径是 ~/.teyvat/RuntimeCache/<id>/conscious-feed.jsonl（旧 memory/<id>/ 早已不存在）→ 之前恒 "?"，scrub() 把自己的路径也改写成 [other-person-…]
+    const m = p.match(/(?:RuntimeCache|MemoryData|memory)\/([a-f0-9]{8})\//);
     return m ? m[1] : "?";
   };
   return {

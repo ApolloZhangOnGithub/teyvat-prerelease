@@ -14,7 +14,9 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { logerr, userFile, runtimeCacheDir } from "#paths";
+import { logerr, userFile, runtimeCacheDir, writeFileAtomic } from "#paths";
+// 扩展加载阶段攒下的告警（pi runtime 未就绪时不能 sendMessage），session_start 时统一发出
+const _kernelWarns: string[] = [];
 
 // ── i18n 辅助 ──
 export function t(zh: string, en: string): string {
@@ -291,7 +293,7 @@ export default function kernelMain(pi: ExtensionAPI) {
     if (!entry) { missing.push(f.name); continue; }
     // 自指防护：entry 指回 kernel 自己（别名配错）会无限递归自表达直到栈爆，跳过并告警
     if ((entry as unknown) === kernelMain) {
-      try { sendCustomMessage(pi, "system-error", `WARN: func ${f.name} 的 REGISTRY entry 指向 kernel 自身（#别名配错?），已跳过以防递归`); } catch (e2) { logerr("K016", e2); }
+      _kernelWarns.push(`WARN: func ${f.name} 的 REGISTRY entry 指向 kernel 自身（#别名配错?），已跳过以防递归`);
       continue;
     }
     try {
@@ -312,9 +314,7 @@ export default function kernelMain(pi: ExtensionAPI) {
 
   // promotor.dna 声明了、但 REGISTRY 里没登记的 func —— 提醒（不致命）
   if (missing.length) {
-    try {
-      sendCustomMessage(pi, "system-error", `WARN: 这些 func 在 promotor.dna 已声明但 kernel 未登记: ${missing.join(", ")}（在 kernel.core/core.ts REGISTRY 加 import）`);
-    } catch (e2) { logerr("K006", e2); }
+    _kernelWarns.push(`WARN: 这些 func 在 promotor.dna 已声明但 kernel 未登记: ${missing.join(", ")}（在 kernel.core/core.ts REGISTRY 加 import）`);
   }
 
   // 反向检查：REGISTRY 登记了、但 promotor.dna/RNA 未声明的 func —— 不能静默！
@@ -324,7 +324,7 @@ export default function kernelMain(pi: ExtensionAPI) {
     const declaredSet = new Set(Object.keys(raw.funcs));
     const unDeclared = Object.keys(REGISTRY).filter((name) => !declaredSet.has(name));
     if (unDeclared.length) {
-      sendCustomMessage(pi, "system-error", `WARN: 这些 func 在 kernel REGISTRY 已登记但 promotor.dna 未声明: ${unDeclared.join(", ")}（在 promotor.dna 加 func 声明并重新生成 rna.json，否则永远不会被加载）`);
+      _kernelWarns.push(`WARN: 这些 func 在 kernel REGISTRY 已登记但 promotor.dna 未声明: ${unDeclared.join(", ")}（在 promotor.dna 加 func 声明并重新生成 rna.json，否则永远不会被加载）`);
     }
   } catch (e2) { logerr("K023", e2); }
 
@@ -334,6 +334,13 @@ export default function kernelMain(pi: ExtensionAPI) {
     const sf = ctx.sessionManager.getSessionFile();
     const role = detectRole(sf);
     rt.setSessionRole(role);
+    // 2026-09-13：kernelMain 是扩展 factory，加载阶段 pi.sendMessage 是 "Extension runtime not initialized" 抛错桩（loader.js）——
+    // 之前三处 REGISTRY/RNA 断线告警在那时直接发，每次都进 catch（历史日志 365 条 K006/K003/K023），用户和 agent 从未见过。改为攒起来在这里发。
+    if (role === "main") {
+      for (const w of _kernelWarns.splice(0)) { try { sendCustomMessage(pi, "system-error", w); } catch (e2) { logerr("K006", e2, w); } }
+    }
+    // 被覆盖层（模型清单 / tools-auth / 会话 /tools）合法移除的工具——K020 硬检查据此免误报
+    const _removedByOverride = new Set<string>();
 
     // ── 工具过滤（代码层强制，所有 role 都过滤）──
     {
@@ -342,7 +349,12 @@ export default function kernelMain(pi: ExtensionAPI) {
         const manifestPath = resolve(DIRS.core, "spirit.bio.gene/tools.manifest.json");
         const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
         if (manifest.roles) Object.assign(ROLE_TOOLS, manifest.roles);
-      } catch (e) { logerr("K007", e); }
+      } catch (e) {
+        // 2026-09-13：manifest 读/解析失败必须 fail-fast（与 RNA 同策略）——之前只 logerr，随后 allowed 为空集 → 过滤整体跳过，
+        // 所有已注册工具（含 default:false 的 mobile/ear/mouth/sleep）全部激活，K020 也静默（历史：手写尾随逗号 30 条 K007/K021）。
+        logerr("K007", e);
+        throw new Error(`[K007] tools.manifest.json 读取/解析失败（fail-fast）: ${(e as any)?.message ?? e}`);
+      }
 
       let allowed: Set<string>;
       if (role === "main") {
@@ -376,7 +388,7 @@ export default function kernelMain(pi: ExtensionAPI) {
                 const ov = JSON.parse(readFileSync(modelPath, "utf8"))?.overrides || {};
                 for (const [k, v] of Object.entries(ov)) {
                   if (v === true) enabled.add(k);
-                  else if (v === false) enabled.delete(k);
+                  else if (v === false) { enabled.delete(k); _removedByOverride.add(k.toLowerCase()); }
                 }
               }
             }
@@ -414,7 +426,7 @@ export default function kernelMain(pi: ExtensionAPI) {
                 }
                 for (const n of dis) {
                   const canon = allNames.find(x => x.toLowerCase() === n.toLowerCase());
-                  if (canon) allowed.delete(canon);
+                  if (canon) { allowed.delete(canon); _removedByOverride.add(canon.toLowerCase()); }
                 }
               }
             }
@@ -467,6 +479,7 @@ export default function kernelMain(pi: ExtensionAPI) {
                 if (canon) out.push(canon);
               } else if (v === false && i >= 0) {
                 out.splice(i, 1);
+                _removedByOverride.add(k.toLowerCase());
               }
             }
             pi.setActiveTools(out);
@@ -497,7 +510,9 @@ export default function kernelMain(pi: ExtensionAPI) {
           const orig = activeOrig.find((a: string) => a.toLowerCase() === t.toLowerCase());
           if (orig !== t) console.warn(`[K022] 工具名大小写不一致: manifest="${t}" vs 注册="${orig}"，已容错匹配`);
         }
-        const missing = expected.filter((t: string) => !disabled.includes(t.toLowerCase()) && !active.includes(t.toLowerCase()));
+        // 2026-09-13：被模型覆盖清单（gene/tools/<model>.json）、tools-auth disabled、会话覆盖（/tools）合法移除的工具不算"未注入"——
+        // 之前只扣 settings.disabled，这三层任一禁用 default:true 工具就 throw K020（历史：deepseek 覆盖文件禁 eyes/mobile → 反复误报，靠改数据压症状）
+        const missing = expected.filter((t: string) => !disabled.includes(t.toLowerCase()) && !_removedByOverride.has(t.toLowerCase()) && !active.includes(t.toLowerCase()));
         if (missing.length > 0) {
           const msg = `[K020] 工具未注入: ${missing.join(", ")}。manifest 声明 default:true 且未被 settings 禁用，但未注入。检查对应 func 是否在 export default 顶层调用了 registerPaimonTool。`;
           logerr("K020", msg);
@@ -568,7 +583,7 @@ export default function kernelMain(pi: ExtensionAPI) {
       const plistPath = join(homedir(), ".teyvat/MemoryData/plist.json");
       const freshList = JSON.parse(readFileSync(plistPath, "utf8"));
       const p = freshList.find((x: any) => x.id === id);
-      if (p && !p.archived) { p.lastSeen = new Date().toISOString(); writeFileSync(plistPath, JSON.stringify(freshList, null, 2)); }
+      if (p && !p.archived) { p.lastSeen = new Date().toISOString(); writeFileAtomic(plistPath, JSON.stringify(freshList, null, 2)); /* 2026-09-13：165 个 agent 共享一个 plist.json，writeFileSync 先截断——并发启动/退出时其他读者读到半截 JSON；改原子写 */ }
     } catch (e) { console.error("[spirit.bio.organs/kernel.core/core.ts] " + ((e as any)?.message || e)); }
 
     // 心跳文件：每 30s 更新一次，hc/sc session 用它检测主意识是否存活（替代 PID 看门狗）
@@ -633,7 +648,7 @@ export default function kernelMain(pi: ExtensionAPI) {
         const plistPath = join(homedir(), ".teyvat/MemoryData/plist.json");
         const freshList = JSON.parse(readFileSync(plistPath, "utf8"));
         const p = freshList.find((x: any) => x.id === id);
-        if (p && !p.archived) { p.lastEnded = new Date().toISOString(); writeFileSync(plistPath, JSON.stringify(freshList, null, 2)); }
+        if (p && !p.archived) { p.lastEnded = new Date().toISOString(); writeFileAtomic(plistPath, JSON.stringify(freshList, null, 2)); /* 2026-09-13：165 个 agent 共享一个 plist.json，writeFileSync 先截断——并发启动/退出时其他读者读到半截 JSON；改原子写 */ }
       }
     } catch (e) { console.error("[spirit.bio.organs/kernel.core/core.ts] " + ((e as any)?.message || e)); }
   });

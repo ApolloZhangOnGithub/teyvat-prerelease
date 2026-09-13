@@ -897,7 +897,8 @@ export default function (pi: ExtensionAPI) {
       if (pid) {
         const memDir = memoryDir(pid);
         const { computeAgentStats, writeStats } = require("../../god.frontend.cli/agent-stats.cjs");
-        writeStats(homedir() + "/.teyvat", pid, computeAgentStats(homedir() + "/.teyvat", memDir, pid));
+        // 2026-09-13：statsDir 必须是父层 MemoryData（computeAgentStats 内部再 join(id)）——之前传 memoryDir(pid) → MemoryData/<id>/<id> 不存在，退出时把列表统计写成 0（session_start 那处 08-20 已改，这里漏了）
+        writeStats(homedir() + "/.teyvat", pid, computeAgentStats(homedir() + "/.teyvat", memoryDataDir(), pid));
       }
     } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
   });
