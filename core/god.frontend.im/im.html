@@ -227,6 +227,7 @@
       使用 GitHub 登录
     </button>
     <div class="status" id="loginStatus"></div>
+    <!-- token 登录（已注释，用户定稿暂不用，保留备查）
     <div class="or-divider" id="orDiv" style="display:none">或</div>
     <div class="token-row" id="tokenRow" style="display:none">
       <input id="tokenInput" placeholder="粘贴 GitHub Token（gho_...）">
@@ -238,6 +239,7 @@
     <div style="text-align:center;margin-top:12px">
       <a href="#" id="showToken" style="font-size:12px;color:#aaa">用 Token 登录</a>
     </div>
+    -->
   </div>
 </div>
 <div id="demoView" class="app">
@@ -469,6 +471,15 @@ function addLongPress(el, handler) {
   el.addEventListener("touchmove", () => clearTimeout(timer));
   el.addEventListener("touchcancel", () => clearTimeout(timer));
 }
+// 通用菜单绑定：统一长按误触检测 + 分发（所有菜单共用）
+function menuBind(menu, handler) {
+  menu.querySelectorAll("[data-act]").forEach((el) => {
+    el.onclick = () => {
+      if (Date.now() - justLongPressed < 350) return; // 长按刚触发，忽略误触
+      handler(el.dataset.act);
+    };
+  });
+}
 function hl(text, kw) { // 关键词高亮
   const t = String(text);
   if (!kw) return esc(t);
@@ -576,7 +587,7 @@ async function loadConvs() {
     $("railMeAvatar").textContent = initial(self.name);
     renderList();
     try { localStorage.setItem("paimon-im-cache-convs", JSON.stringify(convs)); } catch { /* 忽略 */ }
-    if (!current) {
+    if (!current && view === "chats") {
       const last = localStorage.getItem("teyvat-im-last");
       const c0 = last && convs.find((x) => x.sid === last);
       if (c0) selectConv(c0, null, true);
@@ -664,6 +675,20 @@ const BACK_SVG = '<svg viewBox="0 0 24 24" fill="#fff"><path d="M15 5l-7 7 7 7z"
 function goContacts() { view = "contacts"; syncRail(); renderList(); }
 
 // 收藏（独立页面）
+function showFavMenu(x, y, f) {
+  const menu = $("msgMenu");
+  menu.innerHTML = `<div class="mi" data-act="copy">复制</div><div class="mi" data-act="forward">转发</div>`;
+  menu.style.display = "";
+  menu.style.left = Math.min(x, window.innerWidth - 140) + "px";
+  menu.style.top = Math.min(y, window.innerHeight - 120) + "px";
+  menuBind(menu, (act) => {
+    $("msgMenu").style.display = "none";
+    if (act === "copy") {
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(f.text).then(() => toast("已复制")).catch(() => { fallbackCopy(f.text); toast("已复制"); });
+      else { fallbackCopy(f.text); toast("已复制"); }
+    } else if (act === "forward") { openForward({ text: f.text }); }
+  });
+}
 function renderFavs(el) {
   el.appendChild(entryRow("← 返回", "#c8c8c8", BACK_SVG, () => { view = "me"; syncRail(); renderList(); }));
   const favs = getFavs();
@@ -673,22 +698,9 @@ function renderFavs(el) {
     d.className = "fav-item";
     d.style.cursor = "pointer";
     d.innerHTML = `${esc(String(f.text).slice(0, 200))}<div class="fw">${esc(f.from || "")} · ${fmtTime(f.ts)}</div>`;
-    d.title = "右键复制/转发";
-    d.oncontextmenu = (e2) => {
-      e2.preventDefault();
-      const menu = $("msgMenu");
-      menu.innerHTML = `<div class="mi" data-act="copy">复制</div><div class="mi" data-act="forward">转发</div>`;
-      menu.style.display = "";
-      menu.style.left = Math.min(e2.clientX, window.innerWidth - 140) + "px";
-      menu.style.top = Math.min(e2.clientY, window.innerHeight - 120) + "px";
-      menu.querySelectorAll(".mi").forEach((el) => { el.onclick = () => {
-        $("msgMenu").style.display = "none";
-        if (el.dataset.act === "copy") {
-          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(f.text).then(() => toast("已复制")).catch(() => { fallbackCopy(f.text); toast("已复制"); });
-          else { fallbackCopy(f.text); toast("已复制"); }
-        } else if (el.dataset.act === "forward") { openForward({ text: f.text }); }
-      }; });
-    };
+    d.title = "复制/转发";
+    d.oncontextmenu = (e2) => { e2.preventDefault(); showFavMenu(e2.clientX, e2.clientY, f); };
+    addLongPress(d, (x, y) => showFavMenu(x, y, f));
     el.appendChild(d);
   }
 }
@@ -787,29 +799,34 @@ function renderMe(el) {
       `<option value="interrupt" ${cfg.mode === "interrupt" ? "selected" : ""}>打断（立即送达）</option>` +
       `<option value="queue" ${cfg.mode === "queue" ? "selected" : ""}>排队（对方空闲时）</option>` +
     `</select></div>` +
-    `<div class="set-row"><span>系统通知</span><span style="display:flex;align-items:center;gap:10px"><span style="font-size:12px;color:#999" id="notifyState">${notifyStateText()}</span><span class="switch ${cfg.notifyOn ? "on" : ""}" id="setNotifyOn"></span></span></div>` +
-    `<div class="set-row"><span>聚焦时免打扰</span><span class="switch ${cfg.focusMute !== false ? "on" : ""}" id="setFocusMute"></span></div>` +
+    (typeof Notification !== "undefined"
+      ? `<div class="set-row"><span>系统通知</span><span style="display:flex;align-items:center;gap:10px"><span style="font-size:12px;color:#999" id="notifyState">${notifyStateText()}</span><span class="switch ${cfg.notifyOn ? "on" : ""}" id="setNotifyOn"></span></span></div>` +
+        `<div class="set-row"><span>聚焦时免打扰</span><span class="switch ${cfg.focusMute !== false ? "on" : ""}" id="setFocusMute"></span></div>`
+      : "") +
     `<div class="set-note"><b>Teyvat IM · 公网版</b>（GitHub OAuth 登录）</div>` +
     `<div class="set-row" style="margin-top:8px"><button id="btnLogout" style="width:100%;padding:8px;border:1px solid #e3e3e3;background:#fff;border-radius:6px;cursor:pointer;color:#e5484d">退出登录</button></div>`;
   // 我的收藏已改为独立入口（meFavs → view=favs）
   $("setKey").onchange = (e) => { cfg.sendKey = e.target.value; saveCfg(); };
   $("setMode").onchange = (e) => { cfg.mode = e.target.value; saveCfg(); };
   // 收藏独立入口（view=favs）+ 通知开关（授权后仍可控是否发送）
-  $("meFavs").onclick = async () => { await loadFavs(); view = "favs"; syncRail(); renderList(); };
-  $("setNotifyOn").onclick = async () => {
-    cfg.notifyOn = !cfg.notifyOn; saveCfg();
-    $("setNotifyOn").classList.toggle("on", cfg.notifyOn);
-    if (cfg.notifyOn && typeof Notification !== "undefined" && Notification.permission === "default") {
-      try { const p = await Notification.requestPermission(); toast(p === "granted" ? "已开启系统通知" : "未授权（可在浏览器设置里允许）"); renderList(); } catch { /* 忽略 */ }
-    }
-  };
-  $("setFocusMute").onclick = () => { cfg.focusMute = !(cfg.focusMute !== false); saveCfg(); $("setFocusMute").classList.toggle("on", cfg.focusMute !== false); };
+  $("meFavs").onclick = () => { view = "favs"; syncRail(); renderList(); loadFavs(); }; // 先进去再后台同步，不卡
+  if (typeof Notification !== "undefined") {
+    $("setNotifyOn").onclick = async () => {
+      cfg.notifyOn = !cfg.notifyOn; saveCfg();
+      $("setNotifyOn").classList.toggle("on", cfg.notifyOn);
+      if (cfg.notifyOn && Notification.permission === "default") {
+        try { const p = await Notification.requestPermission(); toast(p === "granted" ? "已开启系统通知" : "未授权（可在浏览器设置里允许）"); renderList(); } catch { /* 忽略 */ }
+      }
+    };
+    $("setFocusMute").onclick = () => { cfg.focusMute = !(cfg.focusMute !== false); saveCfg(); $("setFocusMute").classList.toggle("on", cfg.focusMute !== false); };
+  }
   $("btnLogout").onclick = () => { modalConfirm("确定退出登录？", "退出", () => logout()); };
 }
 
 // ── 选中会话 ──
 async function selectConv(c, focusMsgId, keepScroll = false) {
   current = c.sid;
+  if (!keepScroll) { view = "chats"; syncRail(); } // 用户主动打开会话 → 切到消息 tab（手机端左边对应消息）
   document.body.classList.add("chat-open");
   delete unread[c.sid];
   saveUnread();
@@ -1249,7 +1266,7 @@ function renderMoreMenu() {
     `<div class="mi-row"><span>置顶聊天</span><span class="switch ${pinned ? "on" : ""}" data-act="pin"></span></div>` +
     `<div class="mi" data-act="clear">清空聊天记录</div>` +
     `<div class="mi" data-act="del">删除聊天</div>`;
-  $("moreMenu").querySelectorAll(".mi, .switch").forEach((el2) => { el2.onclick = () => handleMore(el2.dataset.act); });
+  menuBind($("moreMenu"), handleMore);
 }
 function handleMore(act) {
   if (!current) return;
@@ -1276,14 +1293,15 @@ document.addEventListener("click", (e) => { if (moreOpen && !e.target.closest(".
 
 // ── 消息右键菜单（复制 / 转发 / 收藏 / 引用 / 删除）──
 const MHIDDEN_KEY = "teyvat-im-mhidden";
-let favs = []; // 收藏（服务端跨设备同步）
+let favs = (() => { try { return JSON.parse(localStorage.getItem("teyvat-im-favs-cache") || "[]"); } catch { return []; } })(); // 收藏（服务端跨设备同步 + 本地缓存，避免刷新闪烁）
 async function loadFavs() {
-  try { const r = await api("/messages/favorites"); if (r.ok) { const d = await r.json().catch(() => ({})); favs = d.favorites || []; } } catch { /* 忽略 */ }
+  try { const r = await api("/messages/favorites"); if (r.ok) { const d = await r.json().catch(() => ({})); favs = d.favorites || []; try { localStorage.setItem("teyvat-im-favs-cache", JSON.stringify(favs)); } catch { /* 忽略 */ } if (view === "me" || view === "favs") renderList(); } } catch { /* 忽略 */ }
 }
 function getFavs() { return favs; }
 async function addFav(text, from) {
   const ts = Date.now();
   favs.unshift({ text, from, ts });
+  try { localStorage.setItem("teyvat-im-favs-cache", JSON.stringify(favs)); } catch { /* 忽略 */ }
   try { await api("/messages/favorites", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, from_name: from, ts }) }); } catch { /* 忽略 */ }
 }
 const getHiddenMsgs = () => new Set(JSON.parse(localStorage.getItem(MHIDDEN_KEY) || "[]"));
@@ -1327,7 +1345,7 @@ function showMsgMenu(e, m) {
   menu.style.display = "";
   menu.style.left = Math.min(e.clientX, window.innerWidth - 140) + "px";
   menu.style.top = Math.min(e.clientY, window.innerHeight - 200) + "px";
-  menu.querySelectorAll(".mi").forEach((el) => { el.onclick = () => { if (Date.now() - justLongPressed < 350) return; handleMsgAct(el.dataset.act); }; });
+  menuBind(menu, handleMsgAct);
 }
 function handleMsgAct(act) {
   const m = ctxMsg; $("msgMenu").style.display = "none"; ctxMsg = null;
@@ -1360,7 +1378,7 @@ function showConvMenu(e, c) {
   menu.style.display = "";
   menu.style.left = Math.min(e.clientX, window.innerWidth - 140) + "px";
   menu.style.top = Math.min(e.clientY, window.innerHeight - 140) + "px";
-  menu.querySelectorAll(".mi").forEach((el) => { el.onclick = () => { if (Date.now() - justLongPressed < 350) return; handleConvAct(el.dataset.act); }; });
+  menuBind(menu, handleConvAct);
 }
 function handleConvAct(act) {
   const c = ctxConv; $("convMenu").style.display = "none"; ctxConv = null;
@@ -1469,20 +1487,21 @@ loadConvs();
 // ── 登录接线 + 初始化 ──
 $("sidever").innerHTML = "Teyvat IM · <b>公网版</b>";
 $("btnLogin").onclick = ghLogin;
-$("chatBack").onclick = () => { document.body.classList.remove("chat-open"); };
-$("showToken").onclick = (e) => { e.preventDefault(); for (const id of ["orDiv", "tokenRow", "tokenHint"]) $(id).style.display = ""; $("showToken").parentElement.style.display = "none"; };
-$("btnToken").onclick = async () => {
-  const t = $("tokenInput").value.trim();
-  if (!t) { $("loginStatus").textContent = "请先粘贴 token"; return; }
-  $("loginStatus").textContent = "验证 token…";
-  TOKEN = t;
-  if (!DEVICE_ID) { DEVICE_ID = Math.random().toString(16).slice(2, 10); localStorage.setItem("paimon-im-device", DEVICE_ID); }
-  try {
-    const r = await api("/sync/agent-presence");
-    if (r.ok) { localStorage.setItem("paimon-im-token", TOKEN); ME = { login: "token 用户" }; localStorage.setItem("paimon-im-login", "token 用户"); $("loginStatus").textContent = "登录成功"; enterMain(); }
-    else { TOKEN = ""; $("loginStatus").textContent = "Token 无效（HTTP " + r.status + "）"; }
-  } catch (e) { TOKEN = ""; $("loginStatus").textContent = "验证失败：" + e.message; }
-};
+$("chatBack").onclick = () => { document.body.classList.remove("chat-open"); current = null; renderList(); }; // 返回时清掉选中，取消灰色高亮
+// token 登录（已注释，用户定稿只留 GitHub OAuth 网页登录，保留备查）
+// $("showToken").onclick = (e) => { e.preventDefault(); for (const id of ["orDiv", "tokenRow", "tokenHint"]) $(id).style.display = ""; $("showToken").parentElement.style.display = "none"; };
+// $("btnToken").onclick = async () => {
+//   const t = $("tokenInput").value.trim();
+//   if (!t) { $("loginStatus").textContent = "请先粘贴 token"; return; }
+//   $("loginStatus").textContent = "验证 token…";
+//   TOKEN = t;
+//   if (!DEVICE_ID) { DEVICE_ID = Math.random().toString(16).slice(2, 10); localStorage.setItem("paimon-im-device", DEVICE_ID); }
+//   try {
+//     const r = await api("/sync/agent-presence");
+//     if (r.ok) { localStorage.setItem("paimon-im-token", TOKEN); ME = { login: "token 用户" }; localStorage.setItem("paimon-im-login", "token 用户"); $("loginStatus").textContent = "登录成功"; enterMain(); }
+//     else { TOKEN = ""; $("loginStatus").textContent = "Token 无效（HTTP " + r.status + "）"; }
+//   } catch (e) { TOKEN = ""; $("loginStatus").textContent = "验证失败：" + e.message; }
+// };
 // 已登录则直接进主界面（无登录闪烁）
 (async () => {
   if (await handleOAuthCallback()) return;

@@ -9,6 +9,7 @@ import { createReadToolDefinition } from "@earendil-works/pi-coding-agent";
 import { registerPaimonTool } from "#kernel_backbone";
 import { renderToolCall, renderMessage, stripResultTokenMark } from "#tui_blockrender";
 import { i18n } from "#tui_localizations";
+import { readFile } from "node:fs/promises";
 import { createDocxBackend } from "#office_docx";
 import { createPptxBackend } from "#office_pptx";
 import { createXlsxBackend } from "#office_xlsx";
@@ -37,6 +38,37 @@ async function readOffice(kind: "docx" | "pptx" | "xlsx" | "pdf", path: string):
     case "xlsx": return createXlsxBackend("python")!.readText(path);
     case "pdf": return createPdfBackend("python")!.readText(path);
   }
+}
+
+// 检测 read 区间是否整体落在「多行块注释」内部（/* */ 或 <!-- -->）。
+// 只标记严格在块内部的行（不含开闭行），避免单行 // 或单行 /* */ 误报（那些标记本身可见）。
+// 目的：agent 读到的几行若全在块注释里，提示它这是注释、不是活代码，避免被注释坑。
+function isRangeInMultiLineComment(text: string, offset: number, limit: number): boolean {
+  const lines = text.split("\n");
+  const start = Math.max(1, offset || 1);
+  const end = limit ? start + limit - 1 : lines.length;
+  const inside = new Array(lines.length + 1).fill(false);
+  let inBlock = false;
+  let closeTok = "";
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const ln = i + 1;
+    if (inBlock) {
+      if (line.indexOf(closeTok) >= 0) { inBlock = false; closeTok = ""; }
+      else inside[ln] = true;
+    } else {
+      const cIdx = line.indexOf("/*");
+      const hIdx = line.indexOf("<!--");
+      let idx = -1, tok = "";
+      if (cIdx >= 0 && (hIdx < 0 || cIdx <= hIdx)) { idx = cIdx; tok = "*/"; }
+      else if (hIdx >= 0) { idx = hIdx; tok = "-->"; }
+      if (idx >= 0 && line.indexOf(tok, idx + 2) < 0) { inBlock = true; closeTok = tok; }
+    }
+  }
+  for (let ln = start; ln <= end && ln <= lines.length; ln++) {
+    if (!inside[ln]) return false;
+  }
+  return start <= end && end <= lines.length;
 }
 
 export default function registerReadTool(_pi: any): void {
@@ -84,7 +116,18 @@ export default function registerReadTool(_pi: any): void {
         return { content: [{ type: "text", text: i18n(`图片文件 [${params.path}]。如需模型看图（原图嵌入，需视觉模型），请用 Eyes(action:'native', path="${params.path}") 注入；或 Eyes(action:'vlm', path=...) 让 VL 描述、Eyes(action:'ocr', path=...) 提取文字。`, `Image file [${params.path}]. To have the model see the original (needs a vision model), use Eyes(action:'native', path="${params.path}") to inject; or Eyes(action:'vlm', path=...) for VL description, Eyes(action:'ocr', path=...) for text extraction.`) }] };
       }
       // 非 office：走 pi 原生 read（文本截断 / offset/limit 全保留）
-      return baseRead.execute(_id, params, signal, onUpdate, ctx);
+      const result = await baseRead.execute(_id, params, signal, onUpdate, ctx);
+      // 注释区间检测：read 区间整体落在块注释内时加提示，避免 agent 把注释误判成活代码
+      if (params.limit && params.limit > 0 && typeof params.path === "string") {
+        try {
+          const raw = await readFile(params.path, "utf8");
+          if (isRangeInMultiLineComment(raw, params.offset || 1, params.limit)) {
+            const hint = "[注释块] 注意：以下内容全部位于块注释（/* */ 或 <!-- -->）内，是注释、不是可执行代码。\n\n";
+            if (result?.content?.[0]?.type === "text") result.content[0].text = hint + result.content[0].text;
+          }
+        } catch { /* 检测失败忽略，不影响 read */ }
+      }
+      return result;
     },
   });
 }

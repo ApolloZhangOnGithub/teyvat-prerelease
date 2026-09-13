@@ -125,6 +125,7 @@ _integrity: _paths ensure-dev-links
 	@echo "[$$(date +%H:%M:%S)] ESM require check..." && cd "$(CORE)" && \
 		node "$(DEPLOY)/check-esm-require.cjs" "$(CORE)" || { echo "  ESM require errors — add createRequire or remove require()"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] resolve check..." && node "$(DEPLOY)/check-resolve.cjs" "$(CORE)" || { echo "  resolve check FAILED — 存在解析不到真实文件的 import/require（镜像 jiti 运行时语义，LESSON 056），修复后再 make"; exit 1; }
+	@echo "[$$(date +%H:%M:%S)] copy/m command check..." && node "$(DEPLOY)/check-copy-command.cjs" "$(CORE)" || { echo "  copy/m 命令注册缺失（经典坑回归）— 见 check-copy-command.cjs.SPEC"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] launcher check..." && node "$(DEPLOY)/check-launcher.cjs" "$(CORE)/god.frontend.cli/launcher.sh" || { echo "  launcher check FAILED — 后台构造未做终端隔离（LESSON 037 / ISSUE 088），修复后再 make"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] require-entry check..." && node "$(DEPLOY)/check-require-entry.cjs" "$(CORE)" || { echo "  require-entry check FAILED — 禁止裸引用 @earendil-works/pi-coding-agent（LESSON 056），修复后再 make"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] render smoke check..." && node "$(DEPLOY)/check-render.mjs" "$(CORE)" || { echo "  render smoke check FAILED — pi-tui 渲染器回归（null 保护/标题定制丢失等），修复后再 make"; exit 1; }

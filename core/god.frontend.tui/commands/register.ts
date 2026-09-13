@@ -77,4 +77,6 @@ export function registerGodCommands(pi: any) {
     description: desc("model", "切换模型（搜索式选择器）", "Switch model (search selector)"),
     handler: modelHandler,
   });
+  // 2026-09-14：注册 trace——/copy 失效排查用，确认本函数真的执行+copy真的注册进 runner
+  try { console.error(`[cmd-reg] registerGodCommands done: s,a,q,h,p,copy,m (pi=${typeof pi?.registerCommand})`); } catch (e) { console.error("[god.frontend.tui/commands/register.ts] " + ((e as any)?.message || e)); }
 }

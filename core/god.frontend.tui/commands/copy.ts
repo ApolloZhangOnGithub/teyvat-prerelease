@@ -8,6 +8,7 @@ import { i18n } from "#tui_localizations";
 const T = (zh: string, en: string) => i18n(zh, en);
 
 export async function copyHandler(_args: any, ctx: any) {
+  try { console.error(`[copy-handler] invoked, bridge=${typeof (globalThis as any).__genshinHandleCopyCommand}`); } catch (e) { console.error("[god.frontend.tui/commands/copy.ts] " + ((e as any)?.message || e)); }
   const handle = (globalThis as any).__genshinHandleCopyCommand;
   if (typeof handle === "function") { handle(); return; }
   ctx.ui.notify(T("复制未就绪（TUI 未初始化）", "Copy not ready (TUI not initialized)"), "error");

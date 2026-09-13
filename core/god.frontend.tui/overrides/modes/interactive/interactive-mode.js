@@ -5387,6 +5387,7 @@ export class InteractiveMode {
     async handleCopyCommand() {
         // 2026-09-14（用户）：/copy = 拷贝历史任意回复——打开 TreeSelector（session tree 全轨迹含分支，
         // no-tools 过滤只看消息），回车拷贝选中 entry 的纯文本；esc 关闭。替代旧“只拷最后一条”。
+        try { console.error(`[copy-cmd] handleCopyCommand invoked, tree=${this.sessionManager.getTree().length}`); } catch (e) { console.error("[modes/interactive/interactive-mode.js] " + (e?.message || e)); }
         if (this.sessionManager.getTree().length === 0) {
             this.showError("No entries in session");
             return;
