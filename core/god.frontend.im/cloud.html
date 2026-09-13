@@ -118,6 +118,56 @@ const API = "https://sync.paimon.beer";
 const MY_SID = "c0de0001"; // 云版身份（与本地 web-im-demo 同 sid：共享同一 server 收件箱）
 let TOKEN = localStorage.getItem("paimon-im-token") || "";
 let DEVICE_ID = localStorage.getItem("paimon-im-device") || "";
+
+// ── E2E 端到端加密（2026-09-13）——ECDH P-256 + AES-256-GCM，与 agent 侧 communicate.ts 对齐 ──
+// 私钥 localStorage 持久化；公钥随消息 pub 字段分发；有对方公钥后正文加密（server 只见密文）；首联明文是设计内行为
+let MY_KP = null, MY_PUB = null;
+const PEER_PUBS = JSON.parse(localStorage.getItem("paimon-im-e2e-peers") || "{}");
+const _b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const _unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+async function e2eInit() {
+  try {
+    const saved = localStorage.getItem("paimon-im-e2e-kp");
+    if (saved) {
+      const j = JSON.parse(saved);
+      MY_KP = await crypto.subtle.importKey("pkcs8", _unb64(j.priv), { name: "ECDH", namedCurve: "P-256" }, false, ["deriveBits"]);
+      MY_PUB = j.pub;
+    } else {
+      const kp = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
+      const priv = _b64(await crypto.subtle.exportKey("pkcs8", kp.privateKey));
+      MY_PUB = _b64(await crypto.subtle.exportKey("spki", kp.publicKey));
+      MY_KP = kp.privateKey;
+      localStorage.setItem("paimon-im-e2e-kp", JSON.stringify({ priv, pub: MY_PUB }));
+    }
+  } catch (e) { console.error("e2e init failed", e); }
+}
+async function e2eKeyFor(peerPubB64) {
+  const peer = await crypto.subtle.importKey("spki", _unb64(peerPubB64), { name: "ECDH", namedCurve: "P-256" }, false, []);
+  const secret = await crypto.subtle.deriveBits({ name: "ECDH", public: peer }, MY_KP, 256);
+  const hashed = await crypto.subtle.digest("SHA-256", secret);   // 与 node 侧 sha256(secret) 对齐
+  return crypto.subtle.importKey("raw", hashed, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+async function e2eEncrypt(peerSid, text) {
+  const peer = PEER_PUBS[peerSid];
+  if (!peer || !MY_KP) return { text };
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await e2eKeyFor(peer);
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(text));
+  return { text: _b64(ct), enc: { v: 1, pub: MY_PUB, iv: _b64(iv) } };
+}
+async function e2eDecrypt(p) {
+  try {
+    if (p?.enc?.pub && p?.enc?.iv && MY_KP) {
+      const key = await e2eKeyFor(p.enc.pub);
+      const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: _unb64(p.enc.iv) }, key, _unb64(p.text));
+      PEER_PUBS[p.from] = p.enc.pub; localStorage.setItem("paimon-im-e2e-peers", JSON.stringify(PEER_PUBS));
+      return new TextDecoder().decode(pt);
+    }
+    if (p?.pub && p?.from) { PEER_PUBS[p.from] = p.pub; localStorage.setItem("paimon-im-e2e-peers", JSON.stringify(PEER_PUBS)); }
+  } catch (e) { console.error("e2e decrypt failed", e); return "[E2E 密文——无法解密]"; }
+  return p.text;
+}
+e2eInit();
 let ME = null, current = null, agents = [], msgsByPeer = {}, pollTimer = null;
 
 const $ = (id) => document.getElementById(id);
@@ -235,6 +285,13 @@ async function send() {
   input.value = "";
   const ts = Date.now();
   const payload = { id: `msg_${ts.toString(36)}_${Math.random().toString(36).slice(2, 8)}`, from: MY_SID, from_name: (ME && ME.login) || "web", to: current, mode: "interrupt", mode_used: "interrupt", text, ts, injected: false };
+  // E2E：附本端公钥供对方学习；已有对方公钥则正文加密（server 只见密文）
+  if (MY_KP) {
+    payload.pub = MY_PUB;
+    const _e = await e2eEncrypt(current, payload.text);
+    payload.text = _e.text;
+    if (_e.enc) payload.enc = _e.enc;
+  }
   try {
     const r = await api("/messages/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ toPerson: current, type: "agent-social", payload }) });
     if (!r.ok) { toast("发送失败 HTTP " + r.status); return; }
@@ -257,6 +314,7 @@ async function pullPending() {
       const p = m.payload;
       if (!p.id || seenIds.has(p.id)) continue;
       seenIds.add(p.id);
+      p.text = await e2eDecrypt(p);   // E2E：解密密文 / 学习对方公钥
       const peer = p.from;
       (msgsByPeer[peer] = msgsByPeer[peer] || []).push(p);
       if (peer === current) changed = true; else toast(`来自 ${p.from_name || peer} 的新消息`);

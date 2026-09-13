@@ -23,6 +23,7 @@ const require = createRequire(import.meta.url);
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync, statSync, rmdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
+import { createCipheriv, createDecipheriv, createHash, createPrivateKey, createPublicKey, diffieHellman, generateKeyPairSync, randomBytes } from "node:crypto";
 import { socialDataDir, logerr, runtimeCacheDir, syncEndpoint, SYNC_UA, writeFileAtomic } from "#paths";   // SYNC_UA 统一在 paths.ts（唯一真相源）
 // heart-state：interrupt 唤醒 hibernated 用（communicate → heart-state 无环；heart.ts 反向 import communicate）
 import { transition, heartState } from "../kernel.heart/heart-state.ts";
@@ -58,6 +59,8 @@ interface SocialMsg {
   text: string;
   ts: number;
   injected: boolean;   // 是否已注入接收方上下文
+  pub?: string;        // E2E（2026-09-13）：发送方公钥（SPKI DER base64，随消息分发，公钥无密）
+  enc?: { v: number; pub: string; iv: string };  // E2E：text = base64(ct+gcmTag)，用本端私钥 + enc.pub 派生密钥解密
 }
 
 interface Group {
@@ -526,6 +529,73 @@ function loadBinding(): { token: string; deviceId: string } | null {
   return null;
 }
 
+// ── E2E 端到端加密（2026-09-13 用户拍板）──────────────────────
+// 范围：走公网 server 的跨设备消息（server/CF 只见密文）；本机 SocialData 直投不出机器，不加密。
+// 方案：每 agent 一对 ECDH P-256（私钥落盘 SocialData/e2e/<sid>.json；公钥随消息 pub 字段分发）。
+//   双方互换公钥后 text 变 AES-256-GCM 密文（enc 字段带 iv + 发送方公钥）；无 enc = 明文（旧版兼容）。
+//   首次联系对方必然明文（还不知道对方公钥）——对方回消息带 pub 后，本端下一轮起自动加密。
+const E2E_DIR = join(homedir(), ".teyvat", "SocialData", "e2e");
+const _e2eCache = new Map<string, { kp: any; pubB64: string }>();
+function _e2eLoadPeers(): Record<string, string> {
+  try { return JSON.parse(readFileSync(join(E2E_DIR, "peers.json"), "utf8")); } catch { return {}; }
+}
+function _e2eSavePeers(peers: Record<string, string>): void {
+  try { mkdirSync(E2E_DIR, { recursive: true }); writeFileSync(join(E2E_DIR, "peers.json"), JSON.stringify(peers, null, 1), "utf8"); } catch { /* 非致命：缓存失败下轮重学 */ }
+}
+function e2eIdentity(sid: string): { kp: any; pubB64: string } {
+  const hit = _e2eCache.get(sid);
+  if (hit) return hit;
+  mkdirSync(E2E_DIR, { recursive: true });
+  const f = join(E2E_DIR, `${sid}.json`);
+  let kp: any;
+  try {
+    const saved = JSON.parse(readFileSync(f, "utf8"));
+    kp = { privateKey: createPrivateKey(saved.priv), publicKey: createPublicKey(saved.pub) };
+  } catch {
+    kp = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+    const priv = kp.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+    const pub = kp.publicKey.export({ type: "spki", format: "pem" }).toString();
+    writeFileSync(f, JSON.stringify({ priv, pub }), "utf8");
+  }
+  const out = { kp, pubB64: kp.publicKey.export({ type: "spki", format: "der" }).toString("base64") };
+  _e2eCache.set(sid, out);
+  return out;
+}
+function _e2eSharedKey(priv: any, peerPubB64: string): Buffer {
+  const peer = createPublicKey({ key: Buffer.from(peerPubB64, "base64"), format: "der", type: "spki" });
+  const secret = diffieHellman({ privateKey: priv, publicKey: peer });
+  return createHash("sha256").update(secret).digest();
+}
+// 发送侧：有对方公钥则加密正文，无则原样（明文首发是设计内行为）。加密失败降级明文，不阻塞发送。
+function e2eEncryptFor(fromSid: string, peerSid: string, text: string): { text: string; enc?: { v: number; pub: string; iv: string } } {
+  try {
+    const peerPub = _e2eLoadPeers()[peerSid];
+    if (!peerPub) return { text };
+    const { kp, pubB64 } = e2eIdentity(fromSid);
+    const iv = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", _e2eSharedKey(kp.privateKey, peerPub), iv);
+    const ct = Buffer.concat([cipher.update(text, "utf8"), cipher.final()]);
+    return { text: Buffer.concat([ct, cipher.getAuthTag()]).toString("base64"), enc: { v: 1, pub: pubB64, iv: iv.toString("base64") } };
+  } catch { return { text }; }
+}
+// 接收侧：有 enc → 解密并学对方公钥；无 enc 但带 pub → 学对方公钥（写 inbox 前调用——本地落盘与注入均为明文）
+function e2eDecryptInPlace(p: any, mySid: string): void {
+  try {
+    if (p?.enc?.pub && p?.enc?.iv && typeof p.text === "string") {
+      const { kp } = e2eIdentity(mySid);
+      const decipher = createDecipheriv("aes-256-gcm", _e2eSharedKey(kp.privateKey, p.enc.pub), Buffer.from(p.enc.iv, "base64"));
+      const buf = Buffer.from(p.text, "base64");
+      decipher.setAuthTag(buf.subarray(buf.length - 16));
+      p.text = Buffer.concat([decipher.update(buf.subarray(0, buf.length - 16)), decipher.final()]).toString("utf8");
+      const peers = _e2eLoadPeers();
+      if (peers[p.from] !== p.enc.pub) { peers[p.from] = p.enc.pub; _e2eSavePeers(peers); }
+    } else if (typeof p?.pub === "string" && p?.from) {
+      const peers = _e2eLoadPeers();
+      if (peers[p.from] !== p.pub) { peers[p.from] = p.pub; _e2eSavePeers(peers); }
+    }
+  } catch (e) { console.error("[social-e2e] decrypt failed: " + ((e as any)?.message || e)); p.text = "[E2E 密文——无法解密]"; }
+}
+
 /** 远端投递：POST /messages/send（type=agent-social，payload=完整 social 消息）。server 落库/ws 推送，不要求对方在线。 */
 // 2026-09-07 Bug1（cross-device-communication-testor-01 报告）：远程 agent 名字路由——resolveSid 只查本地 registry，
 // 远程 agent 名字只在 server presence（/sync/agent-presence）。单发分支本地解析失败时查远端 presence 补名字→sid。
@@ -564,6 +634,11 @@ async function remoteSendOne(toSid: string, text: string, mode: SocialMode, from
     ts: Date.now(),
     injected: false,
   };
+  // E2E（2026-09-13）：远端消息必附本端公钥供对方学习；已有对方公钥则正文加密（server 只见密文）
+  (msg as any).pub = e2eIdentity(fromSid).pubB64;
+  const _e2e = e2eEncryptFor(fromSid, toSid, msg.text);
+  msg.text = _e2e.text;
+  if (_e2e.enc) (msg as any).enc = _e2e.enc;
   const ep = syncEndpoint();
   let res: Response;
   try {
@@ -597,6 +672,8 @@ async function _pullRemoteMessagesImpl(): Promise<number> {
       if (m?.type !== "agent-social") continue;
       const p = m?.payload;
       if (!p || typeof p !== "object" || !p?.id) continue;
+      // E2E（2026-09-13）：解密密文消息 / 学习对方公钥（写 inbox 前完成——本地落盘与注入均为明文）
+      e2eDecryptInPlace(p, sid);
       if (readInbox(sid, 500).some((x: SocialMsg) => x.id === p.id)) continue; // 去重（server 标记延迟防重复注入）
       appendInbox(sid, p as SocialMsg);
       added++;
