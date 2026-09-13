@@ -304,6 +304,29 @@ case "$NAME" in
     # [2026-09-05] 设备管理（devices.cjs）：无参=列表；rn <id> <名>=改名；<name|编号|id>=查看该设备 genshin 快照（不做远程执行）
     node "$PAIMON_CLI/devices.cjs" "$@"
     exit $?;;
+  im)
+    # [2026-09-13] IM 前端入口：--local=起本机后端（I.Ecosystems/im.server，:8790）+开 localhost；无参=开公网网页
+    # 前端 god.frontend.im（index.html 本机版 / cloud.html 公网版）；后端 I.Ecosystems/im.server（用户定稿）
+    if [ "$2" = "--local" ]; then
+      IM_SRV="$PAIMON_EXT/I.Ecosystems/im.server/server.mjs"
+      if [ ! -f "$IM_SRV" ]; then
+        echo "$(_l "  im.server 未部署（runtime 缺 I.Ecosystems/im.server/server.mjs）——先 make 部署" "  im.server not deployed (runtime missing I.Ecosystems/im.server/server.mjs) — run make first")"
+        exit 1
+      fi
+      if ! curl -s --max-time 1 "http://localhost:8790/" >/dev/null 2>&1; then
+        nohup node "$IM_SRV" >/dev/null 2>&1 &
+        sleep 1
+      fi
+      IM_URL="http://localhost:8790/"
+    else
+      IM_URL="${IM_PUBLIC_URL:-https://paimon.beer/im/}"
+    fi
+    case "$(uname)" in
+      Darwin) open "$IM_URL" 2>/dev/null || echo "  $IM_URL";;
+      *) xdg-open "$IM_URL" >/dev/null 2>&1 || echo "  $IM_URL";;
+    esac
+    echo "$(_l "  IM: $IM_URL" "  IM: $IM_URL")"
+    exit $?;;
   sync)
     # [云同步已废弃 2026-09-05，PROPOSAL 036 替代] agent 单机存活，不做跨机状态同步；代码保留不删。
     echo "$(_l "  云同步已废弃（agent 单机存活，机间走 social 通讯）。" "  Cloud sync deprecated (agents live per-machine; cross-device via social).")"

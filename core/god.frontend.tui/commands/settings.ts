@@ -130,8 +130,8 @@ function getAllItems() {
   const footerProvider = g.__genshinFooterProvider ?? false;
   const footerModel = g.__genshinFooterModel ?? true;
   const footerVersion = g.__genshinFooterVersion ?? true;
-  // 2026-09-13（用户）：默认改回底部（footer）——“消息底部”的动态跟随还没彻底修好，修好前不默认
-  const statebarPos = g.__genshinStatebarPosition ?? "footer";
+  // 2026-09-13（用户：其实修好了，只差空行）：默认回消息底部
+  const statebarPos = g.__genshinStatebarPosition ?? "messages";
   // 2026-09-13（用户澄清）：「记忆占比」开关废弃——用户要的是去掉 "contexted" 前缀字（百分比常显），不是隐藏整个显示。开关语义错误，注释保留。
   // const footerContexted = g.__genshinFooterContexted ?? false;
   const footerTokensValue = !footerTokenmaxxed ? T("隐藏", "Hide") : tokenmaxxedColorful ? T("多彩", "Colorful") : T("显示", "Show");

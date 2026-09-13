@@ -478,7 +478,7 @@ export class InteractiveMode {
         // 2026-09-13（用户）：footer 模型名/版本号可隐藏（默认显示）
         globalThis.__genshinFooterModel = this.settingsManager?.globalSettings?.footerModel ?? true;
         globalThis.__genshinFooterVersion = this.settingsManager?.globalSettings?.footerVersion ?? true;
-        globalThis.__genshinStatebarPosition = this.settingsManager?.globalSettings?.statebarPos ?? "footer"; // 2026-09-13（用户）：默认回底部——消息底部动态跟随待修好
+        globalThis.__genshinStatebarPosition = this.settingsManager?.globalSettings?.statebarPos ?? "messages"; // 2026-09-13（用户：其实修好了）默认回消息底部
         // footerContexted 开关已废弃（2026-09-13 用户澄清：只去前缀字，百分比常显）——不再读设置
         // /u 持久化的行为偏好恢复
         if (this.settingsManager?.globalSettings?.ctrlCToBg !== undefined) globalThis.__genshinCtrlCToBg = this.settingsManager.globalSettings.ctrlCToBg;

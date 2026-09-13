@@ -16,7 +16,7 @@
       "#paths": ["./paths.ts"],
       "#tui_blockrender": ["./god.frontend.tui/ui_elements/blocks_nongod.js"],
       "#tui_localizations": ["./god.frontend.tui/localizations/i18n.ts"],
-      "#tui_renderers": ["./god.frontend.tui/renderers.ts"],
+      "#tui_renderers": ["./god.frontend.tui/ui_elements/renderers.ts"],
       "#gene_riboswitch": ["./spirit.bio.gene/_debug_riboswitch.ts"],
       "#gene_transpiler": ["./spirit.bio.gene/polymerase.ts"],
       "#kernel_core": ["./spirit.bio.organs/kernel.core/core.ts"],

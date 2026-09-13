@@ -443,13 +443,36 @@ if [ "$RSYNC_OK" = "0" ]; then
   err "rsync extensions 失败（3次重试均不成功）"
 fi
 
+# I.Ecosystems（服务端/生态域，2026-09-13 用户定稿：后端放 I.Ecosystems）同样同步进 runtime——
+# genshin im --local 从 runtime 跑 I.Ecosystems/im.server/server.mjs，故必须随部署落地。
+if [ -d "$PKG_ROOT/I.Ecosystems" ]; then
+  RSYNC_ECO=0
+  for attempt in 1 2 3; do
+    if rsync -rptgo --delete --exclude='.DS_Store' "$PKG_ROOT/I.Ecosystems/" "$PAIMON_EXT/teyvat/I.Ecosystems/" 2>/dev/null; then
+      RSYNC_ECO=1; break
+    fi
+    sleep 0.3
+  done
+  [ "$RSYNC_ECO" = "1" ] || err "rsync I.Ecosystems 失败（3次重试均不成功）"
+fi
+
 
 # 这里按内容逐字节校验源码树 vs 线上副本，不一致必须响、必须停。
-_tree_sum() { (cd "$1" && find . -type f -not -path '*/node_modules/*' -not -name '.DS_Store' -print0 | sort -z | xargs -0 shasum 2>/dev/null | shasum | cut -d' ' -f1); }
+# 注意：I.Ecosystems 是附加部署域（源在 $PKG_ROOT/I.Ecosystems，线上 teyvat/I.Ecosystems/），
+# 不在 A.core 源码树内——主校验排除它，另在下方单独校验（2026-09-13 IM 迁移新增）。
+_tree_sum() { (cd "$1" && find . -type f -not -path '*/node_modules/*' -not -path './I.Ecosystems/*' -not -name '.DS_Store' -print0 | sort -z | xargs -0 shasum 2>/dev/null | shasum | cut -d' ' -f1); }
 SRC_SUM=$(_tree_sum "$IMPL")
 DST_SUM=$(_tree_sum "$PAIMON_EXT/teyvat")
 if [ -z "$SRC_SUM" ] || [ "$SRC_SUM" != "$DST_SUM" ]; then
   err "extensions 部署校验失败：线上副本与源码不一致（rsync 没落地）— 线上是旧代码"
+fi
+# I.Ecosystems 附加域单独校验
+if [ -d "$PKG_ROOT/I.Ecosystems" ]; then
+  ECO_SRC=$(_tree_sum "$PKG_ROOT/I.Ecosystems")
+  ECO_DST=$(_tree_sum "$PAIMON_EXT/teyvat/I.Ecosystems")
+  if [ -z "$ECO_SRC" ] || [ "$ECO_SRC" != "$ECO_DST" ]; then
+    err "I.Ecosystems 部署校验失败：线上副本与源码不一致"
+  fi
 fi
 # extensions node_modules：pi-coding-agent 的嵌套 node_modules 有 pi-tui/pi-ai 完整依赖，
 # 顶层 runtime/node_modules 有 pi-coding-agent 本身和 @sinclair/typebox。

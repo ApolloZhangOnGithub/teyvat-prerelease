@@ -273,8 +273,9 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
       const showDot = (globalThis as any).__genshinExecuteDot === true;
       const dotOpts = showDot ? undefined : { noDot: true };
       const label = args?.terminal === true ? "Execute(T)" : "Execute";
+      // 2026-09-13（用户）：标题内容自动包英文双引号（cmdShort fallback 非标题不加）
       if (!showSummary) {
-        if (title) return renderToolCall.label(theme, label, title, dotOpts);
+        if (title) return renderToolCall.label(theme, label, '"' + title + '"', dotOpts);
         // 模型没传 title（虽然 schema required）——fallback 到命令首行截短，灰色表示不是标题
         const cmdShort = cmd.split("\n")[0].slice(0, 60) + (cmd.length > 60 ? "…" : "");
         return renderToolCall.label(theme, label, theme.fg("dim", cmdShort), dotOpts);
@@ -285,7 +286,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
       }
       const _lines = cmd.split("\n").filter((l: string) => l.trim());
       const brief = _lines.length > 3 ? _lines.slice(0, 3).join("\n") + "\n... +" + (_lines.length - 3) + " more" : cmd;
-      return renderToolCall.detail(theme, label, title, brief, dotOpts);
+      return renderToolCall.detail(theme, label, title ? '"' + title + '"' : title, brief, dotOpts);
     },
     renderResult(result: any, _options: any, theme: any, ctx: any) {
       // 2026-09-13（ISSUE 226）：三种结果样式（快命令 / Created / cmd-done）统一由 blocks_nongod.renderExecuteResult 画，这里只把 details 映射成 state。

@@ -59,7 +59,7 @@ const stripComment = (line) => line.replace(/^\s*\/\/.*$/, "").replace(/\s\/\/(?
 {
   const targets = [
     { file: path.join("spirit.bio.organs", "hands.executes", "executes.ts"), start: /^\s*renderResult\(/m },
-    { file: path.join("god.frontend.tui", "renderers.ts"), start: /registerMessageRenderer\("continuous-cmd-done"/ },
+    { file: path.join("god.frontend.tui", "ui_elements", "renderers.ts"), start: /registerMessageRenderer\("continuous-cmd-done"/ },  // 2026-09-13：renderers.ts 搬入 ui_elements（用户），路径同步
     { file: OWNER, start: /^export function renderExecuteResult/m },
   ];
   let checked = 0;

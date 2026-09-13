@@ -61,7 +61,8 @@ for (const f of files) {
     if (LOCAL_MARK.test(ctx) && !SYNC_MARK.test(line)) return;  // 本地隧道
     candidates++;
     if (UA_MARK.test(ctx)) { safe++; return; }
-    if ([...uaHelpers].some((h) => new RegExp("\\b" + h + "\\s*\\(").test(line))) { safe++; return; }   // 间接带 UA 的 helper
+    // 间接带 UA 的 helper：定义在别处（单行含 UA_MARK），调用点在 fetch 同行或上下文内（±10 行）——运行时确实注入 UA
+    if ([...uaHelpers].some((h) => new RegExp("\\b" + h + "\\s*\\(").test(ctx))) { safe++; return; }
     bad.push(`${path.relative(core, f)}:${i + 1}  ${line.trim().slice(0, 110)}`);
   });
 }

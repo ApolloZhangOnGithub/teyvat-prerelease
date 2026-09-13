@@ -6,7 +6,7 @@
 import { formatTokens } from "./footer.js";
 import { fmtElapsedCoarse } from "./blocks_nongod.js";
 import { theme } from "../theme/theme.js";
-import { Text } from "@earendil-works/pi-tui";
+import { Spacer, Text } from "@earendil-works/pi-tui";
 import { debug } from '#gene_riboswitch';
 
 const SPARKLE_CHARS = ['·', '✢', '✳', '✶', '✻', '✽'];
@@ -123,46 +123,52 @@ export class StatusBar {
 
   // 把消息底部的状态栏 Text 移到 chatContainer 末尾（跟随最新消息；clear 后重新挂回）
   _followBottom() {
-    const pos = globalThis.__genshinStatebarPosition ?? "footer"; // 2026-09-13（用户）：默认回底部
-    if (pos !== "messages" || !this._msgStatusText || !this._chatContainer) return;
+    const pos = globalThis.__genshinStatebarPosition ?? "messages"; // 2026-09-13（用户：其实修好了）默认消息底部
+    if (pos !== "messages" || !this._msgStatusWrap || !this._chatContainer) return;
     const kids = this._chatContainer.children;
     if (!Array.isArray(kids)) return;
-    const i = kids.indexOf(this._msgStatusText);
+    const i = kids.indexOf(this._msgStatusWrap);
     if (i === -1) {
-      kids.push(this._msgStatusText); // clear 后被清掉——重新挂回末尾
+      kids.push(this._msgStatusWrap); // clear 后被清掉——重新挂回末尾
       return;
     }
     if (i < kids.length - 1) {
       kids.splice(i, 1);
-      kids.push(this._msgStatusText);
+      kids.push(this._msgStatusWrap);
     }
   }
 
   // 2026-09-13（用户）：状态栏渲染出口——位置 footer（旧行为）或消息底部（默认）。
   // 集中所有 setSpinner/updateSpinnerText 走这里，按位置分派，避免散落。
   _spinner(text) {
-    const pos = globalThis.__genshinStatebarPosition ?? "footer"; // 2026-09-13（用户）：默认回底部
+    const pos = globalThis.__genshinStatebarPosition ?? "messages"; // 2026-09-13（用户：其实修好了）默认消息底部
     if (pos === "footer" || !this._chatContainer) {
       // 从消息底部切回 footer：移除残留的状态栏 Text（避免位置切换后旧栏留在消息区中间）
-      if (this._msgStatusText && this._chatContainer) {
+      if (this._msgStatusWrap && this._chatContainer) {
         const kids = this._chatContainer.children;
-        const i = Array.isArray(kids) ? kids.indexOf(this._msgStatusText) : -1;
+        const i = Array.isArray(kids) ? kids.indexOf(this._msgStatusWrap) : -1;
         if (i >= 0) kids.splice(i, 1);
       }
       this._footer.updateSpinnerText(text);
       return;
     }
     // 消息底部：chatContainer 末尾的 Text（消息之后、footer 之上）
-    if (!this._msgStatusText) {
+    // 2026-09-13（用户）：状态栏上方要一个空行与最后一条消息分隔——Spacer + Text 打包成 wrap，_followBottom 移动 wrap 整体
+    if (!this._msgStatusWrap) {
+      // Spacer 从顶部 import（ESM——裸 require 在这里是 undefined，amem 三态同款坑）
+      const wrap = new Container();
+      wrap.addChild(new Spacer(1));
       this._msgStatusText = new Text("", 0, 0);
-      this._chatContainer.addChild(this._msgStatusText);
+      wrap.addChild(this._msgStatusText);
+      this._msgStatusWrap = wrap;
+      this._chatContainer.addChild(wrap);
     }
     if (this._msgStatusText.text === text) return;
     this._msgStatusText.text = text;
     this._requestRender?.();
   }
   _invalidate() {
-    const pos = globalThis.__genshinStatebarPosition ?? "footer"; // 2026-09-13（用户）：默认回底部
+    const pos = globalThis.__genshinStatebarPosition ?? "messages"; // 2026-09-13（用户：其实修好了）默认消息底部
     if (pos === "footer" || !this._chatContainer) {
       this._footer.invalidate?.();
       return;
