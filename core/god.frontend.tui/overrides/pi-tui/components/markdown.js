@@ -383,7 +383,9 @@ export class Markdown {
             }
             case "code": {
                 const indent = this.theme.codeBlockIndent ?? "  ";
-                lines.push(this.theme.codeBlockBorder(`\`\`\`${token.lang || ""}`));
+                // 2026-09-13（房东：这行很恶心）——不再渲染代码块开头围栏行（代码块靠行号 gutter + 配色区分）。
+                // 原文保留，恢复时删掉下面 // OLD: 行的注释符即可。
+                // OLD: lines.push(this.theme.codeBlockBorder(`\`\`\`${token.lang || ""}`));
                 // teyvat: 代码块行号 gutter（0.80.7 时代定制，0.84.1 rebase 时丢失）
                 const codeLineCount = token.text.split("\n").length;
                 const gutterWidth = String(codeLineCount).length;
@@ -425,7 +427,8 @@ export class Markdown {
                         pushCodeLine(i, this.theme.codeBlock(codeLines[i]));
                     }
                 }
-                lines.push(this.theme.codeBlockBorder("```"));
+                // 2026-09-13（房东）：结尾围栏行同样不渲染（原文保留）
+                // OLD: lines.push(this.theme.codeBlockBorder("```"));
                 if (nextTokenType && nextTokenType !== "space") {
                     lines.push(""); // Add spacing after code blocks (unless space token follows)
                 }

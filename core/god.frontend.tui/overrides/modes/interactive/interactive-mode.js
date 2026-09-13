@@ -2299,6 +2299,20 @@ export class InteractiveMode {
                     }
                     this.ui.requestRender();
                 }, () => {
+                    // 2026-09-13（房东）：多级菜单按 ESC 应「返回上一层」，而不是直接关掉整个面板。
+                    // 机制：进入子页面前把上一层 wrapper 压栈；onCancel 时先弹栈恢复上一层，栈空才恢复编辑器。
+                    const _stack = (globalThis.__genshinSettingsModalStack ||= []);
+                    const _back = _stack.pop();
+                    if (_back) {
+                        globalThis.__genshinCurrentSettingsModal = _back;
+                        this.editorContainer.clear();
+                        this.editorContainer.addChild(_back);
+                        this.ui.setFocus(_back);
+                        this.ui.requestRender();
+                        resolve(undefined);
+                        return;
+                    }
+                    globalThis.__genshinCurrentSettingsModal = null;
                     this.editorContainer.clear();
                     this.editorContainer.addChild(this.editor);
                     this.ui.setFocus(this.editor);
@@ -2318,6 +2332,10 @@ export class InteractiveMode {
                     invalidate: () => { list.invalidate?.(); panel.invalidate?.(); },
                     handleInput: (d) => list.handleInput(d),
                 };
+                // 2026-09-13（房东）：多级菜单 ESC = 返回上一层——记录上一层模态以便弹回
+                const _st = (globalThis.__genshinSettingsModalStack ||= []);
+                if (globalThis.__genshinCurrentSettingsModal) _st.push(globalThis.__genshinCurrentSettingsModal);
+                globalThis.__genshinCurrentSettingsModal = wrapper;
                 this.editorContainer.clear();
                 this.editorContainer.addChild(wrapper);
                 this.ui.setFocus(wrapper);

@@ -23,7 +23,9 @@ try {
   const md = new Markdown(src, 0, 0, { ...baseTheme, highlightCode: () => null });
   const lines = md.render(60);
   const text = lines.map(strip).join(NL);
-  check("R1 highlightCode 返回 null 不崩溃且代码内容保留", text.includes('{"ok": true}') && text.includes("json"));
+  // 2026-09-13（房东要求：代码块不再渲染围栏行）——围栏行里的语言标识不再出现在渲染输出，
+  // 故断言里的 text.includes("json") 去掉；本项回归保护的本意（highlightCode 返回 null 不崩溃 + 代码内容保留）不变。
+  check("R1 highlightCode 返回 null 不崩溃且代码内容保留", text.includes('{"ok": true}'));
 } catch (e) {
   check("R1 highlightCode 返回 null 不崩溃且代码内容保留", false, e?.message);
 }
