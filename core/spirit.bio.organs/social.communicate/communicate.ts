@@ -826,7 +826,12 @@ function watchInterruptTriggers(pi: ExtensionAPI): void {
         const msgs = readInbox(mySid, 50).filter((m: SocialMsg) => !m.injected);
         // 立即注入范围：interrupt 全部（强制切断）；queue 仅在 resting（wait 中）时注入（打断 wait）
         const resting = existsSync(join(homedir(), ".teyvat", "RuntimeCache", mySid, "main-resting"));
-        const toInject = msgs.filter((m: SocialMsg) => m.mode_used === "interrupt" || (resting && m.mode_used === "queue"));
+        // 2026-09-14（alice 实测 ISSUE）：queue 原来只覆盖 resting（wait），hibernated 时 toInject 为空 →
+        // 消息滞留 inbox（alice 实测：hibernate 中 queue 消息 3h20m 未注入、injected:false；同场景 interrupt 9.8s 唤醒 ✓）。
+        // hibernate 语义 = 长期"等消息"状态（wait 的超长形态，房东定义 queue 会打断等待方）——queue 对齐 interrupt：
+        // hibernated 也注入；下方 toInject 非空时已有 hibernated 唤醒分支（transition working + 清 hibernate 标记），queue 复用。
+        const hibernated = existsSync(join(homedir(), ".teyvat", "RuntimeCache", mySid, "main-hibernate"));
+        const toInject = msgs.filter((m: SocialMsg) => m.mode_used === "interrupt" || ((resting || hibernated) && m.mode_used === "queue"));
         // 2026-09-08（testor 03:12 实证：消息 injected 但 wait 未被唤醒——诊断打点）：trigger 消费路径低频事件——打点定位静默失败点（toInject 空 / resting 判断 / sendCustomMessage 未达）
         console.error("[social-trigger] consumed " + f.split("/").pop() + " trig=" + JSON.stringify(trig) + " inboxUninjected=" + msgs.length + " toInject=" + toInject.length + " resting=" + resting);
         if (toInject.length) {
