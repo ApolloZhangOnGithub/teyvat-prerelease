@@ -176,6 +176,7 @@ function collectSessions(daysBack: number = 7): SessionSummary[] {
 function findGitRoot(): string | null {
   const candidates = [
     DEV_ROOT,
+    join(H, "Documents/Agent Intelligence/MODERN/TEYVAT/teyvat-main/A.core"), // 2026-09-13：开发树在 ~/Documents 下（原候选缺 Documents 段，恒失败）
     join(H, "Agent Intelligence/MODERN/TEYVAT/teyvat-main/A.core"),
   ];
   for (const dir of candidates) {

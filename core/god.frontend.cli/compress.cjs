@@ -18,10 +18,12 @@ const HAS_ZSTD = (() => {
 
 if (!HAS_ZSTD) process.exit(0);
 
+// 2026-09-13：变量名错误（PAIMON 未定义 → ReferenceError 必崩）——launcher 每次启动 `node compress.cjs decompress <id> 2>/dev/null` 静默失败，
+// 4552 个 .zst 会话从未解压、health 统计读不到。
 const COMPRESS_DIRS = [
-  { base: PAIMON + '/SessionData', sub: null },
-  { base: PAIMON + '/BlackboxData', sub: null },
-  { base: PAIMON + '/ChannelData', sub: null },
+  { base: PAIMON_HOME + '/SessionData', sub: null },
+  { base: PAIMON_HOME + '/BlackboxData', sub: null },
+  { base: PAIMON_HOME + '/ChannelData', sub: null },
 ];
 const DECOMPRESS_DIRS = [
   ...COMPRESS_DIRS,

@@ -312,11 +312,9 @@ export function cmdDoctor(args: string[] = []) {
           const arr = JSON.parse(fs.readFileSync(ob, 'utf8'));
           if (Array.isArray(arr) && arr.length) { bits.push(`outbox 待发 ${arr.length} 条`); unsafe = true; }
         }
-        const tr = path.join(PAIMON, 'RuntimeCache', sid, 'triggers');
-        if (fs.existsSync(tr)) {
-          const k = fs.readdirSync(tr).length;
-          if (k) { bits.push(`残留 trigger ${k} 个`); unsafe = true; }
-        }
+        // 2026-09-13：触发文件实际在 SocialData/triggers/<sid>.json（communicate.ts TRIGGERS_DIR），原查 RuntimeCache/<sid>/triggers/ 从不存在 → 该 unsafe 判定永不触发
+        const tr = path.join(PAIMON, 'SocialData', 'triggers', `${sid}.json`);
+        if (fs.existsSync(tr)) { bits.push('残留 trigger 1 个'); unsafe = true; }
       } catch { /* 证据读取失败：按无未投递数据处理 */ }
       return { label: bits.length ? `（${bits.join('；')}）` : '', unsafe };
     };

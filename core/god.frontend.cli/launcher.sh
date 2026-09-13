@@ -33,7 +33,8 @@ export PAIMON_CONFIG="$PAIMON_HOME/config"
 _proxy_port=""
 _proxy_found=""
 if command -v lsof >/dev/null 2>&1; then
-  _proxy_found=$(lsof -iTCP -sTCP:LISTEN -P 2>/dev/null | grep -iE "clash|mihomo|verge" | grep -oE ':[0-9]+$' | grep -oE '[0-9]+' | sort -u | tr '\n' ' ')
+  # 2026-09-13：lsof -sTCP:LISTEN 每行以 "(LISTEN)" 结尾，原 ':[0-9]+$' 永远匹配不到 → 进程监听端口发现从未生效，只剩固定端口探测
+  _proxy_found=$(lsof -iTCP -sTCP:LISTEN -P 2>/dev/null | grep -iE "clash|mihomo|verge" | grep -oE ':[0-9]+ +\(LISTEN\)' | grep -oE '[0-9]+' | sort -u | tr '\n' ' ')
 elif command -v ss >/dev/null 2>&1; then
   _proxy_found=$(ss -tlnp 2>/dev/null | grep -iE "clash|mihomo|verge" | grep -oE ':[0-9]+' | grep -oE '[0-9]+' | sort -u | tr '\n' ' ')
 fi
@@ -697,7 +698,8 @@ if [ "$MODE" = "kill" ]; then
   # 旧：ps aux | grep "genshin:.*${NAME}" 宽匹配 + NAME 未转义——短名/前缀匹配多个 agent + 取错 PID → 杀错进程
   # → systemd user session scope 结构下连带注销整桌面（Linux；macOS launchd 隔离无此问题）。
   # 修：精确匹配 agent 主进程标识 cmdline "genshin:<name>(main,"——绝不宽匹配、不碰其他进程。
-  PID=$(ps -eo pid,command | grep "genshin:${NAME}(main," | grep -v grep | awk '{print $1}' | head -1)
+  # 2026-09-13：也接受 8 位 id（help 写的是 name/id/index；进程标识是 genshin:<name>(main,<id>,…)）
+  PID=$(ps -eo pid,command | grep -E "genshin:${NAME}\(main,|\(main,${NAME}," | grep -v grep | awk '{print $1}' | head -1)
   if [ -z "$PID" ]; then echo "$(_l "没找到运行中的 $NAME" "No running agent found: $NAME")"; exit 1; fi
   if _confirm "杀掉 $NAME?" "Kill $NAME?"; then
     # 杀掉 pi 进程及其父 bash launcher，清 wake-restart 防重启
@@ -761,9 +763,10 @@ if [ "$MODE" = "tmux" ]; then
     if [ -z "$AGENT_ID" ]; then echo "$(_l "agent \"$NAME\" 不存在，先创建: genshin $NAME" "Agent \"$NAME\" does not exist; create it: genshin $NAME")"; exit 1; fi
     SESSION_NAME="genshin-${AGENT_ID}"
     if command -v tmux &>/dev/null; then
-      tmux new-session -d -s "$SESSION_NAME" "$0 -r $NAME" 2>/dev/null && echo "$(_l "已启动 tmux 会话: $SESSION_NAME (agent: $NAME)" "Started tmux session: $SESSION_NAME (agent: $NAME)")" && echo "$(_l "连接: tmux attach -t $SESSION_NAME" "Attach: tmux attach -t $SESSION_NAME")" || echo "$(_l "tmux 启动失败" "Failed to start tmux")";
+      # 2026-09-13：原写 "$0 -r $NAME"——launcher 没有 -r 选项，落到 unknown option 立即退出，tmux 会话秒退（用户看到"已启动"但 attach 时已不存在）
+      tmux new-session -d -s "$SESSION_NAME" "$0 $NAME" 2>/dev/null && echo "$(_l "已启动 tmux 会话: $SESSION_NAME (agent: $NAME)" "Started tmux session: $SESSION_NAME (agent: $NAME)")" && echo "$(_l "连接: tmux attach -t $SESSION_NAME" "Attach: tmux attach -t $SESSION_NAME")" || echo "$(_l "tmux 启动失败" "Failed to start tmux")";
     else
-      echo "$(_l "tmux 未安装。直接启动: genshin -r $NAME" "tmux not installed. Start directly: genshin -r $NAME")"
+      echo "$(_l "tmux 未安装。直接启动: genshin $NAME" "tmux not installed. Start directly: genshin $NAME")"
     fi
     exit 0
   fi
@@ -877,7 +880,7 @@ ENTRY=$(node --input-type=commonjs -e "
       if (hits.length === 1) e = list.find(p => p.id === hits[0][0]);
       else if (hits.length > 1) console.log('__AMBIG__' + hits.map(([id, v]) => v.n + v.g + '=' + v.name).join('|'));
     } else {
-      e = list.find(p => p.name === arg);
+      e = list.find(p => p.name === arg || p.id === arg); // 2026-09-13：8 位 id 之前只按 name 找 → 找不到就当新名字创建同名 agent
     }
   } else {
     // fallback：group-map 不存在时用旧逻辑
@@ -1109,7 +1112,8 @@ case "$MODE" in
     cleanup() {
       rm -rf "$LOCKDIR" 2>/dev/null
       rm -f "$PIDFILE"
-      _pim_count=$(ps aux 2>/dev/null | grep '[p]im:' | wc -l | tr -d ' ')
+      # 2026-09-13：进程标题早已从 pim: 改为 genshin:——旧写法计数恒 0 → 每次任意 agent 退出都把 19223（steam gomoku 服务器）端口进程杀掉，其他 agent 还在跑也被杀
+      _pim_count=$(ps aux 2>/dev/null | grep '[g]enshin:' | wc -l | tr -d ' ')
       # 2026-09-07（cross-device-communication-testor-01 报告）：精简 Linux server（容器/minimal）无 lsof → 此处 command not found 污染所有 agent 退出路径。
       # 守卫静默跳过：19223 端口清理是 best-effort（缺 lsof 时跳过不影响退出），报错绝不能泄漏到退出输出。
       if [ "${_pim_count:-0}" -le 1 ] 2>/dev/null && command -v lsof >/dev/null 2>&1; then lsof -t -i :19223 | xargs kill 2>/dev/null; fi
@@ -1230,7 +1234,8 @@ case "$MODE" in
       USE_BLACKBOX=0
       SETTINGS_FILE="$PAIMON_CONFIG/settings.json"
       if [ -f "$SETTINGS_FILE" ]; then
-        BB_ENABLED=$(python3 -c "import json; s=json.load(open('$SETTINGS_FILE')); print('true' if s.get('blackboxEnabled') else 'false')" 2>/dev/null || echo "true")
+        # 2026-09-13：改用 node（全脚本其余处都用 node；minimal Linux 无 python3 时 blackboxEnabled=false 被忽略、录屏强制开）
+        BB_ENABLED=$(node -e "try{const s=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));console.log(s.blackboxEnabled?'true':'false')}catch(e){console.log('true')}" "$SETTINGS_FILE" 2>/dev/null || echo "true")
         [ "$BB_ENABLED" = "true" ] && USE_BLACKBOX=1
       else
         USE_BLACKBOX=1

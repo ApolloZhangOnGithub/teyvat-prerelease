@@ -10,7 +10,7 @@ const PAIMON_HOME = process.env.PAIMON_HOME || (process.env.HOME + '/.teyvat');
 
 const MEM_DIR = PAIMON_HOME + '/MemoryData';
 const PLIST = MEM_DIR + '/plist.json';
-const CLI_DIR = path.join(process.env.HOME, '.local/lib/teyvat/extensions/teyvat/god.mods.cli');
+const CLI_DIR = __dirname; // 2026-09-13：原指向不存在的 god.mods.cli 目录（实际是 god.frontend.cli）→ "磁盘分析" 必报 Cannot find module
 
 const R = '\x1b[0m', DIM = '\x1b[90m', CYAN = '\x1b[36m', GREEN = '\x1b[32m';
 const BOLD = '\x1b[1m', YLW = '\x1b[33m', RED = '\x1b[31m', INV = '\x1b[7m';

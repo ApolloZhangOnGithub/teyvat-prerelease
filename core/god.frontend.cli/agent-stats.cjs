@@ -38,7 +38,8 @@ function computeAgentStats(home, memDir, id) {
   const md = path.join(memDir, id);
   const memSize = dirSize(md);
   let totalSize = memSize;
-  for (const sub of ["SessionData", "AgentFileData", "MonitorData", "BlackboxData", "RuntimeCache", "IdentityData", "ErrorData", "AgentWorkDir/Individual"]) {
+  // 2026-09-13：监控数据实际在 AgentFileData/MonitorData/<id>（paths.ts monitorDataFile），<PAIMON>/MonitorData 不存在 → 总计漏算
+  for (const sub of ["SessionData", "AgentFileData", "AgentFileData/MonitorData", "BlackboxData", "RuntimeCache", "IdentityData", "ErrorData", "AgentWorkDir/Individual"]) {
     totalSize += dirSize(path.join(path.dirname(memDir), sub, id));
   }
   const readFile = (f) => { try { return fs.readFileSync(path.join(md, f), "utf8"); } catch { return ""; } };

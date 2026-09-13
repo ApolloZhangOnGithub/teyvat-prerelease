@@ -11,7 +11,7 @@ try { b = JSON.parse(fs.readFileSync(h + "/.teyvat/UserAccount/binding.json", "u
 if (!b?.token || !b?.deviceId) process.exit(0);
 
 let ep = "https://sync.paimon.beer";
-try { const s = JSON.parse(fs.readFileSync(h + "/.teyvat/UserAccount/services.json", "utf8")); if (s.services && s.services["genshin-sync"] && s.services["genshin-sync"].endpoint) ep = s.services["genshin-sync"].endpoint; } catch { /* 缺失/损坏 → 默认 */ }
+try { const s = JSON.parse(fs.readFileSync(h + "/.teyvat/UserAccount/services.json", "utf8")); const gs = s["genshin-sync"] || (s.services && s.services["genshin-sync"]); if (gs && gs.endpoint) ep = gs.endpoint; } catch { /* 缺失/损坏 → 默认 */ } // 2026-09-13：结构对齐 paths.ts（顶层 genshin-sync）
 
 const gbin = process.env.GENSHIN_BIN || h + "/.local/bin/genshin";
 execFile(gbin, [], { encoding: "utf8", timeout: 20000, maxBuffer: 4 * 1024 * 1024 }, async (err, stdout) => {

@@ -230,7 +230,7 @@ async function addToOrg(agent) {
   org.members.push(agent.id);
   fs.writeFileSync(ORGS_FILE, JSON.stringify(orgs, null, 2));
   setOrgs(agent, [...curOrgs, org.id]);
-  fs.writeFileSync(PLIST, JSON.stringify(list, null, 2));
+  fs.writeFileSync(PLIST, JSON.stringify(list.map(p => { const { _active, _ago, ...rest } = p; return rest; }), null, 2)); // 2026-09-13：剥临时字段再写回（见 archive.cjs 同处注释）
   console.log(T(agent.name + ' 已加入「' + org.name + '」(' + org.id + ')', agent.name + ' added to "' + org.name + '" (' + org.id + ')'));
 }
 
@@ -247,7 +247,7 @@ async function removeFromOrg(agent) {
   fs.writeFileSync(ORGS_FILE, JSON.stringify(orgs, null, 2));
   const curOrgs = getOrgs(agent).filter(oid => oid !== org.id);
   setOrgs(agent, curOrgs);
-  fs.writeFileSync(PLIST, JSON.stringify(list, null, 2));
+  fs.writeFileSync(PLIST, JSON.stringify(list.map(p => { const { _active, _ago, ...rest } = p; return rest; }), null, 2)); // 2026-09-13：剥临时字段再写回（见 archive.cjs 同处注释）
   console.log(T(agent.name + ' 已从「' + org.name + '」中移除', agent.name + ' removed from "' + org.name + '"'));
 }
 

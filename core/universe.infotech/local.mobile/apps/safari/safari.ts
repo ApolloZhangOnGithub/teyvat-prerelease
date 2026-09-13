@@ -163,10 +163,9 @@ async function searchWeb(q: string): Promise<string> {
   const { serviceKey } = await import("#paths");
   const key = serviceKey("brave");
   if (!key) { return "搜索失败: brave 未配置，使用 /config 编辑"; }
-  let resolveSearch!: (s: string) => void;
-  const promise = new Promise<string>(r => { resolveSearch = r; });
-  _pendingSearches.set(cacheKey, { promise, ts: Date.now(), q });
-  (async () => {
+  // 2026-09-13：之前手工造了一个 Promise 却从不 resolve（resolveSearch 无任何调用），IIFE 的返回值被丢弃 →
+  // 搜索永不返回 → handleInput 永不完成 → kernel 的慢速队列 _mobileQueue 从此永久 pending，之后所有 >200ms 的 mobile 操作都收不到完成通知。
+  const promise = (async (): Promise<string> => {
   try {
     const text = await new Promise<string>((resolve, reject) => {
       const opts: https.RequestOptions = {

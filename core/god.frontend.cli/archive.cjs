@@ -185,10 +185,12 @@ for (const p of picked) {
     fs.writeFileSync(idPath, JSON.stringify(idData, null, 2));
   } catch (e) { console.error("[god.frontend.cli/archive.cjs] " + (e?.message || e)); }
 }
-fs.writeFileSync(PLIST, JSON.stringify(list, null, 2));
+// 2026-09-13：写回前剥掉 computeAndSort 挂上的临时字段（_active/_ago）——之前整表写回，plist.json 165 条全部带上了陈旧的 _active，
+// 本文件 L49 的"组织成员是否存活"检查读到的正是这些陈旧值
+fs.writeFileSync(PLIST, JSON.stringify(list.map(p => { const { _active, _ago, ...rest } = p; return rest; }), null, 2));
 // 归档后自动压缩，恢复后自动解压
 for (const p of picked) {
-  const COMPRESS = __dirname + '/xscompress.cjs';
+  const COMPRESS = __dirname + '/compress.cjs'; // 2026-09-13：原写 xscompress.cjs（不存在）
   const { spawn } = require('child_process');
   if (MODE === 'archive') {
     spawn('node', [COMPRESS, 'compress', p.id], { stdio: 'ignore', detached: true }).unref();

@@ -13,7 +13,8 @@ function readBinding() {
 }
 function endpoint() {
   let e = "https://sync.paimon.beer";
-  try { const s = JSON.parse(fs.readFileSync(h + "/.teyvat/UserAccount/services.json", "utf8")); if (s.services && s.services["genshin-sync"] && s.services["genshin-sync"].endpoint) e = s.services["genshin-sync"].endpoint; } catch { /* services.json 缺失/损坏 → 用默认 sync.paimon.beer */ }
+  // 2026-09-13：services.json 的结构是顶层 s["genshin-sync"]（paths.ts / cli.ts 同口径），原读 s.services[...] 永远取不到自定义 endpoint
+  try { const s = JSON.parse(fs.readFileSync(h + "/.teyvat/UserAccount/services.json", "utf8")); const gs = s["genshin-sync"] || (s.services && s.services["genshin-sync"]); if (gs && gs.endpoint) e = gs.endpoint; } catch { /* services.json 缺失/损坏 → 用默认 sync.paimon.beer */ }
   return e;
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
