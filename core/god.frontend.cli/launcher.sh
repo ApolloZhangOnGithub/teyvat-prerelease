@@ -1138,21 +1138,31 @@ case "$MODE" in
         # 用户重新 genshin xxx → 恢复到前台 TUI（清 detached 标记 + 杀 headless 进程 + 重新启动）：
         # 同一 SESSION_DIR，session/记忆/意图栈延续，TUI 渲染完整历史——"重新进入前台看到"。
         if [ -f "$RUNTIME_DIR/detached" ]; then
-          echo "$(_l "\n正在把 $NAME 恢复到前台 TUI（headless → 前台，将中断后台当前回合）…" "\nRestoring $NAME to foreground TUI (headless → TUI, current background turn will be interrupted)…")"
+          # 2026-09-14：去掉 _l 字符串开头的字面量 \n——echo 不解释它，会原样打出“\n正在把…”（用户实测观感差）
+          echo "$(_l "正在把 $NAME 恢复到前台 TUI（headless → 前台，将中断后台当前回合）…" "Restoring $NAME to foreground TUI (headless → TUI, current background turn will be interrupted)…")"
           rm -f "$RUNTIME_DIR/detached" 2>/dev/null
           # headless 守护是 setsid 新会话（进程组首进程）——杀整个进程组（launcher+node），
-          # 否则只杀 launcher 会留孤儿 node 继续跑（2026-08-20）
-          kill -TERM -- "-$OLD_PID" 2>/dev/null || kill "$OLD_PID" 2>/dev/null
+          # 否则只杀 launcher 会留孤儿 node 继续跑（2026-08-20）。
+          # 2026-09-14（ISSUE 262）：组号必须取「node 的真实 pgid」而非 node pid——genshin bg 架构下
+          # 进程组首是 daemon bash（setsid 会话首），node 的 pgid=daemon pid；用 node pid 当组号会打空。
+          _opg=$(ps -o pgid= -p "$OLD_PID" 2>/dev/null | tr -d ' ')
+          if [ -n "$_opg" ]; then kill -TERM -- "-$_opg" 2>/dev/null; fi
+          kill -TERM "$OLD_PID" 2>/dev/null
           for _i in $(seq 1 20); do kill -0 "$OLD_PID" 2>/dev/null || break; sleep 0.05; done
           rm -rf "$LOCKDIR" 2>/dev/null
           rm -f "$PIDFILE" 2>/dev/null
           # 2026-08-20 用户需求：attach 回前台时给 agent 注入"用户已以前台模式进入"通知——
           # 写 attached-back 标记，TUI 进程启动（heart 第一回合）时检测并注入 display-shown 消息 + 清标记
-          echo "{\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)\",\"from\":\"attach\"}" > "$RUNTIME_DIR/attached-back" 2>/dev/null
+          # 2026-09-14：macOS BSD date 不支持 %3N，会原样输出 “.3NZ”（标记 ts 出现 “2026-…T21:43:02.3NZ” 脏数据）——改为秒级
+          echo "{\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"from\":\"attach\"}" > "$RUNTIME_DIR/attached-back" 2>/dev/null
           # 重新执行 launcher（锁已清）→ 正常 TUI 启动（session 延续）
-          # 2026-08-20：必须用 ${ORIG[@]}（原始参数）——launcher.sh:189 的 shift 已把 agent 名从 $@ 移除，
+          # 2026-08-20：必须用显式 agent 名——launcher.sh:189 的 shift 已把 agent 名从 $@ 移除，
           # 用 "$@" 会让 exec 的快照无 agent 名 → 启动失败（headless 守护没起来的根因）。
-          exec bash "$_snap" "${ORIG[@]}"
+          # 2026-09-14（ISSUE 262）：改用**已解析的 $NAME**——原 ${ORIG[@]} 是原始参数（可能是序号 3b/1b），
+          # re-exec 会**重新解析**，而此刻 agent 刚被杀、分组编号位移 → 同一命令落到**别的 agent**：
+          # 实测 05:43 `genshin 3b`（attach dev-01）→ 第二实例解析 3b → lovely-paimon（弹第二个确认框，
+          # 按 Y 会级联杀掉它的 headless）。exec 带 $NAME 则与当前状态无关，永远进同一个 agent。
+          exec bash "$_snap" "$NAME"
         fi
         SESSION_ID=$(ps aux 2>/dev/null | grep "genshin:.*$ID" | head -1 | sed 's/.*(main,[^,]*,//' | sed 's/).*//')
         echo "$(_l "$NAME 已在前台运行中（PID $OLD_PID，session ${SESSION_ID:-?}）。如需重启: genshin kill $NAME 后重新启动。" "$NAME is already running in foreground (PID $OLD_PID, session ${SESSION_ID:-?}). To restart: genshin kill $NAME then start again.")"
@@ -1345,7 +1355,9 @@ case "$MODE" in
           echo "$(_l "已转入后台运行（headless）。agent 继续工作，终端已释放。" "Moved to background (headless). Agent keeps working, terminal released.")"
           rm -rf "$LOCKDIR" 2>/dev/null
           rm -f "$PIDFILE" 2>/dev/null
-          PAIMON_HEADLESS_DAEMON=1 perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' -- bash "$_snap" "${ORIG[@]}" >/dev/null 2>&1 &
+          # 2026-09-14（ISSUE 262）：同 attach 分支——re-exec 用已解析的 $NAME，避免序号参数在
+          # agent 退出后编号位移、落到别的 agent（把别的 agent 拉成后台）。
+          PAIMON_HEADLESS_DAEMON=1 perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' -- bash "$_snap" "$NAME" >/dev/null 2>&1 &
           exit 0
         fi
       fi
@@ -1378,7 +1390,9 @@ case "$MODE" in
           # agent 已退出，锁/pid 还在 → 清掉，否则 exec 后新 launcher 报"已有 Session"
           rm -rf "$LOCKDIR" 2>/dev/null
           rm -f "$PIDFILE" 2>/dev/null
-          exec bash "$_snap" "${ORIG[@]}"
+          # 2026-09-14（ISSUE 262）：用已解析的 $NAME——序号参数在 agent 退出后编号位移，
+          # re-exec 会落到别的 agent（同 attach 分支的级联问题）。
+          exec bash "$_snap" "$NAME"
         fi
         continue
       fi
