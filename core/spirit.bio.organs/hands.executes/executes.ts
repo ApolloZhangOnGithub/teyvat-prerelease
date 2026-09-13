@@ -289,6 +289,10 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
       const createdInfo = result?.details?.createdInfo;
       // 快命令:有 execId 但无 createdInfo → Process <id> done in X sec + 输出
       if (execId && !createdInfo) {
+        // 2026-09-13（房东）：Execute 结果=隐藏时，整个结果区（Done in Xs + 输出）都不显示。
+        // （原实现快命令分支完全没检查 resultMode——hide/summary 对快命令不生效，用户设隐藏仍渲染一切。）
+        const _resultMode = (globalThis as any).__genshinExecuteResult ?? "full";
+        if (_resultMode === "hide") return renderMessage.silent();
         const { Text, Container } = require("@earendil-works/pi-tui");
         const indent = " ".repeat(GUTTER);
         const c = new Container();
@@ -331,6 +335,11 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
         const line1 = indent + theme.fg("dim", "⎿  ") + `Done in ${theme.bold(secStr + "s")}${exitPart}` + theme.fg("dim", ` at ${hh}:${mm}:${ss}`);
         c.addChild(new Text(line1, 0, 0));
         if (outText) {
+          // 2026-09-13（房东）：Execute 结果=摘要 → 输出只给前 5 行（无省略提示行）
+          if (_resultMode === "summary") {
+            const _ol = outText.split("\n");
+            if (_ol.length > 5) outText = _ol.slice(0, 5).join("\n");
+          }
           // 行号统一:blocks_nongod.lineNumbered(markdown 同款:右对齐行号 + │ 竖线)
           // 每行独立 Text--避开 Text 组件多行缩进逻辑,保证行号对齐
           const rendered = lineNumbered(outText, theme);
@@ -368,7 +377,11 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
       }
       // 2026-09-13（房东定稿）：「Execute 结果」三态——隐藏 / 摘要（纯前 5 行）/ 全部
       const resultMode = (globalThis as any).__genshinExecuteResult ?? "full";
-      if (resultMode === "summary" && result?.details?.renderText == null) {
+      // 2026-09-13（房东）：去掉 renderText == null 条件——有 renderText 的结果也要遵守 hide/summary
+      if (resultMode === "hide") {
+        return renderMessage.silent();
+      }
+      if (resultMode === "summary") {
         const raw = resultContent(result);
         if (raw.length > 0 && raw[0].type === "text") {
           const lines = raw[0].text.split("\n");
@@ -378,9 +391,6 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
           }
         }
         return renderMessage.output(theme, ctx, raw);
-      }
-      if (resultMode === "hide" && result?.details?.renderText == null) {
-        return renderMessage.silent();
       }
       // 2026-09-13：以下为旧的 compactExecute 逻辑（三态改造后被上面的 resultMode 分支取代），保留备查
       if (false) {
