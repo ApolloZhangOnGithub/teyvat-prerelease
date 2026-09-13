@@ -9,6 +9,8 @@ import { quitHandler } from "./exit.ts";
 import { detachHandler } from "./detach.ts";
 import { pauseHandler } from "./pause.ts";
 import { settingsHandler, setToolsHandler } from "./settings.ts";
+import { copyHandler } from "./copy.ts";
+import { modelHandler } from "./model.ts";
 import { i18n } from "#tui_localizations";
 
 // ── 为什么用短名注册 ──────────────────────────────────────────────────────────
@@ -63,5 +65,16 @@ export function registerGodCommands(pi: any) {
   pi.registerCommand("p", {
     description: desc("pause", "暂停/恢复当前 Agent", "Pause/resume agent"),
     handler: pauseHandler,
+  });
+  // 2026-09-14：/copy 与 /m 必须显式注册——teyvat 禁用 pi 原生命令（interactive-mode L2439），
+  // 未注册的命令会被 onSubmit 当普通用户消息发给 agent（命令静默失效，经典坑）。
+  // 勿删这两行注册：删除后 /copy、/m 静默失效（不报错、只是不执行）。
+  pi.registerCommand("copy", {
+    description: desc("copy", "拷贝历史回复（树选择器）", "Copy a reply from history (tree selector)"),
+    handler: copyHandler,
+  });
+  pi.registerCommand("m", {
+    description: desc("model", "切换模型（搜索式选择器）", "Switch model (search selector)"),
+    handler: modelHandler,
   });
 }

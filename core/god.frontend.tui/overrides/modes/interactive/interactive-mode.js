@@ -2313,6 +2313,7 @@ export class InteractiveMode {
         };
         globalThis.__genshinGetToolExpanded = () => this.toolOutputExpanded;
         globalThis.__genshinHandleModelCommand = (searchTerm) => this.handleModelCommand(searchTerm);
+        globalThis.__genshinHandleCopyCommand = () => this.handleCopyCommand(); // 2026-09-14：/copy 命令桥（register.ts 的 copyHandler 经此调 TreeSelector）
         globalThis.__genshinChatContainer = this.chatContainer;
         globalThis.__genshinAgentSession = this.session;
         globalThis.__genshinShowSettingsList = (title, getItems, onChange) => {

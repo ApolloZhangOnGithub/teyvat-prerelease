@@ -8,11 +8,11 @@
   * { box-sizing: border-box; }
   html, body { height: 100%; }
   body {
-    margin: 0; height: 100vh; overflow: hidden;
+    margin: 0; height: 100vh; height: 100dvh; overflow: hidden;
     font: 14px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
     background: #f5f5f5; color: #1a1a1a; -webkit-font-smoothing: antialiased;
   }
-  .app { display: flex; height: 100vh; padding-top: env(safe-area-inset-top); }
+  .app { display: flex; height: 100vh; height: 100dvh; padding-top: constant(safe-area-inset-top); padding-top: env(safe-area-inset-top); }
   mark { background: #ffe08a; color: inherit; padding: 0 1px; }
 
   /* ── ① 功能栏 ── */
@@ -177,9 +177,10 @@
   .msg-row.flash { background: rgba(255,214,0,.30); border-radius: 8px; transition: background .6s ease; }
   .unread-divider { display: flex; align-items: center; gap: 10px; font-size: 11px; color: #999; margin: 8px 0; }
   .unread-divider::before, .unread-divider::after { content: ""; flex: 1; height: 1px; background: #e4e4e4; }
-  /* ── 登录视图（毛玻璃：主界面在背后打模糊，登录卡片浮层）── */
-  .blurred { filter: blur(14px); pointer-events: none; user-select: none; }
-  #loginView { display: none; position: fixed; inset: 0; z-index: 20; align-items: center; justify-content: center; background: rgba(255,255,255,0.28); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+  /* ── 登录视图（毛玻璃：示例对话 app 在背后，登录卡片浮层）── */
+  #mainView { display: none; }
+  #demoView { display: none; }
+  #loginView { display: none; position: fixed; inset: 0; z-index: 20; align-items: center; justify-content: center; background: rgba(255,255,255,0.22); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
   .login-card { background: rgba(255,255,255,0.86); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.18); padding: 32px 28px; width: 360px; text-align: center; }
   .login-card h1 { font-size: 20px; margin: 0 0 6px; }
   .login-card .sub { color: #999; font-size: 13px; margin-bottom: 22px; }
@@ -193,6 +194,15 @@
   .token-row button { padding: 0 14px; background: #07c160; color: #fff; border: 0; border-radius: 8px; font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
   .token-hint { font-size: 11px; color: #aaa; text-align: left; margin-top: 8px; line-height: 1.7; }
   .status { margin-top: 14px; font-size: 12px; color: #999; min-height: 18px; }
+  /* iOS 式滑块开关 */
+  .switch { position: relative; width: 44px; height: 24px; background: #d9d9d9; border-radius: 12px; cursor: pointer; transition: background .2s; flex: none; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; background: #fff; border-radius: 50%; transition: transform .2s; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+  .switch.on { background: #07c160; }
+  .switch.on::after { transform: translateX(20px); }
+  .mi-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; font-size: 14px; cursor: pointer; }
+  .mi-row:hover { background: #f7f7f7; }
+  /* 长按元素禁用浏览器原生选中/系统菜单，让自定长按菜单生效 */
+  .msg-row, .conv-item, .contact-entry, .fav-item, .gmem-click { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   /* ── 手机端适配 ── */
   .back-btn { display: none; width: 32px; height: 32px; border: 0; background: transparent; border-radius: 6px; cursor: pointer; color: #5f5f5f; flex: none; align-items: center; justify-content: center; }
   .back-btn:hover { background: #e3e3e3; }
@@ -229,6 +239,31 @@
       <a href="#" id="showToken" style="font-size:12px;color:#aaa">用 Token 登录</a>
     </div>
   </div>
+</div>
+<div id="demoView" class="app">
+  <nav class="rail">
+    <button class="rail-btn active" title="消息"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3C6.5 3 2 6.6 2 11c0 2.5 1.5 4.7 3.8 6.1L5 21l4.3-2.2c.9.2 1.9.3 2.7.3 5.5 0 10-3.6 10-8S17.5 3 12 3z"/></svg></button>
+    <button class="rail-btn" title="通讯录"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5v1H4v-1z"/></svg></button>
+    <button class="rail-btn" title="发现"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg></button>
+    <button class="rail-btn" title="我"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5v1H4v-1z"/></svg></button>
+    <div class="rail-me">A</div>
+  </nav>
+  <aside class="conv">
+    <div style="padding:10px 12px"><div style="height:30px;border-radius:5px;background:#e9e9e9"></div></div>
+    <div class="conv-item active"><div class="avatar" style="background:#4ab0d9">S</div><div class="conv-main"><div class="conv-top"><span class="conv-name">support-01</span><span class="conv-right">11:02</span></div><div class="conv-last">已经修好并部署了</div></div></div>
+    <div class="conv-item"><div class="avatar" style="background:#07c160">A</div><div class="conv-main"><div class="conv-top"><span class="conv-name">alice</span><span class="conv-right">10:48</span></div><div class="conv-last">值守报告已同步</div></div></div>
+    <div class="conv-item"><div class="avatar" style="background:#f0a020">D</div><div class="conv-main"><div class="conv-top"><span class="conv-name">dev-01</span><span class="conv-right">昨天</span></div><div class="conv-last">新版本已部署</div></div></div>
+  </aside>
+  <main class="chat">
+    <header class="chat-head"><div class="chat-title">support-01</div></header>
+    <div class="chat-body" style="padding:16px;display:flex;flex-direction:column;gap:12px">
+      <div style="align-self:flex-end;max-width:60%"><div class="bubble" style="background:#95ec69">这个 bug 帮我看看</div></div>
+      <div style="align-self:flex-start;max-width:60%"><div class="bubble">收到，正在排查</div></div>
+      <div style="align-self:flex-end;max-width:60%"><div class="bubble" style="background:#95ec69">好，等你消息</div></div>
+      <div style="align-self:flex-start;max-width:60%"><div class="bubble">已经修好并部署了</div></div>
+    </div>
+    <div style="padding:12px 16px;border-top:1px solid #e6e6e6"><div style="height:34px;border-radius:6px;background:#f0f0f0"></div></div>
+  </main>
 </div>
 <div class="app" id="mainView">
   <nav class="rail">
@@ -271,7 +306,7 @@
     <div class="chat-body" id="chatBody"><div class="empty">← 选择左侧会话开始聊天</div></div>
     <div class="quote-bar" id="quoteBar"></div>
     <div class="chat-foot" id="chatFoot">
-      <textarea id="input" placeholder="Enter 换行 · Shift+Enter 发送" disabled></textarea>
+      <textarea id="input" placeholder="输入消息..." disabled></textarea>
       <button id="send" disabled>发送</button>
     </div>
     <div class="multi-bar" id="multiBar" style="display:none">
@@ -307,6 +342,15 @@ const archSet = new Set(JSON.parse(localStorage.getItem(ARCH_KEY) || "[]"));
 function saveArch() { localStorage.setItem(ARCH_KEY, JSON.stringify([...archSet])); }
 function listGroups() { try { return JSON.parse(localStorage.getItem(GROUPS_KEY) || "[]"); } catch { return []; } }
 function saveGroups(g) { localStorage.setItem(GROUPS_KEY, JSON.stringify(g)); }
+// 持久化 agent 名字缓存：拿到一次就保存（避免 agent 下线后名字丢失）
+const NAME_KEY = "paimon-im-agent-names";
+const nameCache = (() => { try { return JSON.parse(localStorage.getItem(NAME_KEY) || "{}"); } catch { return {}; } })();
+function rememberName(sid, name) {
+  if (!sid || !name || name === sid) return;
+  if (nameCache[sid] !== name) { nameCache[sid] = name; try { localStorage.setItem(NAME_KEY, JSON.stringify(nameCache)); } catch { /* 忽略 */ } }
+}
+// 精确按 sid 过滤（不按名字正则，避免误伤）：只隐藏这几个指定 agent
+const IM_HIDDEN = new Set(["379e262b"]); // check-session-01
 async function api(path, opts = {}) {
   return fetch(API + path, { ...opts, headers: { Authorization: `Bearer ${TOKEN}`, "X-Device-Id": DEVICE_ID, "User-Agent": "genshin-sync/1.0", ...(opts.headers || {}) } });
 }
@@ -370,12 +414,13 @@ async function handleOAuthCallback() {
 }
 function logout() {
   TOKEN = ""; ME = null; localStorage.removeItem("paimon-im-token");
-  $("mainView").classList.add("blurred"); $("loginView").style.display = "flex";
+  $("mainView").style.display = "none"; $("demoView").style.display = "flex"; $("loginView").style.display = "flex";
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 }
 function enterMain() {
-  $("loginView").style.display = "none"; $("mainView").classList.remove("blurred");
-  try { const v = localStorage.getItem("paimon-im-view"); if (v && VIEW_TAB[v]) view = v; } catch { /* 忽略 */ } // 恢复上次所在 tab，不跳回消息
+  $("loginView").style.display = "none"; $("demoView").style.display = "none"; $("mainView").style.display = "flex";
+  try { const v = localStorage.getItem("paimon-im-view"); if (v && VIEW_TAB[v]) view = v; } catch { /* 忽略 */ } // 恢复上次所在 tab
+  syncRail(); // 更新 rail tab 高亮（否则刷新后绿色停在默认消息）
   self = { sid: MY_SID, name: (ME && ME.login) || "我" };
   $("railMeAvatar").textContent = initial((ME && ME.login) || "我");
   // 缓存恢复：立即渲染上次的会话列表 + 历史（消除刷新空白等待），再后台动态更新
@@ -386,6 +431,7 @@ function enterMain() {
     if (Array.isArray(ch)) historyAll = ch;
   } catch { /* 缓存损坏忽略 */ }
   loadConvs();
+  loadFavs();
   refreshHistoryBg();
   if (!pollTimer) pollTimer = setInterval(() => { loadConvs(); pullPending(); }, 4000);
   pullPending();
@@ -406,13 +452,23 @@ const CFG_KEY = "teyvat-im-cfg";
 const cfg = Object.assign({ sendKey: "shift", mode: "interrupt", notifyOn: true, focusMute: true }, JSON.parse(localStorage.getItem(CFG_KEY) || "{}"));
 function saveCfg() { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); updateHint(); }
 function updateHint() {
-  $("input").placeholder =
+  $("input").placeholder = window.innerWidth <= 760 ? "输入消息..." : (
     cfg.sendKey === "enter" ? "Enter 发送 · Shift+Enter 换行" :
     cfg.sendKey === "ctrl" ? "Ctrl+Enter 发送 · Enter 换行" :
-    "Enter 换行 · Shift+Enter 发送";
+    "Enter 换行 · Shift+Enter 发送"
+  );
 }
 
 function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+// 手机长按触发菜单（触屏无右键）
+let justLongPressed = 0; // 长按刚触发时忽略后续的误触点
+function addLongPress(el, handler) {
+  let timer = null;
+  el.addEventListener("touchstart", (e) => { const t = e.touches[0]; const x = t.clientX, y = t.clientY; timer = setTimeout(() => { justLongPressed = Date.now(); handler(x, y); }, 500); }, { passive: true });
+  el.addEventListener("touchend", () => clearTimeout(timer));
+  el.addEventListener("touchmove", () => clearTimeout(timer));
+  el.addEventListener("touchcancel", () => clearTimeout(timer));
+}
 function hl(text, kw) { // 关键词高亮
   const t = String(text);
   if (!kw) return esc(t);
@@ -442,7 +498,7 @@ function fmtTime(ts) {
 function isGroupPeer(sid) { return String(sid || "").startsWith("group:"); }
 // ── 边栏可拖动调宽（2026-09-13 用户需求）──
 (function initConvDrag() {
-  const el = document.querySelector(".conv");
+  const el = document.querySelector("#mainView .conv"); // 只操作主界面的 conv（demoView 也有 .conv，需区分）
   const handle = document.getElementById("convDrag");
   if (!el || !handle) return;
   const MIN = 180, MAX = 560;
@@ -485,26 +541,32 @@ async function loadConvs() {
     const pd = pr.ok ? await pr.json().catch(() => ({})) : {};
     const dr = await api("/auth/devices");
     const dd = dr.ok ? await dr.json().catch(() => ({})) : {};
-    const stateMap = {};
-    for (const dev of (dd.devices || [])) for (const a of (dev.agents || [])) if (a && a.sid) stateMap[a.sid] = a.state || "";
+    const stateMap = {}, deviceBySid = {}, nameBySid = {};
+    for (const dev of (dd.devices || [])) for (const a of (dev.agents || [])) if (a && a.sid) { stateMap[a.sid] = a.state || ""; deviceBySid[a.sid] = dev.device_id; nameBySid[a.sid] = a.name; rememberName(a.sid, a.name); }
+    let localDevice = "";
+    for (const a of (pd.agents || [])) if (a && a.sid === MY_SID) { localDevice = a.device_id || ""; break; }
     const hd = await ensureHistory();
-    const lastByPeer = {}, seen = new Set();
+    const lastByPeer = {}, seen = new Set(), peerName = {};
     for (const p of hd) {
       if (p.from !== MY_SID && p.to !== MY_SID) continue; // 排除 agent↔agent 跨设备消息，只留人类↔agent 会话
       const peer = (p.from === MY_SID) ? p.to : p.from;
       if (!peer || peer === MY_SID || isGroupPeer(peer)) continue;
       seen.add(peer);
+      if (!peerName[peer] && p.from === peer && p.from_name) { peerName[peer] = p.from_name; rememberName(peer, p.from_name); }
       if (!lastByPeer[peer] || (p.ts || 0) > (lastByPeer[peer].ts || 0)) lastByPeer[peer] = { out: p.from === MY_SID, text: p.text, ts: p.ts };
     }
     const groups = listGroups();
     const list = [];
     for (const a of (pd.agents || [])) {
       if (!a || !a.sid || a.sid === MY_SID) continue;
-      if (/check-session|frontierlm|reveng|train-pipe|test-/i.test(a.name || "")) continue; // 测试/调试 agent 不显示
-      list.push({ sid: a.sid, name: a.name || a.sid, online: a.online !== false, remote: true, model: a.model || "", deviceId: a.device_id || "", state: stateMap[a.sid] || "", archived: archSet.has(a.sid), lastMsg: lastByPeer[a.sid] || null });
+      if (IM_HIDDEN.has(a.sid)) continue; // 精确按 sid 过滤，不按名字正则
+      list.push({ sid: a.sid, name: a.name || a.sid, online: a.online !== false, remote: a.device_id !== localDevice, model: a.model || "", deviceId: a.device_id || "", state: stateMap[a.sid] || "", archived: archSet.has(a.sid), lastMsg: lastByPeer[a.sid] || null });
     }
     for (const peer of seen) {
-      if (!list.find((x) => x.sid === peer)) list.push({ sid: peer, name: peer, online: false, remote: true, model: "", state: "O", archived: archSet.has(peer), lastMsg: lastByPeer[peer] || null });
+      if (list.find((x) => x.sid === peer)) continue;
+      const pname = nameBySid[peer] || peerName[peer] || nameCache[peer] || peer;
+      if (IM_HIDDEN.has(peer)) continue; // 精确按 sid 过滤，不按名字正则
+      list.push({ sid: peer, name: pname, online: false, remote: (deviceBySid[peer] || "") !== localDevice, model: "", state: "O", archived: archSet.has(peer), lastMsg: lastByPeer[peer] || null });
     }
     for (const g of groups) {
       if (!list.find((x) => x.sid === g.id)) list.push({ sid: g.id, name: g.name, isGroup: true, members: g.members, archived: false, lastMsg: null });
@@ -537,17 +599,19 @@ function renderList() {
   if (view === "newfriends") return renderFriends(el);
   if (view === "favs") return renderFavs(el);
   const kw = filter.trim().toLowerCase();
-  const match = (c) => (c.name || "").toLowerCase().includes(kw) || c.sid.includes(kw);
   if (view === "chats") {
     const hidden = getSet("hidden"), pinned = getSet("pinned");
-    const list = convs.filter((c) => (c.lastMsg || c.isGroup) && !hidden.has(c.sid)).filter(match)
+    // 消息区搜索：搜消息内容（lastMsg 文本），不再搜联系人名
+    const matchMsg = (c) => !kw || (c.lastMsg && String(c.lastMsg.text).toLowerCase().includes(kw)) || (c.name || "").toLowerCase().includes(kw);
+    const list = convs.filter((c) => (c.lastMsg || c.isGroup) && !hidden.has(c.sid)).filter(matchMsg)
       .sort((a, b) => (pinned.has(b.sid) ? 1 : 0) - (pinned.has(a.sid) ? 1 : 0));
     if (!list.length) { el.innerHTML = '<div class="empty" style="padding:26px 16px;line-height:1.9">暂无会话<br><span style="font-size:12px">去「通讯录」找人聊</span></div>'; return; }
     for (const c of list) el.appendChild(convItem(c, true));
     return;
   }
-  // 通讯录：微信逻辑（A-Z 分组 + 顶部入口）——归档联系人不在通讯录，单独收纳
-  const list = convs.filter((c) => !c.isGroup && !c.archived).filter(match);
+  // 通讯录：微信逻辑（A-Z 分组 + 顶部入口）——搜索联系人名字
+  const matchName = (c) => (c.name || "").toLowerCase().includes(kw) || c.sid.includes(kw);
+  const list = convs.filter((c) => !c.isGroup && !c.archived).filter(matchName);
   el.appendChild(entryRow("群聊", "#4ab0d9",
     '<svg viewBox="0 0 24 24" fill="#fff"><circle cx="8" cy="9" r="2.6"/><circle cx="16" cy="9" r="2.6"/><path d="M2 19c0-3 2.7-5 6-5s6 2 6 5v1H2v-1z"/><path d="M14 19c0-2.3 1.5-4 4-4s4 1.7 4 4v1h-8v-1z"/></svg>',
     () => { view = "groups"; syncRail(); renderList(); }));
@@ -655,7 +719,7 @@ function convItem(c, showTime, showUnread = true) {
       (showTime ? `<div class="conv-last">${esc(preview).slice(0, 40)}</div>` : `<div class="conv-last">${esc(sub)}${modelTag}</div>`) +
     `</div>` + (showTime ? u : "");
   div.onclick = () => (showTime ? selectConv(c) : openAgentInfo(c.sid)); // 通讯录点人 → 联系人详情（消息列表才直接进聊天）
-  if (showTime) div.oncontextmenu = (e) => showConvMenu(e, c); // 通讯录/归档等非会话列表不右键菜单
+  if (showTime) { div.oncontextmenu = (e) => showConvMenu(e, c); addLongPress(div, (x, y) => showConvMenu({ preventDefault() {}, clientX: x, clientY: y }, c)); } // 通讯录/归档等非会话列表不右键菜单
   return div;
 }
 
@@ -686,7 +750,7 @@ function renderCreateGroup(el) {
   $("gCancel").onclick = () => { view = "groups"; renderList(); };
   $("gCreate").onclick = async () => {
     const members = [...el.querySelectorAll("#gPick input:checked")].map((i) => i.value);
-    if (!members.length) { alert("请至少选一个成员"); return; }
+    if (!members.length) { modalAlert("请至少选一个成员"); return; }
     let name = $("gName").value.trim();
     if (!name) {
       const sn = members.slice(0, 3).map((sid) => shortName((convs.find((x) => x.sid === sid) || {}).name || sid));
@@ -723,18 +787,24 @@ function renderMe(el) {
       `<option value="interrupt" ${cfg.mode === "interrupt" ? "selected" : ""}>打断（立即送达）</option>` +
       `<option value="queue" ${cfg.mode === "queue" ? "selected" : ""}>排队（对方空闲时）</option>` +
     `</select></div>` +
-    `<div class="set-row"><span>系统通知</span><span style="display:flex;align-items:center;gap:10px"><span style="font-size:12px;color:#999" id="notifyState">${notifyStateText()}</span><input type="checkbox" id="setNotifyOn" ${cfg.notifyOn ? "checked" : ""} title="授权后是否发送系统通知"></span></div>` +
-    `<div class="set-row"><span>聚焦时免打扰</span><input type="checkbox" id="setFocusMute" ${cfg.focusMute !== false ? "checked" : ""} title="浏览器 tab 在前台时不弹系统通知"></div>` +
+    `<div class="set-row"><span>系统通知</span><span style="display:flex;align-items:center;gap:10px"><span style="font-size:12px;color:#999" id="notifyState">${notifyStateText()}</span><span class="switch ${cfg.notifyOn ? "on" : ""}" id="setNotifyOn"></span></span></div>` +
+    `<div class="set-row"><span>聚焦时免打扰</span><span class="switch ${cfg.focusMute !== false ? "on" : ""}" id="setFocusMute"></span></div>` +
     `<div class="set-note"><b>Teyvat IM · 公网版</b>（GitHub OAuth 登录）</div>` +
     `<div class="set-row" style="margin-top:8px"><button id="btnLogout" style="width:100%;padding:8px;border:1px solid #e3e3e3;background:#fff;border-radius:6px;cursor:pointer;color:#e5484d">退出登录</button></div>`;
   // 我的收藏已改为独立入口（meFavs → view=favs）
   $("setKey").onchange = (e) => { cfg.sendKey = e.target.value; saveCfg(); };
   $("setMode").onchange = (e) => { cfg.mode = e.target.value; saveCfg(); };
   // 收藏独立入口（view=favs）+ 通知开关（授权后仍可控是否发送）
-  $("meFavs").onclick = () => { view = "favs"; syncRail(); renderList(); };
-  $("setNotifyOn").onchange = (e) => { cfg.notifyOn = e.target.checked; saveCfg(); };
-  $("setFocusMute").onchange = (e) => { cfg.focusMute = e.target.checked; saveCfg(); };
-  $("btnLogout").onclick = () => { if (confirm("确定退出登录？")) logout(); };
+  $("meFavs").onclick = async () => { await loadFavs(); view = "favs"; syncRail(); renderList(); };
+  $("setNotifyOn").onclick = async () => {
+    cfg.notifyOn = !cfg.notifyOn; saveCfg();
+    $("setNotifyOn").classList.toggle("on", cfg.notifyOn);
+    if (cfg.notifyOn && typeof Notification !== "undefined" && Notification.permission === "default") {
+      try { const p = await Notification.requestPermission(); toast(p === "granted" ? "已开启系统通知" : "未授权（可在浏览器设置里允许）"); renderList(); } catch { /* 忽略 */ }
+    }
+  };
+  $("setFocusMute").onclick = () => { cfg.focusMute = !(cfg.focusMute !== false); saveCfg(); $("setFocusMute").classList.toggle("on", cfg.focusMute !== false); };
+  $("btnLogout").onclick = () => { modalConfirm("确定退出登录？", "退出", () => logout()); };
 }
 
 // ── 选中会话 ──
@@ -838,6 +908,7 @@ function appendMsg(m) {
   row.className = "msg-row " + (mine ? "out" : "in");
   row.dataset.mid = m.id;
   row.oncontextmenu = (e) => showMsgMenu(e, m);
+  addLongPress(row, (x, y) => showMsgMenu({ preventDefault() {}, clientX: x, clientY: y }, m));
   if (multiMode) {
     row.classList.add("multi");
     if (multiSel.has(m.id)) row.classList.add("sel-row");
@@ -989,7 +1060,7 @@ function hideBanner() { $("banner").style.display = "none"; }
 // 系统通知（macOS 通知中心）：权限授予后自动弹，无需开关
 function notifyStateText() {
   if (typeof Notification === "undefined") return "浏览器不支持";
-  return { granted: "已授权", denied: "已拒绝（需在浏览器/系统设置里允许）", default: "待授权（下次点页面时自动请求）" }[Notification.permission] || "";
+  return { granted: "已授权", denied: "已拒绝（需在浏览器/系统设置里允许）", default: "未开启（勾选开关请求）" }[Notification.permission] || "";
 }
 function sysNotify(name, text, peer, msgId) {
   if (!cfg.notifyOn) return; // 授权后仍可关闭发送
@@ -1034,8 +1105,7 @@ async function maybeAskNotify() {
   $("ntNo").onclick = () => { modal.style.display = "none"; localStorage.setItem("teyvat-im-notify-declined", "1"); };
   modal.onclick = (e) => { if (e.target === modal) modal.style.display = "none"; };
 }
-document.addEventListener("click", maybeAskNotify, { once: true });
-document.addEventListener("keydown", maybeAskNotify, { once: true });
+// 不再自动弹“开启通知”弹窗——改为用户主动勾选“系统通知”开关时才请求权限
 
 // 聊天信息 / 群聊信息（⋯ → 首项）
 function openChatInfo() {
@@ -1062,20 +1132,18 @@ function openChatInfo() {
           `<div style="font-size:12px;color:#999;margin-bottom:8px">群成员（点头像看联系人，× 移出）</div>` +
           `<div style="display:flex;flex-wrap:wrap;gap:12px;max-height:220px;overflow-y:auto">` +
             (members.length
-              ? members.map((m) => `<div style="width:58px;text-align:center;position:relative">` +
+              ? members.map((m) => `<div style="width:58px;text-align:center">` +
                   `<div class="gmem-click" data-sid="${esc(m.sid)}" style="cursor:pointer">${avatarHtml(m.name, m.online)}</div>` +
                   `<div style="font-size:11px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(shortName(m.name))}</div>` +
-                  `<span class="gmem-del" data-del="${esc(m.sid)}" style="position:absolute;top:-4px;right:-4px;width:18px;height:18px;line-height:16px;text-align:center;background:#e5484d;color:#fff;border-radius:50%;font-size:12px;cursor:pointer" title="移出群聊">×</span>` +
                 `</div>`).join("")
               : '<div style="color:#bbb;font-size:12px">无成员</div>') +
           `</div>` +
         `</div>` +
       `</div>`;
-    modal.querySelectorAll(".gmem-click").forEach((el2) => { el2.onclick = () => openAgentInfo(el2.dataset.sid); });
-    modal.querySelectorAll(".gmem-del").forEach((el2) => { el2.onclick = () => mutateGroup(c.sid, (g) => { g.members = g.members.filter((m) => m !== el2.dataset.del); }); });
-    $("gRename").onclick = () => { const n = prompt("新的群聊名称", c.name); if (n && n.trim()) mutateGroup(c.sid, (g) => { g.name = n.trim(); }); };
+    modal.querySelectorAll(".gmem-click").forEach((el2) => { el2.onclick = () => openAgentInfo(el2.dataset.sid, c); });
+    $("gRename").onclick = () => { modalPrompt("重命名群聊", c.name, (n) => { if (n) mutateGroup(c.sid, (g) => { g.name = n; }); }); };
     $("gAdd").onclick = () => addGroupMember(c);
-    $("gLeave").onclick = () => { if (confirm(`解散群聊「${c.name}」？`)) { saveGroups(listGroups().filter((g) => g.id !== c.sid)); current = null; $("chatTitle").textContent = "选择一个会话"; view = "chats"; syncRail(); renderList(); modal.style.display = "none"; loadConvs(); } };
+    $("gLeave").onclick = () => { modalConfirm(`解散群聊「${c.name}」？`, "解散", () => { saveGroups(listGroups().filter((g) => g.id !== c.sid)); current = null; $("chatTitle").textContent = "选择一个会话"; view = "chats"; syncRail(); renderList(); modal.style.display = "none"; loadConvs(); }); };
   } else {
     modal.innerHTML =
       `<div class="modal" style="width:340px">` +
@@ -1094,13 +1162,13 @@ function openChatInfo() {
 }
 
 // 群成员点击 → 查看联系人信息
-function openAgentInfo(sid) {
+function openAgentInfo(sid, groupCtx) {
   const a = convs.find((x) => x.sid === sid) || { sid, name: sid, online: false };
   const modal = $("modal");
   modal.className = "modal-mask"; modal.style.display = "";
   modal.innerHTML =
     `<div class="modal" style="width:340px">` +
-      `<div class="mhead">联系人</div>` +
+      `<div class="mhead">${groupCtx ? `<span id="mBack" style="cursor:pointer;color:#07c160;font-size:13px;margin-right:8px">← 返回</span>` : ""}联系人</div>` +
       `<div style="padding:16px;display:flex;gap:12px;align-items:center">` +
         avatarHtml(a.name, a.online) +
         `<div><div style="font-weight:600;font-size:15px">${esc(a.name)}</div>` +
@@ -1108,9 +1176,14 @@ function openAgentInfo(sid) {
         `<div style="font-size:12px;color:${a.online ? "#07c160" : "#999"}">${a.online ? "在线" : (a.archived ? "已归档" : "离线")}</div></div>` +
       `</div>` +
       `<div class="set-row"><span>模型</span><span style="font-size:12px;color:#666">${esc(a.model || "-")}</span></div>` +
+      (groupCtx ? `<div style="padding:0 16px 8px"><button id="rmBtn" style="width:100%;padding:8px;border:1px solid #e5484d;background:#fff;color:#e5484d;border-radius:6px;font-size:13px;cursor:pointer">移出群聊</button></div>` : "") +
       `<div style="padding:12px 16px"><button id="msgBtn" style="width:100%;padding:8px;background:#07c160;color:#fff;border:0;border-radius:6px;font-size:14px;cursor:pointer">发送信息</button></div>` +
     `</div>`;
   $("msgBtn").onclick = () => { modal.style.display = "none"; selectConv(a); };
+  if (groupCtx) {
+    $("mBack").onclick = () => openChatInfo();
+    $("rmBtn").onclick = () => { modalConfirm(`将「${shortName(a.name)}」移出群聊？`, "移出", () => mutateGroup(groupCtx.sid, (g) => { g.members = g.members.filter((m) => m !== sid); })); };
+  }
   modal.onclick = (e) => { if (e.target === modal) modal.style.display = "none"; };
 }
 // 群变更：同步 localStorage + 内存 conv + 重渲染
@@ -1172,21 +1245,26 @@ function renderMoreMenu() {
   $("moreMenu").innerHTML =
     `<div class="mi" data-act="info">${isGroupPeer(current) ? "群聊信息" : "聊天信息"}</div>` +
     `<div class="mi" data-act="search">查找聊天记录</div>` +
-    `<div class="mi" data-act="mute">消息免打扰${muted ? '<span class="st">已开启</span>' : ""}</div>` +
-    `<div class="mi" data-act="pin">置顶聊天${pinned ? '<span class="st">已置顶</span>' : ""}</div>` +
+    `<div class="mi-row"><span>消息免打扰</span><span class="switch ${muted ? "on" : ""}" data-act="mute"></span></div>` +
+    `<div class="mi-row"><span>置顶聊天</span><span class="switch ${pinned ? "on" : ""}" data-act="pin"></span></div>` +
     `<div class="mi" data-act="clear">清空聊天记录</div>` +
     `<div class="mi" data-act="del">删除聊天</div>`;
-  $("moreMenu").querySelectorAll(".mi").forEach((el2) => { el2.onclick = () => handleMore(el2.dataset.act); });
+  $("moreMenu").querySelectorAll(".mi, .switch").forEach((el2) => { el2.onclick = () => handleMore(el2.dataset.act); });
 }
 function handleMore(act) {
-  toggleMore(false);
   if (!current) return;
+  if (act === "mute" || act === "pin") {
+    const key = act === "mute" ? "muted" : "pinned";
+    const s = getSet(key); s.has(current) ? s.delete(current) : s.add(current); saveSet(key, s);
+    if (act === "pin") renderList();
+    renderMoreMenu();
+    return;
+  }
+  toggleMore(false);
   if (act === "info") { openChatInfo(); return; }
   if (act === "search") { openMsgSearch(); return; }
-  if (act === "mute") { const s = getSet("muted"); s.has(current) ? s.delete(current) : s.add(current); saveSet("muted", s); return; }
-  if (act === "pin") { const s = getSet("pinned"); s.has(current) ? s.delete(current) : s.add(current); saveSet("pinned", s); renderList(); return; }
-  if (act === "clear") { if (confirm("清空当前聊天记录（仅界面显示，demo 不实际删除数据）？")) { cachedMsgs = []; renderChat(); } return; }
-  if (act === "del") { if (confirm("删除该聊天？（demo：仅从列表隐藏）")) { const s = getSet("hidden"); s.add(current); saveSet("hidden", s); current = null; $("chatTitle").textContent = "选择一个会话"; $("input").disabled = true; $("send").disabled = true; $("chatMore").style.display = "none"; $("msgSearch").style.display = "none"; $("chatBody").innerHTML = '<div class="empty">← 选择左侧会话开始聊天</div>'; renderList(); } return; }
+  if (act === "clear") { modalConfirm("清空当前聊天记录？", "清空", () => { cachedMsgs = []; renderChat(); }); return; }
+  if (act === "del") { modalConfirm("删除该聊天？", "删除", () => { const s = getSet("hidden"); s.add(current); saveSet("hidden", s); current = null; $("chatTitle").textContent = "选择一个会话"; $("input").disabled = true; $("send").disabled = true; $("chatMore").style.display = "none"; $("msgSearch").style.display = "none"; $("chatBody").innerHTML = '<div class="empty">← 选择左侧会话开始聊天</div>'; renderList(); }); return; }
 }
 $("chatMore").onclick = (e) => {
   e.stopPropagation();
@@ -1197,15 +1275,47 @@ $("chatMore").onclick = (e) => {
 document.addEventListener("click", (e) => { if (moreOpen && !e.target.closest(".chat-actions")) toggleMore(false); });
 
 // ── 消息右键菜单（复制 / 转发 / 收藏 / 引用 / 删除）──
-const FAV_KEY = "teyvat-im-favs", MHIDDEN_KEY = "teyvat-im-mhidden";
-const getFavs = () => JSON.parse(localStorage.getItem(FAV_KEY) || "[]");
-const saveFavs = (a) => localStorage.setItem(FAV_KEY, JSON.stringify(a));
+const MHIDDEN_KEY = "teyvat-im-mhidden";
+let favs = []; // 收藏（服务端跨设备同步）
+async function loadFavs() {
+  try { const r = await api("/messages/favorites"); if (r.ok) { const d = await r.json().catch(() => ({})); favs = d.favorites || []; } } catch { /* 忽略 */ }
+}
+function getFavs() { return favs; }
+async function addFav(text, from) {
+  const ts = Date.now();
+  favs.unshift({ text, from, ts });
+  try { await api("/messages/favorites", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, from_name: from, ts }) }); } catch { /* 忽略 */ }
+}
 const getHiddenMsgs = () => new Set(JSON.parse(localStorage.getItem(MHIDDEN_KEY) || "[]"));
 const saveHiddenMsgs = (s) => localStorage.setItem(MHIDDEN_KEY, JSON.stringify([...s]));
 let quoted = null;
 function toast(msg) {
   const t = $("toast"); t.textContent = msg; t.style.display = "";
   clearTimeout(t._timer); t._timer = setTimeout(() => { t.style.display = "none"; }, 1800);
+}
+// 自定义弹窗（替代原生 confirm/prompt/alert）
+function modalAlert(text) {
+  const modal = $("modal");
+  modal.className = "modal-mask"; modal.style.display = "";
+  modal.innerHTML = `<div class="modal" style="width:300px"><div class="mhead">提示</div><div style="padding:16px;font-size:14px;color:#333">${esc(text)}</div><div class="btn-row" style="padding:0 16px 16px"><button class="btn btn-primary" id="mOk">知道了</button></div></div>`;
+  $("mOk").onclick = () => { modal.style.display = "none"; };
+  modal.onclick = (e) => { if (e.target === modal) modal.style.display = "none"; };
+}
+function modalConfirm(text, okText, cb) {
+  const modal = $("modal");
+  modal.className = "modal-mask"; modal.style.display = "";
+  modal.innerHTML = `<div class="modal" style="width:300px"><div class="mhead">确认</div><div style="padding:16px;font-size:14px;color:#333">${esc(text)}</div><div class="btn-row" style="padding:0 16px 16px"><button class="btn btn-ghost" id="mCancel">取消</button><button class="btn btn-primary" id="mOk">${esc(okText || "确定")}</button></div></div>`;
+  $("mCancel").onclick = () => { modal.style.display = "none"; };
+  $("mOk").onclick = () => { modal.style.display = "none"; cb && cb(); };
+  modal.onclick = (e) => { if (e.target === modal) modal.style.display = "none"; };
+}
+function modalPrompt(title, def, cb) {
+  const modal = $("modal");
+  modal.className = "modal-mask"; modal.style.display = "";
+  modal.innerHTML = `<div class="modal" style="width:300px"><div class="mhead">${esc(title)}</div><div style="padding:16px"><input id="mInput" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font:inherit;font-size:14px" value="${esc(def || "")}"></div><div class="btn-row" style="padding:0 16px 16px"><button class="btn btn-ghost" id="mCancel">取消</button><button class="btn btn-primary" id="mOk">确定</button></div></div>`;
+  $("mCancel").onclick = () => { modal.style.display = "none"; };
+  $("mOk").onclick = () => { const v = $("mInput").value.trim(); modal.style.display = "none"; cb && cb(v); };
+  modal.onclick = (e) => { if (e.target === modal) modal.style.display = "none"; };
 }
 let ctxMsg = null;
 function showMsgMenu(e, m) {
@@ -1217,7 +1327,7 @@ function showMsgMenu(e, m) {
   menu.style.display = "";
   menu.style.left = Math.min(e.clientX, window.innerWidth - 140) + "px";
   menu.style.top = Math.min(e.clientY, window.innerHeight - 200) + "px";
-  menu.querySelectorAll(".mi").forEach((el) => { el.onclick = () => handleMsgAct(el.dataset.act); });
+  menu.querySelectorAll(".mi").forEach((el) => { el.onclick = () => { if (Date.now() - justLongPressed < 350) return; handleMsgAct(el.dataset.act); }; });
 }
 function handleMsgAct(act) {
   const m = ctxMsg; $("msgMenu").style.display = "none"; ctxMsg = null;
@@ -1228,7 +1338,7 @@ function handleMsgAct(act) {
     return;
   }
   if (act === "forward") return openForward(m);
-  if (act === "fav") { const f = getFavs(); f.unshift({ text: m.text, from: m.out ? "我" : (m.from_name || m.from || ""), ts: m.ts }); saveFavs(f.slice(0, 200)); toast("已收藏"); return; }
+  if (act === "fav") { addFav(m.text, m.out ? "我" : (m.from_name || m.from || "")); toast("已收藏"); return; }
   if (act === "quote") { setQuote(m); return; }
   if (act === "del") { const s = getHiddenMsgs(); s.add(m.id); saveHiddenMsgs(s); renderChat(); toast("已删除（本地）"); return; }
   if (act === "multi") { enterMulti(); return; }
@@ -1250,7 +1360,7 @@ function showConvMenu(e, c) {
   menu.style.display = "";
   menu.style.left = Math.min(e.clientX, window.innerWidth - 140) + "px";
   menu.style.top = Math.min(e.clientY, window.innerHeight - 140) + "px";
-  menu.querySelectorAll(".mi").forEach((el) => { el.onclick = () => handleConvAct(el.dataset.act); });
+  menu.querySelectorAll(".mi").forEach((el) => { el.onclick = () => { if (Date.now() - justLongPressed < 350) return; handleConvAct(el.dataset.act); }; });
 }
 function handleConvAct(act) {
   const c = ctxConv; $("convMenu").style.display = "none"; ctxConv = null;
@@ -1335,9 +1445,8 @@ async function multiAct(act) {
     return;
   }
   if (act === "fav") {
-    const f = getFavs();
-    for (const m of msgs) f.unshift({ text: m.text, from: m.out ? "我" : (m.from_name || m.from || ""), ts: m.ts });
-    saveFavs(f.slice(0, 200)); toast(`已收藏 ${msgs.length} 条`); exitMulti(); return;
+    for (const m of msgs) addFav(m.text, m.out ? "我" : (m.from_name || m.from || ""));
+    toast(`已收藏 ${msgs.length} 条`); exitMulti(); return;
   }
   if (act === "del") {
     const s = getHiddenMsgs();
@@ -1377,7 +1486,7 @@ $("btnToken").onclick = async () => {
 // 已登录则直接进主界面（无登录闪烁）
 (async () => {
   if (await handleOAuthCallback()) return;
-  if (!TOKEN) { $("mainView").classList.add("blurred"); $("loginView").style.display = "flex"; return; }
+  if (!TOKEN) { $("demoView").style.display = "flex"; $("loginView").style.display = "flex"; return; }
   ME = { login: localStorage.getItem("paimon-im-login") || "我" };
   enterMain();
   try { const r = await api("/sync/agent-presence"); if (r.status === 401) logout(); } catch { /* 网络抖动不登出 */ }

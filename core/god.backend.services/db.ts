@@ -61,6 +61,15 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_messages_to ON messages(github_id, to_person, delivered);
   CREATE INDEX IF NOT EXISTS idx_locks_heartbeat ON locks(heartbeat);
 
+  -- IM 收藏（2026-09-14：跨设备同步，替代前端 localStorage）
+  CREATE TABLE IF NOT EXISTS favorites (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    github_id  INTEGER NOT NULL,
+    text       TEXT NOT NULL,
+    from_name  TEXT NOT NULL,
+    ts         INTEGER NOT NULL
+  );
+
   -- 设备主动上传的 genshin 状态（2026-09-05：本地上传→服务器拉，查看 0.3s 内；不做远程执行）
   CREATE TABLE IF NOT EXISTS device_states (
     device_id   TEXT PRIMARY KEY,
@@ -271,6 +280,17 @@ export const stmt = {
 
   expireMessages: db.prepare(`
     DELETE FROM messages WHERE created_at < datetime('now', '-90 days')
+  `),
+
+  // IM 收藏（2026-09-14：跨设备同步）
+  listFavorites: db.prepare(`
+    SELECT id, text, from_name, ts FROM favorites WHERE github_id = ? ORDER BY id DESC LIMIT 200
+  `),
+  addFavorite: db.prepare(`
+    INSERT INTO favorites (github_id, text, from_name, ts) VALUES (?, ?, ?, ?)
+  `),
+  deleteFavorite: db.prepare(`
+    DELETE FROM favorites WHERE github_id = ? AND ts = ?
   `),
 
   // 设备状态主动上传/拉取（2026-09-05）

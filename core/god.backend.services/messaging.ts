@@ -111,3 +111,23 @@ messagingRouter.get("/history", (c) => {
     })),
   });
 });
+
+// 收藏（2026-09-14：跨设备同步，替代前端 localStorage）
+messagingRouter.get("/favorites", (c) => {
+  const user = c.get("user") as AuthUser;
+  const rows = stmt.listFavorites.all(user.githubId) as any[];
+  return c.json({ favorites: rows.map((r) => ({ id: r.id, text: r.text, from: r.from_name, ts: r.ts })) });
+});
+messagingRouter.post("/favorites", async (c) => {
+  const user = c.get("user") as AuthUser;
+  const body = (await c.req.json().catch(() => ({}))) as { text?: string; from_name?: string; ts?: number };
+  if (!body.text) return c.json({ error: "text required" }, 400);
+  stmt.addFavorite.run(user.githubId, String(body.text).slice(0, 2000), body.from_name || "我", body.ts || Date.now());
+  return c.json({ ok: true });
+});
+messagingRouter.delete("/favorites", (c) => {
+  const user = c.get("user") as AuthUser;
+  const ts = parseInt(c.req.query("ts") || "0", 10);
+  if (ts) stmt.deleteFavorite.run(user.githubId, ts);
+  return c.json({ ok: true });
+});
