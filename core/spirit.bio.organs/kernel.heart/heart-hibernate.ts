@@ -10,7 +10,7 @@ import { getSessionRole } from "#kernel_ribosome";
 import { runtimeCacheDir, writeFileAtomic } from "#paths";
 import { registerPaimonTool, sendCustomMessage } from "#kernel_backbone";
 import { backgroundTasksSummary } from "#hands_execute";
-import { renderToolCall, renderMessage } from "#tui_blockrender";
+import { renderToolCall, renderMessage, bulletText } from "#tui_blockrender";
 import { drainPendingSocialWithMeta, hasPendingSocial } from "#social_communicate";
 import { debug } from "#gene_riboswitch";
 import { i18n } from "#tui_localizations";
@@ -76,13 +76,14 @@ export function registerHibernateTool(_pi: ExtensionAPI) {
       until: Type.Optional(Type.String({ messageDescription: "Wake time: 'HH:MM' (today/tomorrow), 'tomorrow HH:MM', or ISO datetime" })),
     }),
     renderCall(args: any, theme: any) {
-      // 2026-09-14 修复：✻ 与摘要合并成单个 Markdown 同行渲染。此前 Text(✻) + Markdown(summary) 放进
-      // Container 会垂直堆叠——✻ 独占第一行、摘要落到第二行，中间就是房东报的「雪花后多一个空行」。
+      // 2026-09-14 二次修复（ISSUE 240 同期回归）：02:11 的「✻ 与摘要合并」改用 Markdown 组件渲染——
+      // Markdown 没有悬挂缩进，摘要第二行起全部顶头（房东：「第二行开始的对齐没了，改成顶头」）。
+      // 改用与所有工具调用行同源的 bulletText 悬挂缩进管线：首行 ✻ [until] 摘要首行，续行对齐到摘要首字。
       const s = (args?.summary ?? "").trim();
       const until = args?.until ? String(args.until).trim() : "";
-      const untilStr = until ? ` until ${until}` : "";
-      const { Markdown } = require("@earendil-works/pi-tui");
-      return new Markdown("✻ " + untilStr + (s || "hibernating"), 0, 0, (globalThis as any).__genshinMarkdownTheme || theme);
+      const untilStr = until ? `until ${until}` : "";
+      const text = ((untilStr ? untilStr + " " : "") + (s || "hibernating")).trim();
+      return bulletText("✻", text);
     },
     renderResult(result, _opts, t, ctx) {
       // ctx.isError 对 Paimon 工具不可靠，直接从 content 文本判断

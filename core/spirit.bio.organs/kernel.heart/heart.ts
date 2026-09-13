@@ -304,6 +304,26 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event: any, ctx: any) => {
     if (isWorkerSession(ctx)) return;
     setUI(ctx.ui);
+    // 2026-09-14（ISSUE 240 同期互搏修复）：attach 回前台的 display-shown 改在 session_start 注入——
+    // 原在 before_agent_start（第一次对话）注入 → 横幅出现在对话中段（房东：「位置根本不对」，
+    // 「✤ Shown」出现在对话中间而非 attach 那一刻）。session_start 注入 = TUI 启动即渲染在顶部。
+    // 并置 __genshinAttachConsumed 让 userback 跳过「用户回来了」（防左右脑互搏）。
+    // before_agent_start 的同名逻辑保留作兜底（标记已清则不重复）。
+    // 每次 session_start 先重置：防上一次 attach 的标志永久压制 userback。
+    (globalThis as any).__genshinAttachConsumed = false;
+    try {
+      const _apid = (globalThis as any).__genshinPersonId || process.env.PAIMON_AGENT_ID || "";
+      if (_apid) {
+        const _amark = join(homedir(), ".teyvat/RuntimeCache", _apid, "attached-back");
+        if (existsSync(_amark)) {
+          try { unlinkSync(_amark); } catch (e: any) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
+          (globalThis as any).__genshinAttachConsumed = true;
+          if ((globalThis as any).__genshinGreetOnAttach !== false && process.env.PAIMON_SILENT !== "1") {
+            sendCustomMessage(pi, "display-shown", "用户已以前台模式进入（attach 回前台 TUI）。用户现在可以看到你的运行过程了，照常工作。");
+          }
+        }
+      }
+    } catch (e: any) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
     // 2026-09-13（support 转达用户：IM GUI 多 agent 显示同一 model——headless 无 TUI 桥时
     // getSysInfo 走共享 settings 回退 → 所有 headless agent 上报同一 defaultModel）：
     // session_start 把当前 model 挂到 __genshinGetModel（interactive-mode L510 只在 TUI 定义）。
@@ -483,6 +503,9 @@ export default function (pi: ExtensionAPI) {
           setTimeout(() => {
             // flag 必须在 setTimeout 回调里检查（不是注册时），因为 __genshinSelfRebooted 在 PI_ALIVE_WOKE 区块设置，时序上晚于 userback 注册
             if ((globalThis as any).__genshinSelfRebooted) { dlog("userback: skipped (self-rebooted)"); return; }
+            // 2026-09-14（ISSUE 240 互搏修复）：attach 的 display-shown 已在 session_start 注入并消费 →
+            // 这里跳过「用户回来了」（否则 attach 场景两条横幅左右脑互搏）
+            if ((globalThis as any).__genshinAttachConsumed) { dlog("userback: skipped (attach shown)"); return; }
             // attach 回前台：launcher attach 分支写了 attached-back 标记，display-shown 已注入「用户已以前台模式进入」，
             // 这里跳过「用户回来了」（attach 不是离线唤醒，避免重复 + 语义错误，2026-08-20）
             try {

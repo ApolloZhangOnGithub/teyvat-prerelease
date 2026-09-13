@@ -209,7 +209,7 @@ function C() { return new _Container(); }
 
 // 挂起 bullet 输出：返回带 render(width) 的对象，调用 hangWrapText 实现折行缩进
 // cont: 续行前缀（替换缩进空格），如 "⎿ " 实现「工具调用续行标记」
-function bulletText(dotStr, text, cont) {
+export function bulletText(dotStr, text, cont) {
   if (!_visibleWidth || !_wrapTextWithAnsi) {
     // fallback: 用 Text 组件（Text 自身会处理折行，不手动 slice 防止切坏 ANSI）
     const safe = dotStr + " " + (text || "");
