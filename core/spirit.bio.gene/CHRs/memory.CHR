@@ -24,12 +24,14 @@ hash_key 由系统生成，你无法自己计算。如果 check 之后 context �
 ### archive / sweep — 归档工具区产物（不是删除！）
 
 **archive（推荐名，语义=归档）免锚点模式处理：工具区产物（toolResult=工具执行结果、toolCall=工具调用记录）+ think（思考记录）**。
-- **think 可一键批量归档**（2026-08-18 用户定稿）：think 是过程性思维（推导/犹豫/重复），结论已固化到后续 text/toolCall，归档对功能性影响小——`types:["a.think"]` 免锚点批量清，原文存 ActiveManage 可 revert，方便安全试验。**务必带 exclude_tail:100000 保护最近思考**。
+- **think 可一键批量归档**（2026-08-18 用户定稿）：think 是过程性思维（推导/犹豫/重复），结论已固化到后续 text/toolCall，归档对功能性影响小——`types:["a.think"]` 免锚点批量清，原文存 ActiveManage 可 revert，方便安全试验。**务必带 exclude_tail 保护最近思考**（不得低于保护区 = 窗口的 10%，1M 窗口即 100000；低于会被拒并告知正确值）。
 - **禁止归档对话记忆**（user 消息、text 对话、assistant 输出）——那是你的记忆本身，归档错就是失忆。系统会拒绝包含这些的 types（免锚点模式）。
 - **锚定区间（文本/时间戳/位置任一）允许归档任意记忆类**——你显式指定了范围，安全语义由"原位留总结块+可 revert"保证，如 `ts_from+ts_to + types:["think"]` 批量归档某时间段思考。sweep 是旧名别名，行为相同。
 
-- `amem(action:"archive", types:["toolResult"], exclude_tail:100000)` → 免锚点归档工具执行结果（大量网页抓取/长输出这类纯工具产物适合）
-- `amem(action:"archive", types:["a.think"], exclude_tail:100000)` → 免锚点归档旧思考（**必须带 exclude_tail 保护最近 100K tokens**；容量告警时清最旧批次）
+- `amem(action:"archive", types:["toolResult"], exclude_tail:100000)` → 免锚点归档工具执行结果（大量网页抓取/长输出这类纯工具产物适合；100000 是 1M 窗口的例子，保护区 = 窗口的 10%）
+- `amem(action:"archive", types:["a.think"], exclude_tail:100000)` → 免锚点归档旧思考（**必须带 exclude_tail 保护最近 10% 窗口**；容量告警时清最旧批次）
+- 类型名先归一化再查守卫：`a.text` / `assistant.text` / `user_msg` 与 `text` / `user` 一样属于记忆类，免锚点模式一律拒绝；`text` 只指你的可见输出（不含 user 消息和 toolResult）
+- 文本锚点的范围会自动对齐到整条记录（begin→该记录行首，end→该记录行尾），结束锚点同样跳过工具区；apply 复用 check 锁定的范围，不会重新搜索——check 之后即使你在回复里复述了锚点文字也不影响 apply
 - `amem(action:"archive", anchor_begin, anchor_end, types:["toolCall"])` → 锚定范围内归档工具调用记录
 - `amem(action:"archive", ts_from:'08-15T14:00', ts_to:'08-15T15:00', types:["think"])` → 时间范围归档某时间段思考（本地时间）
 - 同样需要 hash_key 两步验证 + title(≥10字) + summary(≥50字)（summary 自己写——你手上有完整上下文，比系统自动生成更准更省）
@@ -56,7 +58,7 @@ hash_key 由系统生成，你无法自己计算。如果 check 之后 context �
 - **只在预期内容超过 ~10% context 时使用**——mark_exit 会导致 temp zone 区域缓存失效。小量内容不值得。
 
 ### 最近保护区
-context 尾部 100K token 区域禁止编辑。这保护了：
+context 尾部保护区（窗口的 10%，下限 20K；1M 窗口 = 100K token）禁止编辑。这保护了：
 - 正在使用的最新对话和工具结果
 - KV 缓存中最近缓存的内容
 只有较旧的、与当前工作不再相关的内容才可以被管理。

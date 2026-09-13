@@ -236,6 +236,12 @@ STOCK_BACKUP="$(dirname "$IMPL")/$(basename "$DEPLOY")/pi-image-source/v${PIN}"
 if [ -d "$STOCK_BACKUP/pi-coding-agent" ]; then
   rsync -a --delete "$STOCK_BACKUP/pi-coding-agent/" "$PI_DIST/"
   ok "runtime pi-coding-agent dist restored from stock"
+  # 2026-09-13（dev-01）：上面这行 --delete 会删掉 teyvat 的补丁 dist/debug.js，
+  # 而 stub 重建原本在脚本后段 → make 的 extension load check（在 install **之前**跑）必然失败
+  # （报 "Cannot find module .../dist/debug.js"）→ install 永不执行 → stub 永不重建（死循环，实测踩到）。
+  # 因此紧跟 rsync 立刻补回（与后段创建逻辑一致）。
+  mkdir -p "$PI_PKG/dist"
+  [ -f "$PI_PKG/dist/debug.js" ] || echo 'export const debug = () => {};' > "$PI_PKG/dist/debug.js"
 else
   err "原版镜像不完整: $STOCK_BACKUP/pi-coding-agent 不存在"
 fi

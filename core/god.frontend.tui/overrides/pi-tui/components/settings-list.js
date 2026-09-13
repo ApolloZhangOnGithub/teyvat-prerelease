@@ -83,7 +83,18 @@ export class SettingsList {
             const separator = "  ";
             const usedWidth = prefixWidth + maxLabelWidth + visibleWidth(separator);
             const valueMaxWidth = width - usedWidth - 2;
-            const valueText = this.theme.value(truncateToWidth(item.currentValue, valueMaxWidth, ""), isSelected);
+            // 2026-09-13（房东）：“可进入子菜单”的条目（submenu/onActivate）若无当前值，右侧显示箭头指示“可点进”。
+            // （「功能」组里 身份与用量/服务与凭证/后台任务/工具管理 这类 onActivate 条目原右侧空白，看不出可点。）
+            let valueText;
+            if (item.currentValue) {
+                valueText = this.theme.value(truncateToWidth(item.currentValue, valueMaxWidth, ""), isSelected);
+            }
+            else if (item.submenu || item.onActivate) {
+                valueText = this.theme.hint("→");
+            }
+            else {
+                valueText = "";
+            }
             lines.push(truncateToWidth(prefix + labelText + separator + valueText, width));
         }
         // Add scroll indicator if needed
