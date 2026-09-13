@@ -16,7 +16,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { registerPaimonTool, sendCustomMessage } from "#kernel_backbone";
-import { renderToolCall, renderMessage, GUTTER, lineNumbered } from "#tui_blockrender";
+import { renderToolCall, renderMessage, GUTTER, lineNumbered, SYM } from "#tui_blockrender";
 import { i18n } from "#tui_localizations";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
@@ -893,7 +893,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
         else if (a === "inbox") summary = `${d.count ? theme.bold(String(d.count)) : "No"} message${d.count === 1 ? "" : "s"}`;
         else if (a === "focus") summary = `focus ${theme.fg("accent", d.mode ?? "")}`;
         else if (a === "group") summary = `Group ${d.gop || ""}${d.count ? ` · ${theme.bold(String(d.count))} receivers` : ""}`;
-        c.addChild(new Text(indent + theme.fg("dim", "⎿  ") + summary + "  " + theme.fg("dim", `[${tsStr}]`), 0, 0));
+        c.addChild(new Text(indent + theme.fg("dim", SYM.result + "  ") + summary + "  " + theme.fg("dim", `[${tsStr}]`), 0, 0));
         // send 显示发送的具体内容（用户要求）；单发时 summary 已含接收方+mode，不再重复 receipt 行
         if (a === "send" && d.text) {
           c.addChild(new Text(indent + "  " + d.text, 0, 0));

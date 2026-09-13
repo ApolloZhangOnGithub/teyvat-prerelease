@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { setKittyProtocolActive } from "./keys.js";
 import { isNativeModifierPressed } from "./native-modifiers.js";
 import { StdinBuffer } from "./stdin-buffer.js";
+import { padEnclosedForNarrowCells } from "./utils.js";
 const cjsRequire = createRequire(import.meta.url);
 const TERMINAL_PROGRESS_KEEPALIVE_MS = 1000;
 const TERMINAL_PROGRESS_ACTIVE_SEQUENCE = "\x1b]9;4;3\x07";
@@ -366,6 +367,8 @@ export class ProcessTerminal {
         }
     }
     write(data) {
+        // teyvat 2026-09-13：全角序号 ①②③ 的"两格契约"输出侧——排版按 2 格算，终端只给 1 格时在序号后补一个真实空格（utils.js 注释）
+        data = padEnclosedForNarrowCells(data);
         process.stdout.write(data);
         if (this.writeLogPath) {
             try {

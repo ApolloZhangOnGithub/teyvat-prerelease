@@ -3,7 +3,7 @@ import { createAllToolDefinitions } from "../../../core/tools/index.js";
 import { getTextOutput as getRenderedTextOutput } from "../../../core/tools/render-utils.js";
 import { convertToPng } from "../../../utils/image-convert.js";
 import { theme } from "../theme/theme.js";
-import { initBlockrender, dot as blockDot, renderToolCall, renderMessage, isToolError, GUTTER } from "./blocks_nongod.js";
+import { initBlockrender, dot as blockDot, renderToolCall, renderMessage, isToolError, GUTTER, SYM, fmtElapsedMs, stripResultTokenMark, extractBioclockTag } from "./blocks_nongod.js";
 import { mkdirSync } from "node:fs";
 import { debug } from "#gene_riboswitch";
 // ESM 下 require 未定义：显式建垫片。原先裸用 require() 会在执行到时抛错，
@@ -13,6 +13,30 @@ const require = createRequire(import.meta.url);
 // teyvat 2026-09-13：状态点替换正则——只认行首（可带 ANSI/空白前缀）的 •/◦/⏺；WSL 下 SYM.dot 是 "*" 也要认（blocks_nongod 在 import 时已设 __genshinSYM）
 const __dotRe = new RegExp("^((?:\\x1b\\[[0-9;]*m|\\s)*)[•◦⏺" + (globalThis.__genshinSYM && globalThis.__genshinSYM.dot === "*" ? "\\*" : "") + "]");
 initBlockrender(Text, Container, visibleWidth, wrapTextWithAnsi);
+// teyvat 2026-09-13（ISSUE 226）：状态点替换 / 行尾追加 各只留一份——此前同一段 replaceDot 在本文件复制了 3 份（第三份漏掉了"只认行首"的修复）、
+// appendToLastText 复制了 2 份。递归遍历 Text/Container 树：replaceLeadingDot 只替换行首（可带 ANSI/空白前缀）的状态点；
+// appendToLastText 给最后一个 Text 节点追加后缀（_waitSuffixed 防重复）。
+function replaceLeadingDot(node, dotStr) {
+  if (!node) return;
+  if (typeof node.text === "string" && __dotRe.test(node.text)) {
+    node.text = node.text.replace(__dotRe, "$1" + dotStr);
+    if (typeof node.invalidate === "function") node.invalidate();
+  }
+  if (typeof node.children !== "undefined") for (const child of node.children) replaceLeadingDot(child, dotStr);
+}
+function appendToLastText(node, suffix) {
+  if (!node) return false;
+  if (typeof node.text === "string" && !node._waitSuffixed) {
+    node.text += suffix;
+    node._waitSuffixed = true;
+    if (typeof node.invalidate === "function") node.invalidate();
+    return true;
+  }
+  if (node.children) {
+    for (let i = node.children.length - 1; i >= 0; i--) if (appendToLastText(node.children[i], suffix)) return true;
+  }
+  return false;
+}
 // 从文件路径推断语言（用于代码高亮）
 function langFromPath(p) {
   if (!p) return undefined;
@@ -275,7 +299,7 @@ const _genshinBuiltinRenderers = {
             const { Text: Txt, Container: CC } = require("@earendil-works/pi-tui");
             const cc = new CC();
             const indent = " ".repeat(GUTTER);
-            cc.addChild(new Txt(indent + t.fg("dim", (globalThis.__genshinSYM?.result || "⎿") + "  ") + summary, 0, 0));
+            cc.addChild(new Txt(indent + t.fg("dim", SYM.result + "  ") + summary, 0, 0));
             const contIndent = " ".repeat(GUTTER + 3);
             for (const l of body) cc.addChild(new Txt(contIndent + l, 0, 0));
             return cc;
@@ -286,15 +310,8 @@ const _genshinBuiltinRenderers = {
 // 2026-09-13（用户）：工具结果耗时戳 [0.009s] 默认隐藏——/s 面板「工具耗时」开关控制（__genshinToolElapsed）
 function toolElapsed(t, opts) {
   if (!globalThis.__genshinToolElapsed) return "";
-  return opts?.elapsedMs ? ` ${t.fg("muted", `[${elapsedStr(opts.elapsedMs)}]`)}` : "";
-}
-function elapsedStr(ms) {
-  const s = ms / 1000;
-  if (s < 1) return `${s.toPrecision(1)}s`;
-  if (s < 10) return `${s.toPrecision(2)}s`;
-  if (s < 60) return `${s.toFixed(0)}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}m${Math.floor(s % 60)}s`;
-  return `${Math.floor(s / 3600)}h${Math.floor((s % 3600) / 60)}m`;
+  // 2026-09-13（ISSUE 226）：耗时格式走 blocks_nongod.fmtElapsedMs（唯一实现），本地 elapsedStr 删除
+  return opts?.elapsedMs ? ` ${t.fg("muted", `[${fmtElapsedMs(opts.elapsedMs)}]`)}` : "";
 }
 export class ToolExecutionComponent extends Container {
     contentBox;
@@ -439,9 +456,9 @@ export class ToolExecutionComponent extends Container {
         if (this.result && !this.isPartial) {
             const out = this.getTextOutput();
             if (out) {
-                const tsMatch = out.match(/\n(\[\d{2}:\d{2}:\d{2}[^\]]*\])\s*$/);
-                const ts = tsMatch ? tsMatch[1] : "";
-                const body = (tsMatch ? out.slice(0, tsMatch.index) : out).trimEnd();
+                // 2026-09-13（ISSUE 226）：尾标签取/剥统一走 blocks_nongod（extractBioclockTag / stripResultTokenMark），本文件不再自带时间戳正则
+                const ts = extractBioclockTag(out);
+                const body = stripResultTokenMark(out).trimEnd();
                 // hibernate/wait 不显示时间戳
                 const noTs = this.toolName === 'next' || this.toolName === 'wait' || this.toolName === 'hibernate';
                 if (body.length < 100 && !body.includes('\n')) {
@@ -454,12 +471,10 @@ export class ToolExecutionComponent extends Container {
         return new Text(text, 0, 0);
     }
     createResultFallback() {
-        let output = this.getTextOutput();
+        const output = this.getTextOutput();
         if (!output) return undefined;
-        if (this.toolName === 'next') {
-            output = output.replace(/\n\[\d{2}:\d{2}:\d{2}[^\]]*\]\s*$/g, '');
-        }
-        // 统一走 bulletText 管线，保证折行与工具调用行一致
+        // 统一走 bulletText 管线，保证折行与工具调用行一致（renderMessage.output 内部已 stripResultTokenMark——
+        // 2026-09-13 ISSUE 226：原先 next 工具在这里单独剥时间戳，是重复的第 5 份正则，删）
         return renderMessage.output(theme, { isError: !!this.result?.isError }, [{ type: "text", text: output }]);
     }
     updateArgs(args) {
@@ -652,16 +667,9 @@ export class ToolExecutionComponent extends Container {
                 // 已有 call 行则只更新 dot，不重建（防 updateArgs 二次渲染）
                 if (this.callRendererComponent && !this.result) {
                     const dot = blockDot(theme, { partial: this.isDotPartial(), error: this.isDotError(), blink: (this.toolName === "wait" || this.toolName === "hibernate") && this.isDotPartial() });
-                    (function replaceDot(node) {
-                        // teyvat 2026-09-13：只替换行首（可带 ANSI/空白前缀）的状态点——之前对每个 text 节点替换首个 •/◦/⏺，命令或摘要正文里的 • 也被换成彩色状态点；
-                        // WSL 下状态点是 "*"（SYM.dot），也要认，否则结果到达后点永远停在 partial 色
-                        if (node && typeof node.text === 'string' && __dotRe.test(node.text)) {
-                            node.text = node.text.replace(__dotRe, "$1" + dot);
-                        }
-                        if (node && typeof node.children !== 'undefined') {
-                            for (const child of node.children) replaceDot(child);
-                        }
-                    })(this.callRendererComponent);
+                    // teyvat 2026-09-13：只替换行首（可带 ANSI/空白前缀）的状态点——之前对每个 text 节点替换首个 •/◦/⏺，命令或摘要正文里的 • 也被换成彩色状态点；
+                    // WSL 下状态点是 "*"（SYM.dot），也要认，否则结果到达后点永远停在 partial 色
+                    replaceLeadingDot(this.callRendererComponent, dot);
                     renderContainer.addChild(this.callRendererComponent);
                     hasContent = true;
                 } else {
@@ -670,16 +678,7 @@ export class ToolExecutionComponent extends Container {
                     this.callRendererComponent = component;
                     // 展开视图：把 • 替换成带状态颜色的版本（递归处理 Text 和 Box 子节点）
                     const dot = blockDot(theme, { partial: this.isDotPartial(), error: this.isDotError(), blink: (this.toolName === "wait" || this.toolName === "hibernate") && this.isDotPartial() });
-                    (function replaceDot(node) {
-                        // teyvat 2026-09-13：只替换行首（可带 ANSI/空白前缀）的状态点——之前对每个 text 节点替换首个 •/◦/⏺，命令或摘要正文里的 • 也被换成彩色状态点；
-                        // WSL 下状态点是 "*"（SYM.dot），也要认，否则结果到达后点永远停在 partial 色
-                        if (node && typeof node.text === 'string' && __dotRe.test(node.text)) {
-                            node.text = node.text.replace(__dotRe, "$1" + dot);
-                        }
-                        if (node && typeof node.children !== 'undefined') {
-                            for (const child of node.children) replaceDot(child);
-                        }
-                    })(component);
+                    replaceLeadingDot(component, dot);
                     renderContainer.addChild(component);
                     hasContent = true;
                 }
@@ -714,21 +713,7 @@ export class ToolExecutionComponent extends Container {
                 const reasonStr = reason ? ` (${reasonLabel[reason] || reason})` : "";
                 const forUser = globalThis.__genshinWaitInterruptedForUser === true;
                 const color = (forUser || reason === "system" || reason === "user") ? "success" : "error";
-                const suffix = " → " + `Waited ${secs}s${reasonStr}`;
-                (function appendToLastText(node) {
-                    if (node && typeof node.text === "string" && !node._waitSuffixed) {
-                        node.text += suffix;
-                        node._waitSuffixed = true;
-                        if (typeof node.invalidate === "function") node.invalidate();
-                        return true;
-                    }
-                    if (node && node.children) {
-                        for (let i = node.children.length - 1; i >= 0; i--) {
-                            if (appendToLastText(node.children[i])) return true;
-                        }
-                    }
-                    return false;
-                })(this.callRendererComponent);
+                appendToLastText(this.callRendererComponent, " → " + `Waited ${secs}s${reasonStr}`);
             }
             // wait/hibernate 正常结束（未被打断）：追加 → Waited Xs
             // 条件：result 已到 + 不再 resting/hibernated（wait 真的结束了，不是刚开始 terminate:true 返回）
@@ -740,37 +725,13 @@ export class ToolExecutionComponent extends Container {
                 && !(this.toolCallId && globalThis.__genshinWaitInterruptedId === this.toolCallId)
                 && (this.result?.details?.wait || this.args?.seconds)) { // teyvat 2026-09-13：hibernate 没有秒数（details 只有摘要）——之前醒来后每条摘要末尾追加 "→ Waited ?s"
                 const waitSecs = this.result?.details?.wait || this.args?.seconds || "?";
-                const suffix = " → " + `Waited ${waitSecs}s`;
-                (function appendToLastText(node) {
-                    if (node && typeof node.text === "string" && !node._waitSuffixed) {
-                        node.text += suffix;
-                        node._waitSuffixed = true;
-                        if (typeof node.invalidate === "function") node.invalidate();
-                        return true;
-                    }
-                    if (node && node.children) {
-                        for (let i = node.children.length - 1; i >= 0; i--) {
-                            if (appendToLastText(node.children[i])) return true;
-                        }
-                    }
-                    return false;
-                })(this.callRendererComponent);
+                appendToLastText(this.callRendererComponent, " → " + `Waited ${waitSecs}s`);
             }
             if (this.result) {
                 // 结果到达 → 把 call 行的 ◦（partial）换成正确的状态点
                 if (this.callRendererComponent) {
                     const fixDot = blockDot(theme, { error: this.isDotError(), partial: this.isDotPartial(), blink: (this.toolName === "wait" || this.toolName === "hibernate") && this.isDotPartial() });
-                    (function replaceDot(node) {
-                        // teyvat 2026-09-13：第三份 replaceDot——上面两份已改成只替换行首状态点（__dotRe），这份漏改：
-                        // 结果到达时对每个 text 节点替换首个 •/◦/⏺，命令正文里的 • 仍会被换成状态点；WSL 的 "*" 也不认。
-                        if (node && typeof node.text === 'string' && __dotRe.test(node.text)) {
-                            node.text = node.text.replace(__dotRe, "$1" + fixDot);
-                            if (typeof node.invalidate === 'function') node.invalidate();
-                        }
-                        if (node && typeof node.children !== 'undefined') {
-                            for (const child of node.children) replaceDot(child);
-                        }
-                    })(this.callRendererComponent);
+                    replaceLeadingDot(this.callRendererComponent, fixDot);
                 }
                 // 跟踪是否展示过 spinner（意味着结果异步到达）
                 if (this.result?.details?.loading) {

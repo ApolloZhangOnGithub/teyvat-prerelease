@@ -8,7 +8,7 @@ import { homedir } from "node:os";
 import { getSessionRole, getPrompt } from "#kernel_ribosome";
 import { memoryDir,  personDataDir as _personDataDir, memoryDataDir, sessionDirFor, estimateTokens, monitorDataFile, runtimeCacheDir as _runtimeCacheDir, readGrowthLast } from "#paths";
 import { registerPaimonTool, sendCustomMessage, resultContent } from "#kernel_backbone";
-import { renderToolCall, renderMessage } from "#tui_blockrender";
+import { renderToolCall, renderMessage, SYM } from "#tui_blockrender";
 import { createHash, randomBytes } from "node:crypto";
 import { execSync } from "node:child_process";
 import { logerr } from "#paths";
@@ -1318,7 +1318,11 @@ export default function registerMemory(pi: ExtensionAPI) {
       // 2026-09-13（用户）：Amem 输出三态——隐藏 / 折叠（默认，只显一行摘要）/ 显示（完整含参数表格）
       const amemDisplay = (globalThis as any).__genshinAmemDisplay ?? "fold";
       if (amemDisplay === "hide") return renderMessage.silent();
-      const { Text: Txt, Container: C } = require("@earendil-works/pi-tui");
+      // 2026-09-13（修复）：这里之前用裸 require——memory.ts 是 ESM（顶部无 createRequire），require 未定义
+      // → renderResult 抛 ReferenceError 被 pi 的 catch 静默吞掉 → 走通用 fallback（⎿+原文）——amem 三态从未生效的根因。
+      // 改用顶部 import 的组件（L3）。
+      const Txt = Text;
+      const C = Container;
       const GUTTER = 2;
       const indent = " ".repeat(GUTTER);
       const c = new C();
@@ -1330,7 +1334,7 @@ export default function registerMemory(pi: ExtensionAPI) {
         .replace(/\s*\([^)]*\)/, "")
         .replace(/,\s*archived\s+\S+/, "")
         .trim();
-      c.addChild(new Txt(indent + theme.fg("dim", "⎿  ") + theme.fg("toolOutput", summary || firstLine), 0, 0));
+      c.addChild(new Txt(indent + theme.fg("dim", SYM.result + "  ") + theme.fg("toolOutput", summary || firstLine), 0, 0));
       // 2026-09-13（用户）：折叠模式 = 只显示上面的摘要行，不显示参数表格
       if (amemDisplay === "fold") return c;
       // 参数表格：找出所有 key: value 行，key 列对齐

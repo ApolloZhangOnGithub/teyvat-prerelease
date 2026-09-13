@@ -198,6 +198,9 @@ function graphemeWidth(segment) {
     // teyvat 2026-08-14：全角序号 ①②③（U+2460-24FF Enclosed Alphanumerics，EAW=ambiguous）
     // iTerm2 中文环境按 2 列全角渲染，但 get-east-asian-width 默认按 1 列 → 叠字/折行错乱。
     // 注意：不能整体 ambiguousAsWide（Box Drawing │ 等 ambiguous 字符在终端是 1 列窄），只对序号强制 2。
+    // teyvat 2026-09-13（用户：含 ② 的表格行右边框缩进一格）："排版按 2 格"只解决了字形重叠，终端实际只分配 1 格
+    // （iTerm2 / Terminal.app / tmux 默认 ambiguous=narrow）→ 行比边框短 1 格。补齐契约：输出层在序号后补一个真实空格
+    // （padEnclosedForNarrowCells，terminal.js write 调用），排版 2 格 = 屏幕 2 格；终端本身给 2 格（tui.js 启动 CPR 探测）时不补。
     if (cp >= 0x2460 && cp <= 0x24ff) width = 2;
     // Intl.Segmenter can group multiple terminal-spacing code points into one
     // grapheme. Count trailing visible code points that terminals may allocate
@@ -226,6 +229,20 @@ function graphemeWidth(segment) {
         }
     }
     return width;
+}
+/**
+ * teyvat 2026-09-13：全角序号的"两格契约"输出侧（见 graphemeWidth 里的注释）。
+ * 排版把 ①②③（U+2460-24FF）算作 2 格；终端只分配 1 格时（默认假设；tui.js 启动用 CPR 探测，结果写
+ * globalThis.__genshinEnclosedCells = 1|2；也可用环境变量 GENSHIN_ENCLOSED_CELLS 指定），在每个序号后补一个真实空格，
+ * 让屏幕占位 = 排版占位，表格边框 / 折行 / 光标列全部对齐。终端分配 2 格时原样输出。
+ * 只在 terminal.js 的 write() 出口调用一次——不要在组件层调用（会被 visibleWidth 重复计算）。
+ */
+export const enclosedAlnumRegex = /[①-⓿]/g;
+export function padEnclosedForNarrowCells(str) {
+  if (typeof str !== "string") return str;
+  if (globalThis.__genshinEnclosedCells === 2) return str;
+  if (!/[①-⓿]/.test(str)) return str;
+  return str.replace(enclosedAlnumRegex, "$& ");
 }
 /**
  * Calculate the visible width of a string in terminal columns.

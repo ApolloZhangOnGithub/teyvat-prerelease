@@ -466,6 +466,7 @@ export class TuiBase extends Container {
         this.beforeTerminalStart();
         this.terminal.start((data) => this.handleTerminalInput(data), () => this.requestRender());
         this.afterTerminalStart();
+        this.probeEnclosedCells();
         this.terminal.hideCursor();
         if (this.terminalColorSchemeNotificationsEnabled) {
             this.terminal.write("\x1b[?2031h");
@@ -496,6 +497,37 @@ export class TuiBase extends Container {
         if (!this.stopped) {
             this.terminal.write(enabled ? "\x1b[?2031h" : "\x1b[?2031l");
         }
+    }
+    /**
+     * teyvat 2026-09-13：探测终端给全角序号 ①②③（EAW=ambiguous）分配几格。
+     * 行首写一个 ②，紧跟 CPR（CSI 6 n）问光标列，再回行首擦掉——三段在同一次写入里，终端顺序处理，肉眼无闪烁。
+     * 回包 CSI row ; col R 由 consumeCursorPositionReport 截获：col-1 = 分配格数（1 或 2）→ globalThis.__genshinEnclosedCells。
+     * 排版永远按 2 格算（utils.js graphemeWidth）；终端只给 1 格时 terminal.js write() 在序号后补一个真实空格凑成 2 格。
+     * 探测前 / 无回包（非 TTY、1.5s 超时）默认按 1 格处理（iTerm2 / Terminal.app / tmux 的默认）。
+     * 环境变量 GENSHIN_ENCLOSED_CELLS=1|2 可跳过探测强制指定。
+     */
+    probeEnclosedCells() {
+        const env = process.env.GENSHIN_ENCLOSED_CELLS;
+        if (env === "1" || env === "2") { globalThis.__genshinEnclosedCells = Number(env); return; }
+        if (!process.stdout.isTTY || !process.stdin.isTTY) return;
+        this._enclosedProbePending = true;
+        // 直接走 process.stdout：terminal.write() 会给 ② 补空格，那样量出来的就不是终端自己的分配了
+        process.stdout.write("\r②\x1b[6n\r\x1b[K");
+        this._enclosedProbeTimer = setTimeout(() => { this._enclosedProbePending = false; }, 1500);
+    }
+    consumeCursorPositionReport(data) {
+        if (!this._enclosedProbePending) return false;
+        const m = data.match(/^\x1b\[(\d+);(\d+)R$/);
+        if (!m) return false;
+        this._enclosedProbePending = false;
+        if (this._enclosedProbeTimer) { clearTimeout(this._enclosedProbeTimer); this._enclosedProbeTimer = undefined; }
+        const cells = Number.parseInt(m[2], 10) - 1; // 行首 col=1，② 之后 col=1+格数
+        if (cells === 1 || cells === 2) {
+            const prev = globalThis.__genshinEnclosedCells;
+            globalThis.__genshinEnclosedCells = cells;
+            if (prev !== cells) this.requestRender(true); // 补空格策略变了 → 全量重绘
+        }
+        return true;
     }
     queryCellSize() {
         // Only query if terminal supports images (cell size is only used for image rendering)
@@ -587,6 +619,10 @@ export class TuiBase extends Container {
             return;
         }
         if (this.consumeTerminalColorSchemeReport(data)) {
+            return;
+        }
+        // teyvat 2026-09-13：全角序号格数探测的 CPR 回包（只在探测窗口内截获，不影响正常按键）
+        if (this.consumeCursorPositionReport(data)) {
             return;
         }
         if (this.inputListeners.size > 0) {

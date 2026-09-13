@@ -122,6 +122,7 @@ _integrity: _paths
 	@echo "[$$(date +%H:%M:%S)] launcher check..." && node "$(DEPLOY)/check-launcher.cjs" "$(CORE)/god.frontend.cli/launcher.sh" || { echo "  launcher check FAILED — 后台构造未做终端隔离（LESSON 037 / ISSUE 088），修复后再 make"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] require-entry check..." && node "$(DEPLOY)/check-require-entry.cjs" "$(CORE)" || { echo "  require-entry check FAILED — 禁止裸引用 @earendil-works/pi-coding-agent（LESSON 056），修复后再 make"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] render smoke check..." && node "$(DEPLOY)/check-render.mjs" "$(CORE)" || { echo "  render smoke check FAILED — pi-tui 渲染器回归（null 保护/标题定制丢失等），修复后再 make"; exit 1; }
+	@echo "[$$(date +%H:%M:%S)] execute-render check..." && node "$(DEPLOY)/check-execute-render.cjs" "$(CORE)" || { echo "  execute-render check FAILED — execute 渲染逻辑长回多处（尾标签正则/⎿ 字面量/渲染时 Date.now/cmd-done 无结构化 details），见 ISSUE 226 / check-execute-render.cjs.SPEC"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] tool check..." && bash "$(DEPLOY)/check-tools.sh" "$(CORE)" || { echo "  tool check FAILED — 修复后再 make"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] manifest-tools check..." && node "$(DEPLOY)/check-manifest-tools.cjs" "$(CORE)" || { echo "  manifest-tools check FAILED — 已注册工具未进 tools.manifest.json 会被 session_start 过滤静默剔除（LESSON amem），补清单或移除注册后再 make"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] theme-consistency check..." && node "$(DEPLOY)/check-theme-consistency.cjs" "$(CORE)" || { echo "  theme-consistency check FAILED — dark/light 配色键必须一一对应（用户：light 缺键会丢色/回退），补齐后再 make"; exit 1; }

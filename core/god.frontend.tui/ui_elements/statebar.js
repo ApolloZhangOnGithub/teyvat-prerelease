@@ -4,6 +4,7 @@
 // 其他文件不允许硬编码状态标签/颜色——一律从这里取。
 
 import { formatTokens } from "./footer.js";
+import { fmtElapsedCoarse } from "./blocks_nongod.js";
 import { theme } from "../theme/theme.js";
 import { Text } from "@earendil-works/pi-tui";
 import { debug } from '#gene_riboswitch';
@@ -30,12 +31,8 @@ export const STATUS_DEFS = {
   "sleeping(sleep)":      { label: "Sleeping",          color: "accent" },
 };
 
-export function fmtElapsed(ms) {
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s`;
-  if (s < 3600) { const m = Math.floor(s / 60); const sec = s % 60; return sec === 0 ? `${m}m` : `${m}m ${sec}s`; }
-  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
-}
+// 2026-09-13（ISSUE 226）：耗时格式唯一实现在 blocks_nongod（fmtElapsedCoarse=整秒计时器格式），这里只保留同名出口给既有调用方
+export function fmtElapsed(ms) { return fmtElapsedCoarse(ms); }
 
 // 后台任务标签：`2 background tasks, lasting 10m 5s, 5m 30s`（无任务返回空；时长用 fmtElapsed 同格式）
 // 最多显示 MAX_BG_SHOW 个，超出折叠为 (+N more) 防止 footer 溢出
@@ -112,6 +109,33 @@ export class StatusBar {
     this._requestRender = requestRender;
     this._chatContainer = chatContainer;
     this._msgStatusText = null;
+    // 2026-09-13（用户）：消息底部模式要**动态跟随最新消息**——之前状态栏 Text 固定在加入时的位置，
+    // 后续消息 addChild 排到它后面 → 状态栏被顶到中间。包装 addChild：新内容加入后把状态栏移到最底。
+    if (chatContainer) {
+      const origAdd = chatContainer.addChild.bind(chatContainer);
+      const self = this;
+      chatContainer.addChild = function (c) {
+        origAdd(c);
+        self._followBottom();
+      };
+    }
+  }
+
+  // 把消息底部的状态栏 Text 移到 chatContainer 末尾（跟随最新消息；clear 后重新挂回）
+  _followBottom() {
+    const pos = globalThis.__genshinStatebarPosition ?? "messages";
+    if (pos !== "messages" || !this._msgStatusText || !this._chatContainer) return;
+    const kids = this._chatContainer.children;
+    if (!Array.isArray(kids)) return;
+    const i = kids.indexOf(this._msgStatusText);
+    if (i === -1) {
+      kids.push(this._msgStatusText); // clear 后被清掉——重新挂回末尾
+      return;
+    }
+    if (i < kids.length - 1) {
+      kids.splice(i, 1);
+      kids.push(this._msgStatusText);
+    }
   }
 
   // 2026-09-13（用户）：状态栏渲染出口——位置 footer（旧行为）或消息底部（默认）。
@@ -119,6 +143,12 @@ export class StatusBar {
   _spinner(text) {
     const pos = globalThis.__genshinStatebarPosition ?? "messages";
     if (pos === "footer" || !this._chatContainer) {
+      // 从消息底部切回 footer：移除残留的状态栏 Text（避免位置切换后旧栏留在消息区中间）
+      if (this._msgStatusText && this._chatContainer) {
+        const kids = this._chatContainer.children;
+        const i = Array.isArray(kids) ? kids.indexOf(this._msgStatusText) : -1;
+        if (i >= 0) kids.splice(i, 1);
+      }
       this._footer.updateSpinnerText(text);
       return;
     }

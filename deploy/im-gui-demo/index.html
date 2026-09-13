@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teyvat IM</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; height: 100vh; overflow: hidden;
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f5f5f5; color: #1a1a1a; -webkit-font-smoothing: antialiased;
+  }
+  .app { display: flex; height: 100vh; }
+
+  /* ── ① 最左功能栏（微信 PC）── */
+  .rail {
+    width: 54px; min-width: 54px; background: #e3e3e3; display: flex; flex-direction: column;
+    align-items: center; padding: 14px 0 10px; gap: 4px;
+  }
+  .rail-btn {
+    width: 36px; height: 36px; border: 0; background: transparent; border-radius: 6px;
+    color: #5f5f5f; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  }
+  .rail-btn svg { width: 22px; height: 22px; }
+  .rail-btn:hover { background: #d6d6d6; }
+  .rail-btn.active { color: #07c160; }
+  .rail-spacer { flex: 1; }
+  .rail-me {
+    width: 34px; height: 34px; border-radius: 5px; background: #07c160; color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+
+  /* ── ② 会话列表 ── */
+  .conv { width: 250px; min-width: 250px; background: #f7f7f7; display: flex; flex-direction: column; border-right: 1px solid #e2e2e2; }
+  .conv-head { padding: 12px 12px 8px; }
+  .conv-search { width: 100%; padding: 6px 10px; border: 0; border-radius: 4px; background: #e9e9e9; font: inherit; font-size: 13px; outline: none; }
+  .conv-list { flex: 1; overflow-y: auto; }
+  .conv-item { display: flex; gap: 10px; padding: 10px 12px; cursor: pointer; align-items: center; }
+  .conv-item:hover { background: #ededed; }
+  .conv-item.active { background: #d9d9d9; }
+  .avatar {
+    width: 38px; height: 38px; min-width: 38px; border-radius: 5px; color: #fff;
+    display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 15px;
+  }
+  .avatar-wrap { position: relative; }
+  .avatar-wrap .dot { position: absolute; right: -3px; bottom: -3px; width: 11px; height: 11px; border-radius: 50%; border: 2px solid #f7f7f7; }
+  .dot.on { background: #07c160; } .dot.off { background: #b8b8b8; }
+  .conv-main { flex: 1; min-width: 0; }
+  .conv-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .conv-name { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .conv-time { font-size: 11px; color: #a8a8a8; white-space: nowrap; }
+  .conv-last { font-size: 12px; color: #9a9a9a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .unread { background: #fa5151; color: #fff; border-radius: 9px; font-size: 10px; line-height: 1; padding: 2px 5px; min-width: 16px; text-align: center; }
+
+  /* ── ③ 聊天区 ── */
+  .chat { flex: 1; display: flex; flex-direction: column; min-width: 0; background: #f5f5f5; }
+  .chat-head { height: 52px; min-height: 52px; display: flex; align-items: center; padding: 0 18px; border-bottom: 1px solid #e6e6e6; font-size: 15px; font-weight: 600; }
+  .chat-head .sub { font-weight: 400; font-size: 12px; color: #999; margin-left: 8px; }
+  .chat-body { flex: 1; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+  .empty { color: #b0b0b0; text-align: center; margin: auto; font-size: 13px; }
+  .msg-row { display: flex; gap: 10px; align-items: flex-start; }
+  .msg-row.out { flex-direction: row-reverse; }
+  .bubble { max-width: 62%; padding: 9px 13px; border-radius: 6px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; position: relative; }
+  .msg-row.in .bubble { background: #fff; }
+  .msg-row.out .bubble { background: #95ec69; }
+  .bubble::before { content: ""; position: absolute; top: 11px; width: 0; height: 0; border: 6px solid transparent; }
+  .msg-row.in .bubble::before { left: -11px; border-right-color: #fff; }
+  .msg-row.out .bubble::before { right: -11px; border-left-color: #95ec69; }
+  .bubble .meta { display: block; font-size: 10px; color: rgba(0,0,0,.35); margin-top: 3px; }
+
+  .chat-foot { background: #fff; border-top: 1px solid #e6e6e6; padding: 10px 14px; display: flex; gap: 10px; align-items: flex-end; }
+  #input { flex: 1; padding: 9px 12px; border: 0; outline: none; resize: none; font: inherit; height: 40px; max-height: 120px; background: transparent; }
+  #send { padding: 0 20px; height: 34px; background: #07c160; color: #fff; border: 0; border-radius: 4px; cursor: pointer; font: inherit; font-size: 13px; }
+  #send:disabled { opacity: .4; cursor: default; }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ① 功能栏（微信 PC：四图标 + 底部头像）-->
+  <nav class="rail">
+    <button class="rail-btn active" id="railChats" title="聊天">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3C6.5 3 2 6.6 2 11c0 2.5 1.5 4.7 3.8 6.1L5 21l4.3-2.2c.9.2 1.9.3 2.7.3 5.5 0 10-3.6 10-8S17.5 3 12 3z"/></svg>
+    </button>
+    <button class="rail-btn" id="railContacts" title="通讯录">
+      <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4.4 3.6-7 8-7s8 2.6 8 7v1H4v-1z"/></svg>
+    </button>
+    <button class="rail-btn" id="railDiscover" title="发现">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5 5-2z" fill="currentColor" stroke="none"/></svg>
+    </button>
+    <button class="rail-btn" id="railMeTab" title="我">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.6"/><path d="M5 20c0-3.9 3.1-6.6 7-6.6s7 2.7 7 6.6"/></svg>
+    </button>
+    <div class="rail-spacer"></div>
+    <div class="rail-me" id="railMeAvatar" title="我">我</div>
+  </nav>
+
+  <!-- ② 会话列表 -->
+  <aside class="conv">
+    <div class="conv-head"><input id="search" class="conv-search" placeholder="搜索"></div>
+    <div class="conv-list" id="convList"></div>
+  </aside>
+
+  <!-- ③ 聊天区 -->
+  <main class="chat">
+    <header class="chat-head" id="chatHead">选择一个会话</header>
+    <div class="chat-body" id="chatBody"><div class="empty">← 选择左侧会话开始聊天</div></div>
+    <div class="chat-foot">
+      <textarea id="input" placeholder="Enter 换行 · Shift+Enter 发送" disabled></textarea>
+      <button id="send" disabled>发送</button>
+    </div>
+  </main>
+</div>
+
+<script>
+"use strict";
+let self = null, current = null, convs = [], unread = {}, filter = "", view = "chats";
+const seen = new Set();
+const $ = (id) => document.getElementById(id);
+const AVATAR_COLORS = ["#4a90d9","#57b487","#d98b4a","#9b6bd9","#d95a7a","#4ab0d9","#8fae3a","#c96a6a"];
+
+function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+function colorOf(name) { let h = 0; for (const ch of String(name || "?")) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return AVATAR_COLORS[h % AVATAR_COLORS.length]; }
+function initial(name) {
+  const s = String(name || "?").replace(/^genshin-v?[\d.]*-?/i, "").replace(/^[-_.]+/, "");
+  return (s.slice(0, 1) || "?").toUpperCase();
+}
+function avatarHtml(name) { return `<div class="avatar" style="background:${colorOf(name)}">${esc(initial(name))}</div>`; }
+function fmtTime(ts) {
+  if (!ts) return "";
+  const d = new Date(ts), now = new Date();
+  if (d.toDateString() === now.toDateString()) return d.toTimeString().slice(0, 5);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+// ── 会话列表 ──
+async function loadConvs() {
+  try {
+    const d = await (await fetch("/conversations")).json();
+    self = d.self;
+    convs = d.conversations || [];
+    $("railMeAvatar").textContent = initial(d.self.name);
+    renderConvs();
+  } catch (e) { console.error("loadConvs", e); }
+}
+
+function renderConvs() {
+  const el = $("convList");
+  // 发现 / 我：非会话类视图（占位）
+  if (view === "discover") {
+    el.innerHTML = '<div class="empty" style="padding:26px 16px;line-height:1.9">发现<br><span style="font-size:12px">demo 暂未实现</span></div>';
+    return;
+  }
+  if (view === "me") {
+    el.innerHTML =
+      '<div style="padding:20px 16px">' +
+        '<div style="display:flex;gap:12px;align-items:center;margin-bottom:16px">' +
+          avatarHtml((self && self.name) || "我") +
+          '<div><div style="font-weight:600">' + esc((self && self.name) || "") + '</div>' +
+          '<div style="font-size:12px;color:#999">' + esc((self && self.sid) || "") + '</div></div>' +
+        '</div>' +
+        '<div style="font-size:12px;color:#999;line-height:2">身份：外部 bridge agent<br>通道：SocialData（registry + heartbeat）<br>服务：localhost:8790</div>' +
+      '</div>';
+    return;
+  }
+  el.innerHTML = "";
+  const kw = filter.trim().toLowerCase();
+  const match = (c) => (c.name || "").toLowerCase().includes(kw) || c.sid.includes(kw);
+  // 消息 = 只有聊过的会话（微信“消息” tab）；通讯录 = 全部 agent（在线优先 + 名字序）
+  let list = view === "chats"
+    ? convs.filter((c) => c.lastMsg)
+    : [...convs].sort((a, b) => (b.online - a.online) || (a.name || "").localeCompare(b.name || ""));
+  if (kw) list = list.filter(match);
+  if (!list.length) {
+    el.innerHTML = view === "chats"
+      ? '<div class="empty" style="padding:26px 16px;line-height:1.9">暂无会话<br><span style="font-size:12px">去「通讯录」找人聊</span></div>'
+      : '<div class="empty" style="padding:20px">无匹配联系人</div>';
+    return;
+  }
+  for (const c of list) {
+    const div = document.createElement("div");
+    div.className = "conv-item" + (current === c.sid ? " active" : "");
+    const u = unread[c.sid] ? `<span class="unread">${unread[c.sid]}</span>` : "";
+    const preview = c.lastMsg ? (c.lastMsg.out ? "我: " : "") + c.lastMsg.text : "点这里开始聊天";
+    div.innerHTML =
+      `<div class="avatar-wrap">${avatarHtml(c.name)}<span class="dot ${c.online ? "on" : "off"}"></span></div>` +
+      `<div class="conv-main">` +
+        `<div class="conv-top"><span class="conv-name">${esc(c.name)}</span><span class="conv-time">${fmtTime(c.lastMsg && c.lastMsg.ts)}</span></div>` +
+        `<div class="conv-last">${esc(preview).slice(0, 40)}</div>` +
+      `</div>` + u;
+    div.onclick = () => selectConv(c);
+    el.appendChild(div);
+  }
+}
+
+// ── 选中会话 → 聊天区 ──
+async function selectConv(c) {
+  current = c.sid;
+  delete unread[c.sid];
+  $("chatHead").innerHTML = `${esc(c.name)}<span class="sub">${c.sid} · ${c.online ? "在线" : "离线"}</span>`;
+  $("input").disabled = false;
+  $("send").disabled = false;
+  $("input").focus();
+  renderConvs();
+  try {
+    const d = await (await fetch("/messages?peer=" + encodeURIComponent(c.sid))).json();
+    renderChat(d.messages || []);
+  } catch (e) { console.error("messages", e); }
+}
+
+function renderChat(msgs) {
+  const el = $("chatBody");
+  el.innerHTML = "";
+  seen.clear();
+  if (!msgs.length) { el.innerHTML = '<div class="empty">还没有消息——发一条试试</div>'; return; }
+  for (const m of msgs) appendMsg(m);
+  el.scrollTop = el.scrollHeight;
+}
+
+function appendMsg(m) {
+  if (seen.has(m.id)) return;
+  seen.add(m.id);
+  const el = $("chatBody");
+  const empty = el.querySelector(".empty");
+  if (empty) empty.remove();
+  const row = document.createElement("div");
+  row.className = "msg-row " + (m.out ? "out" : "in");
+  const who = m.out ? (self && self.name) : (m.from_name || m.from || "");
+  const meta = m.out ? fmtTime(m.ts) : `${esc(String(who).slice(0, 22))} · ${fmtTime(m.ts)}`;
+  row.innerHTML = avatarHtml(who || "?") + `<div class="bubble">${esc(m.text)}<span class="meta">${meta}</span></div>`;
+  el.appendChild(row);
+  el.scrollTop = el.scrollHeight;
+}
+
+// ── 发送 ──
+async function send() {
+  const input = $("input");
+  const text = input.value.replace(/\n+$/, "");
+  if (!text.trim() || !current) return;
+  input.value = "";
+  input.style.height = "40px";
+  try {
+    const d = await (await fetch("/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to: current, text }),
+    })).json();
+    if (d.msg) appendMsg(d.msg);
+    loadConvs();
+  } catch (e) { console.error("send", e); }
+}
+
+// ── SSE ──
+function connectSSE() {
+  const es = new EventSource("/events");
+  es.onmessage = (ev) => {
+    let m; try { m = JSON.parse(ev.data); } catch { return; }
+    if (m.out) { if (m.to === current) appendMsg(m); return; }
+    if (m.from === current) appendMsg(m);
+    else unread[m.from] = (unread[m.from] || 0) + 1;
+    loadConvs();
+  };
+}
+
+// ── 事件 ──
+$("send").onclick = send;
+$("search").addEventListener("input", (e) => { filter = e.target.value; renderConvs(); });
+// 功能栏四视图切换（微信：消息 / 通讯录 / 发现 / 我）
+const RAIL_TABS = [["railChats", "chats"], ["railContacts", "contacts"], ["railDiscover", "discover"], ["railMeTab", "me"]];
+function syncRail() {
+  for (const [id, v] of RAIL_TABS) { const b = $(id); if (b) b.classList.toggle("active", view === v); }
+}
+for (const [id, v] of RAIL_TABS) {
+  const b = $(id);
+  if (b) b.onclick = () => { view = v; syncRail(); renderConvs(); };
+}
+$("input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && e.shiftKey) { e.preventDefault(); send(); } // Enter 换行 · Shift+Enter 发送（用户定稿）
+});
+$("input").addEventListener("input", (e) => {
+  e.target.style.height = "40px";
+  e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
+});
+
+loadConvs();
+connectSSE();
+setInterval(loadConvs, 10000);
+</script>
+</body>
+</html>

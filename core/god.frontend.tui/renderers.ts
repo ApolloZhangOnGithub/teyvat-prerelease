@@ -9,7 +9,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { GUTTER, renderMessage, lineNumbered, SYM } from "#tui_blockrender";
+import { GUTTER, renderMessage, lineNumbered, SYM, renderExecuteResult, parseLegacyCmdDone } from "#tui_blockrender";
 import { i18n } from "#tui_localizations";
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -58,6 +58,22 @@ export function checkRenderPipeline(env: "tui" | "headless"): string[] {
 // 暴露检查桥（interactive-mode / main.js 启动时调用，TUI 环境跑 tui、headless 跑 headless）
 (globalThis as any).__genshinCheckRenderPipeline = checkRenderPipeline;
 
+// cmd-done 合并判定：紧挨着的前一个非空组件就是同 recId 的 execute Created 行 → 结果直接接在它下面（⎿），否则独立 ▸ 行。
+// "是否相邻"只有聊天容器知道，所以留在渲染侧；但只比较结构化 recId，不再从格式化文本里用正则抠 id（ISSUE 226）。
+function _cmdDoneMergesWithCreated(recId: string | undefined): boolean {
+  const chatContainer = (globalThis as any).__genshinChatContainer;
+  if (!chatContainer || !recId) return false;
+  const kids = chatContainer.children || [];
+  // 从末尾往回找最近的非空组件（跳过 Spacer 等空行），最多回看 5 个
+  for (let i = kids.length - 1; i >= Math.max(0, kids.length - 5); i--) {
+    const kid = kids[i];
+    if (!kid || !kid.result) continue;
+    if (kid.result?.details?.recId === recId) return true;
+    if (kid.toolName || kid.role) return false; // 中间有其他内容组件就不合并
+  }
+  return false;
+}
+
 export function registerMessageRenderers(pi: ExtensionAPI) {
   // R002 校验要"真的注册了什么"：包一层记录实际注册的 type（之前函数末尾把 RENDER_PARTS 全部标成已注册，R002 永远不会 FAIL，校验形同虚设）
   const _origRegister = pi.registerMessageRenderer.bind(pi);
@@ -69,16 +85,9 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
     // 用 details.resumeType 区分（不靠字符串匹配）
     const resumeType = (message.details as any)?.resumeType;
     if (resumeType === "wait" || resumeType === "hibernate") {
-      // wait/hibernate 完成/中断 → 折线结果
-      const match = clean.match(/\[(wait|hibernate)\s+(\d+)s/);
-      const interrupted = (message.details as any)?.interrupted;
-      const intrReason = (message.details as any)?.interruptReason;
-      const reasonLabel: Record<string, string> = { esc: "ESC", user: "user message", sleep: "sleep cycle", reload: "reload", shutdown: "shutdown", command: "/pause" };
-      const secs = match?.[2] || "?";
-      const indent = " ".repeat(GUTTER);
-      const { Text } = require("@earendil-works/pi-tui");
       // 2026-09-11：wait/hibernate 结果已在 tool-execution.js 的 call 行追加渲染（→ Waited Xs），
       // continuous-resume 消息不再独立渲染折线——否则 Waited 显示两遍。
+      // （2026-09-13 ISSUE 226：原先这里还算了 match/interrupted/reasonLabel/secs 一堆再返回空容器，删掉死计算）
       const { Container: C } = require("@earendil-works/pi-tui");
       return new C();
     }
@@ -147,141 +156,32 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
   pi.registerMessageRenderer("continuous-error-retry", (message: any, _opts: any, theme: any) => {
     return _sysMsg(theme, (message.content ?? "").toString(), "warning");
   });
+  // 2026-09-13（ISSUE 226）：cmd-done 渲染只做"details → state"映射，画法在 blocks_nongod.renderExecuteResult（与快命令/Created 同一入口）。
+  // executes.ts 发送时随 details 带 { status, recId, exitCode, elapsedSec, endTs, cmd, output, remaining }；
+  // 没有 details.status 的是旧格式历史消息（重启回放）→ parseLegacyCmdDone 从文本反解析兜底。
   pi.registerMessageRenderer("continuous-cmd-done", (message: any, _opts: any, theme: any) => {
-    const { Text, Container } = require("@earendil-works/pi-tui");
+    const { Text } = require("@earendil-works/pi-tui");
     const raw = (message.content ?? "").toString();
-    // 格式1 (desktop): "完成 (Ns, exit CODE):\n$ CMD\nOUTPUT"
-    // 格式2 (desktop error): "Command failed/killed (Ns):\n$ CMD\nERROR"
-    // 格式3 (mobile): " mobile 完成 (Ns):\nOUTPUT"
-    const dsMatch = raw.match(/^(.*?)\s*\((\d+)s,\s*exit\s+(\d+)\):\n\$\s+(.*?)\n([\s\S]*)$/);
-    const dsFail = raw.match(/^Command (failed|killed by user)\s*\((\d+)s\):\n\$\s+(.*?)\n([\s\S]*)$/);
-    const mbMatch = raw.match(/^\s*mobile\s*完成\s*\((\d+)s\):\n([\s\S]*)$/);
-    let cmd = ""; let elapsed = 0; let output = ""; let exitCode: number | undefined;
-    let isError = false;
-    if (dsMatch) {
-      elapsed = parseInt(dsMatch[2]);
-      exitCode = parseInt(dsMatch[3]);
-      cmd = dsMatch[4].split("\n")[0].trim();
-      output = (dsMatch[5] || "").trim();
-      isError = exitCode !== 0;
-    } else if (dsFail) {
-      elapsed = parseInt(dsFail[2]);
-      cmd = dsFail[3].split("\n")[0].trim();
-      output = (dsFail[4] || "").trim();
-      isError = true;
-    } else if (mbMatch) {
-      elapsed = parseInt(mbMatch[1]);
-      cmd = "mobile";
-      output = (mbMatch[2] || "").trim();
-    }
-    // 无匹配时：用原始内容当输出
-    if (!cmd && !output) {
-      output = raw.trim();
-      cmd = "execute";
-    }
+    const d = (message.details ?? {}) as any;
+    const legacy = d.status ? null : parseLegacyCmdDone(raw);
     // 格式4 (hibernate/wait): "hibernate 完成 (50s)" 或 "wait 完成 (35s)\nnext steps"
     // 渲染为简洁的折线结果：⎿ Xs（绿色），无标题。单 Text 避免多余空行
-    const hwMatch = raw.match(/^(hibernate|wait)\s+完成\s*\((\d+)s\)(?:\n([\s\S]*))?$/);
-    if (hwMatch) {
-      elapsed = parseInt(hwMatch[2]);
-      const nextSteps = (hwMatch[3] || "").trim();
+    if (legacy && legacy.kind === "hw") {
       const indent = " ".repeat(GUTTER);
       const prefix = indent + SYM.result + "  ";
       // 数字统一白色粗体，单位 s 保持 success 色（与 Result 行 in Xs 一致）
-      let text = elapsed === 0
+      let text = legacy.elapsedSec === 0
         ? prefix + theme.fg("success", "Instantly")
-        : prefix + String(elapsed) + theme.fg("success", "s"); // 数字 default（与 Result 行一致）
-      if (nextSteps) text += "\n" + indent + "  " + theme.fg("dim", nextSteps);
+        : prefix + String(legacy.elapsedSec) + theme.fg("success", "s"); // 数字 default（与 Result 行一致）
+      if (legacy.nextSteps) text += "\n" + indent + "  " + theme.fg("dim", legacy.nextSteps);
       return new Text(text, 0, 0);
     }
-    // 从消息提取短 id（[id: xxx]），output 里剥掉 [id:] 和 [remaining:]（两者可能相邻，不能依赖 $ 锚定）
-    const idMatch = raw.match(/\[id:\s*([A-Za-z0-9-]+)\]/);
-    const idStr = idMatch ? idMatch[1] : "";
-    output = output.replace(/\n*\[id:\s*[A-Za-z0-9-]+\]/g, "");
-    // 2026-09-08（用户：cmd-done 还带 [background: N running]——.79 只剥了 execute 同步返回路径，cmd-done 推送没剥）：任意位置剥 background 行
-    output = output.replace(/\n*\[background: [^\]]*running[^\]]*\]/g, "");
-    // 用户展示剥离：bioclock 耗时戳 [HH:MM:SS.mmm +Xs]（只对用户隐藏，模型消息里保留）
-    output = output.replace(/\n*\[\d{2}:\d{2}:\d{2}[^\]]*\]\s*$/, "").trimEnd(); // 2026-09-13：bioclock 标签带 " | ctx N%" 后缀，旧正则不认
-    const exitStr = exitCode !== undefined ? `exit ${exitCode}` : (elapsed === 0 ? "instantly" : `${elapsed}s`);
-    const statusColor = isError ? "error" : "success";
-    // 合并检测：如果前一个组件就是同 recId 的 execute Created，跳过独立 Result 头——
-    // 把结果直接追加到 execute 组件里（像同步快命令一样）
-    const chatContainer = (globalThis as any).__genshinChatContainer;
-    let merged = false;
-    if (chatContainer && idStr) {
-      const kids = chatContainer.children || [];
-      // 从末尾往回找最近的非空组件（跳过 Spacer 等空行）
-      for (let i = kids.length - 1; i >= Math.max(0, kids.length - 5); i--) {
-        const kid = kids[i];
-        if (!kid || !kid.result) continue;
-        // 检查是否是同一个 execute 的 tool-execution 组件
-        const kidRecId = kid.result?.details?.recId;
-        if (kidRecId && kidRecId === idStr) {
-          merged = true;
-          break;
-        }
-        // 中间有其他内容组件就不合并
-        if (kid.toolName || kid.role) break;
-      }
-    }
-
-    const c = new Container();
-    const indent = " ".repeat(GUTTER);
-    const title = (message.details as any)?.title;
-    const fmtElapsed = (sec: number) => {
-      if (sec < 10) return `${sec.toFixed(1)}s`;
-      if (sec < 60) return `${sec}s`;
-      if (sec < 3600) { const m = Math.floor(sec / 60); const s2 = sec % 60; return s2 === 0 ? `${m}m` : `${m}m ${s2}s`; }
-      return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`;
-    };
-    const elapsedFmt = elapsed === 0 ? "instantly" : fmtElapsed(elapsed);
-    const remMatch = raw.match(/\[remaining:\s*(\d+)\]/);
-    const remaining = remMatch ? parseInt(remMatch[1]) : 0;
-    if (remMatch) output = output.replace(/\n*\[remaining:.*$/, "");
-    const remPart = remaining > 0 ? ` (${remaining} remaining)` : "";
-    // 2026-09-13：用消息自带时间戳——CustomMessageComponent 每次 invalidate 都重跑渲染器，取渲染时刻会让历史 "Done at" 全部变成当前时间（重启回放全显示重启时刻）
-    const ts = new Date(typeof message?.timestamp === "number" ? message.timestamp : Date.now());
-    const hh = String(ts.getHours()).padStart(2, "0");
-    const mm = String(ts.getMinutes()).padStart(2, "0");
-    const ss = String(ts.getSeconds()).padStart(2, "0");
-    const timeFmt = `${hh}:${mm}:${ss}`;
-    // → Task title done in X.Xs at HH:MM:SS（exit 0 不显示）
-    const exitPart = exitCode !== undefined && exitCode !== 0 ? `, exit ${theme.bold(String(exitCode))}` : "";
-    const titlePart = title ? `${title} ` : "";
-    // merged = 紧挨 Created 调用行 → ⎿ 折线；非 merged（async background 完成）→ ▸ 箭头独立行
-    const prefix = merged
-      ? indent + (isError ? theme.fg("error", SYM.result + "  ") : theme.fg("dim", SYM.result + "  "))
-      : (isError ? theme.fg("error", SYM.arrow) : theme.fg("success", SYM.arrow)) + " ";
-    const line1 = prefix + `${titlePart}Done in ${theme.bold(elapsedFmt)}${exitPart}${remPart}` + theme.fg("dim", ` at ${timeFmt}`);
-    c.addChild(new Text(line1, 0, 0));
-    // [PRESERVED] 旧版两行渲染（→ Result 头 + Executed 详情行）：
-    // const d = isError ? theme.fg("error", "→") : theme.fg("result", "→");
-    // const mainStr = merged ? "" : d + " " + theme.bold("Result") + (title ? " " + title : "");
-    // const idPart = idStr ? `process ${idStr} ` : "";
-    // const line2 = indent + theme.fg("dim", SYM.result + "  ") + `Executed ${idPart}` + `in ${theme.fg("accent", elapsedFmt)}` + `, with ` + theme.bold(theme.fg(statusColor, exitStr)) + remPart + theme.fg("dim", timePart);
-    // if (mainStr) c.addChild(new Text(mainStr, 0, 0));
-    // c.addChild(new Text(line2, 0, 0));
-    if (output) {
-      const compact = (globalThis as any).__genshinCompactExecute;
-      let display = output;
-      // 非合并时输出用 ⎿ 折线连接（和 tool result 一致）
-      const resultPrefix = indent + theme.fg("dim", SYM.result + "  ");
-      // 2026-09-13（用户定稿）：「Execute 结果」三态——隐藏 / 摘要（纯前 5 行）/ 全部
-      // （隐藏=不渲染结果区；摘要=只给前 5 行、无省略提示行；全部=原样）
-      const resultMode = (globalThis as any).__genshinExecuteResult ?? "full";
-      if (resultMode === "hide") display = "";
-      else if (resultMode === "summary") {
-        const outLines = output.split("\n");
-        display = outLines.length > 5 ? outLines.slice(0, 5).join("\n") : output;
-      }
-      // 全部：display 保持 output
-      if (display) {
-      const contIndent = " ".repeat(GUTTER + 3);
-      const rendered = lineNumbered(display, theme);
-      for (const line of rendered.split("\n")) c.addChild(new Text(contIndent + line, 0, 0));
-      }
-    }
-    return c;
+    const msgTs = typeof message?.timestamp === "number" ? message.timestamp : undefined; // 事件时刻，不取渲染时刻（LESSON 094）
+    const st: any = d.status
+      ? { kind: "done", status: d.status, title: d.title, recId: d.recId || "", exitCode: d.exitCode, elapsedMs: (d.elapsedSec ?? 0) * 1000, endTs: d.endTs ?? msgTs, output: d.output ?? "", remaining: d.remaining ?? 0 }
+      : { kind: "done", status: legacy!.status, title: d.title, recId: legacy!.recId, exitCode: legacy!.exitCode, elapsedMs: legacy!.elapsedSec * 1000, endTs: msgTs, output: legacy!.output, remaining: legacy!.remaining };
+    st.merged = _cmdDoneMergesWithCreated(st.recId);
+    return renderExecuteResult(theme, st);
   });
   // 全部渲染器注册完成 → 只把实际注册过的 type 标记就位（R002 校验用），并恢复原方法
   (pi as any).registerMessageRenderer = _origRegister;

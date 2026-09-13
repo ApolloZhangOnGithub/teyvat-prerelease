@@ -441,11 +441,8 @@ export class InteractiveMode {
             this.renderMode = savedRenderMode;
             globalThis.__piRenderMode = savedRenderMode;
         }
-        // Load compact execute from persisted settings
-        const savedCompactExecute = this.settingsManager.settings?.compactExecute;
-        if (savedCompactExecute !== undefined) {
-            globalThis.__genshinCompactExecute = savedCompactExecute;
-        }
+        // （2026-09-13 ISSUE 226：原先这里还恢复 compactExecute → __genshinCompactExecute，但没有任何渲染器读它——
+        //   结果区三态早已由下面的 executeResult 接管；写它的 /u 面板 ux.ts 也早已无人注册。空设置删除。）
         // 2026-09-13（用户）：Intention 工具输出隐藏/显示（默认隐藏，/s 面板可切）
         const savedIntentionShow = this.settingsManager.settings?.intentionShow;
         if (savedIntentionShow !== undefined) globalThis.__genshinIntentionShow = savedIntentionShow;
@@ -474,13 +471,13 @@ export class InteractiveMode {
         globalThis.__genshinFooterModel = this.settingsManager?.globalSettings?.footerModel ?? true;
         globalThis.__genshinFooterVersion = this.settingsManager?.globalSettings?.footerVersion ?? true;
         globalThis.__genshinStatebarPosition = this.settingsManager?.globalSettings?.statebarPos ?? "messages";
-        globalThis.__genshinFooterContexted = this.settingsManager?.globalSettings?.footerContexted ?? false;
+        // footerContexted 开关已废弃（2026-09-13 用户澄清：只去前缀字，百分比常显）——不再读设置
         // /u 持久化的行为偏好恢复
         if (this.settingsManager?.globalSettings?.ctrlCToBg !== undefined) globalThis.__genshinCtrlCToBg = this.settingsManager.globalSettings.ctrlCToBg;
         if (this.settingsManager?.globalSettings?.codeHighlight !== undefined) globalThis.__genshinCodeHighlight = this.settingsManager.globalSettings.codeHighlight;
         if (this.settingsManager?.globalSettings?.readExpanded !== undefined) globalThis.__genshinReadExpanded = this.settingsManager.globalSettings.readExpanded;
         if (this.settingsManager?.globalSettings?.executeBreakAnd !== undefined) globalThis.__genshinExecuteBreakAnd = this.settingsManager.globalSettings.executeBreakAnd;
-        if (this.settingsManager?.globalSettings?.executeDisplay !== undefined) globalThis.__genshinExecuteDisplay = this.settingsManager.globalSettings.executeDisplay;
+        // （2026-09-13 ISSUE 226：executeDisplay → __genshinExecuteDisplay 只有已下线的 /u 面板自己读来显示，没有渲染器用它；调用行样式由 executeSummary 决定。空设置删除。）
         if (this.settingsManager?.globalSettings?.tokenmaxxedColorful !== undefined) globalThis.__genshinTokenmaxxedColorful = this.settingsManager.globalSettings.tokenmaxxedColorful;
         if (this.settingsManager?.globalSettings?.showPinDev !== undefined) globalThis.__genshinShowPinDev = this.settingsManager.globalSettings.showPinDev;
         if (this.settingsManager?.globalSettings?.writeExpanded !== undefined) globalThis.__genshinWriteExpanded = this.settingsManager.globalSettings.writeExpanded;

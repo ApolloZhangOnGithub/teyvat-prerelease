@@ -134,6 +134,68 @@ try {
   check("R5 代码折行续行对齐", false, e?.message);
 }
 
+// E1–E6: execute 结果渲染唯一入口（ISSUE 226，2026-09-13）——快命令 / Created / cmd-done 三种样式的纯文本快照 + 旧格式反解析
+try {
+  const B = await import("./pi-tui/blocks_nongod.js");
+  const { visibleWidth, wrapTextWithAnsi } = await import("./pi-tui/utils.js");
+  class FT { constructor(text) { this.text = text; } }
+  class FC { constructor() { this.children = []; } addChild(c) { this.children.push(c); } }
+  B.initBlockrender(FT, FC, visibleWidth, wrapTextWithAnsi);
+  const t = { fg: (_k, s) => s, bold: (s) => s };
+  const flat = (node, out = []) => { if (node?.text !== undefined) out.push(node.text); for (const c of node?.children || []) flat(c, out); return out; };
+  const fixedTs = new Date(2026, 8, 13, 9, 39, 52).getTime();
+  delete globalThis.__genshinExecuteResult;
+  // E1 快命令
+  const e1 = flat(B.renderExecuteResult(t, { kind: "fast", exitCode: 0, elapsedMs: 120, endTs: fixedTs, output: "hello\nworld" }));
+  check("E1 快命令摘要行 = ⎿ Done in 0.12s at HH:MM:SS", e1[0] === "  ⎿  Done in 0.12s at 09:39:52", e1[0]);
+  check("E1b 快命令输出带行号缩进", e1.length === 3 && /^\s{5}\s*1\s+hello$/.test(e1[1]) && /2\s+world$/.test(e1[2]), JSON.stringify(e1));
+  const e1x = flat(B.renderExecuteResult(t, { kind: "fast", exitCode: 2, elapsedMs: 3000, endTs: fixedTs, output: "" }));
+  check("E1c 非 0 退出码显示 exit N、整秒无小数", e1x[0] === "  ⎿  Done in 3s, exit 2 at 09:39:52", e1x[0]);
+  // E2 Created
+  const e2 = flat(B.renderExecuteResult(t, { kind: "created", created: 1, total: 2, terminal: true, tname: "deploy9", recId: "260913-093952-a1b2c3d4", endTs: fixedTs }));
+  check("E2 Created 行", e2[0] === "  ⎿  Created 1 terminal process named deploy9 (2 in total), id 260913-093952-a1b2c3d4 at 09:39:52", e2[0]);
+  // E3 cmd-done：merged → ⎿；非 merged → ▸；exit≠0 / failed 判错（前缀符号由 fg 直接透传，这里只看文本）
+  const e3 = flat(B.renderExecuteResult(t, { kind: "done", status: "done", title: "确认权重已下载", recId: "x", exitCode: 0, elapsedMs: 16000, endTs: fixedTs, output: "ok", remaining: 2, merged: true }));
+  check("E3 cmd-done merged", e3[0] === "  ⎿  确认权重已下载 Done in 16s (2 remaining) at 09:39:52", e3[0]);
+  const e3b = flat(B.renderExecuteResult(t, { kind: "done", status: "failed", title: "t", exitCode: -1, elapsedMs: 5000, endTs: fixedTs, output: "boom", merged: false }));
+  check("E3b cmd-done failed 非 merged 用 ▸", e3b[0] === "▸ t Failed after 5s, exit -1 at 09:39:52", e3b[0]);
+  // E4 三态：summary 只留 5 行；hide 快命令整块不显示、cmd-done 只藏输出
+  globalThis.__genshinExecuteResult = "summary";
+  const e4 = flat(B.renderExecuteResult(t, { kind: "fast", exitCode: 0, elapsedMs: 10, endTs: fixedTs, output: "1\n2\n3\n4\n5\n6\n7" }));
+  check("E4 summary 只给前 5 行", e4.length === 6, `lines=${e4.length}`);
+  globalThis.__genshinExecuteResult = "hide";
+  check("E4b hide 快命令整块不显示", flat(B.renderExecuteResult(t, { kind: "fast", exitCode: 0, elapsedMs: 10, endTs: fixedTs, output: "x" })).length === 0);
+  check("E4c hide cmd-done 只藏输出", flat(B.renderExecuteResult(t, { kind: "done", status: "done", exitCode: 0, elapsedMs: 1000, endTs: fixedTs, output: "x", merged: true })).length === 1);
+  delete globalThis.__genshinExecuteResult;
+  // E5 旧格式 cmd-done 反解析（历史消息回放兜底）
+  const p = B.parseLegacyCmdDone("完成 (16s, exit 1):\n$ make x\nline1\nline2\n[id: 260913-093952-a1b2c3d4]\n[remaining: 2]");
+  check("E5 legacy 完成 反解析", p.status === "done" && p.exitCode === 1 && p.elapsedSec === 16 && p.cmd === "make x" && p.output === "line1\nline2" && p.recId === "260913-093952-a1b2c3d4" && p.remaining === 2, JSON.stringify(p));
+  const p2 = B.parseLegacyCmdDone("Command failed (5s):\n$ bad\nboom\n[id: abc-1]");
+  check("E5b legacy failed 反解析", p2.status === "failed" && p2.output === "boom" && p2.recId === "abc-1", JSON.stringify(p2));
+  const p3 = B.parseLegacyCmdDone("wait 完成 (35s)\nnext");
+  check("E5c legacy wait 完成", p3.kind === "hw" && p3.elapsedSec === 35 && p3.nextSteps === "next");
+  // E6 尾标签整组剥净（backbone 新口径 + bioclock 带 ctx 后缀）
+  const s = B.stripResultTokenMark("out\n[id: x]\n[result 254 tokens, ctx.md 606.3k est, api 490k (49%)]\n[19:00:07.687 +0.9s | ctx 49%]");
+  check("E6 stripResultTokenMark 三行整组剥净", s === "out", JSON.stringify(s));
+  check("E6b fmtElapsedMs 分档", B.fmtElapsedMs(530) === "0.53s" && B.fmtElapsedMs(1500) === "1.5s" && B.fmtElapsedMs(65000) === "1m 5s" && B.fmtElapsedMs(7200000) === "2h 0m");
+} catch (e) {
+  check("E1-E6 execute 渲染唯一入口", false, e?.stack || e?.message);
+}
+
+// W1: 全角序号 ①②③ 的两格契约（2026-09-13 用户：含 ② 的表格行右边框缩进一格）——排版 2 格 + 终端只给 1 格时输出补空格
+try {
+  const { visibleWidth, padEnclosedForNarrowCells } = await import("./pi-tui/utils.js");
+  check("W1 ② 排版按 2 格", visibleWidth("②") === 2);
+  delete globalThis.__genshinEnclosedCells;
+  check("W1b 终端未知/1 格：② 后补一个真实空格", padEnclosedForNarrowCells("│ ② x │") === "│ ②  x │");
+  globalThis.__genshinEnclosedCells = 2;
+  check("W1c 终端给 2 格：原样输出", padEnclosedForNarrowCells("│ ② x │") === "│ ② x │");
+  delete globalThis.__genshinEnclosedCells;
+  check("W1d 无序号的串不动", padEnclosedForNarrowCells("plain │ text") === "plain │ text");
+} catch (e) {
+  check("W1 全角序号两格契约", false, e?.message);
+}
+
 if (failures > 0) {
   console.error(`  render smoke check FAILED: ${failures} 项失败`);
   process.exit(1);

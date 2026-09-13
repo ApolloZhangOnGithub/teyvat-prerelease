@@ -312,7 +312,8 @@ export class FooterComponent {
           // [DISABLED 2026-08-15] 括号内分项暂时不显示，由 amem 工具提供细粒度感知
           // memStr = `记忆${tp}% [对话${ctxPct} 工作${workPct} 新皮层${cxPct}]/${ctxWindowStr}`;
           // 2026-09-13：无 API 值（首轮/重启后尚无成功回复）时回退磁盘估算，显式标 est——否则与 API 值口径不同却长得一样，看起来像乱跳
-          memStr = latestPromptTokens > 0 ? `contexted ${tp}%/${ctxWindowStr}` : `contexted ${tp}% est/${ctxWindowStr}`;
+          // 2026-09-13（用户澄清）：只去掉 "contexted" 前缀字，百分比照常显示（不是隐藏整个显示）
+          memStr = latestPromptTokens > 0 ? `${tp}%/${ctxWindowStr}` : `${tp}% est/${ctxWindowStr}`;
         }
         if (totalPercent > 90) {
           memStr = theme.fg("error", memStr);
@@ -442,14 +443,12 @@ export class FooterComponent {
                 }
             } catch (e) { console.error("[god.frontend.tui/ui_elements/footer.js] " + (e?.message || e)); }
         }
-        // 2026-09-13（用户）：contexted（记忆占比）也可隐藏（/u 开关，默认隐藏）
-        const showContexted = globalThis.__genshinFooterContexted !== false;
-        const memPart = showContexted ? memStr : "";
-        const rightParts = [ageStr, tokenmaxxedStr, memPart].filter(Boolean);
+        // 2026-09-13（用户澄清）：contexted 开关废弃（语义错了——用户要的是去掉前缀字，百分比常显），恢复 memStr 常显
+        const rightParts = [ageStr, tokenmaxxedStr, memStr].filter(Boolean);
         const rightLine1 = rightParts.map((s, i) => i < rightParts.length - 1 ? theme.fg("dim", s) : s).join(" · ");
         const rightLine1W = visibleWidth(rightLine1);
         // 2026-09-13（用户）：footer 只剩 contexted（模型/年龄/履历全隐藏）→ contexted 移到底行(statebar)右侧，footer 只一行（去掉中间空行）
-        const onlyContexted = !showModel && !ageStr && !tokenmaxxedStr && !!memPart;
+        const onlyContexted = !showModel && !ageStr && !tokenmaxxedStr && !!memStr;
         let line1;
         if (onlyContexted) {
             line1 = ""; // line1 不显示，contexted 由 line2 右对齐承担

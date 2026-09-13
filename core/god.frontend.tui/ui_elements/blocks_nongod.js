@@ -18,12 +18,12 @@ export const GUTTER = 2; // 内容列：bullet "• " 占 2 列，内容从第 2
 
 // WSL 检测：Windows Terminal 字体缺 Unicode 符号→乱码，用 ASCII 回退
 const _isWSL = process.platform === "linux" && !!(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP);
-globalThis.__genshinSYM = _isWSL
-  ? { dot: "*", diamond: "+", diamondOpen: "o", result: "|", star: "*", snow: "*", prompt: ">", arrow: ">" }
-  : { dot: "⏺", diamond: "◆", diamondOpen: "◇", result: "⎿", star: "✤", snow: "❄", prompt: "❯", arrow: "▸" };
+// 2026-09-13（ISSUE 226）：SYM 只定义一次——此前 globalThis.__genshinSYM 与 export const SYM 是两个内容相同的字面量，改一处漏一处。
+// 消费方两种取法都行（import SYM / globalThis.__genshinSYM），拿到的是同一个对象。结果行折线一律 SYM.result，禁止手写 "⎿"（门禁 check-execute-render）。
 export const SYM = _isWSL
   ? { dot: "*", diamond: "+", diamondOpen: "o", result: "|", star: "*", snow: "*", prompt: ">", arrow: ">" }
   : { dot: "⏺", diamond: "◆", diamondOpen: "◇", result: "⎿", star: "✤", snow: "❄", prompt: "❯", arrow: "▸" };
+globalThis.__genshinSYM = SYM;
 
 // 状态点（工具用）：进行=◦(accent) / 错=•(error) / 成功=•(success)。统一在这里，别各处各写。
 // 2026-08-14 用户定稿：进行中/等待中（partial）本身是空心黄 ◦，为美观统一用实心黄 •。
@@ -431,4 +431,125 @@ export const renderMessage = {
     return c;
   },
 };
+
+// ── 时间 / 耗时格式化（唯一实现，2026-09-13 ISSUE 226）───────────────────────
+// 此前耗时格式器有 6 份（statebar / renderers / tool-execution / status-indicator / bg / executes 内联）、HH:MM:SS 拼接 4 份。
+// fmtElapsedMs：结果行用（快命令带小数）——<1s "0.12s"、<10s "1.2s"（整秒不带小数）、<60s "16s"、<1h "1m 5s"、其余 "2h 3m"
+export function fmtElapsedMs(ms) {
+  const s = Math.max(0, Number(ms) || 0) / 1000;
+  if (s < 1) return `${s.toFixed(2)}s`;
+  if (s < 10) return Number.isInteger(s) ? `${s}s` : `${s.toFixed(1)}s`;
+  if (s < 60) return `${Math.round(s)}s`;
+  if (s < 3600) { const m = Math.floor(s / 60); const sec = Math.round(s % 60); return sec === 0 ? `${m}m` : `${m}m ${sec}s`; }
+  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+}
+// fmtElapsedCoarse：实时计时器用（statebar 的 lasting、/b 列表）——整秒不带小数，小数会每帧抖
+export function fmtElapsedCoarse(ms) {
+  const s = Math.floor(Math.max(0, Number(ms) || 0) / 1000);
+  if (s < 60) return `${s}s`;
+  if (s < 3600) { const m = Math.floor(s / 60); const sec = s % 60; return sec === 0 ? `${m}m` : `${m}m ${sec}s`; }
+  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+}
+// fmtClock：本地 HH:MM:SS。ts 必须是事件自带的时刻（details.endTs / createdInfo.ts / message.timestamp）——
+// 渲染层禁止 Date.now()：心跳状态切换会让全部历史组件重跑渲染器，取"现在"会让历史行整体漂（LESSON 094）。
+export function fmtClock(ts) {
+  const d = ts instanceof Date ? ts : new Date(ts);
+  if (Number.isNaN(d.getTime())) return "??:??:??";
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+// ── 尾标签的其余两个入口（与 stripResultTokenMark 同为唯一实现）──────────────
+// [background: N running …] 可能不在尾部（用户样例里夹在中间），单独任意位置剥
+export function stripInlineBgTag(text) {
+  return String(text ?? "").replace(/\n\[background: [^\]]*running[^\]]*\]/g, "");
+}
+// 取出 bioclock 追加的尾标签 "[HH:MM:SS.mmm +Xs | ctx N%]"（tool-execution 把短结果并到标题行时要单独显示它）
+export function extractBioclockTag(text) {
+  const m = String(text ?? "").match(/\n(\[\d{2}:\d{2}:\d{2}[^\]]*\])\s*$/);
+  return m ? m[1] : "";
+}
+
+// ── execute 结果渲染（唯一入口，2026-09-13 ISSUE 226）────────────────────────
+// 快命令 / Created / cmd-done 三种样式都由这里画；executes.ts 的 renderResult 与 renderers.ts 的 cmd-done 渲染器
+// 只负责把 details 映射成 state。此前三处各手拼 Container、各自一套 "⎿  "、耗时、时钟、三态与错误判定。
+// state = {
+//   kind: "fast" | "created" | "done",
+//   status: "done" | "failed" | "timeout" | "terminated"   （kind=done 用）
+//   title, recId, exitCode, elapsedMs, endTs（事件时刻，ms）, output, remaining, merged, isError,
+//   terminal, tname, created, total                          （kind=created 用）
+// }
+// 三态（/s「Execute 结果」__genshinExecuteResult）：hide=快命令整块不显示、cmd-done 只藏输出；summary=输出前 5 行；full=原样。
+// 错误判定：有 exitCode 看 exitCode≠0；status 为 failed/timeout/terminated 亦为错；否则看 state.isError。
+export function renderExecuteResult(theme, state) {
+  const st = state || {};
+  const mode = globalThis.__genshinExecuteResult ?? "full";
+  const indent = " ".repeat(GUTTER);
+  const c = C();
+  const clock = st.endTs != null ? theme.fg("dim", ` at ${fmtClock(st.endTs)}`) : "";
+  if (st.kind === "created") {
+    const kind = st.terminal ? "terminal process" : "bash process";
+    const named = st.terminal && st.tname ? ` named ${st.tname}` : "";
+    const totalPart = st.total > 0 ? ` (${st.total} in total)` : "";
+    const idPart = st.recId ? `, id ${st.recId}` : "";
+    c.addChild(T(indent + theme.fg("dim", SYM.result + "  ") + `Created ${st.created ?? 1} ${kind}${named}${totalPart}${idPart}` + clock));
+    return c;
+  }
+  if (mode === "hide" && st.kind === "fast") return c;
+  const hasExit = typeof st.exitCode === "number";
+  const isErr = st.isError === true || (hasExit && st.exitCode !== 0) || st.status === "failed" || st.status === "timeout" || st.status === "terminated";
+  const exitPart = hasExit && st.exitCode !== 0 ? `, exit ${theme.bold(String(st.exitCode))}` : "";
+  const elapsed = theme.bold(fmtElapsedMs(st.elapsedMs || 0));
+  let head;
+  switch (st.status) {
+    case "failed": head = `Failed after ${elapsed}`; break;
+    case "timeout": head = `Timed out after ${elapsed}`; break;
+    case "terminated": head = `Terminated after ${elapsed}`; break;
+    default: head = st.kind === "done" && !(st.elapsedMs > 0) ? "Done instantly" : `Done in ${elapsed}`;
+  }
+  const remPart = st.remaining > 0 ? ` (${st.remaining} remaining)` : "";
+  const titlePart = st.kind === "done" && st.title ? `${st.title} ` : "";
+  // merged = 紧挨同 recId 的 Created 行 → ⎿ 折线；非 merged 的后台完成 → ▸ 独立行（exit≠0 红、否则绿）
+  let prefix;
+  if (st.kind === "done" && !st.merged) prefix = (isErr ? theme.fg("error", SYM.arrow) : theme.fg("success", SYM.arrow)) + " ";
+  else prefix = indent + (isErr && st.kind === "done" ? theme.fg("error", SYM.result + "  ") : theme.fg("dim", SYM.result + "  "));
+  c.addChild(T(prefix + titlePart + head + exitPart + remPart + clock));
+  let out = String(st.output ?? "").trimEnd();
+  if (mode === "hide") out = "";
+  else if (mode === "summary" && out) { const ls = out.split("\n"); if (ls.length > 5) out = ls.slice(0, 5).join("\n"); }
+  if (out) {
+    const contIndent = " ".repeat(GUTTER + 3);
+    const dimBody = st.kind === "fast"; // 笔记规范：快命令返回内容 dim；cmd-done 输出原样（与原实现一致）
+    for (const line of lineNumbered(out, theme).split("\n")) c.addChild(T(contIndent + (dimBody ? theme.fg("dim", line) : line)));
+  }
+  return c;
+}
+
+// 旧格式 cmd-done 文本反解析（只给历史消息回放兜底——2026-09-13 起 executes.ts 发送时随 details 带结构化字段，
+// 渲染器优先读 details，不再靠正则从格式化文本里把 elapsed/exit/cmd/output 抠回来）。
+// 返回 { kind:"hw", tool, elapsedSec, nextSteps } 或 { kind:"done", status, cmd, elapsedSec, exitCode, output, recId, remaining }
+export function parseLegacyCmdDone(raw) {
+  const s = String(raw ?? "");
+  const hw = s.match(/^(hibernate|wait)\s+完成\s*\((\d+)s\)(?:\n([\s\S]*))?$/);
+  if (hw) return { kind: "hw", tool: hw[1], elapsedSec: parseInt(hw[2], 10), nextSteps: (hw[3] || "").trim() };
+  const st = { kind: "done", status: "done", cmd: "", elapsedSec: 0, exitCode: undefined, output: "", recId: "", remaining: 0 };
+  const ds = s.match(/^(.*?)\s*\((\d+)s,\s*exit\s+(\d+)\):\n\$\s+(.*?)\n([\s\S]*)$/);          // 完成/Done/Terminal 完成 (Ns, exit N):\n$ cmd\n…
+  const fail = s.match(/^Command (failed|killed by user)\s*\((\d+)s\):\n\$\s+(.*?)\n([\s\S]*)$/); // Command failed (Ns):
+  const mb = s.match(/^\s*mobile\s*完成\s*\((\d+)s\):\n([\s\S]*)$/);                                 // mobile 完成 (Ns):
+  const to = s.match(/^(?:超时|Timeout)\s*\((\d+)min\):\n\$\s+(.*?)(?:\n([\s\S]*))?$/);              // 超时 (Nmin):\n$ cmd
+  const term = s.match(/^Terminal (?:已终止|terminated)\s*(?:\((\d+)s\))?/);                          // Terminal 已终止 (Ns) - …
+  if (ds) { st.elapsedSec = parseInt(ds[2], 10); st.exitCode = parseInt(ds[3], 10); st.cmd = ds[4].split("\n")[0].trim(); st.output = ds[5] || ""; }
+  else if (fail) { st.status = "failed"; st.elapsedSec = parseInt(fail[2], 10); st.cmd = fail[3].split("\n")[0].trim(); st.output = fail[4] || ""; }
+  else if (mb) { st.elapsedSec = parseInt(mb[1], 10); st.cmd = "mobile"; st.output = mb[2] || ""; }
+  else if (to) { st.status = "timeout"; st.elapsedSec = parseInt(to[1], 10) * 60; st.cmd = to[2].split("\n")[0].trim(); st.output = to[3] || ""; }
+  else if (term) { st.status = "terminated"; st.elapsedSec = term[1] ? parseInt(term[1], 10) : 0; st.output = s; }
+  else { st.cmd = "execute"; st.output = s; }
+  const idm = s.match(/\[id:\s*([A-Za-z0-9-]+)\]/);
+  st.recId = idm ? idm[1] : "";
+  const rem = s.match(/\[remaining:\s*(\d+)\]/);
+  st.remaining = rem ? parseInt(rem[1], 10) : 0;
+  // [id:] 可能不在尾部（ISSUE 168：后面还跟 [remaining:]）——任意位置剥；其余尾标签整组剥
+  st.output = stripResultTokenMark(stripInlineBgTag(st.output).replace(/\n*\[id:\s*[A-Za-z0-9-]+\]/g, "")).trim();
+  return st;
+}
 

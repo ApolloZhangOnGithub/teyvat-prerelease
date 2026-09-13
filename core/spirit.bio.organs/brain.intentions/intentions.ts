@@ -6,7 +6,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { registerPaimonTool } from "#kernel_backbone";
-import { renderToolCall, renderMessage, GUTTER, dot, lineNumbered } from "#tui_blockrender";
+import { renderToolCall, renderMessage, GUTTER, dot, lineNumbered, SYM, stripResultTokenMark } from "#tui_blockrender";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
@@ -103,7 +103,8 @@ export default function (_pi: ExtensionAPI) {
       let text = content?.[0]?.text || "";
       // 2026-08-18 用户定稿：剥离 feed 层 append 的 [result N tokens, ctx X.Xk]（backbone.ts 拼进 content
       // 给模型感知结果大小与 context 总量，渲染层不需要显示——不剥会漏在兜底渲染里，还会污染 edit/write 的 diff 与行数）
-      text = text.replace(/\n*\[result\s+[\d.]+[kM]?\s*tokens?(?:,\s*(?:ctx|contexted)\s+[\d.]+[kM]?)?\]\s*$/, "");
+      // 2026-09-13（ISSUE 226）：统一走 stripResultTokenMark——此前自带正则只认 ", ctx|contexted X" 后缀，backbone 改成 ", ctx.md X est, api Y (P%)" 后失配
+      text = stripResultTokenMark(text);
       // 编辑器风格渲染（与 pi 内置 Edit 一致，NORM 008）：unified diff → renderDiff
       const { renderDiff } = require("@earendil-works/pi-coding-agent/dist/modes/interactive/components/diff.js");
       const { generateDiffString } = require("@earendil-works/pi-coding-agent/dist/core/tools/edit-diff.js");
@@ -114,7 +115,7 @@ export default function (_pi: ExtensionAPI) {
         const cc = new CC();
         const lineCount = text.split("\n").filter((l: string) => l.trim()).length;
         const indent = " ".repeat(GUTTER);
-        cc.addChild(new Txt(indent + theme.fg("dim", "⎿  ") + `${lineCount} lines`, 0, 0));
+        cc.addChild(new Txt(indent + theme.fg("dim", SYM.result + "  ") + `${lineCount} lines`, 0, 0));
         const rendered = lineNumbered(text, theme);
         const contIndent = " ".repeat(GUTTER + 3);
         for (const line of rendered.split("\n")) cc.addChild(new Txt(contIndent + line, 0, 0));

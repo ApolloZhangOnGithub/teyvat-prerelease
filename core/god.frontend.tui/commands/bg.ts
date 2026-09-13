@@ -7,15 +7,12 @@
 // （命令层与扩展同进程，直接读模块级 running 注册表的快照）。
 
 import { i18n } from "#tui_localizations";
+import { fmtElapsedCoarse } from "#tui_blockrender";
 const T = (zh: string, en: string) => i18n(zh, en);
 
+// 2026-09-13（ISSUE 226）：耗时格式唯一实现在 blocks_nongod.fmtElapsedCoarse（与 statebar 的 lasting 同款）
 function fmtDuration(secs: number): string {
-  const s = Math.max(0, Math.round(secs));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ${s % 60}s`;
-  const h = Math.floor(m / 60);
-  return `${h}h ${m % 60}m`;
+  return fmtElapsedCoarse(Math.max(0, Math.round(secs)) * 1000);
 }
 
 function getTasks(): any[] {

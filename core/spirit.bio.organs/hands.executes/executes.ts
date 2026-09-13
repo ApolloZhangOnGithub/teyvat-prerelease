@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { registerPaimonTool, sendCustomMessage, resultContent } from "#kernel_backbone";
 import { outboxSend } from "../kernel.backbone/backbone.ts"; // 2026-08-20:outbox 已合并进 backbone.ts(不再单独文件)
-import { renderToolCall, renderMessage, GUTTER, lineNumbered, stripResultTokenMark } from "#tui_blockrender";
+import { renderToolCall, renderMessage, stripResultTokenMark, stripInlineBgTag, renderExecuteResult } from "#tui_blockrender";
 import { i18n } from "#tui_localizations";
 import { validateExecute } from "../hands.fileacts/fileacts.ts";
 import { personId } from "../kernel.heart/heart-state.ts";
@@ -285,140 +285,35 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
       return renderToolCall.detail(theme, label, title, brief);
     },
     renderResult(result: any, _options: any, theme: any, ctx: any) {
-      const execId = result?.details?.execId;
-      const createdInfo = result?.details?.createdInfo;
-      // 快命令:有 execId 但无 createdInfo → Process <id> done in X sec + 输出
+      // 2026-09-13（ISSUE 226）：三种结果样式（快命令 / Created / cmd-done）统一由 blocks_nongod.renderExecuteResult 画，这里只把 details 映射成 state。
+      // 此前快命令与 Created 两个分支各自手拼 Container：硬编码 "⎿  "（绕过 WSL 回退）、各算一遍 HH:MM:SS、各读一遍三态、
+      // 算了从未显示的 token 数（timeTok）、还有一整块 if (false) 的旧 compactExecute 逻辑；与 renderers.ts 的 cmd-done 渲染器三套并存。
+      // 历史规范仍然有效：⎿ 只出现一次（摘要行）；时间取事件时刻（details.endTs / createdInfo.ts，LESSON 094）；
+      // 快命令返回内容 dim；Created 行不重复 title（2026-08-27 用户要求）、id 用 ExecuteData 记录 id 不用 #N、不渲染 renderText。
+      const d = result?.details || {};
+      const execId = d.execId;
+      const createdInfo = d.createdInfo;
+      // 快命令：有 execId 但无 createdInfo。renderText 是给用户的干净文本（content 保留 [id]/[background] 给模型，2026-09-08 用户：信息源头分开）
       if (execId && !createdInfo) {
-        // 2026-09-13（用户）：Execute 结果=隐藏时，整个结果区（Done in Xs + 输出）都不显示。
-        // （原实现快命令分支完全没检查 resultMode——hide/summary 对快命令不生效，用户设隐藏仍渲染一切。）
-        const _resultMode = (globalThis as any).__genshinExecuteResult ?? "full";
-        if (_resultMode === "hide") return renderMessage.silent();
-        const { Text, Container } = require("@earendil-works/pi-tui");
-        const indent = " ".repeat(GUTTER);
-        const c = new Container();
-        const sec = ((result?.details?.elapsedMs || 0) / 1000);
-        const secStr = sec < 1 ? sec.toFixed(2) : sec.toFixed(1);
-        // 2026-09-13：时间戳取执行结束时刻（details.endTs），不取渲染时刻——心跳状态切换会让全部历史组件重渲染，历史 Result 行的时间会整体跳到"现在"
-        const ts = new Date(result?.details?.endTs || Date.now());
-        const hh = String(ts.getHours()).padStart(2, "0");
-        const mm = String(ts.getMinutes()).padStart(2, "0");
-        const ss = String(ts.getSeconds()).padStart(2, "0");
-        // 20260811 笔记格式规范:这一行 default--id 不着色、耗时不着色不粗;时间戳行尾全 dim
-        // 2026-08-14 用户要求:done in Xs 的数字用蓝色(accent)
-        // 输出区文本先算(token 数要在摘要行时间后显示)
-        const rc = result?.details?.renderText != null
-          ? [{ type: "text", text: result.details.renderText }]
-          : resultContent(result);
-        // 输出区:无 ⎿,缩进对齐(⎿ 只出现一次在摘要行)
-        let outText = rc.filter((b: any) => b?.type === "text").map((b: any) => b.text).join("\n");
-        // 用户展示剥离:末尾的 [id: xxx](执行记录引用)、[result N tokens](结果 token 统计)
-        // 和 [HH:MM:SS.mmm +Xs](bioclock 耗时戳)
-        // 只对用户隐藏--content 保留,模型仍可见(要 read 执行记录 / 知道 token 量 / 耗时)。
-        // token 数在 result 摘要行时间后已显示(· N tokens),不在末尾重复占行。
-        // 2026-09-13：统一走 blocks_nongod.stripResultTokenMark（唯一的尾标签剥离器，LESSON 084）。
-        // 此前这里自带三条正则，[result …] 只认旧的 ", contexted X" 后缀——backbone 改成 ", ctx.md X est, api Y (P%)" 后失配，
-        // 且 [id:] 在 [result] 之前、$ 锚定也跟着失配 → 快命令输出末尾漏出 [id: …] 与 [result …] 两行。
-        outText = stripResultTokenMark(outText).trimEnd();
-        // 2026-08-15 用户要求:token 数渲染在时间后面(与 [HH:MM:SS] 同行的 result 摘要行)。
-        // 系数与 memory.ts estimateTokens 一致:CJK 1.8/字,其他 4 字符/1 token。
-        // 2026-08-15 用户要求(格式):不要点分隔--同一方括号内逗号分隔:[HH:MM:SS, N tokens]
-        let cjk = 0;
-        for (let i = 0; i < outText.length; i++) {
-          const c = outText.charCodeAt(i);
-          if ((c >= 0x3400 && c <= 0x9fff) || (c >= 0xf900 && c <= 0xfaff) ||
-              (c >= 0x3000 && c <= 0x30ff) || (c >= 0xff00 && c <= 0xffef)) cjk++;
-        }
-        const estTok = Math.ceil(cjk * 1.8 + (outText.length - cjk) / 4);
-        const timeTok = estTok > 0 ? `[${hh}:${mm}:${ss}, ${estTok} tokens]` : `[${hh}:${mm}:${ss}]`;
-        const exitCode = result?.details?.exitCode;
-        const exitPart = exitCode !== undefined && exitCode !== 0 ? `, exit ${theme.bold(String(exitCode))}` : "";
-        const line1 = indent + theme.fg("dim", "⎿  ") + `Done in ${theme.bold(secStr + "s")}${exitPart}` + theme.fg("dim", ` at ${hh}:${mm}:${ss}`);
-        c.addChild(new Text(line1, 0, 0));
-        if (outText) {
-          // 2026-09-13（用户）：Execute 结果=摘要 → 输出只给前 5 行（无省略提示行）
-          if (_resultMode === "summary") {
-            const _ol = outText.split("\n");
-            if (_ol.length > 5) outText = _ol.slice(0, 5).join("\n");
-          }
-          // 行号统一:blocks_nongod.lineNumbered(markdown 同款:右对齐行号 + │ 竖线)
-          // 每行独立 Text--避开 Text 组件多行缩进逻辑,保证行号对齐
-          const rendered = lineNumbered(outText, theme);
-          const contIndent = " ".repeat(GUTTER + 3);
-          // 笔记规范:返回的具体内容 dim(行号 gutter 在 lineNumbered 内已 dim)
-          for (const line of rendered.split("\n")) c.addChild(new Text(contIndent + theme.fg("dim", line), 0, 0));
-        }
-        return c;
+        const rc = d.renderText != null ? [{ type: "text", text: d.renderText }] : resultContent(result);
+        const outText = stripResultTokenMark(rc.filter((b: any) => b?.type === "text").map((b: any) => b.text).join("\n"));
+        return renderExecuteResult(theme, { kind: "fast", exitCode: d.exitCode, elapsedMs: d.elapsedMs, endTs: d.endTs, output: outText });
       }
-      // 后台/terminal:Created N bash/terminal process(+ named XXX), id <记录id> [hh:mm:ss]
+      // 后台 / terminal 创建行
       if (execId && createdInfo) {
-        const { Text, Container } = require("@earendil-works/pi-tui");
-        const indent = " ".repeat(GUTTER);
-        const c = new Container();
-        const totalRunning = createdInfo.total;
-        // 笔记格式规范:这一行 default--数字/name/id 均不着色
-        const isTerm = result?.details?.terminal === true;
-        const tname = result?.details?.tname;
-        const kind = isTerm ? "terminal process" : "bash process";
-        const named = isTerm && tname ? ` named ${tname}` : "";
-        const createdStr = `Created ${createdInfo.created} ${kind}` + named + (totalRunning > 0 ? ` (${totalRunning} in total)` : "");
-        // 2026-08-27 用户要求:title 已在调用行(• Execute <title>)显示,Result 创建行不重复追加
-        // 有 title 则显示(人类可读任务标签),无则跳过
-        // id 统一用 ExecuteData 记录 id(details.recId),不用任务编号 #N
-        const recId = result?.details?.recId;
-        const idPart = recId ? `, id ${recId}` : `, id ${execId}`;
-        const ts = new Date(result?.details?.createdInfo?.ts || Date.now()); // 2026-09-13：取创建时刻，不取渲染时刻（同上）
-        const hh = String(ts.getHours()).padStart(2, "0");
-        const mm = String(ts.getMinutes()).padStart(2, "0");
-        const ss = String(ts.getSeconds()).padStart(2, "0");
-        const timePart = ` at ${hh}:${mm}:${ss}`;
-        c.addChild(new Text(indent + theme.fg("dim", "⎿  ") + createdStr + idPart + theme.fg("dim", timePart), 0, 0));
-        // 不渲染 renderText(Running in background / Terminal N - 使用 @N)--创建行保持一行
-        return c;
+        return renderExecuteResult(theme, { kind: "created", created: createdInfo.created, total: createdInfo.total, terminal: d.terminal === true, tname: d.tname, recId: d.recId || execId, endTs: createdInfo.ts });
       }
-      // 2026-09-13（用户定稿）：「Execute 结果」三态——隐藏 / 摘要（纯前 5 行）/ 全部
+      // 其余（@ 列表 / kill 结果 / 被拦 / self-reboot 提示等）：通用输出管线，三态同样生效（2026-09-13 用户：有 renderText 的结果也要遵守 hide/summary）
       const resultMode = (globalThis as any).__genshinExecuteResult ?? "full";
-      // 2026-09-13（用户）：去掉 renderText == null 条件——有 renderText 的结果也要遵守 hide/summary
-      if (resultMode === "hide") {
-        return renderMessage.silent();
-      }
-      if (resultMode === "summary") {
-        const raw = resultContent(result);
-        if (raw.length > 0 && raw[0].type === "text") {
-          const lines = raw[0].text.split("\n");
-          if (lines.length > 5) {
-            const head = lines.slice(0, 5).join("\n");
-            return renderMessage.output(theme, ctx, [{ type: "text", text: head }]);
-          }
-        }
-        return renderMessage.output(theme, ctx, raw);
-      }
-      // 2026-09-13：以下为旧的 compactExecute 逻辑（三态改造后被上面的 resultMode 分支取代），保留备查
-      if (false) {
-        const raw = resultContent(result);
-        if (raw.length > 0 && raw[0].type === "text") {
-          const lines = raw[0].text.split("\n");
-          // 2026-09-13(用户定稿):只显示 5 行 = **纯前 5 行**,不加任何省略提示行
-          // (原 "... N lines more (lines x-y omitted)" 提示行已去掉--用户:那行占空间、很恶心)
-          if (lines.length > 5) {
-            const head = lines.slice(0, 5).join("\n");
-            return renderMessage.output(theme, ctx, [{ type: "text", text: head }]);
-          }
-        }
-        return renderMessage.output(theme, ctx, raw);
-      }
-      const rc0 = result?.details?.renderText != null
-        ? [{ type: "text", text: result.details.renderText }]
-        : resultContent(result);
-      // 2026-09-07(用户:running/@N kill 与尾部 [id] 只在 feed 保留--渲染用户显示过滤):剥尾部元信息行。
-      // feed content 不动(模型需要 background/id 元信息),这里只对渲染副本剥。
+      if (resultMode === "hide") return renderMessage.silent();
+      const rc0 = d.renderText != null ? [{ type: "text", text: d.renderText }] : resultContent(result);
+      // 2026-09-07（用户：running/@N kill 与尾部 [id] 只在 feed 保留——渲染用户显示过滤）：feed content 不动，只对渲染副本剥；
+      // [background: …] 可能不在尾部（用户样例夹在中间）→ stripInlineBgTag；尾部标签组 → stripResultTokenMark（均为 blocks_nongod 唯一实现）
       const rc = rc0.map((x: any) => {
         if (x.type !== "text" || typeof x.text !== "string") return x;
-        // 2026-09-13：非尾部的 [background: …] 行仍单独剥（用户样例里它可能在中间），尾部标签组统一交给 stripResultTokenMark
-        //（此前这里只剥 [id]/[remaining]，漏 [result …] 与 bioclock 时间戳——与快命令分支各写一套正则，LESSON 084）。
-        const cleaned = stripResultTokenMark(
-          x.text.replace(/\n\[background: [^\]]*running[^\]]*\]/g, "") // 2026-09-07 22:20(用户样例 [background: 1 running xxx]--可能非尾部):任意位置的 background 行都剥(原尾部锚定漏剥非尾部场景)
-        );
-        return cleaned === x.text ? x : { ...x, text: cleaned };
+        let t = stripResultTokenMark(stripInlineBgTag(x.text));
+        if (resultMode === "summary") { const ls = t.split("\n"); if (ls.length > 5) t = ls.slice(0, 5).join("\n"); }
+        return t === x.text ? x : { ...x, text: t };
       });
       return renderMessage.output(theme, ctx, rc);
     },
@@ -692,7 +587,8 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
                 recordExecute({ id: entry.recId || shortRecId(cmd), command: cmd, cwd: tCwd, title: entry.title, start_time: entry.startTime, end_time: Date.now(), exit_code: 137, stdout: "[terminated externally - session closed]", stderr: "" });
                 if (notify) {
                   try {
-                    outboxSend(pi, "continuous-cmd-done", i18n(`Terminal 已终止 (${elapsed}s) - tmux 会话 ${n} 被外部关闭(pkill/kill-server/崩溃),后台记录已自动清理:\n$ ${cmd}`, `Terminal terminated (${elapsed}s) - tmux session ${n} closed externally (pkill/kill-server/crash), background record auto-cleaned:\n$ ${cmd}`), { title: entry.title }, { deliverAs: "interrupt" });
+                    // 2026-09-13（ISSUE 226）：cmd-done 的 details 带结构化字段（status/recId/exitCode/elapsedSec/endTs/cmd/output/remaining），渲染器直接读，不再从文本反解析
+                    outboxSend(pi, "continuous-cmd-done", i18n(`Terminal 已终止 (${elapsed}s) - tmux 会话 ${n} 被外部关闭(pkill/kill-server/崩溃),后台记录已自动清理:\n$ ${cmd}`, `Terminal terminated (${elapsed}s) - tmux session ${n} closed externally (pkill/kill-server/crash), background record auto-cleaned:\n$ ${cmd}`), { title: entry.title, status: "terminated", recId: entry.recId || shortRecId(cmd), exitCode: 137, elapsedSec: elapsed, endTs: Date.now(), cmd, output: "" }, { deliverAs: "interrupt" });
                   } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
                 }
                 running.delete(ttyId);
@@ -724,7 +620,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
                     // 此前无 deliverAs(默认 steer)在 streaming 时也是排队,可能丢失。
                     // ISSUE 119 P1(2026-08-18,qwen-3-8-27b-infer-test-01):改走 outbox--先落盘再发,
                     // 落入 wait 窗口被吞时由 heart 唤醒重发(at-least-once)。
-                    outboxSend(pi, "continuous-cmd-done", i18n(`Terminal 完成 (${elapsed}s, exit ${code}):\n$ ${cmd}\n${tail || "(no output)"}${recInfo}`, `Terminal done (${elapsed}s, exit ${code}):\n$ ${cmd}\n${tail || "(no output)"}${recInfo}`), { title: entry.title }, { deliverAs: "interrupt" });
+                    outboxSend(pi, "continuous-cmd-done", i18n(`Terminal 完成 (${elapsed}s, exit ${code}):\n$ ${cmd}\n${tail || "(no output)"}${recInfo}`, `Terminal done (${elapsed}s, exit ${code}):\n$ ${cmd}\n${tail || "(no output)"}${recInfo}`), { title: entry.title, status: "done", recId, exitCode: parseInt(code) || 0, elapsedSec: elapsed, endTs: Date.now(), cmd, output: tail || "(no output)", terminal: true }, { deliverAs: "interrupt" });
                   } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
                 }
                 running.delete(ttyId);
@@ -804,7 +700,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
         if (entry && !entry.killedByUser) {
           (entry as any).timedOut = true; // 2026-09-13：成功分支据此不再重复发"完成"（之前超时后 execPromise 正常 resolve、code 0 → "超时"+"完成 exit 0" 双通知）
           try { ac.abort(); } catch (e) { console.error("[executes.ts] bg timeout abort: " + ((e as any)?.message || e)); }
-          try { outboxSend(pi, "continuous-cmd-done", i18n(`超时 (${Math.round(bgTimeoutMs / 60000)}min):\n$ ${cmd}\n(自动终止)`, `Timeout (${Math.round(bgTimeoutMs / 60000)}min):\n$ ${cmd}\n(auto-killed)`), { title: entry.title }, { deliverAs: "interrupt" }); } catch (e) { console.error("[executes.ts] bg timeout notify: " + ((e as any)?.message || e)); }
+          try { outboxSend(pi, "continuous-cmd-done", i18n(`超时 (${Math.round(bgTimeoutMs / 60000)}min):\n$ ${cmd}\n(自动终止)`, `Timeout (${Math.round(bgTimeoutMs / 60000)}min):\n$ ${cmd}\n(auto-killed)`), { title: entry.title, status: "timeout", recId: entry.recId, elapsedSec: Math.round(bgTimeoutMs / 1000), endTs: Date.now(), cmd, output: "" }, { deliverAs: "interrupt" }); } catch (e) { console.error("[executes.ts] bg timeout notify: " + ((e as any)?.message || e)); }
         }
       }, bgTimeoutMs);
 
@@ -857,7 +753,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
             // sendCustomMessage 是 async--必须 await,否则 async reject 成 unhandledRejection 静默丢失
             // ISSUE 119 P1(2026-08-18,qwen-3-8-27b-infer-test-01):改走 outbox--先落盘再发,
             // 落入 wait 窗口被吞时由 heart 唤醒重发(at-least-once)。
-            outboxSend(pi, "continuous-cmd-done", i18n(`完成 (${elapsed}s, exit ${r.code}):\n$ ${cmd}\n${tail || "(no output)"}${recInfo}${remInfo}`, `Done (${elapsed}s, exit ${r.code}):\n$ ${cmd}\n${tail || "(no output)"}${recInfo}${remInfo}`), { title: entry?.title }, { deliverAs: "interrupt" });
+            outboxSend(pi, "continuous-cmd-done", i18n(`完成 (${elapsed}s, exit ${r.code}):\n$ ${cmd}\n${tail || "(no output)"}${recInfo}${remInfo}`, `Done (${elapsed}s, exit ${r.code}):\n$ ${cmd}\n${tail || "(no output)"}${recInfo}${remInfo}`), { title: entry?.title, status: "done", recId, exitCode: typeof r.code === "number" ? r.code : 0, elapsedSec: elapsed, endTs: Date.now(), cmd, output: tail || "(no output)", remaining: remNow }, { deliverAs: "interrupt" });
           } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
         } catch (err: any) {
           clearTimeout(bgTimer);
@@ -871,7 +767,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
             stdout: accum, stderr: err?.message ?? String(err),
           });
           const recInfo = recFile ? `\n[id: ${recId}]` : "";
-          try { outboxSend(pi, "continuous-cmd-done", `Command failed (${elapsed}s):\n$ ${cmd}\n${err?.message ?? err}${recInfo}`, { title: entry?.title }, { deliverAs: "followUp" }); } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
+          try { outboxSend(pi, "continuous-cmd-done", `Command failed (${elapsed}s):\n$ ${cmd}\n${err?.message ?? err}${recInfo}`, { title: entry?.title, status: "failed", recId, exitCode: -1, elapsedSec: elapsed, endTs: Date.now(), cmd, output: String(err?.message ?? err) }, { deliverAs: "followUp" }); } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
         } finally {
           running.delete(id);
           updateBgCount();
@@ -961,9 +857,10 @@ function registerTmuxRestore(pi: ExtensionAPI): void {
                     recordExecute({ id: recId, command: cmdDisp, cwd: "", title: cmdDisp, start_time: startTime, end_time: Date.now(), exit_code: parseInt(code) || 0, stdout: pane, stderr: "", truncated: pane.length > 20000 });
                     const outPart = doneIdx > 0 ? pane.slice(0, doneIdx) : pane;
                     const tail = outPart.split("\n").filter((l: string) => l.trim() && !l.trim().startsWith("$ ")).slice(-25).join("\n");
-                    outboxSend(pi, "continuous-cmd-done", i18n(`Terminal 完成 (${elapsed}s, exit ${code}):\n$ ${cmdDisp}\n${tail || "(no output)"}\n[id: ${recId}]`, `Terminal done (${elapsed}s, exit ${code}):\n$ ${cmdDisp}\n${tail || "(no output)"}\n[id: ${recId}]`), { title: cmdDisp }, { deliverAs: "interrupt" });
+                    outboxSend(pi, "continuous-cmd-done", i18n(`Terminal 完成 (${elapsed}s, exit ${code}):\n$ ${cmdDisp}\n${tail || "(no output)"}\n[id: ${recId}]`, `Terminal done (${elapsed}s, exit ${code}):\n$ ${cmdDisp}\n${tail || "(no output)"}\n[id: ${recId}]`), { title: cmdDisp, status: "done", recId, exitCode: parseInt(code) || 0, elapsedSec: elapsed, endTs: Date.now(), cmd: cmdDisp, output: tail || "(no output)", terminal: true }, { deliverAs: "interrupt" });
                   } else {
-                    outboxSend(pi, "continuous-cmd-done", i18n(`Terminal 已终止 (${Math.max(1, Math.round((Date.now() - startTime) / 1000))}s) - tmux 会话 ${n} 关闭(重启前任务,无 doneMarker)`, `Terminal terminated - tmux session ${n} closed (pre-restart task, no done marker)`), { title: cmdDisp }, { deliverAs: "interrupt" });
+                    const termElapsed = Math.max(1, Math.round((Date.now() - startTime) / 1000));
+                    outboxSend(pi, "continuous-cmd-done", i18n(`Terminal 已终止 (${termElapsed}s) - tmux 会话 ${n} 关闭(重启前任务,无 doneMarker)`, `Terminal terminated - tmux session ${n} closed (pre-restart task, no done marker)`), { title: cmdDisp, status: "terminated", recId, elapsedSec: termElapsed, endTs: Date.now(), cmd: cmdDisp, output: "" }, { deliverAs: "interrupt" });
                   }
                 } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
                 break;
