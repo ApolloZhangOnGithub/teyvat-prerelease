@@ -761,8 +761,10 @@ export class ToolExecutionComponent extends Container {
                 if (this.callRendererComponent) {
                     const fixDot = blockDot(theme, { error: this.isDotError(), partial: this.isDotPartial(), blink: (this.toolName === "wait" || this.toolName === "hibernate") && this.isDotPartial() });
                     (function replaceDot(node) {
-                        if (node && typeof node.text === 'string' && (node.text.includes('•') || node.text.includes('◦') || node.text.includes('⏺'))) {
-                            node.text = node.text.replace(/[•◦⏺]/, fixDot);
+                        // teyvat 2026-09-13：第三份 replaceDot——上面两份已改成只替换行首状态点（__dotRe），这份漏改：
+                        // 结果到达时对每个 text 节点替换首个 •/◦/⏺，命令正文里的 • 仍会被换成状态点；WSL 的 "*" 也不认。
+                        if (node && typeof node.text === 'string' && __dotRe.test(node.text)) {
+                            node.text = node.text.replace(__dotRe, "$1" + fixDot);
                             if (typeof node.invalidate === 'function') node.invalidate();
                         }
                         if (node && typeof node.children !== 'undefined') {

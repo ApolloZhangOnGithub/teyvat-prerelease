@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { registerPaimonTool, sendCustomMessage, resultContent } from "#kernel_backbone";
 import { outboxSend } from "../kernel.backbone/backbone.ts"; // 2026-08-20:outbox 已合并进 backbone.ts(不再单独文件)
-import { renderToolCall, renderMessage, GUTTER, lineNumbered } from "#tui_blockrender";
+import { renderToolCall, renderMessage, GUTTER, lineNumbered, stripResultTokenMark } from "#tui_blockrender";
 import { i18n } from "#tui_localizations";
 import { validateExecute } from "../hands.fileacts/fileacts.ts";
 import { personId } from "../kernel.heart/heart-state.ts";
@@ -315,11 +315,10 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
         // 和 [HH:MM:SS.mmm +Xs](bioclock 耗时戳)
         // 只对用户隐藏--content 保留,模型仍可见(要 read 执行记录 / 知道 token 量 / 耗时)。
         // token 数在 result 摘要行时间后已显示(· N tokens),不在末尾重复占行。
-        outText = outText
-          .replace(/\n*\[\d{2}:\d{2}:\d{2}[^\]]*\]\s*$/, "") // 2026-09-13：bioclock 标签带 " | ctx N%" 后缀，旧正则不认
-          .replace(/\n*\[result\s+[\d.]+[kM]?\s*tokens?(?:,\s*contexted\s+[\d.]+[kM]?)?\]\s*$/, "")
-          .replace(/\n*\[id:\s*[A-Za-z0-9-]+\]\s*$/, "")
-          .trimEnd();
+        // 2026-09-13：统一走 blocks_nongod.stripResultTokenMark（唯一的尾标签剥离器，LESSON 084）。
+        // 此前这里自带三条正则，[result …] 只认旧的 ", contexted X" 后缀——backbone 改成 ", ctx.md X est, api Y (P%)" 后失配，
+        // 且 [id:] 在 [result] 之前、$ 锚定也跟着失配 → 快命令输出末尾漏出 [id: …] 与 [result …] 两行。
+        outText = stripResultTokenMark(outText).trimEnd();
         // 2026-08-15 用户要求:token 数渲染在时间后面(与 [HH:MM:SS] 同行的 result 摘要行)。
         // 系数与 memory.ts estimateTokens 一致:CJK 1.8/字,其他 4 字符/1 token。
         // 2026-08-15 用户要求(格式):不要点分隔--同一方括号内逗号分隔:[HH:MM:SS, N tokens]
@@ -414,10 +413,11 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
       // feed content 不动(模型需要 background/id 元信息),这里只对渲染副本剥。
       const rc = rc0.map((x: any) => {
         if (x.type !== "text" || typeof x.text !== "string") return x;
-        const cleaned = x.text
-          .replace(/\n\[background: [^\]]*running[^\]]*\]/g, "") // 2026-09-07 22:20(用户样例 [background: 1 running xxx]--可能非尾部):任意位置的 background 行都剥(原尾部锚定漏剥非尾部场景)
-          .replace(/\n\[id: [^\]]*\]$/, "")
-          .replace(/\n\[remaining: \d+\]$/, "");
+        // 2026-09-13：非尾部的 [background: …] 行仍单独剥（用户样例里它可能在中间），尾部标签组统一交给 stripResultTokenMark
+        //（此前这里只剥 [id]/[remaining]，漏 [result …] 与 bioclock 时间戳——与快命令分支各写一套正则，LESSON 084）。
+        const cleaned = stripResultTokenMark(
+          x.text.replace(/\n\[background: [^\]]*running[^\]]*\]/g, "") // 2026-09-07 22:20(用户样例 [background: 1 running xxx]--可能非尾部):任意位置的 background 行都剥(原尾部锚定漏剥非尾部场景)
+        );
         return cleaned === x.text ? x : { ...x, text: cleaned };
       });
       return renderMessage.output(theme, ctx, rc);
