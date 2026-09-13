@@ -33,6 +33,7 @@ import { isInstallTelemetryEnabled } from "../../core/telemetry.js";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.js";
 import { getChangelogPath, getNewEntries, normalizeChangelogLinks, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard, readClipboardText } from "../../utils/clipboard.js";
+import { copyRich } from "../../../ui_elements/rich-clipboard.js"; // 2026-09-14（用户）：/copy 富文本剪贴板（HTML + 纯文本双 flavor）
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
 import { parseGitUrl } from "../../utils/git.js";
 import { getCwdRelativePath } from "../../utils/paths.js";
@@ -4639,10 +4640,12 @@ export class InteractiveMode {
                     return;
                 }
                 try {
-                    await copyToClipboard(text);
-                    const chars = text.length;
-                    const lines = text.split("\n").length;
-                    this.showStatus(`copied ${chars} chars, ${lines} lines`);
+                    // 同样走富文本双 flavor（此文本为 getEntryCopyText 格式，带 role 前缀）
+                    const richOk = await copyRich(text).catch(() => false);
+                    if (!richOk) await copyToClipboard(text);
+                    this.showStatus(`copied ${text.length} chars, ${text.split("\n").length} lines (rich)`);
+                    copyDone();
+                    this.ui.requestRender();
                 }
                 catch (error) {
                     this.showError(error instanceof Error ? error.message : String(error));
@@ -5411,10 +5414,12 @@ export class InteractiveMode {
                         return;
                     }
                     try {
-                        await copyToClipboard(text);
+                        // 富文本优先（HTML + 纯文本双 flavor——粘贴到 Notion/Obsidian/Notes 等保留渲染），失败回退纯文本
+                        const richOk = await copyRich(text).catch(() => false);
+                        if (!richOk) await copyToClipboard(text);
                         const chars = text.length;
                         const lines = text.split("\n").length;
-                        this.showStatus(`copied ${chars} chars, ${lines} lines`);
+                        this.showStatus(`copied ${chars} chars, ${lines} lines (rich)`);
                         copyDone();
                         this.ui.requestRender();
                     }

@@ -252,6 +252,15 @@ export const stmt = {
     LIMIT ?
   `),
 
+  // 会话历史（2026-09-14）：只取 sid 相关消息（to_person=sid 或 payload.from=sid）——排除 agent↔agent 跨设备消息，大幅减小体积
+  listPeerMessages: db.prepare(`
+    SELECT id, from_person, to_person, type, payload, created_at
+    FROM messages
+    WHERE github_id = ? AND (to_person = ? OR json_extract(payload, '$.from') = ?)
+    ORDER BY id DESC
+    LIMIT ?
+  `),
+
   getAllLocks: db.prepare(`
     SELECT person_id, device_id, acquired_at, heartbeat FROM locks WHERE github_id = ?
   `),

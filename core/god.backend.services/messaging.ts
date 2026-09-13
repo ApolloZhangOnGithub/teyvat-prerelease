@@ -99,7 +99,11 @@ function safeParse(s: string): any {
 messagingRouter.get("/history", (c) => {
   const user = c.get("user") as AuthUser;
   const limit = Math.min(Math.max(parseInt(c.req.query("limit") || "500", 10) || 500, 1), 2000);
-  const rows = stmt.listAllMessages.all(user.githubId, limit) as any[];
+  const sid = (c.req.query("sid") || "").toString().trim();
+  // 带 sid → 只返回该 sid ↔ 各 agent 的消息（排除 agent↔agent 跨设备消息，大幅减小体积）
+  const rows = sid
+    ? (stmt.listPeerMessages.all(user.githubId, sid, sid, limit) as any[])
+    : (stmt.listAllMessages.all(user.githubId, limit) as any[]);
   return c.json({
     messages: rows.map((r) => ({
       id: r.id, from_person: r.from_person, to_person: r.to_person,

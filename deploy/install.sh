@@ -194,14 +194,19 @@ else
   # 2026-08-20：pi 代码用了 cli-highlight（语法高亮）但 package.json 未声明依赖（pi 的依赖声明 bug）→
   # 部署时显式安装，否则 interactive-mode.js:81 import 失败（高亮静默失效 + Cannot find package 错误）
   ( cd "$RUNTIME" && npm install cli-highlight 2>&1 | tail -1 )
+  # 2026-09-14：teyvat 扩展新增依赖（/copy 富文本剪贴板的 markdown→HTML）——
+  # A.core package.json 已声明（tsc/门禁用），运行时解析走 NODE_PATH=runtime/node_modules，这里同步装
+  ( cd "$RUNTIME" && npm install marked 2>&1 | tail -1 )
   ok "runtime pi@$PIN"
 fi
 
 [ ! -f "$PI_DIST/core/tools/bash.js" ] && err "runtime broken"
 node -e "const f='$PI_PKG/package.json',p=JSON.parse(require('fs').readFileSync(f,'utf8'));if(p.piConfig?.name!=='genshin'){p.piConfig=p.piConfig||{};p.piConfig.name='genshin';require('fs').writeFileSync(f,JSON.stringify(p,null,'\t'))}" 2>/dev/null
 
-# 顶层 pi-ai / pi-agent-core 与 PIN 对齐（扩展经软链解析到顶层副本；不对齐 = 扩展侧与 pi 核心两个版本并存）
-for dep in pi-ai pi-agent-core; do
+# 顶层 pi-ai / pi-agent-core / pi-tui 与 PIN 对齐（扩展经软链/imports 解析到顶层副本；不对齐 = 扩展侧与 pi 核心两个版本并存）
+# 2026-09-14：加 pi-tui —— 它同样被扩展直接 import（heart/renderers 等），且 npm 重排树时会被挤进嵌套
+# （实证：install marked 后顶层 pi-tui 被 prune 进 pi-coding-agent/node_modules，A.core 链接断 + 运行时解析炸）
+for dep in pi-ai pi-agent-core pi-tui; do
   DEP_VER=$(node -e "try{console.log(require('$RUNTIME/node_modules/@earendil-works/$dep/package.json').version)}catch {}" 2>/dev/null)
   if [ "$DEP_VER" != "$PIN" ]; then
     echo -e "  ${DIM}aligning $dep@$PIN (was ${DEP_VER:-none})...${R}"

@@ -47,6 +47,7 @@
   "dependencies": {
     "@sinclair/typebox": "^0.34.49",
     "cli-highlight": "^2.1.11",
+    "marked": "^18.0.13",
     "wrap-ansi": "^9.0.0"
   },
   "devDependencies": {

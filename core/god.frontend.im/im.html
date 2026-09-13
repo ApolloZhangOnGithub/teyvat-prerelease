@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Teyvat IM</title>
 <style>
   * { box-sizing: border-box; }
@@ -12,7 +12,7 @@
     font: 14px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
     background: #f5f5f5; color: #1a1a1a; -webkit-font-smoothing: antialiased;
   }
-  .app { display: flex; height: 100vh; }
+  .app { display: flex; height: 100vh; padding-top: env(safe-area-inset-top); }
   mark { background: #ffe08a; color: inherit; padding: 0 1px; }
 
   /* ── ① 功能栏 ── */
@@ -177,10 +177,10 @@
   .msg-row.flash { background: rgba(255,214,0,.30); border-radius: 8px; transition: background .6s ease; }
   .unread-divider { display: flex; align-items: center; gap: 10px; font-size: 11px; color: #999; margin: 8px 0; }
   .unread-divider::before, .unread-divider::after { content: ""; flex: 1; height: 1px; background: #e4e4e4; }
-  /* ── 登录视图 ── */
-  #mainView { display: none; }
-  #loginView { display: none; align-items: center; justify-content: center; height: 100vh; background: #f0f0f0; }
-  .login-card { background: #fff; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,.10); padding: 32px 28px; width: 360px; text-align: center; }
+  /* ── 登录视图（毛玻璃：主界面在背后打模糊，登录卡片浮层）── */
+  .blurred { filter: blur(14px); pointer-events: none; user-select: none; }
+  #loginView { display: none; position: fixed; inset: 0; z-index: 20; align-items: center; justify-content: center; background: rgba(255,255,255,0.28); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+  .login-card { background: rgba(255,255,255,0.86); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.18); padding: 32px 28px; width: 360px; text-align: center; }
   .login-card h1 { font-size: 20px; margin: 0 0 6px; }
   .login-card .sub { color: #999; font-size: 13px; margin-bottom: 22px; }
   .btn-gh { display: inline-flex; align-items: center; gap: 10px; background: #24292f; color: #fff; border: 0; border-radius: 8px; padding: 11px 20px; font: inherit; font-size: 14px; cursor: pointer; }
@@ -212,7 +212,6 @@
 <div id="loginView">
   <div class="login-card">
     <h1>Teyvat IM</h1>
-    <div class="sub">用 GitHub 账号登录</div>
     <button class="btn-gh" id="btnLogin">
       <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
       使用 GitHub 登录
@@ -259,7 +258,7 @@
 
   <main class="chat">
     <header class="chat-head">
-      <button id="chatBack" class="back-btn" title="返回" style="display:none"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 3.5 7 12l8.5 8.5 1.4-1.4L9.8 12l7.1-7.1z"/></svg></button>
+      <button id="chatBack" class="back-btn" title="返回"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 3.5 7 12l8.5 8.5 1.4-1.4L9.8 12l7.1-7.1z"/></svg></button>
       <div class="chat-title" id="chatTitle">选择一个会话</div>
       <div class="chat-actions">
         <input id="msgSearch" class="msg-search" placeholder="查找聊天记录" style="display:none">
@@ -318,7 +317,7 @@ function saveHistoryCache(all) {
 }
 async function ensureHistory() {
   if (historyAll) return historyAll;
-  const r = await api("/messages/history?limit=1000");
+  const r = await api("/messages/history?limit=1000&sid=" + encodeURIComponent(MY_SID));
   const d = r.ok ? await r.json().catch(() => ({})) : {};
   historyAll = (d.messages || []).map((m) => m.payload || {});
   saveHistoryCache(historyAll);
@@ -329,7 +328,7 @@ async function refreshHistoryBg() {
   if (historyRefreshing) return;
   historyRefreshing = true;
   try {
-    const r = await api("/messages/history?limit=1000");
+    const r = await api("/messages/history?limit=1000&sid=" + encodeURIComponent(MY_SID));
     const d = r.ok ? await r.json().catch(() => ({})) : {};
     historyAll = (d.messages || []).map((m) => m.payload || {});
     saveHistoryCache(historyAll);
@@ -371,11 +370,12 @@ async function handleOAuthCallback() {
 }
 function logout() {
   TOKEN = ""; ME = null; localStorage.removeItem("paimon-im-token");
-  $("mainView").style.display = "none"; $("loginView").style.display = "flex";
+  $("mainView").classList.add("blurred"); $("loginView").style.display = "flex";
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 }
 function enterMain() {
-  $("loginView").style.display = "none"; $("mainView").style.display = "flex";
+  $("loginView").style.display = "none"; $("mainView").classList.remove("blurred");
+  try { const v = localStorage.getItem("paimon-im-view"); if (v && VIEW_TAB[v]) view = v; } catch { /* 忽略 */ } // 恢复上次所在 tab，不跳回消息
   self = { sid: MY_SID, name: (ME && ME.login) || "我" };
   $("railMeAvatar").textContent = initial((ME && ME.login) || "我");
   // 缓存恢复：立即渲染上次的会话列表 + 历史（消除刷新空白等待），再后台动态更新
@@ -425,6 +425,7 @@ function initial(name) {
   const s = String(name || "?").replace(/^genshin-v?[\d.]*-?/i, "").replace(/^[-_.]+/, "");
   return (s.slice(0, 1) || "?").toUpperCase();
 }
+function shortName(name) { const s = String(name || "?").replace(/^genshin-v?[\d.]*-?/i, "").replace(/^[-_.]+/, ""); return s || String(name || "?"); }
 function letterOf(name) { const c = String(name || "").trim().slice(0, 1).toUpperCase(); return /[A-Z]/.test(c) ? c : "#"; }
 function avatarHtml(name, online, isGroup) {
   const inner = isGroup
@@ -499,6 +500,7 @@ async function loadConvs() {
     const list = [];
     for (const a of (pd.agents || [])) {
       if (!a || !a.sid || a.sid === MY_SID) continue;
+      if (/check-session|frontierlm|reveng|train-pipe|test-/i.test(a.name || "")) continue; // 测试/调试 agent 不显示
       list.push({ sid: a.sid, name: a.name || a.sid, online: a.online !== false, remote: true, model: a.model || "", deviceId: a.device_id || "", state: stateMap[a.sid] || "", archived: archSet.has(a.sid), lastMsg: lastByPeer[a.sid] || null });
     }
     for (const peer of seen) {
@@ -525,7 +527,7 @@ function renderList() {
   updateRailBadge();
   const el = $("convList"), idx = $("indexBar");
   idx.style.display = "none";
-  $("listHead").style.display = (view === "me" || view === "createGroup") ? "none" : "";
+  $("listHead").style.display = (view === "chats" || view === "contacts") ? "" : "none";
   el.innerHTML = "";
   if (view === "discover") { el.innerHTML = '<div class="empty" style="padding:26px 16px;line-height:1.9">发现<br><span style="font-size:12px">demo 暂未实现</span></div>'; return; }
   if (view === "me") return renderMe(el);
@@ -538,7 +540,7 @@ function renderList() {
   const match = (c) => (c.name || "").toLowerCase().includes(kw) || c.sid.includes(kw);
   if (view === "chats") {
     const hidden = getSet("hidden"), pinned = getSet("pinned");
-    const list = convs.filter((c) => c.lastMsg && !hidden.has(c.sid)).filter(match)
+    const list = convs.filter((c) => (c.lastMsg || c.isGroup) && !hidden.has(c.sid)).filter(match)
       .sort((a, b) => (pinned.has(b.sid) ? 1 : 0) - (pinned.has(a.sid) ? 1 : 0));
     if (!list.length) { el.innerHTML = '<div class="empty" style="padding:26px 16px;line-height:1.9">暂无会话<br><span style="font-size:12px">去「通讯录」找人聊</span></div>'; return; }
     for (const c of list) el.appendChild(convItem(c, true));
@@ -550,13 +552,10 @@ function renderList() {
     '<svg viewBox="0 0 24 24" fill="#fff"><circle cx="8" cy="9" r="2.6"/><circle cx="16" cy="9" r="2.6"/><path d="M2 19c0-3 2.7-5 6-5s6 2 6 5v1H2v-1z"/><path d="M14 19c0-2.3 1.5-4 4-4s4 1.7 4 4v1h-8v-1z"/></svg>',
     () => { view = "groups"; syncRail(); renderList(); }));
   const archCount = convs.filter((c) => c.archived).length;
-  el.appendChild(entryRow(`已归档（${archCount}）`, "#9a9a9a",
+  if (archCount > 0) el.appendChild(entryRow(`已归档（${archCount}）`, "#9a9a9a",
     '<svg viewBox="0 0 24 24" fill="#fff"><path d="M4 5h16v3H4zM5 9h14v10H5zM9 12h6v2H9z"/></svg>',
     () => { view = "archived"; syncRail(); renderList(); }));
-  const newFriends = convs.filter((c) => !c.isGroup && !c.archived && c.online && !c.lastMsg);
-  el.appendChild(entryRow(`新的朋友（${newFriends.length}）`, "#f0a020",
-    '<svg viewBox="0 0 24 24" fill="#fff"><circle cx="10" cy="8" r="3.6"/><path d="M3 20c0-3.9 2.8-6.6 7-6.6s7 2.7 7 6.6v1H3v-1z"/><path d="M18 8h2v2h2v2h-2v2h-2v-2h-2v-2h2V8z"/></svg>',
-    () => { view = "newfriends"; syncRail(); renderList(); }));
+  const newFriends = null; // 新的朋友功能未实现，不再自动列出在线无聊天 agent（避免测试/调试 agent 冒出）
   if (!list.length) { el.insertAdjacentHTML("beforeend", '<div class="empty" style="padding:20px">无匹配联系人</div>'); return; }
   const groups = {};
   for (const c of list) (groups[letterOf(c.name)] = groups[letterOf(c.name)] || []).push(c);
@@ -655,8 +654,8 @@ function convItem(c, showTime, showUnread = true) {
       `<div class="conv-top"><span class="conv-name">${esc(c.name)}</span><span class="conv-right">${stateBadges(c.state)}${right}</span></div>` +
       (showTime ? `<div class="conv-last">${esc(preview).slice(0, 40)}</div>` : `<div class="conv-last">${esc(sub)}${modelTag}</div>`) +
     `</div>` + (showTime ? u : "");
-  div.onclick = () => selectConv(c);
-  div.oncontextmenu = (e) => showConvMenu(e, c);
+  div.onclick = () => (showTime ? selectConv(c) : openAgentInfo(c.sid)); // 通讯录点人 → 联系人详情（消息列表才直接进聊天）
+  if (showTime) div.oncontextmenu = (e) => showConvMenu(e, c); // 通讯录/归档等非会话列表不右键菜单
   return div;
 }
 
@@ -686,9 +685,14 @@ function renderCreateGroup(el) {
   el.querySelectorAll("#gPick input").forEach((i) => { i.onchange = cnt; });
   $("gCancel").onclick = () => { view = "groups"; renderList(); };
   $("gCreate").onclick = async () => {
-    const name = $("gName").value.trim() || "群聊";
     const members = [...el.querySelectorAll("#gPick input:checked")].map((i) => i.value);
     if (!members.length) { alert("请至少选一个成员"); return; }
+    let name = $("gName").value.trim();
+    if (!name) {
+      const sn = members.slice(0, 3).map((sid) => shortName((convs.find((x) => x.sid === sid) || {}).name || sid));
+      const d = new Date();
+      name = sn.join("、") + "（" + (d.getMonth() + 1) + "/" + d.getDate() + "）";
+    }
     try {
       const gid = "group:" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
       const groups = listGroups();
@@ -708,7 +712,7 @@ function renderMe(el) {
   el.innerHTML =
     `<div class="me-card">${avatarHtml((self && self.name) || "我")}` +
       `<div><div class="name">${esc((self && self.name) || "")}</div><div class="sid">${esc((self && self.sid) || "")}</div></div></div>` +
-    `<div class="me-entry" id="meFavs"><span>我的收藏</span><span class="badge-n">${getFavs().length} 条</span></div>` +
+    `<div class="me-entry" id="meFavs"><span>我的收藏</span><span style="display:flex;align-items:center;gap:6px"><span class="badge-n">${getFavs().length} 条</span><span style="color:#c8c8c8;font-size:18px;line-height:1">›</span></span></div>` +
     `<div class="set-title">设置</div>` +
     `<div class="set-row"><span>发送键</span><select id="setKey">` +
       `<option value="shift" ${cfg.sendKey === "shift" ? "selected" : ""}>Shift+Enter</option>` +
@@ -721,11 +725,7 @@ function renderMe(el) {
     `</select></div>` +
     `<div class="set-row"><span>系统通知</span><span style="display:flex;align-items:center;gap:10px"><span style="font-size:12px;color:#999" id="notifyState">${notifyStateText()}</span><input type="checkbox" id="setNotifyOn" ${cfg.notifyOn ? "checked" : ""} title="授权后是否发送系统通知"></span></div>` +
     `<div class="set-row"><span>聚焦时免打扰</span><input type="checkbox" id="setFocusMute" ${cfg.focusMute !== false ? "checked" : ""} title="浏览器 tab 在前台时不弹系统通知"></div>` +
-    `<div class="set-note">` +
-    `<b>Teyvat IM · 公网版</b>（GitHub OAuth 登录）<br>` +
-    `发送键：Enter / Shift+Enter / Ctrl+Enter 三选一（发送），另外两个键换行。<br>` +
-    `发送模式：打断 = 立即中断对方当前工作送达；排队 = 对方空闲时送达。<br><br>` +
-    `身份：${esc((ME && ME.login) || "我")} · 通道：sync 服务器（跨设备）· 端到端加密</div>` +
+    `<div class="set-note"><b>Teyvat IM · 公网版</b>（GitHub OAuth 登录）</div>` +
     `<div class="set-row" style="margin-top:8px"><button id="btnLogout" style="width:100%;padding:8px;border:1px solid #e3e3e3;background:#fff;border-radius:6px;cursor:pointer;color:#e5484d">退出登录</button></div>`;
   // 我的收藏已改为独立入口（meFavs → view=favs）
   $("setKey").onchange = (e) => { cfg.sendKey = e.target.value; saveCfg(); };
@@ -734,7 +734,7 @@ function renderMe(el) {
   $("meFavs").onclick = () => { view = "favs"; syncRail(); renderList(); };
   $("setNotifyOn").onchange = (e) => { cfg.notifyOn = e.target.checked; saveCfg(); };
   $("setFocusMute").onchange = (e) => { cfg.focusMute = e.target.checked; saveCfg(); };
-  $("btnLogout").onclick = logout;
+  $("btnLogout").onclick = () => { if (confirm("确定退出登录？")) logout(); };
 }
 
 // ── 选中会话 ──
@@ -760,7 +760,7 @@ async function selectConv(c, focusMsgId, keepScroll = false) {
   try { $("input").value = localStorage.getItem("teyvat-im-draft-" + current) || ""; } catch { $("input").value = ""; }
   $("input").style.height = "40px";
   if ($("input").value) $("input").style.height = Math.min($("input").scrollHeight, 120) + "px";
-  $("input").focus();
+  if (window.innerWidth > 760) $("input").focus(); // 手机端不自动聚焦（避免自动弹键盘）
   renderList();
   await reloadChat(focusMsgId);
 }
@@ -949,8 +949,8 @@ $("input").addEventListener("input", (e) => {
 const RAIL_TABS = [["railChats", "chats"], ["railContacts", "contacts"], ["railDiscover", "discover"], ["railMeTab", "me"]];
 // 子视图归属父 tab（groups/archived/newfriends/createGroup → 通讯录）：高亮不丢
 const VIEW_TAB = { chats: "railChats", contacts: "railContacts", groups: "railContacts", archived: "railContacts", newfriends: "railContacts", createGroup: "railContacts", favs: "railMeTab", discover: "railDiscover", me: "railMeTab" };
-function syncRail() { const active = VIEW_TAB[view] || "railChats"; for (const [id] of RAIL_TABS) { const b = $(id); if (b) b.classList.toggle("active", id === active); } }
-for (const [id, v] of RAIL_TABS) { const b = $(id); if (b) b.onclick = () => { view = (view === v) ? "chats" : v; syncRail(); renderList(); }; }
+function syncRail() { const active = VIEW_TAB[view] || "railChats"; for (const [id] of RAIL_TABS) { const b = $(id); if (b) b.classList.toggle("active", id === active); } try { localStorage.setItem("paimon-im-view", view); } catch { /* 忽略 */ } }
+for (const [id, v] of RAIL_TABS) { const b = $(id); if (b) b.onclick = () => { view = v; document.body.classList.remove("chat-open"); syncRail(); renderList(); }; }
 // 左下角头像（初始字母）→ 进「我」页（可看版本信息）
 $("railMeAvatar").onclick = () => { view = "me"; syncRail(); renderList(); };
 
@@ -1049,19 +1049,33 @@ function openChatInfo() {
       `<div class="modal" style="width:368px">` +
         `<div class="mhead">群聊信息</div>` +
         `<div style="padding:14px 16px">` +
-          `<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">` +
+          `<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">` +
             avatarHtml(c.name, undefined, true) +
-            `<div><div style="font-weight:600;font-size:15px">${esc(c.name)}</div>` +
+            `<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.name)}</div>` +
             `<div style="font-size:12px;color:#999">${(c.members || []).length} 位成员</div></div>` +
+            `<button id="gRename" style="border:1px solid #ddd;background:#fff;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;flex:none">重命名</button>` +
           `</div>` +
-          `<div style="font-size:12px;color:#999;margin-bottom:8px">群成员</div>` +
+          `<div style="display:flex;gap:8px;margin-bottom:12px">` +
+            `<button id="gAdd" style="flex:1;border:1px solid #07c160;background:#fff;color:#07c160;border-radius:6px;padding:6px;font-size:12px;cursor:pointer">+ 添加成员</button>` +
+            `<button id="gLeave" style="flex:1;border:1px solid #e3e3e3;background:#fff;border-radius:6px;padding:6px;font-size:12px;cursor:pointer;color:#e5484d">解散群聊</button>` +
+          `</div>` +
+          `<div style="font-size:12px;color:#999;margin-bottom:8px">群成员（点头像看联系人，× 移出）</div>` +
           `<div style="display:flex;flex-wrap:wrap;gap:12px;max-height:220px;overflow-y:auto">` +
             (members.length
-              ? members.map((m) => `<div style="width:58px;text-align:center">${avatarHtml(m.name, m.online)}<div style="font-size:11px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.name)}</div></div>`).join("")
+              ? members.map((m) => `<div style="width:58px;text-align:center;position:relative">` +
+                  `<div class="gmem-click" data-sid="${esc(m.sid)}" style="cursor:pointer">${avatarHtml(m.name, m.online)}</div>` +
+                  `<div style="font-size:11px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(shortName(m.name))}</div>` +
+                  `<span class="gmem-del" data-del="${esc(m.sid)}" style="position:absolute;top:-4px;right:-4px;width:18px;height:18px;line-height:16px;text-align:center;background:#e5484d;color:#fff;border-radius:50%;font-size:12px;cursor:pointer" title="移出群聊">×</span>` +
+                `</div>`).join("")
               : '<div style="color:#bbb;font-size:12px">无成员</div>') +
           `</div>` +
         `</div>` +
       `</div>`;
+    modal.querySelectorAll(".gmem-click").forEach((el2) => { el2.onclick = () => openAgentInfo(el2.dataset.sid); });
+    modal.querySelectorAll(".gmem-del").forEach((el2) => { el2.onclick = () => mutateGroup(c.sid, (g) => { g.members = g.members.filter((m) => m !== el2.dataset.del); }); });
+    $("gRename").onclick = () => { const n = prompt("新的群聊名称", c.name); if (n && n.trim()) mutateGroup(c.sid, (g) => { g.name = n.trim(); }); };
+    $("gAdd").onclick = () => addGroupMember(c);
+    $("gLeave").onclick = () => { if (confirm(`解散群聊「${c.name}」？`)) { saveGroups(listGroups().filter((g) => g.id !== c.sid)); current = null; $("chatTitle").textContent = "选择一个会话"; view = "chats"; syncRail(); renderList(); modal.style.display = "none"; loadConvs(); } };
   } else {
     modal.innerHTML =
       `<div class="modal" style="width:340px">` +
@@ -1076,6 +1090,54 @@ function openChatInfo() {
         `<div class="set-row"><span>类型</span><span style="font-size:12px;color:#666">${c.remote ? "跨设备 agent" : "本机 agent"}${c.archived ? "（已归档）" : ""}</span></div>` +
       `</div>`;
   }
+  modal.onclick = (e) => { if (e.target === modal) modal.style.display = "none"; };
+}
+
+// 群成员点击 → 查看联系人信息
+function openAgentInfo(sid) {
+  const a = convs.find((x) => x.sid === sid) || { sid, name: sid, online: false };
+  const modal = $("modal");
+  modal.className = "modal-mask"; modal.style.display = "";
+  modal.innerHTML =
+    `<div class="modal" style="width:340px">` +
+      `<div class="mhead">联系人</div>` +
+      `<div style="padding:16px;display:flex;gap:12px;align-items:center">` +
+        avatarHtml(a.name, a.online) +
+        `<div><div style="font-weight:600;font-size:15px">${esc(a.name)}</div>` +
+        `<div style="font-size:12px;color:#999">${esc(a.sid)}${a.remote ? " · 远程 " + esc(a.deviceId || "") : ""}</div>` +
+        `<div style="font-size:12px;color:${a.online ? "#07c160" : "#999"}">${a.online ? "在线" : (a.archived ? "已归档" : "离线")}</div></div>` +
+      `</div>` +
+      `<div class="set-row"><span>模型</span><span style="font-size:12px;color:#666">${esc(a.model || "-")}</span></div>` +
+      `<div style="padding:12px 16px"><button id="msgBtn" style="width:100%;padding:8px;background:#07c160;color:#fff;border:0;border-radius:6px;font-size:14px;cursor:pointer">发送信息</button></div>` +
+    `</div>`;
+  $("msgBtn").onclick = () => { modal.style.display = "none"; selectConv(a); };
+  modal.onclick = (e) => { if (e.target === modal) modal.style.display = "none"; };
+}
+// 群变更：同步 localStorage + 内存 conv + 重渲染
+function mutateGroup(sid, fn) {
+  const groups = listGroups();
+  const g = groups.find((x) => x.id === sid);
+  if (!g) return;
+  fn(g);
+  saveGroups(groups);
+  const c = convs.find((x) => x.sid === sid);
+  if (c) { c.name = g.name; c.members = g.members; }
+  renderList();
+  if (current === sid) openChatInfo();
+}
+function addGroupMember(c) {
+  const candidates = convs.filter((x) => !x.isGroup && !x.archived && !(c.members || []).includes(x.sid));
+  const modal = $("modal");
+  modal.className = "modal-mask"; modal.style.display = "";
+  modal.innerHTML = `<div class="modal" style="width:340px"><div class="mhead">添加成员</div><div class="pick" style="max-height:260px;overflow-y:auto;margin:12px">` +
+    (candidates.length ? candidates.map((a) => `<label class="pick-item"><input type="checkbox" value="${esc(a.sid)}"> ${esc(a.name)}</label>`).join("") : '<div class="empty" style="padding:12px">无可添加的 agent</div>') +
+    `</div><div class="btn-row" style="padding:0 12px 12px"><button class="btn btn-primary" id="gAddOk">添加</button><button class="btn btn-ghost" id="gAddCancel">取消</button></div></div>`;
+  $("gAddCancel").onclick = () => { modal.style.display = "none"; };
+  $("gAddOk").onclick = () => {
+    const sel = [...modal.querySelectorAll(".pick input:checked")].map((i) => i.value);
+    modal.style.display = "none";
+    if (sel.length) mutateGroup(c.sid, (g) => { g.members = g.members.concat(sel.filter((s) => !g.members.includes(s))); });
+  };
   modal.onclick = (e) => { if (e.target === modal) modal.style.display = "none"; };
 }
 
@@ -1315,7 +1377,7 @@ $("btnToken").onclick = async () => {
 // 已登录则直接进主界面（无登录闪烁）
 (async () => {
   if (await handleOAuthCallback()) return;
-  if (!TOKEN) { $("loginView").style.display = "flex"; return; }
+  if (!TOKEN) { $("mainView").classList.add("blurred"); $("loginView").style.display = "flex"; return; }
   ME = { login: localStorage.getItem("paimon-im-login") || "我" };
   enterMain();
   try { const r = await api("/sync/agent-presence"); if (r.status === 401) logout(); } catch { /* 网络抖动不登出 */ }
