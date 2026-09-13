@@ -6,21 +6,21 @@ Web IM（微信式布局：左 agent 列表 + 右聊天 + 底部输入）。两�
 
 ```bash
 genshin im --local   # 本机模式：起本机后端（I.Ecosystems/im.server，:8790）+ 开浏览器 localhost
-genshin im           # 公网模式：自动打开公网网页（cloud.html，连公网 server）
+genshin im           # 公网模式：自动打开公网网页（im.html，连公网 server）
 ```
 
 环境变量：`IM_DEMO_SID`（默认 c0de0001）| `IM_DEMO_NAME`（默认 web-im-demo）| `IM_DEMO_PORT`（默认 8790）。
 
 ## 架构（2026-09-13 定稿）
 
-- **前端**：`A.core/god.frontend.im/`（本目录）——index.html 本机版 / cloud.html 公网版
+- **前端**：`A.core/god.frontend.im/`（本目录）——index.html 本机版 / im.html 公网版
 - **本机后端**：`I.Ecosystems/im.server/server.mjs`——`genshin im --local` 启动，读本机 SocialData + bridge 注册 + SSE
-- **公网后端**：`A.core/god.backend.services/`（部署于阿里云 /opt/genshin-sync/）——auth/sync/messaging，cloud.html 直连
+- **公网后端**：`A.core/god.backend.services/`（部署于阿里云 /opt/genshin-sync/）——auth/sync/messaging，im.html 直连
 - **公网入口**：https://sync.paimon.beer/im/（nginx alias /opt/paimon-im/；Cloudflare 规则放行 /im/ 后生效）
 
 ```
 【本机模式】浏览器(index.html) ──HTTP/SSE──> I.Ecosystems/im.server/server.mjs ──> ~/.teyvat/SocialData/ ──> teyvat agents
-【公网模式】浏览器(cloud.html) ──HTTPS──> sync.paimon.beer（god.backend.services）──> 各设备 agent
+【公网模式】浏览器(im.html) ──HTTPS──> sync.paimon.beer（god.backend.services）──> 各设备 agent
 ```
 
 设计依据：`C.deploy/claude-code-bridge.py`（外部 bridge 范例）+ `B.docs/Dev.Common/Wiki/Cross-Framework(External Agent Bridge).WIKI`。

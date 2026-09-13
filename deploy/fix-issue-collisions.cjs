@@ -98,7 +98,7 @@ for (const kind of KINDS_ARG.split(",")) {
     fs.renameSync(src, dst); // 2026-09-13：先原子改名再改头（原 write 新文件 + unlink 旧文件——中途崩溃会留两份或零份）
     fs.writeFileSync(dst, txt);
     // 3) 配套文件跟着改号
-    for (const c of all.filter((x) => x.startsWith(`${numStr}-`) && isCompanion(x) && x !== p.from)) {
+    for (const c of all.filter((x) => x.startsWith(p.from + ".") && isCompanion(x))) { // 2026-09-14：只带走改号文件自己的配套（原按编号前缀会把保留号那份的 .CHANGELOG/.HISTORY 一起搬走）
       const newC = c.replace(new RegExp(`^${numStr}-`), `${newNumStr}-`);
       fs.renameSync(path.join(t.dir, c), path.join(t.dir, newC));
       console.log(`   配套文件同步: ${c} → ${newC}`);

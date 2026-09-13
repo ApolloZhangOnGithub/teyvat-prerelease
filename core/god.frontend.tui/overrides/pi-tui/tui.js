@@ -510,6 +510,7 @@ export class TuiBase extends Container {
         const env = process.env.GENSHIN_ENCLOSED_CELLS;
         if (env === "1" || env === "2") { globalThis.__genshinEnclosedCells = Number(env); return; }
         if (!process.stdout.isTTY || !process.stdin.isTTY) return;
+        if (this._enclosedProbeTimer) { clearTimeout(this._enclosedProbeTimer); this._enclosedProbeTimer = undefined; } // 重入先清旧定时器
         this._enclosedProbePending = true;
         // 直接走 process.stdout：terminal.write() 会给 ② 补空格，那样量出来的就不是终端自己的分配了
         process.stdout.write("\r②\x1b[6n\r\x1b[K");
@@ -525,7 +526,8 @@ export class TuiBase extends Container {
         if (cells === 1 || cells === 2) {
             const prev = globalThis.__genshinEnclosedCells;
             globalThis.__genshinEnclosedCells = cells;
-            if (prev !== cells) this.requestRender(true); // 补空格策略变了 → 全量重绘
+            // 2026-09-14：默认假设就是 1 格（补空格）——只有终端答"2 格"且之前不是 2 才需要全量重绘；主屏模式下无谓的 requestRender(true) 会清掉刚画出的行内 UI
+            if (cells === 2 && prev !== 2) this.requestRender(true);
         }
         return true;
     }

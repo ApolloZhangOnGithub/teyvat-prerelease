@@ -165,6 +165,10 @@ const FILE_RULES = [
 // + git commit + artifact 覆盖（见 Continents.DEFINATION）。仅 .SPEC 活跃（文件级设计意图，agent 轻量规格）。
 // 本清单保留不删，向后兼容已有伴随文件。
 const COMPANIONS = [".SPEC", ".CHANGELOG", ".HISTORY", ".NAMETRACE"]; // .LOCATIONTRACE removed
+// 2026-09-14：DEPRECATED 的伴随文件自动生成（.HISTORY / .CHANGELOG / .NAMETRACE / 自动 .SPEC）默认关闭——
+// 2026-09-13 把 tool_result 钩子从从不触发的 "input" 事件改到 "tool_result" 后，这些"保留不删"的死块被一并复活，
+// 一天之内在用户所有仓库里生成了 69 个伴随文件并被 auto-checkpoint 提交。要恢复旧行为显式设 GENSHIN_COMPANIONS=1。
+const COMPANIONS_ON = process.env.GENSHIN_COMPANIONS === "1";
 
 // prompt 来自 coded.dna（coded fileactions.wise + fileactions.rules），由 runtime 取，不再硬编码。
 const PROMPT = getPrompt("fileactions.wise");
@@ -484,7 +488,9 @@ export default function (pi: ExtensionAPI) {
 
     // ── 他人私有数据目录：所有带 path 的工具（含 read/ls/grep/glob）统一守卫 ──
     if (authPath) {
-      const foreign = checkPrivateDataPath(authPath, agentId());
+      // 2026-09-14：process.title 未设（session_start 早期 / K007 之后）时 agentId() 是 "unknown"，会把自己的目录当他人拦——退回 core 设的 __genshinPersonId
+      const _self = agentId() !== "unknown" ? agentId() : String((globalThis as any).__genshinPersonId || "unknown");
+      const foreign = checkPrivateDataPath(authPath, _self);
       if (foreign) return { block: true, reason: foreign };
     }
 
@@ -733,9 +739,8 @@ export default function (pi: ExtensionAPI) {
       const checker = ext === "ts" || ext === "tsx" ? "bun build --no-bundle"
         : ext === "js" || ext === "mjs" || ext === "cjs" ? "node --check"
         : ext === "py" ? "python3 -m py_compile"
-        : ext === "go" ? "go build"
-        : ext === "rs" ? "cargo check --quiet"
-        : null;
+        : ext === "go" ? "gofmt -e" // 2026-09-14：go build <file> 会把二进制丢进 cwd；gofmt -e 只查语法
+        : null; // rs：cargo check 不接受单文件参数，原写法在装了 cargo 的机器上每次 .rs 编辑都误报"语法错误"
       if (checker) {
         try {
           const { execSync } = await import("node:child_process");
@@ -779,8 +784,8 @@ export default function (pi: ExtensionAPI) {
         }
       }
 
-      // DEPRECATED: 自动写 .HISTORY（diff 记录）。职能已被 git commit + MAKELOG.CHANGELOG 覆盖，保留不删。
-      if (path.endsWith(".HISTORY") || path.endsWith(".CHANGELOG")) {
+      // DEPRECATED: 自动写 .HISTORY（diff 记录）。职能已被 git commit + MAKELOG.CHANGELOG 覆盖，保留不删（默认关闭，见 COMPANIONS_ON）。
+      if (!COMPANIONS_ON || path.endsWith(".HISTORY") || path.endsWith(".CHANGELOG")) {
         // 不记录对 HISTORY/CHANGELOG 本身的编辑
       } else {
         const ts = new Date().toISOString().slice(0, 16).replace("T", " ");
@@ -821,8 +826,8 @@ export default function (pi: ExtensionAPI) {
     }
 
     // ── tool_result: auto-create CHANGELOG on write ─────────────────
-    // DEPRECATED: CHANGELOG 已退役（见 COMPANIONS 注释）。保留不删，向后兼容。
-    if (event.toolName === "write" && !event.isError) {
+    // DEPRECATED: CHANGELOG 已退役（见 COMPANIONS 注释）。保留不删，向后兼容（默认关闭，见 COMPANIONS_ON）。
+    if (COMPANIONS_ON && event.toolName === "write" && !event.isError) {
       const path = (event.input as any)?.path ?? (event.input as any)?.file_path;
       if (!path || isExempt(path)) return;
 
@@ -843,7 +848,7 @@ export default function (pi: ExtensionAPI) {
         const filePath = resolve(newFilePath);
         const ext2 = newFilePath.includes('.') ? newFilePath.slice(newFilePath.lastIndexOf('.')) : '';
         const SELF = ['.md','.txt','.json','.yaml','.yml','.csv','.xml','.html','.css','.toml'];
-        if (!SELF.includes(ext2) && !(await exists(`${filePath}.SPEC`))) {
+        if (COMPANIONS_ON && !SELF.includes(ext2) && !(await exists(`${filePath}.SPEC`))) { // 2026-09-14：自动 .SPEC 同样默认关闭
           // 不 block——文件已创建——但追加 warn
           await appendFile(`${filePath}.SPEC`, "(auto-created: no spec provided)\n", "utf8").catch(() => {});
         }
@@ -863,12 +868,12 @@ export default function (pi: ExtensionAPI) {
 
       await moveCompanions(mv.src, newPath);
 
-      // DEPRECATED: mv/rename 后自动写 CHANGELOG + NAMETRACE。职能已被 minutely 意图日志覆盖，保留不删。
+      // DEPRECATED: mv/rename 后自动写 CHANGELOG + NAMETRACE。职能已被 minutely 意图日志覆盖，保留不删（默认关闭，见 COMPANIONS_ON）。
       const clPath = `${newPath}.CHANGELOG`;
       const action = mv.isRename ? "renamed" : "moved";
-      await appendFile(clPath, `[${fmt()}] ${action} from ${mv.src}\n`, "utf8").catch(() => {});
+      if (COMPANIONS_ON) await appendFile(clPath, `[${fmt()}] ${action} from ${mv.src}\n`, "utf8").catch(() => {});
 
-      if (mv.isRename) {
+      if (COMPANIONS_ON && mv.isRename) {
         const ntPath = `${newPath}.NAMETRACE`;
         await appendFile(ntPath, `[${fmt()}] ${basename(mv.src)} → ${basename(newPath)}\n`, "utf8").catch(() => {});
       // .LOCATIONTRACE generation removed
@@ -1012,6 +1017,7 @@ export default function (pi: ExtensionAPI) {
   // ── turn_end: auto-append changelog for missed edits ─────────────
   // DEPRECATED: CHANGELOG 已退役（见 COMPANIONS 注释）。保留不删。
   pi.on("turn_end", async (_event, _ctx) => {
+    if (!COMPANIONS_ON) { editedThisTurn.clear(); changelogUpdatedThisTurn.clear(); return; } // 2026-09-14：默认关闭
     for (const path of editedThisTurn) {
       if (changelogUpdatedThisTurn.has(path)) continue;
       const clPath = `${path}.CHANGELOG`;

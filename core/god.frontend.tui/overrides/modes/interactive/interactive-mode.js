@@ -515,6 +515,10 @@ export class InteractiveMode {
             this._chatUnloaded = true;
         }
         globalThis.__genshinGetModel = () => this.session.model;
+        // 2026-09-13（用户）：把真正的 MarkdownTheme 挂到全局——heart-hibernate 等器官层渲染器拿不到
+        // getMarkdownTheme（它在 pi dist 的 theme.js，器官层 import 不到）；用普通 theme 传给 Markdown 组件
+        // 会在含列表/代码块的 summary 上炸（theme.listBullet is not a function）→ 异常被 tool-execution 静默吞 → 空行/丢内容
+        globalThis.__genshinMarkdownTheme = getMarkdownTheme();
         // 默认 effort: 强制设为 high（对应 DeepSeek max），清除旧版残留的 "max"
         const cur = this.session.thinkingLevel;
         if (cur === "off" || cur === "max") this.session.setThinkingLevel("high");
@@ -5377,20 +5381,70 @@ export class InteractiveMode {
         }
     }
     async handleCopyCommand() {
-        const text = this.session.getLastAssistantText();
-        if (!text) {
-            this.showError("No agent messages to copy yet.");
+        // 2026-09-14（用户）：/copy = 拷贝历史任意回复——打开 TreeSelector（session tree 全轨迹含分支，
+        // no-tools 过滤只看消息），回车拷贝选中 entry 的纯文本；esc 关闭。替代旧“只拷最后一条”。
+        if (this.sessionManager.getTree().length === 0) {
+            this.showError("No entries in session");
             return;
         }
-        try {
-            await copyToClipboard(text);
-            const chars = text.length;
-            const lines = text.split("\n").length;
-            this.showStatus(`copied ${chars} chars, ${lines} lines`);
-        }
-        catch (error) {
-            this.showError(error instanceof Error ? error.message : String(error));
-        }
+        this.showSelector((copyDone) => {
+            const selector = new TreeSelectorComponent(
+                this.sessionManager.getTree(),
+                this.sessionManager.getLeafId(),
+                this.ui.terminal.rows,
+                async (entryId) => {
+                    // 回车 = 拷贝选中 entry 的纯文本（message.content 的 text blocks 拼接，不带 role 前缀）
+                    const entry = this.sessionManager.getEntry(entryId);
+                    const msg = entry?.message;
+                    let text = "";
+                    if (msg) {
+                        if (typeof msg.content === "string") text = msg.content;
+                        else if (Array.isArray(msg.content)) {
+                            text = msg.content
+                                .filter((b) => b && b.type === "text" && typeof b.text === "string")
+                                .map((b) => b.text)
+                                .join("\n");
+                        }
+                    }
+                    if (!text.trim()) {
+                        this.showError("Selected entry has no text to copy");
+                        return;
+                    }
+                    try {
+                        await copyToClipboard(text);
+                        const chars = text.length;
+                        const lines = text.split("\n").length;
+                        this.showStatus(`copied ${chars} chars, ${lines} lines`);
+                        copyDone();
+                        this.ui.requestRender();
+                    }
+                    catch (error) {
+                        this.showError(error instanceof Error ? error.message : String(error));
+                    }
+                },
+                () => { copyDone(); this.ui.requestRender(); },
+                undefined,
+                undefined,
+                "no-tools",
+            );
+            // tree selector 自带的 copy 键（app.message.copy）也接上——文本为 getEntryCopyText 格式（带 role 前缀）
+            selector.onCopy = async (text) => {
+                if (!text) {
+                    this.showError("Selected entry has no text to copy");
+                    return;
+                }
+                try {
+                    await copyToClipboard(text);
+                    this.showStatus(`copied ${text.length} chars, ${text.split("\n").length} lines`);
+                    copyDone();
+                    this.ui.requestRender();
+                }
+                catch (error) {
+                    this.showError(error instanceof Error ? error.message : String(error));
+                }
+            };
+            return { component: selector, focus: selector };
+        });
     }
     handleNameCommand(text) {
         const name = text.replace(/^\/name\s*/, "").trim();

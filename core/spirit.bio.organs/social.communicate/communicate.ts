@@ -402,8 +402,9 @@ function withInboxLock<T>(file: string, fn: () => T): T {
     try { mkdirSync(lock); break; } catch (e: any) {
       if (e?.code !== "EEXIST") throw e;
       // 持锁进程崩溃留下的陈锁：超过 5s 直接接管
-      try { if (Date.now() - statSync(lock).mtimeMs > 5000) { rmdirSync(lock); continue; } } catch { /* 锁已被别人释放 → 重试 */ }
-      if (Date.now() - t0 > 2000) throw new Error("inbox lock timeout: " + lock);
+      // 2026-09-14：陈锁接管改为先 rename 再删（两个等待者同时判定陈锁时，原 rmdir 会把对方刚 mkdir 的新锁删掉）；等待上限 8s > 陈锁阈值 5s，孤儿锁不会让前 3s 的 append 全部失败
+      try { if (Date.now() - statSync(lock).mtimeMs > 5000) { const dead = lock + ".stale-" + process.pid; renameSync(lock, dead); try { rmdirSync(dead); } catch { /* 空目录删不掉也不影响 */ } continue; } } catch { /* 锁已被别人释放/接管 → 重试 */ }
+      if (Date.now() - t0 > 8000) throw new Error("inbox lock timeout: " + lock);
       Atomics.wait(sab, 0, 0, 15);
     }
   }
@@ -551,7 +552,9 @@ function e2eIdentity(sid: string): { kp: any; pubB64: string } {
   try {
     const saved = JSON.parse(readFileSync(f, "utf8"));
     kp = { privateKey: createPrivateKey(saved.priv), publicKey: createPublicKey(saved.pub) };
-  } catch {
+  } catch (e: any) {
+    // 2026-09-14：只有文件不存在才生成新密钥——EMFILE/EACCES/半截 JSON 等瞬时错误原来也会换钥匙，对端仍用旧公钥加密 → 之后每个 peer 丢一条消息
+    if (e?.code !== "ENOENT") throw e;
     kp = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
     const priv = kp.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
     const pub = kp.publicKey.export({ type: "spki", format: "pem" }).toString();
@@ -593,7 +596,7 @@ function e2eDecryptInPlace(p: any, mySid: string): void {
       const peers = _e2eLoadPeers();
       if (peers[p.from] !== p.pub) { peers[p.from] = p.pub; _e2eSavePeers(peers); }
     }
-  } catch (e) { console.error("[social-e2e] decrypt failed: " + ((e as any)?.message || e)); p.text = "[E2E 密文——无法解密]"; }
+  } catch (e) { console.error("[social-e2e] decrypt failed: " + ((e as any)?.message || e)); p.e2e_failed = true; /* 2026-09-14：不再覆盖 text/enc——密文保留在记录里，密钥恢复后还能解；原来直接写成"[无法解密]"，消息永久丢 */ }
 }
 
 /** 远端投递：POST /messages/send（type=agent-social，payload=完整 social 消息）。server 落库/ws 推送，不要求对方在线。 */
@@ -1414,6 +1417,7 @@ export default function (pi: ExtensionAPI) {
       // 2026-09-13：元意识/海马体/睡眠子进程也加载本器官——它们的 session 路径含主 agent 的 id，之前会用主 agent 的 sid registerSelf、
       // 跑自己的 presence/pull、并争抢同一个 triggers/<sid>.json（谁先 unlink 谁把消息注进自己的 session → 主 agent 收不到）。子会话直接不参与。
       if (sf && /metaconsciousnessSessions|HippocampusSessions|SleepSessions|NapSessions/.test(sf)) return;
+      _startNetTick(); // 2026-09-14：幂等——/clear /resume 后确保 45s presence/pull 还在
       if (sf) {
         const m = sf.match(/([a-f0-9]{8})\//);
         if (m) {
@@ -1433,16 +1437,24 @@ export default function (pi: ExtensionAPI) {
   // reportPresence(up) 维持 server presence + pullRemoteMessages 拉远端消息写本地 inbox。
   // 与 touchPresence 30s 节流互补（消息活跃时双保险）。unref：不阻止 agent 进程正常退出。
   // 2026-09-13：/reload 会再次执行本入口——之前每次多一套 45s timer 且从不清理（presence/pull 频率 ×N）。句柄放模块级，重入先清；shutdown 也清并上报 offline。
-  if (_netTickHandle) { try { clearInterval(_netTickHandle); } catch { /* 已清 */ } }
-  _netTickHandle = setInterval(() => {
-    try { reportPresence("up").catch(() => {}); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* 静默 */ }
-    try { pullRemoteMessages().catch(() => {}); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* 静默 */ }
-  }, 45_000);
-  if (typeof (_netTickHandle as any)?.unref === "function") (_netTickHandle as any).unref();
-  pi.on("session_shutdown", async () => {
+  if (_netTickHandle) { try { clearInterval(_netTickHandle); } catch { /* 已清 */ } _netTickHandle = null; }
+  _startNetTick();
+  // 2026-09-14：session_shutdown 在 /clear /new /resume /fork /reload 时也会触发——原来一律清定时器 + 上报 offline，
+  // 而 /clear /resume 不会重跑扩展工厂，45s 的 presence/pull 从此没了（agent 5 分钟后在 server 上"离线"、收不到远程消息）。只在真正退出时做。
+  pi.on("session_shutdown", async (event: any) => {
+    const reason = String((event as any)?.reason || "");
+    if (["new", "resume", "fork", "reload", "switch"].includes(reason)) return;
     try { if (_netTickHandle) clearInterval(_netTickHandle); } catch { /* 已清 */ }
     // reportOffline 之前从未被调用（注释说 heart 退出钩子调，实际没有）→ 退出后 server 端最多 5 分钟仍显示在线并向其投递
     try { await Promise.race([reportOffline(), new Promise((r) => setTimeout(r, 3000))]); } catch { /* 网络失败不阻塞退出 */ }
   });
 }
 let _netTickHandle: ReturnType<typeof setInterval> | null = null;
+function _startNetTick() {
+  if (_netTickHandle) return;
+  _netTickHandle = setInterval(() => {
+    try { reportPresence("up").catch(() => {}); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* 静默 */ }
+    try { pullRemoteMessages().catch(() => {}); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* 静默 */ }
+  }, 45_000);
+  if (typeof (_netTickHandle as any)?.unref === "function") (_netTickHandle as any).unref();
+}

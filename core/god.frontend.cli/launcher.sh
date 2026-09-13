@@ -306,7 +306,7 @@ case "$NAME" in
     exit $?;;
   im)
     # [2026-09-13] IM 前端入口：--local=起本机后端（I.Ecosystems/im.server，:8790）+开 localhost；无参=开公网网页
-    # 前端 god.frontend.im（index.html 本机版 / cloud.html 公网版）；后端 I.Ecosystems/im.server（用户定稿）
+    # 前端 god.frontend.im（index.html 本机版 / im.html 公网版）；后端 I.Ecosystems/im.server（用户定稿）
     if [ "$2" = "--local" ]; then
       IM_SRV="$PAIMON_EXT/I.Ecosystems/im.server/server.mjs"
       if [ ! -f "$IM_SRV" ]; then

@@ -123,17 +123,7 @@ _integrity: _paths ensure-dev-links
 		echo "  checked $$N files"; \
 		[ "$$FAIL" = "0" ] || { echo "  syntax errors found, abort"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] ESM require check..." && cd "$(CORE)" && \
-		N=0; FAIL=0; \
-		while IFS= read -r f; do \
-			N=$$((N+1)); \
-			if grep -q 'require(' "$$f" 2>/dev/null && ! grep -q 'createRequire' "$$f" 2>/dev/null; then \
-				REAL=$$(grep -E 'require\(' "$$f" | grep -vcE '^[[:space:]]*//'); \
-				if [ "$$REAL" -gt 0 ]; then echo "  BARE require in ESM: $$f"; FAIL=1; fi; \
-			fi; \
-		done < <(find "$(TUI)/overrides" "$(TUI)/ui_elements" "$(TUI)/commands" \( -name '*.js' -o -name '*.ts' \)); \
-		[ "$$N" -gt 0 ] || { echo "  ERROR: ESM check 零匹配 —— 目录结构已变，检查未生效"; exit 1; }; \
-		echo "  checked $$N files"; \
-		[ "$$FAIL" = "0" ] || { echo "  ESM require errors — add createRequire or remove require()"; exit 1; }
+		node "$(DEPLOY)/check-esm-require.cjs" "$(CORE)" || { echo "  ESM require errors — add createRequire or remove require()"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] resolve check..." && node "$(DEPLOY)/check-resolve.cjs" "$(CORE)" || { echo "  resolve check FAILED — 存在解析不到真实文件的 import/require（镜像 jiti 运行时语义，LESSON 056），修复后再 make"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] launcher check..." && node "$(DEPLOY)/check-launcher.cjs" "$(CORE)/god.frontend.cli/launcher.sh" || { echo "  launcher check FAILED — 后台构造未做终端隔离（LESSON 037 / ISSUE 088），修复后再 make"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] require-entry check..." && node "$(DEPLOY)/check-require-entry.cjs" "$(CORE)" || { echo "  require-entry check FAILED — 禁止裸引用 @earendil-works/pi-coding-agent（LESSON 056），修复后再 make"; exit 1; }

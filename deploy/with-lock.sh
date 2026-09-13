@@ -91,7 +91,8 @@ _lock_age() {
 # stamp 缺失时的兜底：用锁目录 mtime 推算（目录在、文件没了也能等到超时）
 _dir_age() {
   local m
-  m=$(stat -f %m "$LOCK_DIR" 2>/dev/null || stat -c %Y "$LOCK_DIR" 2>/dev/null) || return 1  # 2026-09-13：GNU stat 的 -f 是文件系统模式，Linux 上永远返回非数字 → 陈锁兜底从不触发
+  # 2026-09-14：GNU stat 的 -f %m 打印 "?" 且 exit 0，|| 分支永远走不到——先试 GNU 写法（macOS 的 stat -c 会报错退到 -f）
+  m=$(stat -c %Y "$LOCK_DIR" 2>/dev/null || stat -f %m "$LOCK_DIR" 2>/dev/null) || return 1
   case "$m" in ''|*[!0-9]*) return 1;; esac
   echo $(( $(_now) - m ))
 }

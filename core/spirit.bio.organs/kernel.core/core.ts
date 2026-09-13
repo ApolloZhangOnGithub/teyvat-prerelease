@@ -17,6 +17,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { logerr, userFile, runtimeCacheDir, writeFileAtomic } from "#paths";
 // 扩展加载阶段攒下的告警（pi runtime 未就绪时不能 sendMessage），session_start 时统一发出
 const _kernelWarns: string[] = [];
+let _manifestBroken = false; // 2026-09-14：tools.manifest.json 读/解析失败 → 全部工具停用（失败即关闭），但 session_start 其余步骤照走
 
 // ── i18n 辅助 ──
 export function t(zh: string, en: string): string {
@@ -353,7 +354,10 @@ export default function kernelMain(pi: ExtensionAPI) {
         // 2026-09-13：manifest 读/解析失败必须 fail-fast（与 RNA 同策略）——之前只 logerr，随后 allowed 为空集 → 过滤整体跳过，
         // 所有已注册工具（含 default:false 的 mobile/ear/mouth/sleep）全部激活，K020 也静默（历史：手写尾随逗号 30 条 K007/K021）。
         logerr("K007", e);
-        throw new Error(`[K007] tools.manifest.json 读取/解析失败（fail-fast）: ${(e as any)?.message ?? e}`);
+        // 2026-09-14：不能在 session_start 里 throw——runner 吞掉异常后 process.title / plist lastSeen / main.pid 心跳全部不跑，
+        // agent 在 genshin 列表里"已死"、fileacts 把自己的目录当他人拦。改为记 _manifestBroken，稍后把全部工具停用并告警。
+        _manifestBroken = true;
+        _kernelWarns.push(`ERROR [K007] tools.manifest.json 读取/解析失败：${(e as any)?.message ?? e}——已按"失败即关闭"停用全部工具，修好 manifest 后 /reload`);
       }
 
       let allowed: Set<string>;
@@ -434,7 +438,9 @@ export default function kernelMain(pi: ExtensionAPI) {
         } catch (e) { logerr("K026", e); }
       }
 
-      if (allowed.size > 0) {
+      if (_manifestBroken) {
+        try { pi.setActiveTools([]); } catch (e) { logerr("K007", e); } // 失败即关闭：manifest 坏了就一个工具都不给（原来是全部放开）
+      } else if (allowed.size > 0) {
         const current: string[] = pi.getActiveTools() ?? [];
         const filtered = current.filter((t: string) => allowed.has(t));
         pi.setActiveTools(filtered);

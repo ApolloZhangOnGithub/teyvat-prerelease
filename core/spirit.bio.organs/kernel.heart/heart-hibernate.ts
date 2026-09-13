@@ -84,7 +84,11 @@ export function registerHibernateTool(_pi: ExtensionAPI) {
       const c = new C();
       c.addChild(new T(theme.fg("dim", "✻") + " " + untilStr, 0, 0));
       // 2026-09-13（用户）：summary 用 markdown 渲染（和其他消息一致），paddingX=2 对齐 ✻
-      c.addChild(new Markdown(s || "hibernating", 2, 0, theme));
+      // 2026-09-13（修复）：Markdown 要用真正的 MarkdownTheme（含 listBullet/代码块色等方法）——
+      // renderCall 的 theme 是普通渲染 theme，多行 summary 含列表时调 theme.listBullet 炸 → 异常被
+      // tool-execution 静默吞 → 只剩 ✻ 行+空（房东报的“雪花后多一个空行”）。__genshinMarkdownTheme 由
+      // interactive-mode 挂载（getMarkdownTheme()），headless 无渲染不受影响；fallback 到 theme 保证非 TUI 不炸。
+      c.addChild(new Markdown(s || "hibernating", 2, 0, (globalThis as any).__genshinMarkdownTheme || theme));
       return c;
     },
     renderResult(result, _opts, t, ctx) {

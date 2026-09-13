@@ -45,8 +45,9 @@ import { cleanupWindowsSelfUpdateQuarantine } from "./utils/windows-self-update.
 // agent 转为无渲染继续工作（符合"内核常驻"愿景）；运行期其余 EPIPE 由 core.ts 兜底。
 for (const _s of [process.stdout, process.stderr]) {
   _s.on("error", (err) => {
-    if (err && err.code === "EPIPE") return; // 静默：对端已关，渲染不可达，内核继续跑
-    throw err; // 2026-09-13：挂了监听就没有默认抛错——非 EPIPE 的流错误不能悄悄吞
+    if (err && (err.code === "EPIPE" || err.code === "EIO" || err.code === "EAGAIN")) return; // 静默：对端已关 / pty 已收 / 管道满，渲染不可达，内核继续跑
+    // 2026-09-14：其余错误记日志但不 throw——throw 会变成 uncaughtException 在关机途中杀掉 agent（原意只是"别悄悄吞"）
+    try { require("fs").appendFileSync((process.env.HOME || "") + "/.teyvat/LogData/genshin-catch-errors.log", "[main.js stdio error] " + (err && err.stack || err) + "\n"); } catch (e) { /* 日志写不了就算了 */ }
   });
 }
 const EXTENSION_LOAD_FAILURE_HINT = 'Hint: Start without extensions using "pi -ne".';

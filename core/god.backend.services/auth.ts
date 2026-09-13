@@ -80,7 +80,7 @@ export async function resolveUser(token: string, deviceId: string, deviceName?: 
       signal: AbortSignal.timeout(10_000),
     });
   } catch { return null; }
-  if (!res.ok) { negCache.set(token, now); _evict(negCache, CACHE_MAX); return null; }
+  if (!res.ok) { if (res.status === 401) { negCache.set(token, now); _evict(negCache, CACHE_MAX); } return null; } // 2026-09-14：只有 401 进负缓存——GitHub 5xx/限流不该让这个 token 60s 内全部 401
 
   const gh = (await res.json()) as { id: number; login: string; avatar_url: string };
   const user: AuthUser = { githubId: gh.id, login: gh.login, avatarUrl: gh.avatar_url, deviceId };

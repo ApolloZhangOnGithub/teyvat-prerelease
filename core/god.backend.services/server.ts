@@ -16,8 +16,10 @@ const app = new Hono();
 
 app.use("*", cors());
 // 2026-09-13（审计）：请求体上限——@hono/node-server 默认无限制，任何 GitHub 账号都能把内存/磁盘灌满。/sync/push 保留 20MB（多文件 multipart），其余 2MB。
-app.use("/sync/push", bodyLimit({ maxSize: 20 * 1024 * 1024 }));
-app.use("*", bodyLimit({ maxSize: 2 * 1024 * 1024 }));
+const _pushLimit = bodyLimit({ maxSize: 20 * 1024 * 1024 });
+const _defaultLimit = bodyLimit({ maxSize: 2 * 1024 * 1024 });
+// 2026-09-14：两条 use 都会命中 /sync/push，第二条 2MB 生效 → 20MB 形同虚设；按路径二选一
+app.use("*", (c, next) => (c.req.path === "/sync/push" ? _pushLimit(c, next) : _defaultLimit(c, next)));
 
 // 2026-09-13（审计，线上实证 GET /health → 401）：这三条公开路由必须注册在 authMiddleware 之前——Hono 按注册顺序匹配，
 // 之前排在 app.use("/*", authMiddleware()) 之后，bootstrap.sh 的 curl /health 每次都失败、本地隧道探测永远探不到、wiki auth_request 永远 denied。

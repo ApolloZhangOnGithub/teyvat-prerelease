@@ -696,7 +696,9 @@ export default function (pi: ExtensionAPI) {
       // 快速操作同步返回，慢速操作走后台队列
       // 2026-09-13：①真正串行执行——之前只把"等待"排队，handleInput 立即并发启动，两次调用共享同一 state（A app 的状态可能写进 B）；
       //             ②慢路径异常不再 .catch(() => {}) 吞掉——agent 会永远停在"Mobile 加载中"，现在发一条出错通知
-      const handlePromise = _mobileQueue.then(() => handleInput(input, pd)).then(screen => ({ screen: screen || i18n("(无返回)", "(no output)") }));
+      // 2026-09-14：单个 handleInput 最多 120s——否则一个挂死的 app 把之后所有 mobile 调用堵成永远"加载中"
+      const _withTimeout = <T,>(p: Promise<T>): Promise<T> => { let t: any; const timeout = new Promise<T>((_, rej) => { t = setTimeout(() => rej(new Error("mobile handler timeout (120s)")), 120_000); }); return Promise.race([p, timeout]).finally(() => clearTimeout(t)); };
+      const handlePromise = _mobileQueue.then(() => _withTimeout(handleInput(input, pd))).then(screen => ({ screen: screen || i18n("(无返回)", "(no output)") }));
       _mobileQueue = handlePromise.then(() => undefined, () => undefined);
       const fastResult = await Promise.race([
         handlePromise.catch((e: any) => ({ screen: i18n(`Mobile 出错: ${e?.message || e}`, `Mobile error: ${e?.message || e}`) })),

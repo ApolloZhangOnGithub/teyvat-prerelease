@@ -193,6 +193,18 @@
   .token-row button { padding: 0 14px; background: #07c160; color: #fff; border: 0; border-radius: 8px; font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
   .token-hint { font-size: 11px; color: #aaa; text-align: left; margin-top: 8px; line-height: 1.7; }
   .status { margin-top: 14px; font-size: 12px; color: #999; min-height: 18px; }
+  /* ── 手机端适配 ── */
+  .back-btn { display: none; width: 32px; height: 32px; border: 0; background: transparent; border-radius: 6px; cursor: pointer; color: #5f5f5f; flex: none; align-items: center; justify-content: center; }
+  .back-btn:hover { background: #e3e3e3; }
+  .back-btn svg { width: 20px; height: 20px; }
+  @media (max-width: 760px) {
+    .rail { width: 44px; min-width: 44px; }
+    .conv { width: calc(100vw - 44px); min-width: 0; }
+    .chat { display: none; }
+    .back-btn { display: flex; }
+    body.chat-open .conv { display: none; }
+    body.chat-open .chat { display: flex; }
+  }
 </style>
 </head>
 <body>
@@ -247,6 +259,7 @@
 
   <main class="chat">
     <header class="chat-head">
+      <button id="chatBack" class="back-btn" title="返回" style="display:none"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 3.5 7 12l8.5 8.5 1.4-1.4L9.8 12l7.1-7.1z"/></svg></button>
       <div class="chat-title" id="chatTitle">选择一个会话</div>
       <div class="chat-actions">
         <input id="msgSearch" class="msg-search" placeholder="查找聊天记录" style="display:none">
@@ -288,7 +301,7 @@ const MY_SID = "c0de0001";
 let TOKEN = localStorage.getItem("paimon-im-token") || "";
 let DEVICE_ID = localStorage.getItem("paimon-im-device") || "";
 const API = "https://sync.paimon.beer";
-let ME = { login: localStorage.getItem("paimon-im-login") || "已登录" };
+let ME = { login: localStorage.getItem("paimon-im-login") || "我" };
 let seenIds = new Set();
 const ARCH_KEY = "paimon-im-archived", GROUPS_KEY = "paimon-im-groups";
 const archSet = new Set(JSON.parse(localStorage.getItem(ARCH_KEY) || "[]"));
@@ -299,6 +312,31 @@ async function api(path, opts = {}) {
   return fetch(API + path, { ...opts, headers: { Authorization: `Bearer ${TOKEN}`, "X-Device-Id": DEVICE_ID, "User-Agent": "genshin-sync/1.0", ...(opts.headers || {}) } });
 }
 function msgOf(p) { return { id: p.id, from: p.from, from_name: p.from_name, to: p.to, text: p.text, ts: p.ts, out: p.from === MY_SID }; }
+let historyAll = null; // 全量历史缓存（payload 数组）：首次拉取后复用，避免每次切会话都重新请求
+function saveHistoryCache(all) {
+  try { const human = (all || []).filter((p) => p.from === MY_SID || p.to === MY_SID).slice(-300); localStorage.setItem("paimon-im-cache-history", JSON.stringify(human)); } catch { /* 忽略 */ }
+}
+async function ensureHistory() {
+  if (historyAll) return historyAll;
+  const r = await api("/messages/history?limit=1000");
+  const d = r.ok ? await r.json().catch(() => ({})) : {};
+  historyAll = (d.messages || []).map((m) => m.payload || {});
+  saveHistoryCache(historyAll);
+  return historyAll;
+}
+let historyRefreshing = false;
+async function refreshHistoryBg() {
+  if (historyRefreshing) return;
+  historyRefreshing = true;
+  try {
+    const r = await api("/messages/history?limit=1000");
+    const d = r.ok ? await r.json().catch(() => ({})) : {};
+    historyAll = (d.messages || []).map((m) => m.payload || {});
+    saveHistoryCache(historyAll);
+    if (current) reloadChat();
+  } catch (e) { /* 忽略 */ }
+  historyRefreshing = false;
+}
 // ── 登录 ──
 let _clientId = "";
 async function ghClientId() {
@@ -326,7 +364,7 @@ async function handleOAuthCallback() {
   $("loginStatus").textContent = "正在登录…";
   try {
     const d = await (await fetch(API + "/auth/github", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, redirect_uri: location.origin + "/im/" }) })).json();
-    if (d.token) { TOKEN = d.token; ME = d.user; localStorage.setItem("paimon-im-token", TOKEN); localStorage.setItem("paimon-im-login", (d.user && d.user.login) || "已登录"); if (!DEVICE_ID) { DEVICE_ID = Math.random().toString(16).slice(2, 10); localStorage.setItem("paimon-im-device", DEVICE_ID); } $("loginStatus").textContent = "登录成功"; enterMain(); return true; }
+    if (d.token) { TOKEN = d.token; ME = d.user; localStorage.setItem("paimon-im-token", TOKEN); localStorage.setItem("paimon-im-login", (d.user && d.user.login) || "我"); if (!DEVICE_ID) { DEVICE_ID = Math.random().toString(16).slice(2, 10); localStorage.setItem("paimon-im-device", DEVICE_ID); } $("loginStatus").textContent = "登录成功"; enterMain(); return true; }
     $("loginStatus").textContent = "登录失败：" + (d.error || "未知错误");
   } catch (e) { $("loginStatus").textContent = "登录失败：" + e.message; }
   return true;
@@ -338,8 +376,17 @@ function logout() {
 }
 function enterMain() {
   $("loginView").style.display = "none"; $("mainView").style.display = "flex";
+  self = { sid: MY_SID, name: (ME && ME.login) || "我" };
   $("railMeAvatar").textContent = initial((ME && ME.login) || "我");
+  // 缓存恢复：立即渲染上次的会话列表 + 历史（消除刷新空白等待），再后台动态更新
+  try {
+    const cc = JSON.parse(localStorage.getItem("paimon-im-cache-convs") || "null");
+    if (Array.isArray(cc) && cc.length) { convs = cc; renderList(); }
+    const ch = JSON.parse(localStorage.getItem("paimon-im-cache-history") || "null");
+    if (Array.isArray(ch)) historyAll = ch;
+  } catch { /* 缓存损坏忽略 */ }
   loadConvs();
+  refreshHistoryBg();
   if (!pollTimer) pollTimer = setInterval(() => { loadConvs(); pullPending(); }, 4000);
   pullPending();
 }
@@ -439,11 +486,10 @@ async function loadConvs() {
     const dd = dr.ok ? await dr.json().catch(() => ({})) : {};
     const stateMap = {};
     for (const dev of (dd.devices || [])) for (const a of (dev.agents || [])) if (a && a.sid) stateMap[a.sid] = a.state || "";
-    const hr = await api("/messages/history?limit=1000");
-    const hd = hr.ok ? await hr.json().catch(() => ({})) : {};
+    const hd = await ensureHistory();
     const lastByPeer = {}, seen = new Set();
-    for (const m of (hd.messages || [])) {
-      const p = m.payload || {};
+    for (const p of hd) {
+      if (p.from !== MY_SID && p.to !== MY_SID) continue; // 排除 agent↔agent 跨设备消息，只留人类↔agent 会话
       const peer = (p.from === MY_SID) ? p.to : p.from;
       if (!peer || peer === MY_SID || isGroupPeer(peer)) continue;
       seen.add(peer);
@@ -465,6 +511,7 @@ async function loadConvs() {
     self = { sid: MY_SID, name: (ME && ME.login) || "我" };
     $("railMeAvatar").textContent = initial(self.name);
     renderList();
+    try { localStorage.setItem("paimon-im-cache-convs", JSON.stringify(convs)); } catch { /* 忽略 */ }
     if (!current) {
       const last = localStorage.getItem("teyvat-im-last");
       const c0 = last && convs.find((x) => x.sid === last);
@@ -563,10 +610,21 @@ function renderFavs(el) {
     d.className = "fav-item";
     d.style.cursor = "pointer";
     d.innerHTML = `${esc(String(f.text).slice(0, 200))}<div class="fw">${esc(f.from || "")} · ${fmtTime(f.ts)}</div>`;
-    d.title = "右键删除该收藏";
+    d.title = "右键复制/转发";
     d.oncontextmenu = (e2) => {
       e2.preventDefault();
-      if (confirm("删除这条收藏？")) { saveFavs(getFavs().filter((x) => !(x.ts === f.ts && x.text === f.text))); renderList(); }
+      const menu = $("msgMenu");
+      menu.innerHTML = `<div class="mi" data-act="copy">复制</div><div class="mi" data-act="forward">转发</div>`;
+      menu.style.display = "";
+      menu.style.left = Math.min(e2.clientX, window.innerWidth - 140) + "px";
+      menu.style.top = Math.min(e2.clientY, window.innerHeight - 120) + "px";
+      menu.querySelectorAll(".mi").forEach((el) => { el.onclick = () => {
+        $("msgMenu").style.display = "none";
+        if (el.dataset.act === "copy") {
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(f.text).then(() => toast("已复制")).catch(() => { fallbackCopy(f.text); toast("已复制"); });
+          else { fallbackCopy(f.text); toast("已复制"); }
+        } else if (el.dataset.act === "forward") { openForward({ text: f.text }); }
+      }; });
     };
     el.appendChild(d);
   }
@@ -664,10 +722,11 @@ function renderMe(el) {
     `<div class="set-row"><span>系统通知</span><span style="display:flex;align-items:center;gap:10px"><span style="font-size:12px;color:#999" id="notifyState">${notifyStateText()}</span><input type="checkbox" id="setNotifyOn" ${cfg.notifyOn ? "checked" : ""} title="授权后是否发送系统通知"></span></div>` +
     `<div class="set-row"><span>聚焦时免打扰</span><input type="checkbox" id="setFocusMute" ${cfg.focusMute !== false ? "checked" : ""} title="浏览器 tab 在前台时不弹系统通知"></div>` +
     `<div class="set-note">` +
-    (verInfo ? `<b>im-gui-demo v${esc(verInfo.version)}</b>（${verInfo.channel === "test" ? "测试版" : esc(verInfo.channel)}）` + (verInfo.stale ? ` — 源码已更新至 v${esc(verInfo.sourceVersion)}，重启生效` : "") + `<br>` + `源码目录：${esc(verInfo.sourceDir || "")}<br>` : "") +
+    `<b>Teyvat IM · 公网版</b>（GitHub OAuth 登录）<br>` +
     `发送键：Enter / Shift+Enter / Ctrl+Enter 三选一（发送），另外两个键换行。<br>` +
     `发送模式：打断 = 立即中断对方当前工作送达；排队 = 对方空闲时送达。<br><br>` +
-    `身份：外部 bridge agent · 通道：SocialData（registry + heartbeat）· 服务：localhost:8790</div>`;
+    `身份：${esc((ME && ME.login) || "我")} · 通道：sync 服务器（跨设备）· 端到端加密</div>` +
+    `<div class="set-row" style="margin-top:8px"><button id="btnLogout" style="width:100%;padding:8px;border:1px solid #e3e3e3;background:#fff;border-radius:6px;cursor:pointer;color:#e5484d">退出登录</button></div>`;
   // 我的收藏已改为独立入口（meFavs → view=favs）
   $("setKey").onchange = (e) => { cfg.sendKey = e.target.value; saveCfg(); };
   $("setMode").onchange = (e) => { cfg.mode = e.target.value; saveCfg(); };
@@ -675,11 +734,13 @@ function renderMe(el) {
   $("meFavs").onclick = () => { view = "favs"; syncRail(); renderList(); };
   $("setNotifyOn").onchange = (e) => { cfg.notifyOn = e.target.checked; saveCfg(); };
   $("setFocusMute").onchange = (e) => { cfg.focusMute = e.target.checked; saveCfg(); };
+  $("btnLogout").onclick = logout;
 }
 
 // ── 选中会话 ──
 async function selectConv(c, focusMsgId, keepScroll = false) {
   current = c.sid;
+  document.body.classList.add("chat-open");
   delete unread[c.sid];
   saveUnread();
   try { localStorage.setItem("teyvat-im-last", current); } catch { /* 忽略隐私模式写失败 */ }
@@ -706,12 +767,11 @@ async function selectConv(c, focusMsgId, keepScroll = false) {
 async function reloadChat(focusMsgId) {
   if (!current) return;
   try {
-    const r = await api("/messages/history?limit=1000");
-    const d = r.ok ? await r.json().catch(() => ({})) : {};
+    const hd = await ensureHistory();
     const group = isGroupPeer(current);
-    cachedMsgs = (d.messages || [])
-      .filter((m) => { const p = m.payload || {}; return group ? (p.to === current || p.from === current) : ((p.from === current && p.to === MY_SID) || (p.from === MY_SID && p.to === current)); })
-      .map((m) => msgOf(m.payload || {}))
+    cachedMsgs = hd
+      .filter((p) => group ? (p.to === current || p.from === current) : ((p.from === current && p.to === MY_SID) || (p.from === MY_SID && p.to === current)))
+      .map((p) => msgOf(p))
       .sort((a, b) => (a.ts || 0) - (b.ts || 0));
     curLastReadTs = parseInt(localStorage.getItem("teyvat-im-read-" + current) || "0", 10);
     renderChat();
@@ -808,20 +868,20 @@ async function send() {
   input.style.height = "40px";
   try { localStorage.removeItem("teyvat-im-draft-" + current); } catch { /* 忽略 */ }
   clearQuote();
-  try {
-    const group = isGroupPeer(current);
-    const targets = group ? (convs.find((x) => x.sid === current)?.members || []) : [current];
-    for (const to of targets) {
-      const ts = Date.now();
-      const payload = { id: `msg_${ts.toString(36)}_${Math.random().toString(36).slice(2, 8)}`, from: MY_SID, from_name: (ME && ME.login) || "我", to, mode: cfg.mode, mode_used: cfg.mode, text, ts, injected: false };
-      await api("/messages/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ toPerson: to, type: "agent-social", payload }) });
-    }
-    const now = Date.now();
-    cachedMsgs.push(msgOf({ id: `msg_${now.toString(36)}_${Math.random().toString(36).slice(2, 8)}`, from: MY_SID, from_name: (ME && ME.login) || "我", to: current, text, ts: now }));
-    const b = $("chatBody"); b.scrollTop = b.scrollHeight;
-    renderChat();
-    loadConvs();
-  } catch (e) { console.error("send", e); }
+  const name = (ME && ME.login) || "我";
+  // 乐观渲染：先本地立即上屏（消除“卡一秒”），再后台发送
+  const now = Date.now();
+  cachedMsgs.push(msgOf({ id: `msg_${now.toString(36)}_${Math.random().toString(36).slice(2, 8)}`, from: MY_SID, from_name: name, to: current, text, ts: now }));
+  const b = $("chatBody"); b.scrollTop = b.scrollHeight;
+  renderChat();
+  const group = isGroupPeer(current);
+  const targets = group ? (convs.find((x) => x.sid === current)?.members || []) : [current];
+  for (const to of targets) {
+    const ts = Date.now();
+    const payload = { id: `msg_${ts.toString(36)}_${Math.random().toString(36).slice(2, 8)}`, from: MY_SID, from_name: name, to, mode: cfg.mode, mode_used: cfg.mode, text, ts, injected: false };
+    try { await api("/messages/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ toPerson: to, type: "agent-social", payload }) }); } catch (e) { console.error("send-fail", e); }
+  }
+  loadConvs();
 }
 
 // ── 收消息（轮询 pending，替代 SSE）──
@@ -837,6 +897,7 @@ async function pullPending() {
       const p = m.payload;
       if (!p.id || seenIds.has(p.id)) continue;
       seenIds.add(p.id);
+      if (historyAll) historyAll.push(p);
       const msg = msgOf(p);
       const grp = isGroupPeer(msg.to) || isGroupPeer(msg.from);
       const belongs = current && (grp ? (msg.to === current || msg.from === current) : (msg.out ? msg.to === current : msg.from === current));
@@ -889,7 +950,7 @@ const RAIL_TABS = [["railChats", "chats"], ["railContacts", "contacts"], ["railD
 // 子视图归属父 tab（groups/archived/newfriends/createGroup → 通讯录）：高亮不丢
 const VIEW_TAB = { chats: "railChats", contacts: "railContacts", groups: "railContacts", archived: "railContacts", newfriends: "railContacts", createGroup: "railContacts", favs: "railMeTab", discover: "railDiscover", me: "railMeTab" };
 function syncRail() { const active = VIEW_TAB[view] || "railChats"; for (const [id] of RAIL_TABS) { const b = $(id); if (b) b.classList.toggle("active", id === active); } }
-for (const [id, v] of RAIL_TABS) { const b = $(id); if (b) b.onclick = () => { view = v; syncRail(); renderList(); }; }
+for (const [id, v] of RAIL_TABS) { const b = $(id); if (b) b.onclick = () => { view = (view === v) ? "chats" : v; syncRail(); renderList(); }; }
 // 左下角头像（初始字母）→ 进「我」页（可看版本信息）
 $("railMeAvatar").onclick = () => { view = "me"; syncRail(); renderList(); };
 
@@ -1122,7 +1183,8 @@ function showConvMenu(e, c) {
     `<div class="mi" data-act="${pinned ? "unpin" : "pin"}">${pinned ? "取消置顶" : "置顶聊天"}</div>` +
     (isUnread
       ? `<div class="mi" data-act="read">标为已读</div>`
-      : `<div class="mi" data-act="unread">标为未读</div>`);
+      : `<div class="mi" data-act="unread">标为未读</div>`) +
+    (!c.isGroup ? `<div class="mi" data-act="archive">${c.archived ? "取消归档" : "归档联系人"}</div>` : "");
   menu.style.display = "";
   menu.style.left = Math.min(e.clientX, window.innerWidth - 140) + "px";
   menu.style.top = Math.min(e.clientY, window.innerHeight - 140) + "px";
@@ -1144,6 +1206,10 @@ function handleConvAct(act) {
     saveUnread();
     try { localStorage.setItem("teyvat-im-read-" + c.sid, String(Date.now())); } catch { /* 忽略 */ }
     renderList(); toast("已标为已读"); return;
+  }
+  if (act === "archive") {
+    if (c.archived) archSet.delete(c.sid); else archSet.add(c.sid);
+    saveArch(); renderList(); toast(c.archived ? "已取消归档" : "已归档"); return;
   }
 }
 
@@ -1232,6 +1298,7 @@ loadConvs();
 // ── 登录接线 + 初始化 ──
 $("sidever").innerHTML = "Teyvat IM · <b>公网版</b>";
 $("btnLogin").onclick = ghLogin;
+$("chatBack").onclick = () => { document.body.classList.remove("chat-open"); };
 $("showToken").onclick = (e) => { e.preventDefault(); for (const id of ["orDiv", "tokenRow", "tokenHint"]) $(id).style.display = ""; $("showToken").parentElement.style.display = "none"; };
 $("btnToken").onclick = async () => {
   const t = $("tokenInput").value.trim();
@@ -1249,7 +1316,7 @@ $("btnToken").onclick = async () => {
 (async () => {
   if (await handleOAuthCallback()) return;
   if (!TOKEN) { $("loginView").style.display = "flex"; return; }
-  ME = { login: localStorage.getItem("paimon-im-login") || "已登录" };
+  ME = { login: localStorage.getItem("paimon-im-login") || "我" };
   enterMain();
   try { const r = await api("/sync/agent-presence"); if (r.status === 401) logout(); } catch { /* 网络抖动不登出 */ }
 })();
