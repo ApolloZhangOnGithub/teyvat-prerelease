@@ -888,7 +888,7 @@ export default function registerMemory(pi: ExtensionAPI) {
         // 剔除 assistant 自身产生的内容（think / text / toolCall）——不参与 hash 基准
         if (o.role === "assistant") continue;
         out.push(line);
-      } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); out.push(line); }
+      } catch { /* 坏行（截断/历史格式）：原样计入 hash（只需稳定），不刷日志——每次 check/apply 都会全文跑一遍 */ out.push(line); }
     }
     return out.join("\n");
   }
@@ -947,7 +947,12 @@ export default function registerMemory(pi: ExtensionAPI) {
     }
     if (/^\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(s)) {
       // 2026-08-20 加固：用匹配前缀构造（s 可能带多余后缀如 ':00'，new Date 用整个 s 会 Invalid Date 返回 0）
-      const d = new Date(`${new Date().getFullYear()}-${s.slice(0, 14)}`);
+      // 2026-09-13（M6）：本地格式没有年份——先按当年解析，若落到"明天之后"则按去年
+      //（否则跨年后 12 月的记录/区间全被算成明年，anchor_ts / ts_from~ts_to 全部失配）
+      const y = new Date().getFullYear();
+      let d = new Date(`${y}-${s.slice(0, 14)}`);
+      if (isNaN(d.getTime())) return 0;
+      if (d.getTime() > Date.now() + 86400e3) d = new Date(`${y - 1}-${s.slice(0, 14)}`);
       return isNaN(d.getTime()) ? 0 : d.getTime();
     }
     const d = new Date(s);
@@ -963,7 +968,7 @@ export default function registerMemory(pi: ExtensionAPI) {
         for (const k of ["ts_start", "ts_end", "ts"]) {
           const v = o[k]; if (typeof v === "number" && v > 1e12) { if (!lo || v < lo) lo = v; if (!hi || v > hi) hi = v; }
         }
-      } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
+      } catch { /* 坏行：无时间戳可取，跳过不刷日志 */ }
     }
     return { earliest: lo ? _fmtLocalTs(lo) : null, latest: hi ? _fmtLocalTs(hi) : null };
   }
@@ -976,13 +981,14 @@ export default function registerMemory(pi: ExtensionAPI) {
   // 这是 TTT 提的"salt 切割"的等价实现：以 JSONL 结构作天然边界（toolCall→toolResult 即工具区），
   // 比维护"哪些来源要排除"名单更通用——所有工具的调用区都不参与内容锚点匹配。
   function _ctxRowIndex(ctxContent: string) {
-    const rows: { start: number; end: number; label: string; ts: string; isToolZone: boolean }[] = [];
+    const rows: { start: number; end: number; label: string; ts: string; tsMs: number; isToolZone: boolean }[] = [];
     let pos = 0;
     for (const line of ctxContent.split("\n")) {
       const start = pos;
       const end = start + line.length;
       let label = "nonJson";
       let ts = "";
+      let tsMs = 0; // 2026-09-13（M6）：保留原始毫秒（含年份）——时间范围比较直接用它，不再从无年份的字符串反推
       let isToolZone = false;
       const t = line.trim();
       if (t.startsWith("{")) {
@@ -994,39 +1000,57 @@ export default function registerMemory(pi: ExtensionAPI) {
           const rawTs = o.ts_start || o.ts || "";
           if (rawTs) {
             const d = new Date(rawTs);
-            if (!isNaN(d.getTime())) ts = _fmtLocalTs(d.getTime());
+            if (!isNaN(d.getTime())) { tsMs = d.getTime(); ts = _fmtLocalTs(tsMs); }
           }
           // 工具区：toolCall（任何工具的调用参数）+ toolResult（工具输出）
           if (type === "toolCall" || role === "toolResult") isToolZone = true;
-        } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
-      } else if (/^\[amem |^\[memory op:|^\[Napped\./.test(t)) {
-        // 压缩 marker / amem 归档标记 / 记忆操作记录 = 工具区产物
+        } catch { /* 坏行：按 nonJson 处理，不刷日志（每次 check/apply/fetch 都会全文跑一遍） */ }
+      } else if (/^\[amem |^\[memory op:|^\[Napped\.|^（记忆交换: |^\(memory swap: /.test(t)) {
+        // 压缩 marker / amem 归档块头 / 记忆操作记录 / 交换元数据行 = 工具区产物（块内的 summary/revision 是记忆本体，仍可被锚点命中）
         isToolZone = true;
       }
-      rows.push({ start, end, label, ts, isToolZone });
+      rows.push({ start, end, label, ts, tsMs, isToolZone });
       pos = end + 1; // +1 换行符
     }
     return rows;
   }
+  type CtxRow = ReturnType<typeof _ctxRowIndex>[number];
+  // 二分找 pos 所在行（行区间 [start, end]，end 处是换行符本身，归属该行；行首尾相接，任意 pos 恰落一行）
+  function _rowAt(rows: CtxRow[], pos: number): CtxRow | undefined {
+    let lo = 0, hi = rows.length - 1;
+    while (lo <= hi) { const mid = (lo + hi) >> 1; const r = rows[mid]; if (pos < r.start) hi = mid - 1; else if (pos > r.end) lo = mid + 1; else return r; }
+    return undefined;
+  }
+  // 把 [bi, ei) 对齐到整行：begin → 所在行行首，end → (ei-1) 所在行行尾（不含换行符）
+  function _snapToRows(rows: CtxRow[], bi: number, ei: number): { begin: number; end: number } {
+    const rb = _rowAt(rows, bi), re = _rowAt(rows, Math.max(bi, ei - 1));
+    return { begin: rb ? rb.start : bi, end: re ? re.end : ei };
+  }
 
   // 锚点搜索：排除工具区（isToolZone 行）内的命中——根治自污染。
   // 返回每个匹配附带所属记录类型 + 时间戳（排除后 think/text 双份问题也大幅缓解）。
+  // 2026-09-13（H1）：命中范围对齐到整条 JSONL 记录——begin 扩到所在行行首、end 扩到所在行行尾。
+  // 之前按字符偏移原样切：[amem …] 块被插进某行 "text":"…" 字符串中间（实测 9760c70f 10 处、4d3c397c 5 处），
+  // 那一行从此不是 JSON——失去 type/ts 标签、工具区排除失效、快照不压缩、每次解析刷错。ts/index 定位本来就是整行，这里对齐。
   function _anchorSearch(text: string, b: string, e: string) {
     const rows = _ctxRowIndex(text);
     const r: { begin_index: number; end_index: number; length: number; type?: string; ts?: string }[] = [];
+    const seen = new Set<string>();
     let from = 0;
     while (from < text.length && r.length < 200) {
       const bi = text.indexOf(b, from); if (bi < 0) break;
       const ei = text.indexOf(e, bi + b.length); if (ei < 0) break;
       const end = ei + e.length;
-      // 命中起点属于哪条记录（按行区间）；若在工具区内则跳过继续搜
-      let hit: { label: string; ts: string; isToolZone: boolean; start: number; end: number } | undefined;
-      for (const row of rows) {
-        if (row.start <= bi && bi < row.end) { hit = row; break; }
+      // 命中起点属于哪条记录；若在工具区内则跳到下一行继续搜
+      const hit = _rowAt(rows, bi);
+      if (hit?.isToolZone) { from = hit.end + 1; continue; }
+      const snapped = _snapToRows(rows, bi, end);
+      const sig = `${snapped.begin}:${snapped.end}`;
+      if (!seen.has(sig)) {
+        seen.add(sig);
+        r.push({ begin_index: snapped.begin, end_index: snapped.end, length: snapped.end - snapped.begin, type: hit?.label, ts: hit?.ts });
       }
-      if (hit?.isToolZone) { from = hit.end; continue; }
-      r.push({ begin_index: bi, end_index: end, length: end - bi, type: hit?.label, ts: hit?.ts });
-      from = end;
+      from = Math.max(end, snapped.end);
     }
     return r;
   }
@@ -1055,7 +1079,13 @@ export default function registerMemory(pi: ExtensionAPI) {
   function _ctxStats(ctxContent: string): string {
     const ctxTok = estimateTokens(ctxContent);
     const ft = (n: number) => n < 1000 ? n + "" : n < 1e6 ? (n / 1000).toFixed(1) + "k" : (n / 1e6).toFixed(1) + "M";
-    return `context ${ft(ctxTok)} tokens / ${ft(modelMax)}`;
+    const pct = (n: number) => modelMax > 0 ? Math.round((n / modelMax) * 100) : 0;
+    // 2026-09-13（ISSUE 203/204 口径标注）：两个数语义不同，分别标清——
+    //   est = context.md 文件体量（amem 直接改的对象，归档后立刻下降）
+    //   api = 上一轮 API 真实 prompt（活对话窗口，含已注入的旧快照，amem 后不会立刻降——见 ISSUE 204）
+    // 之前只显示 est 却叫 "context"，和 footer 的 api 值对不上，看起来像数字乱跳。
+    const api = _pondSess.prevPrompt;
+    return `context.md est ${ft(ctxTok)} tok (${pct(ctxTok)}% of ${ft(modelMax)})` + (api ? ` · api window ${ft(api)} tok (${pct(api)}%, last turn)` : "");
   }
 
   // context 概览：JSONL 条目类型分布 + 可编辑范围提示（fetch 无 id 时附上，解决"盲人摸象"）
@@ -1096,7 +1126,7 @@ export default function registerMemory(pi: ExtensionAPI) {
           ageBuckets[bidx].count++;
           ageBuckets[bidx].chars += c;
         } else noTs++;
-      } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); nonJson++; }
+      } catch { /* 坏行按 nonJson 计，不刷日志 */ nonJson++; }
     }
     const parts = Object.entries(counts)
       .filter(([k]) => !k.startsWith("assistant.")) // 细分行单独列
@@ -1131,7 +1161,7 @@ export default function registerMemory(pi: ExtensionAPI) {
         const rawTxt = o.text ?? o.content ?? o.think ?? o.tool ?? "";
         const c = typeof rawTxt === "string" ? rawTxt.length : JSON.stringify(rawTxt).length;
         stats[k].chars += c;
-      } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
+      } catch { /* 坏行：跳过不刷日志 */ }
     }
     return Object.entries(stats).sort((a, b) => b[1].chars - a[1].chars).map(([type, v]) => ({ type, count: v.count, chars: v.chars }));
   }
@@ -1157,6 +1187,29 @@ export default function registerMemory(pi: ExtensionAPI) {
     return estimateTokens(tail) < RECENT_PROTECT_TOKENS;
   }
 
+  // JSONL 行分类（archive 的 types 匹配用；名字与 fetch 概览一致）：
+  //   toolResult（工具结果，实际行是 {role:"toolResult",type:"text"}）/ toolCall / user / think / text（仅 assistant 可见输出）/ bad_frame / 其他按 role
+  // 2026-09-13（H2）：之前 `tSet.has(o.role) || tSet.has(o.type)` 让 "text" 同时命中 user 消息与 toolResult 行——语义混淆，也是守卫绕过面。
+  function _rowKind(o: any): string {
+    if (!o) return "?";
+    if (o.type === "bad_frame") return "bad_frame";
+    if (o.role === "toolResult" || o.role === "tool") return "toolResult";
+    if (o.type === "toolCall") return "toolCall";
+    if (o.role === "user") return "user";
+    if (o.role === "assistant") return o.type || "assistant";
+    return o.role || o.type || "?";
+  }
+  const _normType = (t: string) => String(t).replace(/^(a|assistant)\./, "");
+  // 归档索引重算（口径统一：total_excised_chars 只算未 revert 的条目——之前新增时算全部、revert 时只算未 revert，两边打架）
+  function _recalcIdx(idx: any): void {
+    if (!Array.isArray(idx.entries)) idx.entries = [];
+    idx.total_entries = idx.entries.length;
+    idx.total_excised_chars = idx.entries.filter((e: any) => !e.reverted).reduce((s: number, e: any) => s + (e.excised_length || 0), 0);
+  }
+  // 软错误（定位失败/保护区/多匹配等）：isError:true → 红点与红字统一走 result.isError
+  //（此前 renderResult 靠自己的正则判红，把 fetch/review 的正常输出也染红了）
+  const _soft = (text: string, details: any = {}) => ({ content: [{ type: "text" as const, text }], details, isError: true });
+
   registerPaimonTool({
     name: "amem",
     label: "Active Memory",
@@ -1174,7 +1227,8 @@ export default function registerMemory(pi: ExtensionAPI) {
       "  - fetch (from='2026-08-01', to='2026-08-15', limit=10) → filter index by date range / cap size\n" +
       "  - fetch (q='word') → search archived content (title/summary/excised) — the retrieval layer\n" +
       "  - fetch (review=3[, q='topic']) → randomly recall N archives — the reminiscence layer\n" +
-      "  - Recent 100K tokens are protected from editing.",
+      "  - Text anchors snap to whole JSONL rows (begin→row start, end→row end); the recent tail (10% of the window, min 20K; 100K on 1M) is protected from editing.\n" +
+      "  - apply reuses the range locked by check (no re-search); types must match the check.",
     promptSnippet: "amem: manage/archive(sweep)/fetch/revert with hash-lock, recent-zone protection, ts-range bulk archive",
     renderCall(args: any, theme: any) {
       const a = args?.action || "";
@@ -1187,7 +1241,9 @@ export default function registerMemory(pi: ExtensionAPI) {
     },
     renderResult(result: any, _options: any, theme: any, ctx: any) {
       const raw = resultContent(result)?.[0]?.text || "";
-      const isErr = ctx?.isError || /^(?:ERR:|amem\s+\w+:\s)/.test(raw);
+      // 2026-09-13（L1）：之前 /amem\s+\w+:\s/ 把 "amem fetch: N entries"、"amem review:"、"amem mark_enter:" 的正常输出也判成错误（整段红字），
+      // 与 isToolError 的红点判定（只认 ERR:）不一致（绿点+红字）。软错误现在统一带 isError:true，这里只看 isError / ERR: 前缀。
+      const isErr = !!(ctx?.isError || result?.isError) || /^ERR:/.test(raw);
       if (!raw || isErr) {
         const cleaned = raw.replace(/^amem\s+\w+:\s*/, "");
         return renderMessage.summary(theme, { ...ctx, isError: true }, cleaned);
@@ -1324,7 +1380,7 @@ export default function registerMemory(pi: ExtensionAPI) {
           // 加权挑选：manage/revert（含人工决策的替换/还原）权重更高——回放"有决策"的记忆比"批量清理"更有价值
           const weighted = pool.map((e: any) => {
             let d: any = null; try { d = JSON.parse(readFile(path.join(manageDir, `${e.id}.json`))); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
-            const action = d?.action || "";
+            const action = d?.action || "manage"; // 历史 manage 归档没写 action 字段（2026-09-13 起写入）——缺省即 manage，否则权重/●◐ 标记都错
             const w = action === "manage" || action === "revert" ? 3 : 1;
             return { e, d, action, w };
           });
@@ -1350,15 +1406,15 @@ export default function registerMemory(pi: ExtensionAPI) {
         }
         if (params.id) {
           const e = entries.find((x: any) => x.id === params.id);
-          if (!e) return { content: [{ type: "text", text: `amem fetch: ${params.id} not found.` }], details: {} };
+          if (!e) return { content: [{ type: "text", text: `amem fetch: ${params.id} not found.` }], details: {}, isError: true };
           let d: any = null; { const _mf = _amemManageFile(String(params.id)); try { d = _mf ? JSON.parse(readFile(_mf)) : null; } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); } }
-          if (!d) return { content: [{ type: "text", text: `amem fetch: file not readable.` }], details: {} };
+          if (!d) return { content: [{ type: "text", text: `amem fetch: file not readable.` }], details: {}, isError: true };
           const ts = d.time_span || {};
           const tsE = ts.earliest || (ts.latest ? null : d.timestamp);
           const tsL = ts.latest || d.timestamp;
           return { content: [{ type: "text", text:
             `amem fetch ${params.id}:\ntitle: ${JSON.stringify(d.title)}\nsummary: ${JSON.stringify(d.summary)}\n` +
-            `excised: ${d.excised?.length || 0}c | revision: ${d.revision?.length || 0}c\n` +
+            `excised: ${d.excised?.length || 0}c (~${typeof d.excised_tokens === "number" ? d.excised_tokens : estimateTokens(String(d.excised || ""))} tok) | ${d.action && d.action !== "manage" ? `modified: ${d.modified?.length || 0}c` : `revision: ${d.revision?.length || 0}c`}\n` +
             `time_span: ${_normTs(tsE)} ~ ${_normTs(tsL)}\nreverted: ${!!d.reverted}` }], details: { entry: d } };
         }
         if (entries.length === 0) {
@@ -1387,8 +1443,14 @@ export default function registerMemory(pi: ExtensionAPI) {
           `${shown.length < list.length ? `, showing latest ${shown.length}` : ""}, ${idx.total_excised_chars || 0}c total excised.\n`;
         for (let i = 0; i < shown.length; i++) {
           const e = shown[i], ts = e.time_span || {}, rv = e.reverted ? " [REVERTED]" : "";
-          // token 占比：excised 内容估算 token 相对当前 context 的占比（粗算，实际管理用真实 estimateTokens）
-          const estTok = Math.round((e.excised_length || 0) * 0.6);
+          // token：优先用归档时算好的 excised_tokens；历史条目没有 → 读归档文件按 estimateTokens 现算。
+          // 2026-09-13：之前 excised_length×0.6 一刀切——中文按 1.8 tok/字 少算 3 倍、英文按 1/4 多算 2.4 倍，"数字乱跳"的来源之一
+          let estTok: number = typeof e.excised_tokens === "number" ? e.excised_tokens : -1;
+          if (estTok < 0) {
+            const _mf = _amemManageFile(String(e.id)); let d: any = null;
+            try { d = _mf ? JSON.parse(readFile(_mf)) : null; } catch { /* 坏归档文件：按 0 计 */ }
+            estTok = d?.excised ? estimateTokens(String(d.excised)) : 0;
+          }
           const pct = totalTok > 0 ? Math.min(99, Math.round((estTok / totalTok) * 100)) : 0;
           const tsE = ts.earliest || (ts.latest ? null : e.timestamp);
           const tsL = ts.latest || e.timestamp;
@@ -1410,15 +1472,17 @@ export default function registerMemory(pi: ExtensionAPI) {
         const ctx = readFile(contextPath);
         if (!ctx) return { content: [{ type: "text", text: "ERR: context.md empty." }], details: {}, isError: true };
         let m: { begin_index: number; end_index: number; length: number; type?: string; ts?: string };
+        if (!params.hash_key) {
+        // ── check：定位（四种任一）→ 保护区 → 发 hash_key（match 随 key 锁定，apply 复用）──
         if (hasTsAnchor) {
           // 按记录时间戳定位：_ctxRowIndex 的 ts 为 MM-DDTHH:MM:SS，支持前缀/包含匹配（如 '08-15T02:14'）
           const rows = _ctxRowIndex(ctx);
           const tq = params.anchor_ts;
           const hits = rows.filter((r) => r.ts && (r.ts.includes(tq) || tq.includes(r.ts)));
-          if (hits.length === 0) return { content: [{ type: "text", text: i18n(`amem manage: 0 matches for anchor_ts="${tq}". ${_ctxStats(ctx)}\n提示: 从 fetch 概览或 check 输出的 ts 字段复制精确时间戳（如 08-15T02:14:55）。`, `amem manage: 0 matches for anchor_ts="${tq}". ${_ctxStats(ctx)}\nTip: copy an exact timestamp from the fetch overview or the ts field of check output (e.g. 08-15T02:14:55).`) }], details: {} };
+          if (hits.length === 0) return { content: [{ type: "text", text: i18n(`amem manage: 0 matches for anchor_ts="${tq}". ${_ctxStats(ctx)}\n提示: 从 fetch 概览或 check 输出的 ts 字段复制精确时间戳（如 08-15T02:14:55）。`, `amem manage: 0 matches for anchor_ts="${tq}". ${_ctxStats(ctx)}\nTip: copy an exact timestamp from the fetch overview or the ts field of check output (e.g. 08-15T02:14:55).`) }], details: {}, isError: true };
           if (hits.length > 1) {
             const list = hits.map((h) => `  ts=${h.ts} [${h.start}..${h.end}] type=${h.label}`).join("\n");
-            return { content: [{ type: "text", text: i18n(`amem manage: ${hits.length} records match anchor_ts="${tq}". 用更精确的时间戳重试。\n${list}`, `amem manage: ${hits.length} records match anchor_ts="${tq}". Retry with a more precise timestamp.\n${list}`) }], details: {} };
+            return { content: [{ type: "text", text: i18n(`amem manage: ${hits.length} records match anchor_ts="${tq}". 用更精确的时间戳重试。\n${list}`, `amem manage: ${hits.length} records match anchor_ts="${tq}". Retry with a more precise timestamp.\n${list}`) }], details: {}, isError: true };
           }
           m = { begin_index: hits[0].start, end_index: hits[0].end, length: hits[0].end - hits[0].start, type: hits[0].label, ts: hits[0].ts };
         } else if (hasTsRange) {
@@ -1431,7 +1495,7 @@ export default function registerMemory(pi: ExtensionAPI) {
             if (!r.ts) return false;
             // 时间比较语义（非字符串包含）：ts 落在 [from, to] 区间内。
             // 前缀补全：'08-15T02:00' → '08-15T02:00:00'；from 取区间起点，to 取区间终点。
-            const ms = _tsToMs(r.ts);
+            const ms = r.tsMs; // 2026-09-13（M6）：用行自带的原始毫秒（含年份），不再从无年份字符串反推
             if (!ms) return false;
             if (fq) {
               // 2026-08-20 修复：补全目标应是 14 字符 MM-DDTHH:MM:SS（原 19 会把已含秒的 '08-20T10:18:00' 补成 '08-20T10:18:00:00' → new Date Invalid → 0 条）
@@ -1444,59 +1508,58 @@ export default function registerMemory(pi: ExtensionAPI) {
             }
             return true;
           });
-          if (inRange.length === 0) return { content: [{ type: "text", text: i18n(`amem manage: 0 records in time range "${fq} ~ ${tq}". ${_ctxStats(ctx)}\n提示: 时间范围按本地时间前缀匹配（如 ts_from='08-15T14:00' ts_to='08-15T15:00'）。从 fetch 概览的 ts 字段确认范围（本地时间）。`, `amem manage: 0 records in time range "${fq} ~ ${tq}". ${_ctxStats(ctx)}\nTip: time range matches by local-time prefix (e.g. ts_from='08-15T14:00' ts_to='08-15T15:00'). Confirm the range from the ts fields in the fetch overview (local time).`) }], details: {} };
+          if (inRange.length === 0) return { content: [{ type: "text", text: i18n(`amem manage: 0 records in time range "${fq} ~ ${tq}". ${_ctxStats(ctx)}\n提示: 时间范围按本地时间前缀匹配（如 ts_from='08-15T14:00' ts_to='08-15T15:00'）。从 fetch 概览的 ts 字段确认范围（本地时间）。`, `amem manage: 0 records in time range "${fq} ~ ${tq}". ${_ctxStats(ctx)}\nTip: time range matches by local-time prefix (e.g. ts_from='08-15T14:00' ts_to='08-15T15:00'). Confirm the range from the ts fields in the fetch overview (local time).`) }], details: {}, isError: true };
           const first = inRange[0], last = inRange[inRange.length - 1];
           const begin = first.start, end = last.end;
-          m = { begin_index: begin, end_index: end, length: end - begin, type: `${inRange.length} records` };
-          // 时间范围定位的 check 提示（archive 主要场景）
-          if (!params.hash_key) {
-            const key = _amemCreateKey(ctx, { action: "manage", match: m });
-            return { content: [{ type: "text", text:
-              `amem manage check: ${inRange.length} records in time range "${fq} ~ ${tq}". hash_key=${key}\n` +
-              `matched: begin_index=${begin}, end_index=${end}, length=${end - begin} (${inRange.length} rows)\n` +
-              `${_ctxStats(ctx)}\nProvide hash_key + revision + title(≥10c) + summary(≥50c) to apply.` }],
-              details: { hash_key: key, match: m } };
-          }
+          // 2026-09-13（M4）：不再在这里提前 return——之前绕过了下方的保护区判定（check 发了 key，apply 才被保护区拒）
+          m = { begin_index: begin, end_index: end, length: end - begin, type: `${inRange.length} records in "${fq} ~ ${tq}"`, ts: first.ts };
         } else if (hasPosAnchor) {
           // 直接位置定位：check 返回的 begin_index/end_index（hash-lock 保证 apply 时 context 未变，位置有效）
           const bi = params.anchor_begin_index, ei = params.anchor_end_index;
           if (bi < 0 || ei > ctx.length || bi >= ei) return { content: [{ type: "text", text: i18n(`ERR: 非法位置 [${bi}..${ei}]，context 长度=${ctx.length}。`, `ERR: invalid position [${bi}..${ei}], context length=${ctx.length}.`) }], details: {}, isError: true };
           const rows = _ctxRowIndex(ctx);
-          let hit: any = undefined;
-          for (const row of rows) { if (row.start <= bi && bi < row.end) { hit = row; break; } }
-          m = { begin_index: bi, end_index: ei, length: ei - bi, type: hit?.label, ts: hit?.ts };
+          const sn = _snapToRows(rows, bi, ei); // 对齐整行（agent 传来的任意位置也不会切坏 JSONL）
+          const hit = _rowAt(rows, sn.begin);
+          m = { begin_index: sn.begin, end_index: sn.end, length: sn.end - sn.begin, type: hit?.label, ts: hit?.ts };
         } else {
           const matches = _anchorSearch(ctx, params.anchor_begin, params.anchor_end);
-          if (matches.length === 0) return { content: [{ type: "text", text: i18n(`amem manage: 0 matches. ${_ctxStats(ctx)}\nSystem sections not searchable.\n提示: 锚点不在可搜索区。常见原因: ①文本在 system section（DNA/CHRs 声明区）②锚点过长/含换行 ③文本已被 amem 替换压缩。建议: 用 10-20 字符的短锚点（避免换行），或先 amem(fetch) 查看 context 概览后取精确文本，或用 anchor_ts 按时间戳定位。`, `amem manage: 0 matches. ${_ctxStats(ctx)}\nSystem sections not searchable.\nTip: the anchor is not in a searchable area. Common causes: ①text is in a system section (DNA/CHRs declaration area) ②anchor too long / contains newlines ③text already replaced/compressed by amem. Suggestion: use a short 10-20 char anchor (no newlines), or amem(fetch) to view the context overview and take exact text, or locate by timestamp with anchor_ts.`) }], details: {} };
-          if (matches.length > 1) return { content: [{ type: "text", text: _multiMatch("amem manage", matches, ctx.length) + i18n(`\n提示: 锚定不唯一。推荐: 用 anchor_ts 按记录时间戳定位（免疫双份/自污染），或用 check 输出的 anchor_begin_index/anchor_end_index 直接操作。`, `\nTip: the anchor is not unique. Recommended: locate by record timestamp with anchor_ts (immune to duplication/self-pollution), or use the anchor_begin_index/anchor_end_index from check output directly.`) }], details: {} };
+          if (matches.length === 0) return { content: [{ type: "text", text: i18n(`amem manage: 0 matches. ${_ctxStats(ctx)}\nSystem sections not searchable.\n提示: 锚点不在可搜索区。常见原因: ①文本在 system section（DNA/CHRs 声明区）②锚点过长/含换行 ③文本已被 amem 替换压缩。建议: 用 10-20 字符的短锚点（避免换行），或先 amem(fetch) 查看 context 概览后取精确文本，或用 anchor_ts 按时间戳定位。`, `amem manage: 0 matches. ${_ctxStats(ctx)}\nSystem sections not searchable.\nTip: the anchor is not in a searchable area. Common causes: ①text is in a system section (DNA/CHRs declaration area) ②anchor too long / contains newlines ③text already replaced/compressed by amem. Suggestion: use a short 10-20 char anchor (no newlines), or amem(fetch) to view the context overview and take exact text, or locate by timestamp with anchor_ts.`) }], details: {}, isError: true };
+          if (matches.length > 1) return { content: [{ type: "text", text: _multiMatch("amem manage", matches, ctx.length) + i18n(`\n提示: 锚定不唯一。推荐: 用 anchor_ts 按记录时间戳定位（免疫双份/自污染），或用 check 输出的 anchor_begin_index/anchor_end_index 直接操作。`, `\nTip: the anchor is not unique. Recommended: locate by record timestamp with anchor_ts (immune to duplication/self-pollution), or use the anchor_begin_index/anchor_end_index from check output directly.`) }], details: {}, isError: true };
           m = matches[0];
         }
 
         // 最近保护区
         if (_inRecentZone(ctx, m.end_index)) {
-          return { content: [{ type: "text", text: `amem manage: match falls in recent ${RECENT_PROTECT_TOKENS/1000}K token protection zone (tail). Only older content can be edited.\n${_ctxStats(ctx)}` }], details: {} };
+          return _soft(`amem manage: match falls in recent ${RECENT_PROTECT_TOKENS/1000}K token protection zone (tail). Only older content can be edited.\n${_ctxStats(ctx)}`);
         }
 
-        // check (no hash_key)
-        if (!params.hash_key) {
+        // check → 发 hash_key（match 随 key 锁定，apply 复用）
+        {
           const key = _amemCreateKey(ctx, { action: "manage", match: m });
           const typeInfo = m.type ? `, type=${m.type}` : "";
           const tsInfo = m.ts ? `, ts=${m.ts}` : "";
           return { content: [{ type: "text", text:
             `amem manage check: 1 match. hash_key=${key}\n` +
             `matched: begin_index=${m.begin_index}, end_index=${m.end_index}, length=${m.length}${typeInfo}${tsInfo}\n` +
-            i18n(`提示: apply 时可用 anchor_begin_index=${m.begin_index} + anchor_end_index=${m.end_index}（直接位置，最稳）或 anchor_ts="${m.ts}"（按时间戳）。\n`,
-                 `Tip: when applying, use anchor_begin_index=${m.begin_index} + anchor_end_index=${m.end_index} (direct position, most stable) or anchor_ts="${m.ts}" (by timestamp).\n`) +
+            i18n(`提示: 范围已对齐到整条 JSONL 记录。apply 时带 hash_key + 任一定位参数即可——apply 复用本次锁定的范围，不再重新搜索。\n`,
+                 `Tip: the range is aligned to whole JSONL records. To apply, pass hash_key plus any locator — apply reuses the range locked by this check, no re-search.\n`) +
             `${_ctxStats(ctx)}\nProvide hash_key + revision + title(≥10c) + summary(≥50c) to apply.` }],
             details: { hash_key: key, match: m } };
         }
+        } // end check（!hash_key）
 
-        // apply (with hash_key)
-        const v = _amemValidateKey(params.hash_key, ctx);
-        if (!v.ok) return { content: [{ type: "text", text: `ERR: ${v.reason}` }], details: {}, isError: true };
+        // ── apply（带 hash_key）──
+        // 2026-09-13 重排（M3/M5）：①先校验参数（title/summary/revision）②再核 hash_key（一次性——参数错不白白消费）
+        // ③复用 check 锁定的 match，不再重新搜锚点（check→apply 之间 assistant 若在 text 里复述了锚点文字，重搜会变 2 matches；
+        //   archive 早在 ISSUE 098 就改成复用锁定范围，manage 一直漏了）
         if (params.revision === undefined || params.revision === null) return { content: [{ type: "text", text: "ERR: revision required." }], details: {}, isError: true };
         if (!params.title || params.title.length < 10) return { content: [{ type: "text", text: `ERR: title ≥10c required (got ${params.title?.length || 0}).` }], details: {}, isError: true };
         if (!params.summary || params.summary.length < 50) return { content: [{ type: "text", text: `ERR: summary ≥50c required (got ${params.summary?.length || 0}).` }], details: {}, isError: true };
+        const v = _amemValidateKey(params.hash_key, ctx);
+        if (!v.ok) return { content: [{ type: "text", text: `ERR: ${v.reason}` }], details: {}, isError: true };
+        if (v.data?.action !== "manage" || !v.data.match) return { content: [{ type: "text", text: "ERR: hash_key was issued for a different action — re-check with action=manage." }], details: {}, isError: true };
+        m = v.data.match;
+        if (m.begin_index < 0 || m.end_index > ctx.length || m.begin_index >= m.end_index) return { content: [{ type: "text", text: "ERR: locked range no longer valid — re-check." }], details: {}, isError: true };
 
         const excised = ctx.slice(m.begin_index, m.end_index);
         const ts = _timeSpan(excised);
@@ -1505,18 +1568,22 @@ export default function registerMemory(pi: ExtensionAPI) {
 
         const blockBase = `[amem ${amId} | ${params.title}]\n${params.summary}\n${params.revision}`;
         // 交换总结块：标题+摘要+revision+自解释的替换前后元数据（用户设计："除了数字本身，前面也要写上是什么"）。
-        // 替换后 length 用 blockBase.length（元数据行自身未计入，context 长度本就是估算，无伤大雅）。
-        const metaLine = i18n(`\n（记忆交换: 替换前 begin_index=${m.begin_index}, end_index=${m.end_index}, length=${m.length}, context_length=${ctx.length} → 替换后 begin_index=${m.begin_index}, end_index=${m.begin_index + blockBase.length}, length=${blockBase.length}, context_length=${ctx.length - m.length + blockBase.length}；原文归档 ActiveManage/${amId}.json，amem(fetch, id=\"${amId}\") 查原文，amem(revert, id=\"${amId}\") 还原）`, `\n(memory swap: before begin_index=${m.begin_index}, end_index=${m.end_index}, length=${m.length}, context_length=${ctx.length} → after begin_index=${m.begin_index}, end_index=${m.begin_index + blockBase.length}, length=${blockBase.length}, context_length=${ctx.length - m.length + blockBase.length}; original archived at ActiveManage/${amId}.json, amem(fetch, id=\"${amId}\") to view the original, amem(revert, id=\"${amId}\") to restore)`);
-        const block = blockBase + metaLine;
+        // 2026-09-13：替换后 end_index/length/context_length 必须是【含元数据行自身】的真实值（之前写 blockBase.length，与真实值差一整行）。
+        // 元数据行长度依赖其中数字的位数 → 定点迭代（位数稳定即收敛，≤4 轮）。
+        const mkMeta = (blockLen: number) => i18n(`\n（记忆交换: 替换前 begin_index=${m.begin_index}, end_index=${m.end_index}, length=${m.length}, context_length=${ctx.length} → 替换后 begin_index=${m.begin_index}, end_index=${m.begin_index + blockLen}, length=${blockLen}, context_length=${ctx.length - m.length + blockLen}；原文归档 ActiveManage/${amId}.json，amem(fetch, id=\"${amId}\") 查原文，amem(revert, id=\"${amId}\") 还原）`, `\n(memory swap: before begin_index=${m.begin_index}, end_index=${m.end_index}, length=${m.length}, context_length=${ctx.length} → after begin_index=${m.begin_index}, end_index=${m.begin_index + blockLen}, length=${blockLen}, context_length=${ctx.length - m.length + blockLen}; original archived at ActiveManage/${amId}.json, amem(fetch, id=\"${amId}\") to view the original, amem(revert, id=\"${amId}\") to restore)`);
+        let block = blockBase + mkMeta(blockBase.length);
+        for (let i = 0; i < 4; i++) { const next = blockBase + mkMeta(block.length); const done = next.length === block.length; block = next; if (done) break; }
+        // 范围已对齐整行：块落在行首，ctx.slice(end) 以换行开头 → 块尾不会与下一条 JSONL 粘连
         const newCtx = ctx.slice(0, m.begin_index) + block + ctx.slice(m.end_index);
 
         const entry = {
-          id: amId, title: params.title, summary: params.summary,
+          id: amId, action: "manage", title: params.title, summary: params.summary,
           excised, revision: params.revision || null,
-          anchors: { begin: params.anchor_begin, end: params.anchor_end, ts: params.anchor_ts, begin_index: params.anchor_begin_index, end_index: params.anchor_end_index },
+          modified: block, // 2026-09-13（M1）：revert 用它整块定位——之前只按块头+summary+revision 搜，元数据行 revert 后孤儿残留
+          anchors: { begin: params.anchor_begin, end: params.anchor_end, ts: params.anchor_ts, ts_from: params.ts_from, ts_to: params.ts_to, begin_index: params.anchor_begin_index, end_index: params.anchor_end_index },
           before: { begin_index: m.begin_index, end_index: m.end_index, length: m.length, context_length: ctx.length },
           after: { begin_index: m.begin_index, end_index: m.begin_index + block.length, length: block.length, context_length: newCtx.length },
-          time_span: ts, timestamp: new Date().toISOString(), reverted: false,
+          time_span: ts, excised_tokens: estimateTokens(excised), timestamp: new Date().toISOString(), reverted: false,
         };
         writeFile(path.join(manageDir, `${amId}.json`), JSON.stringify(entry, null, 2));
 
@@ -1524,9 +1591,8 @@ export default function registerMemory(pi: ExtensionAPI) {
         try { idx = JSON.parse(readFile(indexPath) || "{}"); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
         if (!Array.isArray(idx.entries)) idx.entries = [];
         idx.entries.push({ id: amId, title: params.title, summary: params.summary, path: `ActiveManage/${amId}.json`,
-          excised_length: m.length, revision_length: block.length, time_span: ts, timestamp: entry.timestamp, reverted: false });
-        idx.total_entries = idx.entries.length;
-        idx.total_excised_chars = idx.entries.reduce((s: number, e: any) => s + (e.excised_length || 0), 0);
+          excised_length: m.length, excised_tokens: entry.excised_tokens, revision_length: block.length, time_span: ts, timestamp: entry.timestamp, reverted: false });
+        _recalcIdx(idx);
         idx.last_updated = entry.timestamp;
         writeFile(indexPath, JSON.stringify(idx, null, 2));
         writeFile(contextPath, newCtx);
@@ -1548,7 +1614,11 @@ export default function registerMemory(pi: ExtensionAPI) {
         // archive 免锚点允许：工具区产物（toolResult/toolCall）+ think（思考记录——2026-08-18 用户定稿：
         // 一键批量归档，必须排除尾部 100K tokens、必须可 revert；think 是过程性思维，卸载对功能性影响小，原文归档可回查）。
         // 禁止删对话记忆（user/text/assistant/bad_frame）："sweep 只能清除 tool 区之类的结果，不是用来删除自己的记忆的"——记忆交换用 manage（锚定+总结）。
-        const MEMORY_TYPES = new Set(["user", "text", "assistant", "bad_frame"]);
+        // 2026-09-13（H2）：类型名先归一化（a.think / assistant.text → think / text）再查记忆类守卫。
+        // 之前守卫查原名、匹配用归一名：`types:["a.text"]`（fetch 概览正是这么显示的）能绕过守卫，免锚点一次把 user/assistant text 全归档。
+        // user 消息的 type 可能是 "user_msg"（字符串型消息），也补进名单。
+        const normTypes: string[] = Array.from(new Set(params.types.map(_normType)));
+        const MEMORY_TYPES = new Set(["user", "user_msg", "text", "assistant", "bad_frame"]);
         // 记忆类禁止条件按模式区分（用户最初设计原话："比如模型可以选择只清除某一区间的工具调用结果或某一区间的其他或者某区间的思考或其他，这些可能也行"）：
         //  - 免锚点全量扫（exclude_tail）：只允许工具区产物——记忆类拒绝（防止误删自己的记忆）
         //  - 锚定区间（文本/ts/index 任一）：允许记忆类——用户显式指定了范围，安全语义由"原位留总结块+可 revert"保证
@@ -1557,13 +1627,89 @@ export default function registerMemory(pi: ExtensionAPI) {
         const hasTsRange = !!(params.ts_from || params.ts_to);
         const hasPosAnchor = params.anchor_begin_index != null && params.anchor_end_index != null;
         const isAnchored = hasTextAnchor || hasTsAnchor || hasTsRange || hasPosAnchor;
-        const bad = params.types.filter((t: string) => MEMORY_TYPES.has(t));
+        const bad = normTypes.filter((t) => MEMORY_TYPES.has(t));
         if (bad.length && !isAnchored) {
           return { content: [{ type: "text", text: i18n(`ERR: ${actName} 免锚点模式不能归档记忆类记录（${bad.join(", ")}）。免锚点全量扫允许：工具区产物（toolResult/toolCall）+ think（思考记录，需 exclude_tail 保护尾部）；若要归档对话记忆（user/text），请用锚定区间（anchor_begin+anchor_end 文本 / anchor_ts 时间戳 / ts_from+ts_to 时间范围 / anchor_begin_index+anchor_end_index 位置）显式指定范围——原位留总结块、可 revert。`, `ERR: ${actName} no-anchor mode cannot archive memory-class records (${bad.join(", ")}). No-anchor full sweep allows: tool-zone products (toolResult/toolCall) + think (thought records, requires exclude_tail protection); to archive conversation memory (user/text), explicitly specify an anchored range (anchor_begin+anchor_end text / anchor_ts timestamp / ts_from+ts_to time range / anchor_begin_index+anchor_end_index position) — a summary block stays in place and it is revertable.`) }], details: {}, isError: true };
         }
         const ctx = readFile(contextPath);
         if (!ctx) return { content: [{ type: "text", text: "ERR: context.md empty." }], details: {}, isError: true };
+        // 行匹配：按 _rowKind 分类（toolResult/toolCall/user/think/text/bad_frame），或整 role（"assistant" = 全部 assistant 行）。
+        // 之前 `tSet.has(o.role) || tSet.has(o.type)` 让 "text" 同时命中 user 消息和 toolResult 行（后者 type 也是 "text"）。
+        const tSet = new Set(normTypes);
+        const matchRow = (o: any) => tSet.has(_rowKind(o)) || tSet.has(String(o.role || ""));
+        const splitRange = (rs: number, re: number) => {
+          const kept: string[] = [], swept: string[] = [];
+          for (const line of ctx.slice(rs, re).split("\n")) {
+            const t = line.trim();
+            if (!t.startsWith("{")) { kept.push(line); continue; }
+            let o: any = null; try { o = JSON.parse(t); } catch { /* 坏行：保留原样，不刷日志 */ }
+            if (o && matchRow(o)) swept.push(line); else kept.push(line);
+          }
+          return { kept, swept };
+        };
 
+        if (params.hash_key) {
+          // ── apply ──（2026-09-13 重排：①参数 ②hash_key ③复用 check 锁定的 rStart/rEnd/types——不重新定位、不重跑保护区判定）
+          if (!params.title || params.title.length < 10) return { content: [{ type: "text", text: "ERR: title ≥10c required." }], details: {}, isError: true };
+          if (!params.summary || params.summary.length < 50) return { content: [{ type: "text", text: "ERR: summary ≥50c required." }], details: {}, isError: true };
+          const v = _amemValidateKey(params.hash_key, ctx);
+          if (!v.ok) return { content: [{ type: "text", text: `ERR: ${v.reason}` }], details: {}, isError: true };
+          if (v.data?.action !== "sweep" || typeof v.data.rStart !== "number" || typeof v.data.rEnd !== "number") return { content: [{ type: "text", text: `ERR: hash_key was issued for a different action — re-check with action=${actName}.` }], details: {}, isError: true };
+          const rStart: number = v.data.rStart, rEnd: number = v.data.rEnd;
+          if (rStart < 0 || rEnd > ctx.length || rStart >= rEnd) return { content: [{ type: "text", text: "ERR: locked range no longer valid — re-check." }], details: {}, isError: true };
+          // types 必须与 check 一致——否则 check 看到的条数/预览与实际归档不符
+          const lockedTypes: string[] = Array.isArray(v.data.types) ? v.data.types : [];
+          if (lockedTypes.join(",") !== normTypes.join(",")) return { content: [{ type: "text", text: `ERR: types changed since check (checked: ${lockedTypes.join(",")}; now: ${normTypes.join(",")}) — re-check.` }], details: {}, isError: true };
+          const { kept: kept2, swept: swept2 } = splitRange(rStart, rEnd);
+          const sweptText2 = swept2.join("\n");
+          if (swept2.length === 0) return _soft(`amem ${actName}: 0 entries to remove in locked range.`);
+          const rangeText2 = ctx.slice(rStart, rEnd);
+
+          const amId = `am-${Date.now()}`;
+          try { fs.mkdirSync(manageDir, { recursive: true }); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
+          const ts = _timeSpan(sweptText2);
+          const keptText = kept2.join("\n");
+          // 交换块：原位留下【总结内容】（标题+摘要+归档指引），不是一行代码 marker——
+          // 模型不 revert 也能从总结知道这段记忆讲了什么（用户设计："替换进去的东西应该直接加上这段标题和摘要"）。
+          // 附带自解释的替换前后元数据（用户设计："除了数字本身，前面也要写上是什么，否则模型不知道"）。
+          const markerBase = `[amem swap ${amId} | ${params.title}]\n${params.summary}`;
+          const mkMarker = (rangeLen: number) => markerBase + i18n(`\n（记忆交换: 替换前 begin_index=${rStart}, end_index=${rEnd}, length=${rEnd - rStart}, context_length=${ctx.length} → 替换后 begin_index=${rStart}, end_index=${rStart + rangeLen}, length=${rangeLen}, context_length=${ctx.length - (rEnd - rStart) + rangeLen}；交换出 ${swept2.length} 条 ${normTypes.join("/")} 记录 ${sweptText2.length}c → ActiveManage/${amId}.json；amem(fetch, id=\"${amId}\") 查原文，amem(revert, id=\"${amId}\") 还原）`, `\n(memory swap: before begin_index=${rStart}, end_index=${rEnd}, length=${rEnd - rStart}, context_length=${ctx.length} → after begin_index=${rStart}, end_index=${rStart + rangeLen}, length=${rangeLen}, context_length=${ctx.length - (rEnd - rStart) + rangeLen}; swapped out ${swept2.length} ${normTypes.join("/")} record(s), ${sweptText2.length}c → ActiveManage/${amId}.json; amem(fetch, id=\"${amId}\") to view the original, amem(revert, id=\"${amId}\") to restore)`);
+          // 2026-09-13：替换后范围 = 总结块 + 保留行（之前只报 markerBase.length，与真实值差一整段）→ 定点迭代；
+          // 范围首尾都已对齐整行，块后接保留行或下一条记录之间必有换行（不会粘连）
+          const build = (len: number) => { const mk = mkMarker(len); return keptText ? mk + "\n" + keptText : mk; };
+          let modifiedRange = build(0);
+          for (let i = 0; i < 4; i++) { const next = build(modifiedRange.length); const done = next.length === modifiedRange.length; modifiedRange = next; if (done) break; }
+          const newCtx = ctx.slice(0, rStart) + modifiedRange + ctx.slice(rEnd);
+
+          const entry = {
+            id: amId, action: actName, title: params.title, summary: params.summary,
+            types: normTypes, swept_count: swept2.length,
+            excised: rangeText2, modified: modifiedRange,
+            before: { range_start: rStart, range_end: rEnd, context_length: ctx.length },
+            after: { range_end: rStart + modifiedRange.length, length: modifiedRange.length, context_length: newCtx.length },
+            time_span: ts, excised_tokens: estimateTokens(sweptText2), timestamp: new Date().toISOString(), reverted: false,
+          };
+          writeFile(path.join(manageDir, `${amId}.json`), JSON.stringify(entry, null, 2));
+
+          let idx: any = { total_entries: 0, total_excised_chars: 0, entries: [] };
+          try { idx = JSON.parse(readFile(indexPath) || "{}"); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
+          if (!Array.isArray(idx.entries)) idx.entries = [];
+          idx.entries.push({ id: amId, title: params.title, summary: params.summary, path: `ActiveManage/${amId}.json`,
+            excised_length: sweptText2.length, excised_tokens: entry.excised_tokens, revision_length: modifiedRange.length, time_span: ts, timestamp: entry.timestamp, reverted: false });
+          _recalcIdx(idx);
+          idx.last_updated = entry.timestamp;
+          writeFile(indexPath, JSON.stringify(idx, null, 2));
+          writeFile(contextPath, newCtx);
+          _refreshGaugeAfterContextChange(newCtx);
+
+          return { content: [{ type: "text", text:
+            `amem ${actName} ${JSON.stringify(params.title)} → removed ${swept2.length} entries (${sweptText2.length}c, ~${entry.excised_tokens} tok), archived ${amId}\n` +
+            `context_length: ${ctx.length} → ${newCtx.length} (freed ${ctx.length - newCtx.length}c)\n` +
+            (ts.earliest ? `time_span: ${ts.earliest} ~ ${ts.latest}\n` : "") + _ctxStats(newCtx) }],
+            details: { archived: amId, swept: swept2.length } };
+        }
+
+        // ── check ──：定位 → 保护区 → 统计 → 发 hash_key（范围/types 随 key 锁定）
         let rStart = 0, rEnd = ctx.length;
         let modeDesc = "";
         let rangeDesc = ""; // 时间范围模式的描述（块外声明，check 分支安全访问——修复 a is not defined）
@@ -1574,10 +1720,10 @@ export default function registerMemory(pi: ExtensionAPI) {
             const rows = _ctxRowIndex(ctx);
             const tq = params.anchor_ts;
             const hits = rows.filter((r) => r.ts && (r.ts.includes(tq) || tq.includes(r.ts)));
-            if (hits.length === 0) return { content: [{ type: "text", text: i18n(`amem ${actName}: 0 matches for anchor_ts="${tq}". ${_ctxStats(ctx)}\n提示: 从 fetch 概览或 check 输出的 ts 字段复制精确时间戳（如 08-15T02:14:55）。`, `amem ${actName}: 0 matches for anchor_ts="${tq}". ${_ctxStats(ctx)}\nTip: copy an exact timestamp from the fetch overview or the ts field of check output (e.g. 08-15T02:14:55).`) }], details: {} };
+            if (hits.length === 0) return { content: [{ type: "text", text: i18n(`amem ${actName}: 0 matches for anchor_ts="${tq}". ${_ctxStats(ctx)}\n提示: 从 fetch 概览或 check 输出的 ts 字段复制精确时间戳（如 08-15T02:14:55）。`, `amem ${actName}: 0 matches for anchor_ts="${tq}". ${_ctxStats(ctx)}\nTip: copy an exact timestamp from the fetch overview or the ts field of check output (e.g. 08-15T02:14:55).`) }], details: {}, isError: true };
             if (hits.length > 1) {
               const list = hits.map((h) => `  ts=${h.ts} [${h.start}..${h.end}] type=${h.label}`).join("\n");
-              return { content: [{ type: "text", text: i18n(`amem ${actName}: ${hits.length} records match anchor_ts="${tq}". 用更精确的时间戳重试。\n${list}`, `amem ${actName}: ${hits.length} records match anchor_ts="${tq}". Retry with a more precise timestamp.\n${list}`) }], details: {} };
+              return { content: [{ type: "text", text: i18n(`amem ${actName}: ${hits.length} records match anchor_ts="${tq}". 用更精确的时间戳重试。\n${list}`, `amem ${actName}: ${hits.length} records match anchor_ts="${tq}". Retry with a more precise timestamp.\n${list}`) }], details: {}, isError: true };
             }
             a = { begin_index: hits[0].start, end_index: hits[0].end, length: hits[0].end - hits[0].start };
           } else if (hasTsRange) {
@@ -1588,7 +1734,7 @@ export default function registerMemory(pi: ExtensionAPI) {
             const tq = params.ts_to || "";
             const inRange = rows.filter((r) => {
               if (!r.ts) return false;
-              const ms = _tsToMs(r.ts);
+              const ms = r.tsMs; // 2026-09-13（M6）：行自带原始毫秒（含年份）
               if (!ms) return false;
               if (fq) {
                 const fBase = fq.length < 14 ? fq + ":00".slice(0, 14 - fq.length) : fq;
@@ -1600,7 +1746,7 @@ export default function registerMemory(pi: ExtensionAPI) {
               }
               return true;
             });
-            if (inRange.length === 0) return { content: [{ type: "text", text: i18n(`amem ${actName}: 0 records in time range "${fq} ~ ${tq}". ${_ctxStats(ctx)}\n提示: 时间范围按前缀匹配（如 ts_from='08-15T02:00' ts_to='08-15T05:00'）。从 fetch 概览的 ts 字段确认范围。`, `amem ${actName}: 0 records in time range "${fq} ~ ${tq}". ${_ctxStats(ctx)}\nTip: time range matches by prefix (e.g. ts_from='08-15T02:00' ts_to='08-15T05:00'). Confirm the range from the ts fields in the fetch overview.`) }], details: {} };
+            if (inRange.length === 0) return { content: [{ type: "text", text: i18n(`amem ${actName}: 0 records in time range "${fq} ~ ${tq}". ${_ctxStats(ctx)}\n提示: 时间范围按前缀匹配（如 ts_from='08-15T02:00' ts_to='08-15T05:00'）。从 fetch 概览的 ts 字段确认范围。`, `amem ${actName}: 0 records in time range "${fq} ~ ${tq}". ${_ctxStats(ctx)}\nTip: time range matches by prefix (e.g. ts_from='08-15T02:00' ts_to='08-15T05:00'). Confirm the range from the ts fields in the fetch overview.`) }], details: {}, isError: true };
             const first = inRange[0], last = inRange[inRange.length - 1];
             a = { begin_index: first.start, end_index: last.end, length: last.end - first.start };
             // 时间范围模式信息（用于 check 输出的条数提示）
@@ -1608,11 +1754,12 @@ export default function registerMemory(pi: ExtensionAPI) {
           } else if (hasPosAnchor) {
             const bi = params.anchor_begin_index, ei = params.anchor_end_index;
             if (bi < 0 || ei > ctx.length || bi >= ei) return { content: [{ type: "text", text: i18n(`ERR: 非法位置 [${bi}..${ei}]，context 长度=${ctx.length}。`, `ERR: invalid position [${bi}..${ei}], context length=${ctx.length}.`) }], details: {}, isError: true };
-            a = { begin_index: bi, end_index: ei, length: ei - bi };
+            const sn = _snapToRows(_ctxRowIndex(ctx), bi, ei); // 对齐整行
+            a = { begin_index: sn.begin, end_index: sn.end, length: sn.end - sn.begin };
           } else {
             const ms = _anchorSearch(ctx, params.anchor_begin, params.anchor_end);
-            if (ms.length === 0) return { content: [{ type: "text", text: i18n(`amem ${actName}: 0 anchor matches. ${_ctxStats(ctx)}\n提示: 锚点不在可搜索区（见 manage 提示）。也可改用 exclude_tail=N 免锚点模式。`, `amem ${actName}: 0 anchor matches. ${_ctxStats(ctx)}\nTip: the anchor is not in a searchable area (see manage tips). Alternatively use exclude_tail=N no-anchor mode.`) }], details: {} };
-            if (ms.length > 1) return { content: [{ type: "text", text: _multiMatch(`amem ${actName}`, ms, ctx.length) + i18n(`\n提示: 锚定不唯一，用更长唯一片段重试，或改用 exclude_tail=N。`, `\nTip: the anchor is not unique — retry with a longer unique fragment, or switch to exclude_tail=N.`) }], details: {} };
+            if (ms.length === 0) return { content: [{ type: "text", text: i18n(`amem ${actName}: 0 anchor matches. ${_ctxStats(ctx)}\n提示: 锚点不在可搜索区（见 manage 提示）。也可改用 exclude_tail=N 免锚点模式。`, `amem ${actName}: 0 anchor matches. ${_ctxStats(ctx)}\nTip: the anchor is not in a searchable area (see manage tips). Alternatively use exclude_tail=N no-anchor mode.`) }], details: {}, isError: true };
+            if (ms.length > 1) return { content: [{ type: "text", text: _multiMatch(`amem ${actName}`, ms, ctx.length) + i18n(`\n提示: 锚定不唯一，用更长唯一片段重试，或改用 exclude_tail=N。`, `\nTip: the anchor is not unique — retry with a longer unique fragment, or switch to exclude_tail=N.`) }], details: {}, isError: true };
             a = ms[0];
           }
           rStart = a.begin_index; rEnd = a.end_index;
@@ -1622,9 +1769,12 @@ export default function registerMemory(pi: ExtensionAPI) {
           // exclude_tail 是用户显式指定的保护线，低于铁律（100K）则拒绝；达到则尊重它，
           // 不再走 _inRecentZone 严格 `<` 判定——否则二分切出的 tail 恰好 ≤100000 时会被误判在保护区（边界 bug）。
           if (params.exclude_tail < RECENT_PROTECT_TOKENS) {
-            return { content: [{ type: "text", text: i18n(`amem ${actName}: exclude_tail=${params.exclude_tail} < 铁律 ${RECENT_PROTECT_TOKENS / 1000}K token protection — recent content must stay protected. 请用 exclude_tail=${RECENT_PROTECT_TOKENS} 或更大。\n${_ctxStats(ctx)}`, `amem ${actName}: exclude_tail=${params.exclude_tail} < iron rule ${RECENT_PROTECT_TOKENS / 1000}K token protection — recent content must stay protected. Use exclude_tail=${RECENT_PROTECT_TOKENS} or larger.\n${_ctxStats(ctx)}`) }], details: {} };
+            return { content: [{ type: "text", text: i18n(`amem ${actName}: exclude_tail=${params.exclude_tail} < 铁律 ${RECENT_PROTECT_TOKENS / 1000}K token protection — recent content must stay protected. 请用 exclude_tail=${RECENT_PROTECT_TOKENS} 或更大。\n${_ctxStats(ctx)}`, `amem ${actName}: exclude_tail=${params.exclude_tail} < iron rule ${RECENT_PROTECT_TOKENS / 1000}K token protection — recent content must stay protected. Use exclude_tail=${RECENT_PROTECT_TOKENS} or larger.\n${_ctxStats(ctx)}`) }], details: {}, isError: true };
           }
           rEnd = _tailCutOffset(ctx, params.exclude_tail);
+          // 2026-09-13：二分切点可能落在某行中间 → 回退到上一整行行尾（范围只含整条 JSONL 记录；替换后块与下一条之间必有换行）
+          if (rEnd >= ctx.length) rEnd = ctx.endsWith("\n") ? ctx.length - 1 : ctx.length;
+          else if (ctx[rEnd] !== "\n") { const nl = ctx.lastIndexOf("\n", rEnd - 1); rEnd = nl >= 0 ? nl : 0; }
           modeDesc = `no-anchor, exclude_tail=${params.exclude_tail} tokens → [0..${rEnd}]`;
         }
 
@@ -1633,122 +1783,35 @@ export default function registerMemory(pi: ExtensionAPI) {
           const hint = (rEnd === ctx.length)
             ? `Full-context sweep not allowed — use exclude_tail=N (e.g. 100000) to skip the recent tail, or provide anchor_begin + anchor_end.`
             : `range extends into recent ${RECENT_PROTECT_TOKENS / 1000}K token protection zone — narrow anchors.`;
-          return { content: [{ type: "text", text: `amem ${actName}: range extends into recent ${RECENT_PROTECT_TOKENS / 1000}K token protection zone. ${hint}\n${_ctxStats(ctx)}` }], details: {} };
+          return { content: [{ type: "text", text: `amem ${actName}: range extends into recent ${RECENT_PROTECT_TOKENS / 1000}K token protection zone. ${hint}\n${_ctxStats(ctx)}` }], details: {}, isError: true };
         }
 
-        const rangeText = ctx.slice(rStart, rEnd);
-        const lines = rangeText.split("\n");
-        // 2026-08-20 修复：概览显示 assistant.think（缩写 a.think），types 直接匹配 o.type 会 0 条——
-        // 类型名规范化：a.think / assistant.think → think（同时支持裸名 think/text/toolResult/toolCall）
-        const normType = (t: string) => t.replace(/^(a|assistant)\./, "");
-        const tSet = new Set(params.types.map(normType));
-        const kept: string[] = [], swept: string[] = [];
-        for (const line of lines) {
-          const t = line.trim();
-          if (!t.startsWith("{")) { kept.push(line); continue; }
-          try {
-            const o = JSON.parse(t);
-            // 实际 JSONL 条目：工具结果是 {role:"toolResult", type:"text"}，思考是 {type:"think"} 等。
-            // types 同时匹配 role 和 type——sweep(["toolResult"]) 才能命中工具结果记录。
-            if (tSet.has(o.role) || tSet.has(o.type)) { swept.push(line); } else { kept.push(line); }
-          }
-          catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); kept.push(line); }
-        }
+        const { swept } = splitRange(rStart, rEnd);
         const sweptText = swept.join("\n");
-
-        // check
-        if (!params.hash_key) {
-          // 时间范围模式：check 输出带区间内记录数提示
+        // 2026-09-13（L4）：0 条时不发 hash_key（之前发了 key、apply 时才说 0 entries）
+        if (swept.length === 0) return _soft(`amem ${actName}: 0 entries of (${normTypes.join(",")}) in ${modeDesc || `[${rStart}..${rEnd}]`} — nothing to archive.\n${_ctxStats(ctx)}`);
+        // 时间范围模式：check 输出带区间内记录数提示
         const rangeHint = rangeDesc ? ` (${rangeDesc})` : "";
-        const key = _amemCreateKey(ctx, { action: "sweep", rStart, rEnd, n: swept.length, c: sweptText.length });
-          // 内容预览：前 3 条将被移除记录的文本开头，避免"盲清"
-          let preview = "";
-          const shown = swept.slice(0, 3);
-          if (shown.length) {
-            preview = i18n("\n预览(前" + shown.length + "条):\n", "\npreview (first " + shown.length + "):\n");
-            for (const ln of shown) {
-              let txt = "";
-              try {
-                const o = JSON.parse(ln);
-                const raw = o.text || o.think || o.content || o.tool || "";
-                txt = (typeof raw === "string" ? raw : JSON.stringify(raw)).replace(/\n/g, " ");
-              } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); txt = ln.slice(0, 80); }
-              preview += `  · ${txt.slice(0, 100)}${txt.length > 100 ? "…" : ""}\n`;
-            }
+        const key = _amemCreateKey(ctx, { action: "sweep", rStart, rEnd, n: swept.length, c: sweptText.length, types: normTypes });
+        // 内容预览：前 3 条将被移除记录的文本开头，避免"盲清"
+        let preview = "";
+        const shown = swept.slice(0, 3);
+        if (shown.length) {
+          preview = i18n("\n预览(前" + shown.length + "条):\n", "\npreview (first " + shown.length + "):\n");
+          for (const ln of shown) {
+            let txt = "";
+            try {
+              const o = JSON.parse(ln);
+              const raw = o.text || o.think || o.content || o.tool || "";
+              txt = (typeof raw === "string" ? raw : JSON.stringify(raw)).replace(/\n/g, " ");
+            } catch { /* 坏行：直接截原文 */ txt = ln.slice(0, 80); }
+            preview += `  · ${txt.slice(0, 100)}${txt.length > 100 ? "…" : ""}\n`;
           }
-          return { content: [{ type: "text", text:
-            `amem ${actName} check: ${swept.length} entries (${params.types.join(",")}) in [${rStart}..${rEnd}], ${sweptText.length}c${rangeHint}.\n` +
-            `hash_key=${key}${preview}\n${_ctxStats(ctx)}\nProvide hash_key + title(≥10c) + summary(≥50c) to apply.` }],
-            details: { hash_key: key, swept_count: swept.length, swept_chars: sweptText.length } };
         }
-
-        // apply
-        const v = _amemValidateKey(params.hash_key, ctx);
-        if (!v.ok) return { content: [{ type: "text", text: `ERR: ${v.reason}` }], details: {}, isError: true };
-        // 复用 check 时锁定的范围——apply 时 ctx 已追加本工具调用记录，重新计算 rEnd 会漂移
-        // （保护区判定随之抖动 → check 过 apply 挂）。hash 通过 = context 未变，锁定位置仍然有效。
-        if (v.data && typeof v.data.rStart === "number") { rStart = v.data.rStart; rEnd = v.data.rEnd; }
-        if (!params.title || params.title.length < 10) return { content: [{ type: "text", text: "ERR: title ≥10c required." }], details: {}, isError: true };
-        if (!params.summary || params.summary.length < 50) return { content: [{ type: "text", text: "ERR: summary ≥50c required." }], details: {}, isError: true };
-        if (swept.length === 0) return { content: [{ type: "text", text: `amem ${actName}: 0 entries to remove.` }], details: {} };
-
-        // range 锁定后用 apply 时的 ctx 重新切分（位置不变，内容可能含 hash 归一化容忍的自身记录）
-        const rangeText2 = ctx.slice(rStart, rEnd);
-        const lines2 = rangeText2.split("\n");
-        // 2026-08-20 修复：同 archive——类型名规范化（a.think/assistant.think → think），sweep 与 archive 匹配语义一致
-        const normType2 = (t: string) => t.replace(/^(a|assistant)\./, "");
-        const tSet2 = new Set(params.types.map(normType2));
-        const kept2: string[] = [], swept2: string[] = [];
-        for (const line of lines2) {
-          const t = line.trim();
-          if (!t.startsWith("{")) { kept2.push(line); continue; }
-          try {
-            const o = JSON.parse(t);
-            if (tSet2.has(o.role) || tSet2.has(o.type)) { swept2.push(line); } else { kept2.push(line); }
-          }
-          catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); kept2.push(line); }
-        }
-        const sweptText2 = swept2.join("\n");
-        if (sweptText2.length === 0) return { content: [{ type: "text", text: `amem ${actName}: 0 entries to remove in locked range.` }], details: {} };
-
-        const amId = `am-${Date.now()}`;
-        try { fs.mkdirSync(manageDir, { recursive: true }); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
-        const ts = _timeSpan(sweptText2);
-        // 交换块：原位留下【总结内容】（标题+摘要+归档指引），不是一行代码 marker——
-        // 模型不 revert 也能从总结知道这段记忆讲了什么（用户设计："替换进去的东西应该直接加上这段标题和摘要"）。
-        // 附带自解释的替换前后元数据（用户设计："除了数字本身，前面也要写上是什么，否则模型不知道"）。
-        const markerBase = `[amem swap ${amId} | ${params.title}]\n${params.summary}`;
-        const marker = markerBase + i18n(`\n（记忆交换: 替换前 begin_index=${rStart}, end_index=${rEnd}, length=${rEnd - rStart}, context_length=${ctx.length} → 替换后 begin_index=${rStart}, end_index=${rStart + markerBase.length}, length=${markerBase.length}, context_length=${ctx.length - (rEnd - rStart) + markerBase.length}；交换出 ${swept2.length} 条 ${params.types.join("/")} 记录 ${sweptText2.length}c → ActiveManage/${amId}.json；amem(fetch, id=\"${amId}\") 查原文，amem(revert, id=\"${amId}\") 还原）`, `\n(memory swap: before begin_index=${rStart}, end_index=${rEnd}, length=${rEnd - rStart}, context_length=${ctx.length} → after begin_index=${rStart}, end_index=${rStart + markerBase.length}, length=${markerBase.length}, context_length=${ctx.length - (rEnd - rStart) + markerBase.length}; swapped out ${swept2.length} ${params.types.join("/")} record(s), ${sweptText2.length}c → ActiveManage/${amId}.json; amem(fetch, id=\"${amId}\") to view the original, amem(revert, id=\"${amId}\") to restore)`);
-        const modifiedRange = marker + "\n" + kept2.join("\n");
-        const newCtx = ctx.slice(0, rStart) + modifiedRange + ctx.slice(rEnd);
-
-        const entry = {
-          id: amId, action: actName, title: params.title, summary: params.summary,
-          types: params.types, swept_count: swept2.length,
-          excised: rangeText2, modified: modifiedRange,
-          before: { range_start: rStart, range_end: rEnd, context_length: ctx.length },
-          after: { context_length: newCtx.length },
-          time_span: ts, timestamp: new Date().toISOString(), reverted: false,
-        };
-        writeFile(path.join(manageDir, `${amId}.json`), JSON.stringify(entry, null, 2));
-
-        let idx: any = { total_entries: 0, total_excised_chars: 0, entries: [] };
-        try { idx = JSON.parse(readFile(indexPath) || "{}"); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
-        if (!Array.isArray(idx.entries)) idx.entries = [];
-        idx.entries.push({ id: amId, title: params.title, summary: params.summary, path: `ActiveManage/${amId}.json`,
-          excised_length: sweptText2.length, revision_length: marker.length, time_span: ts, timestamp: entry.timestamp, reverted: false });
-        idx.total_entries = idx.entries.length;
-        idx.total_excised_chars = idx.entries.reduce((s: number, e: any) => s + (e.excised_length || 0), 0);
-        idx.last_updated = entry.timestamp;
-        writeFile(indexPath, JSON.stringify(idx, null, 2));
-        writeFile(contextPath, newCtx);
-        _refreshGaugeAfterContextChange(newCtx);
-
         return { content: [{ type: "text", text:
-          `amem ${actName} ${JSON.stringify(params.title)} → removed ${swept2.length} entries (${sweptText2.length}c), archived ${amId}\n` +
-          `context_length: ${ctx.length} → ${newCtx.length} (freed ${ctx.length - newCtx.length}c)\n` +
-          (ts.earliest ? `time_span: ${ts.earliest} ~ ${ts.latest}\n` : "") + _ctxStats(newCtx) }],
-          details: { archived: amId, swept: swept2.length } };
+          `amem ${actName} check: ${swept.length} entries (${normTypes.join(",")}) in [${rStart}..${rEnd}], ${sweptText.length}c (~${estimateTokens(sweptText)} tok)${rangeHint}.\n` +
+          `hash_key=${key}${preview}\n${_ctxStats(ctx)}\nProvide hash_key + title(≥10c) + summary(≥50c) to apply (same types; the range is locked to this check).` }],
+          details: { hash_key: key, swept_count: swept.length, swept_chars: sweptText.length } };
       }
 
       // ── revert ─────────────────────────────────────────────────────
@@ -1763,23 +1826,20 @@ export default function registerMemory(pi: ExtensionAPI) {
         const ctx = readFile(contextPath);
         if (!ctx) return { content: [{ type: "text", text: "ERR: context.md empty." }], details: {}, isError: true };
 
-        // 确定搜索文本和还原内容
-        let searchText: string, restoreText: string;
-        if ((d.action === "sweep" || d.action === "archive" || d.action === "mark") && d.modified) {
-          searchText = d.modified; restoreText = d.excised;
-        } else {
-          searchText = `[amem ${d.id} | ${d.title}]\n${d.summary}\n${d.revision || ""}`;
-          restoreText = d.excised;
-        }
-
+        // 搜索文本 = 归档时写进 context 的替换后文本（modified，manage/archive/mark 现在都存）。
+        // 历史 manage 归档没存 modified → 用块头+summary+revision 拼，并把紧随其后的元数据行（（记忆交换: … / (memory swap: …）
+        // 一并纳入——否则 revert 后这一行孤儿残留（2026-09-13 M1，实测 7 条活跃 manage 归档都会留）
+        const restoreText: string = typeof d.excised === "string" ? d.excised : "";
+        let searchText: string = (typeof d.modified === "string" && d.modified) ? d.modified : `[amem ${d.id} | ${d.title}]\n${d.summary}\n${d.revision || ""}`;
         let positions = _findAll(ctx, searchText);
-        if (positions.length === 0 && d.action !== "sweep" && d.action !== "archive" && d.revision) {
-          searchText = d.revision; positions = _findAll(ctx, searchText);
+        if (positions.length === 0 && !d.modified && d.revision) { searchText = d.revision; positions = _findAll(ctx, searchText); }
+        if (positions.length === 0) return _soft(`amem revert check ${params.id}: 0 matches — text no longer in context (already reverted, or rewritten by a later amem op: revert the newer op first).`);
+        if (positions.length > 1) return _soft(`amem revert check ${params.id}: ${positions.length} ambiguous matches.`);
+        const mIdx = positions[0]; let mLen = searchText.length;
+        if (!d.modified) {
+          const trail = ctx.slice(mIdx + mLen).match(/^\n(?:（记忆交换: |\(memory swap: )[^\n]*/);
+          if (trail) mLen += trail[0].length;
         }
-        if (positions.length === 0) return { content: [{ type: "text", text: `amem revert check ${params.id}: 0 matches — text no longer in context.` }], details: {} };
-        if (positions.length > 1) return { content: [{ type: "text", text: `amem revert check ${params.id}: ${positions.length} ambiguous matches.` }], details: {} };
-
-        const mIdx = positions[0], mLen = searchText.length;
 
         // check
         if (!params.hash_key) {
@@ -1791,9 +1851,11 @@ export default function registerMemory(pi: ExtensionAPI) {
             details: { hash_key: key, matches: 1 } };
         }
 
-        // apply
+        // apply：复用 check 锁定的位置（hash 保证 context 未变；位置若对不上则要求重 check）
         const v = _amemValidateKey(params.hash_key, ctx);
         if (!v.ok) return { content: [{ type: "text", text: `ERR: ${v.reason}` }], details: {}, isError: true };
+        if (v.data?.action !== "revert" || v.data.id !== params.id) return { content: [{ type: "text", text: "ERR: hash_key was issued for a different action/id — re-check." }], details: {}, isError: true };
+        if (v.data.mIdx !== mIdx || v.data.mLen !== mLen) return { content: [{ type: "text", text: "ERR: locked position no longer matches — re-check." }], details: {}, isError: true };
 
         const newCtx = ctx.slice(0, mIdx) + restoreText + ctx.slice(mIdx + mLen);
         writeFile(contextPath, newCtx);
@@ -1804,14 +1866,14 @@ export default function registerMemory(pi: ExtensionAPI) {
         let idx: any = { entries: [] }; try { idx = JSON.parse(readFile(indexPath) || "{}"); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
         const ie = (idx.entries || []).find((e: any) => e.id === params.id);
         if (ie) { ie.reverted = true; ie.reverted_at = d.reverted_at; }
-        idx.total_excised_chars = (idx.entries || []).filter((e: any) => !e.reverted).reduce((s: number, e: any) => s + (e.excised_length || 0), 0);
+        _recalcIdx(idx);
         idx.last_updated = d.reverted_at;
         writeFile(indexPath, JSON.stringify(idx, null, 2));
 
         return { content: [{ type: "text", text:
           `amem revert applied ${params.id}: ${JSON.stringify(d.title)}\n` +
           `reverted: index=${mIdx}, ${mLen}c → ${restoreText.length}c\n` +
-          `context_length: ${ctx.length} → ${newCtx.length}` }],
+          `context_length: ${ctx.length} → ${newCtx.length}\n${_ctxStats(newCtx)}` }],
           details: { reverted: true } };
       }
 
@@ -1869,7 +1931,8 @@ export default function registerMemory(pi: ExtensionAPI) {
         try { fs.mkdirSync(manageDir, { recursive: true }); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
         const ts = _timeSpan(tempZone);
 
-        const block = `[amem mark ${amId} | ${params.title}]\n${params.summary}\n${params.info}`;
+        const block = `[amem mark ${amId} | ${params.title}]\n${params.summary}\n${params.info}\n`;
+        // 2026-09-13（M2）：块尾必须换行——之前没有，下一条 JSONL 直接粘在 info 行后（实测 9760c70f 3 处），那条记录从此不是合法 JSON
         const newCtx = ctx.slice(0, mark.offset) + block;
 
         const entry = {
@@ -1879,7 +1942,7 @@ export default function registerMemory(pi: ExtensionAPI) {
           modified: block, // revert 定位所需的替换后文本（之前缺失 → mark 的 revert 报 0 matches）
           before: { offset: mark.offset, temp_length: tempLen, context_length: ctx.length },
           after: { context_length: newCtx.length },
-          time_span: ts, timestamp: new Date().toISOString(), reverted: false,
+          time_span: ts, excised_tokens: estimateTokens(tempZone), timestamp: new Date().toISOString(), reverted: false,
         };
         writeFile(path.join(manageDir, `${amId}.json`), JSON.stringify(entry, null, 2));
 
@@ -1887,9 +1950,8 @@ export default function registerMemory(pi: ExtensionAPI) {
         try { idx = JSON.parse(readFile(indexPath) || "{}"); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
         if (!Array.isArray(idx.entries)) idx.entries = [];
         idx.entries.push({ id: amId, title: params.title, summary: params.summary, path: `ActiveManage/${amId}.json`,
-          excised_length: tempLen, revision_length: block.length, time_span: ts, timestamp: entry.timestamp, reverted: false });
-        idx.total_entries = idx.entries.length;
-        idx.total_excised_chars = idx.entries.reduce((s: number, e: any) => s + (e.excised_length || 0), 0);
+          excised_length: tempLen, excised_tokens: entry.excised_tokens, revision_length: block.length, time_span: ts, timestamp: entry.timestamp, reverted: false });
+        _recalcIdx(idx);
         idx.last_updated = entry.timestamp;
         writeFile(indexPath, JSON.stringify(idx, null, 2));
         writeFile(contextPath, newCtx);
@@ -1942,7 +2004,7 @@ export default function registerMemory(pi: ExtensionAPI) {
         return { content: [{ type: "text", text: i18n("ERR: 只有主 session 可以 nap。", "ERR: Only the main session can nap.") }], details: {}, isError: true };
       }
       if (napHandle?.isRunning?.()) {
-        return { content: [{ type: "text", text: "nap 已在运行中。" }], details: {} };
+        return { content: [{ type: "text", text: "nap 已在运行中。" }], details: {}, isError: true };
       }
 
       const personId = path.basename(personDir);

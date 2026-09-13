@@ -5,7 +5,7 @@ import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint } from "./keybinding-hints.js";
 // 2026-09-04：models.dev 目录自动维护（loadModelsDevExtras）需要 node 模块
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 const MAX_VISIBLE = 10; // 2026-09-05（用户）：边缘滚动——可视行数（从 updateList 局部常量提出，handleInput 也要用）
@@ -99,14 +99,15 @@ export class ModelSelectorComponent extends Container {
     // 2026-09-04（用户定稿）：models.dev 目录自动维护——拉取 https://models.dev/api.json（缓存 24h），
     // 返回内置目录缺失的 openrouter 模型（合成 teyvat Model 格式：api/baseUrl 继承内置 openrouter provider，
     // cost 从 models.dev 换算已是每百万美元、limit.context→contextWindow、limit.output→maxTokens、reasoning）。
-    // 架构通用：MODELSDEV_PROVIDERS 映射表加 provider id 即启用其他 provider（deepseek→deepseek、bigmodel→zhipuai）。
+    // 架构通用：MODELSDEV_PROVIDERS 映射表加 provider id 即启用其他 provider。
     // 离线/超时/解析失败 → 返回 []（用内置目录，永不卡 /m）。
-    MODELSDEV_PROVIDERS = { openrouter: "openrouter" }; // 2026-09-04 先行 openrouter；deepseek:"deepseek"、bigmodel:"zhipuai" 待启用
+    // 2026-09-13（房东：bigmodel 下也不全）：启用 bigmodel→zhipuai、deepseek→deepseek（models.dev 的 provider 键）。
+    MODELSDEV_PROVIDERS = { openrouter: "openrouter", bigmodel: "zhipuai", deepseek: "deepseek" };
     MODELSDEV_URL = "https://models.dev/api.json";
     MODELSDEV_TTL_MS = 24 * 60 * 60 * 1000;
     // 2026-09-04：models.dev 目录合并——**只读缓存**（零网络，不卡 /m；缓存由启动时的后台预同步维护，见模块级 syncModelsDevCache）
     // 离线/缓存不存在 → 返回 []（用内置目录）。
-    MODELSDEV_PROVIDERS = { openrouter: "openrouter" }; // 2026-09-04 先行 openrouter；deepseek:"deepseek"、bigmodel:"zhipuai" 待启用
+    MODELSDEV_PROVIDERS = { openrouter: "openrouter", bigmodel: "zhipuai", deepseek: "deepseek" }; // 2026-09-13 启用 bigmodel/deepseek
     MODELSDEV_URL = "https://models.dev/api.json";
     MODELSDEV_TTL_MS = 24 * 60 * 60 * 1000;
     MODELSDEV_CACHE_FILE = () => join(homedir(), ".teyvat", "RuntimeCache", process.env.PAIMON_AGENT_ID || "unknown", "modelsdev-catalog.json");
@@ -117,25 +118,56 @@ export class ModelSelectorComponent extends Container {
             return JSON.parse(readFileSync(f, "utf8"));
         } catch { return null; }
     }
+    // 2026-09-13（dev-01）：补上**从未实现的写入端**。
+    // 背景：models.dev 缓存的读取端（readModelsDevCache）与合并逻辑（loadModelsDevExtras）2026-09-04 就落好了，
+    // 但没人往缓存文件里写（注释提到的模块级 syncModelsDevCache 根本不存在）→ 缓存永远不存在 → 合并/元数据全废，
+    // 实际表现：/m 里 openrouter 只有 pi 内置的旧目录（7/30），新模型（如 z-ai/glm-5.3）永远进不来。
+    // 逻辑：构建列表时若缓存缺失/过期（TTL 24h）→ 后台拉取写入（fire-and-forget，不阻塞本次 /m，下次生效）。
+    syncModelsDevCache() {
+        try {
+            const f = this.MODELSDEV_CACHE_FILE();
+            let fresh = false;
+            try { fresh = Date.now() - statSync(f).mtimeMs < this.MODELSDEV_TTL_MS; } catch { /* 无缓存 → 需要拉取 */ }
+            if (fresh) return;
+            void (async () => {
+                try {
+                    const res = await fetch(this.MODELSDEV_URL, { signal: AbortSignal.timeout(30000) });
+                    if (!res || !res.ok) return;
+                    const text = await res.text();
+                    if (!text || text.length < 1000 || !text.trimStart().startsWith("{")) return;
+                    mkdirSync(dirname(f), { recursive: true });
+                    writeFileSync(f + ".tmp", text);
+                    renameSync(f + ".tmp", f); // 原子替换，避免读到半写文件
+                } catch (e) { console.error("[teyvat model-selector] models.dev 缓存同步失败: " + (e?.message ?? e)); }
+            })();
+        } catch (e) { console.error("[teyvat model-selector] models.dev 同步触发失败: " + (e?.message ?? e)); }
+    }
     async loadModelsDevExtras(availableModels) {
+        this.syncModelsDevCache(); // 缓存缺失/过期 → 后台补（本次 /m 仍用现有缓存，下次生效）
         const catalog = this.readModelsDevCache();
         if (!catalog) return [];
         const extras = [];
         const seen = new Set(availableModels.map((m) => `${m.provider}::${m.id}`));
+        // 2026-09-13：按 provider 收集内置模型——合成条目继承其 api/baseUrl（见下）
+        const inherit = {};
+        for (const m of availableModels) { if (m.provider && !inherit[m.provider]) inherit[m.provider] = m; }
         for (const [prov, mdKey] of Object.entries(this.MODELSDEV_PROVIDERS)) {
             const mdProv = catalog[mdKey];
             if (!mdProv?.models) continue;
+            // 2026-09-13：该 provider 的 api/baseUrl 从**内置同名模型**继承。
+            // （原实现把 baseUrl 硬编码成 openrouter——一旦启用 bigmodel/deepseek，请求会打到错误的端点）
+            const base = inherit[prov] || {};
             for (const mdModel of Object.values(mdProv.models)) {
-                const fullId = mdKey === prov ? mdModel.id : `${mdKey}/${mdModel.id}`; // models.dev 的 id 可能含子前缀
+                const fullId = mdModel.id; // models.dev 的 id 自带子前缀（openrouter: z-ai/glm-5.3；zhipuai: glm-5.3）
                 const key = `${prov}::${fullId}`;
                 if (seen.has(key)) continue;
                 seen.add(key);
                 extras.push({
                     id: fullId,
                     name: mdModel.name || fullId,
-                    api: "openai-completions",
+                    api: base.api || "openai-completions",
                     provider: prov,
-                    baseUrl: "https://openrouter.ai/api/v1",
+                    baseUrl: base.baseUrl || "https://openrouter.ai/api/v1",
                     input: (mdModel.modalities?.input && mdModel.modalities.input.length) ? mdModel.modalities.input : ["text"],
                     reasoning: !!mdModel.reasoning,
                     contextWindow: mdModel.limit?.context || 200000,
