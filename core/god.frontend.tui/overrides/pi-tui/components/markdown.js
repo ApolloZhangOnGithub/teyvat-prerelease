@@ -383,7 +383,7 @@ export class Markdown {
             }
             case "code": {
                 const indent = this.theme.codeBlockIndent ?? "  ";
-                // 2026-09-13（房东：这行很恶心）——不再渲染代码块开头围栏行（代码块靠行号 gutter + 配色区分）。
+                // 2026-09-13（用户：这行很恶心）——不再渲染代码块开头围栏行（代码块靠行号 gutter + 配色区分）。
                 // 原文保留，恢复时删掉下面 // OLD: 行的注释符即可。
                 // OLD: lines.push(this.theme.codeBlockBorder(`\`\`\`${token.lang || ""}`));
                 // teyvat: 代码块行号 gutter（0.80.7 时代定制，0.84.1 rebase 时丢失）
@@ -393,9 +393,12 @@ export class Markdown {
                 // teyvat 2026-08-14 修复：超长代码行折行时，续行对齐"上行代码文字的左列"
                 //（行号 gutter 之后），而不是整个左缘——此前通用 wrap 会把续行顶到最左边，
                 // 与代码内容错位（用户报 CoT 代码块自动换行没对齐）。
+                // 2026-09-13（房东：左侧有留白、右侧顶到边缘——做成对称，参考 Claude Code）：右侧预留与左缩进等宽的空白，
+                // 折行宽度相应收窄；续行同样受限，所以整块代码左右留白一致。
+                const rightPad = visibleWidth(indent);
                 const pushCodeLine = (i, codeLine) => {
                     const prefix = `${indent}${fmtLineNo(i + 1)}`;
-                    const available = Math.max(1, width - visibleWidth(prefix));
+                    const available = Math.max(1, width - visibleWidth(prefix) - rightPad);
                     const chunks = wrapTextWithAnsi(codeLine, available);
                     if (!chunks || chunks.length === 0) {
                         lines.push(prefix);
@@ -427,7 +430,7 @@ export class Markdown {
                         pushCodeLine(i, this.theme.codeBlock(codeLines[i]));
                     }
                 }
-                // 2026-09-13（房东）：结尾围栏行同样不渲染（原文保留）
+                // 2026-09-13（用户）：结尾围栏行同样不渲染（原文保留）
                 // OLD: lines.push(this.theme.codeBlockBorder("```"));
                 if (nextTokenType && nextTokenType !== "space") {
                     lines.push(""); // Add spacing after code blocks (unless space token follows)

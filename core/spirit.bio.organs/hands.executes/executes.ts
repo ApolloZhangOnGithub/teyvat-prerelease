@@ -266,7 +266,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
     renderCall(args: any, theme: any) {
       let cmd = args?.command || _lastCmd || "...";
       const title = String(args?.title || "").trim();
-      // 2026-09-13（房东定稿）：调用行 = 标题 + 「摘要」显示/隐藏。
+      // 2026-09-13（用户定稿）：调用行 = 标题 + 「摘要」显示/隐藏。
       // 摘要隐藏（默认）= 只有标题；摘要显示 = 标题 + 命令前 3 行（+N more）。
       const showSummary = (globalThis as any).__genshinExecuteSummary === true;
       const label = args?.terminal === true ? "Execute(T)" : "Execute";
@@ -289,7 +289,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
       const createdInfo = result?.details?.createdInfo;
       // 快命令:有 execId 但无 createdInfo → Process <id> done in X sec + 输出
       if (execId && !createdInfo) {
-        // 2026-09-13（房东）：Execute 结果=隐藏时，整个结果区（Done in Xs + 输出）都不显示。
+        // 2026-09-13（用户）：Execute 结果=隐藏时，整个结果区（Done in Xs + 输出）都不显示。
         // （原实现快命令分支完全没检查 resultMode——hide/summary 对快命令不生效，用户设隐藏仍渲染一切。）
         const _resultMode = (globalThis as any).__genshinExecuteResult ?? "full";
         if (_resultMode === "hide") return renderMessage.silent();
@@ -315,7 +315,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
         // 只对用户隐藏--content 保留,模型仍可见(要 read 执行记录 / 知道 token 量 / 耗时)。
         // token 数在 result 摘要行时间后已显示(· N tokens),不在末尾重复占行。
         outText = outText
-          .replace(/\n*\[\d{2}:\d{2}:\d{2}\.\d{3}\s*\+\d+(?:\.\d+)?s\]\s*$/, "")
+          .replace(/\n*\[\d{2}:\d{2}:\d{2}[^\]]*\]\s*$/, "") // 2026-09-13：bioclock 标签带 " | ctx N%" 后缀，旧正则不认
           .replace(/\n*\[result\s+[\d.]+[kM]?\s*tokens?(?:,\s*contexted\s+[\d.]+[kM]?)?\]\s*$/, "")
           .replace(/\n*\[id:\s*[A-Za-z0-9-]+\]\s*$/, "")
           .trimEnd();
@@ -335,7 +335,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
         const line1 = indent + theme.fg("dim", "⎿  ") + `Done in ${theme.bold(secStr + "s")}${exitPart}` + theme.fg("dim", ` at ${hh}:${mm}:${ss}`);
         c.addChild(new Text(line1, 0, 0));
         if (outText) {
-          // 2026-09-13（房东）：Execute 结果=摘要 → 输出只给前 5 行（无省略提示行）
+          // 2026-09-13（用户）：Execute 结果=摘要 → 输出只给前 5 行（无省略提示行）
           if (_resultMode === "summary") {
             const _ol = outText.split("\n");
             if (_ol.length > 5) outText = _ol.slice(0, 5).join("\n");
@@ -375,9 +375,9 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
         // 不渲染 renderText(Running in background / Terminal N - 使用 @N)--创建行保持一行
         return c;
       }
-      // 2026-09-13（房东定稿）：「Execute 结果」三态——隐藏 / 摘要（纯前 5 行）/ 全部
+      // 2026-09-13（用户定稿）：「Execute 结果」三态——隐藏 / 摘要（纯前 5 行）/ 全部
       const resultMode = (globalThis as any).__genshinExecuteResult ?? "full";
-      // 2026-09-13（房东）：去掉 renderText == null 条件——有 renderText 的结果也要遵守 hide/summary
+      // 2026-09-13（用户）：去掉 renderText == null 条件——有 renderText 的结果也要遵守 hide/summary
       if (resultMode === "hide") {
         return renderMessage.silent();
       }
@@ -397,8 +397,8 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
         const raw = resultContent(result);
         if (raw.length > 0 && raw[0].type === "text") {
           const lines = raw[0].text.split("\n");
-          // 2026-09-13(房东定稿):只显示 5 行 = **纯前 5 行**,不加任何省略提示行
-          // (原 "... N lines more (lines x-y omitted)" 提示行已去掉--房东:那行占空间、很恶心)
+          // 2026-09-13(用户定稿):只显示 5 行 = **纯前 5 行**,不加任何省略提示行
+          // (原 "... N lines more (lines x-y omitted)" 提示行已去掉--用户:那行占空间、很恶心)
           if (lines.length > 5) {
             const head = lines.slice(0, 5).join("\n");
             return renderMessage.output(theme, ctx, [{ type: "text", text: head }]);

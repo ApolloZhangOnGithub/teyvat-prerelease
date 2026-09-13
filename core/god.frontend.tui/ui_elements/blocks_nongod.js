@@ -349,14 +349,16 @@ export const renderToolCall = {
 // 否则会漏在裸传 content 的工具结果里，如 intentions 曾出现）。
 // 注意：只剥 backbone 的 feed 标注；工具自设计的 summary（如 execute 的 [HH:MM:SS, N tokens]）不含
 // "result" 前缀，不受影响（read/execute 的 summary 行保留）。
-function stripResultTokenMark(text) {
+export function stripResultTokenMark(text) {
   // 2026-09-09（用户：Result 还带 [id: xxx]——9/8 只剥 [result N tokens] 漏 id/时间戳——"垃圾过滤器"）：
   // 剥尾部工具元数据段组（不限行首——[background: ...] [id: xxx] [result N tokens, ctx X] [remaining: N]
   // [HH:MM:SS.mmm +Ns] 任意顺序连续/空格隔开——只剥元数据前缀段，不碰内容里的正常 [方括号]。
   // feed content 保留不剥（模型要）——渲染层显示剥离。
   let s = String(text ?? "");
-  // 2026-09-13：[result …] 段逗号后接受任意标注（ctx.md X est / api X (N%) / 旧的 ctx|contexted X），backbone 改口径后这里不用再跟着改
-  const re = /(?:(?:\[(?:id|background|remaining):[^\]]*\]|\[result\s+[\d.]+[kM]?\s*tokens?(?:,[^\]]*)?\]|\[\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:\s+[+-]?\d+(?:\.\d+)?s)?\])\s*)+$/;
+  // 2026-09-13：[result …] 段逗号后接受任意标注（ctx.md X est / api X (N%) / 旧的 ctx|contexted X），backbone 改口径后这里不用再跟着改。
+  // 时间戳段同样放宽为 [HH:MM:SS…]——bioclock 追加的是 "[19:00:07.687 +0.9s | ctx 49%]"，旧正则要求 s 后紧跟 ] → 末段失配 →
+  // 整组尾标签一个都剥不掉，屏幕上同一条结果里 "contexted 606.3k"（文件估算）与 "ctx 49%"（API）并排（"数字乱跳"的直接视觉来源）。
+  const re = /(?:(?:\[(?:id|background|remaining):[^\]]*\]|\[result\s+[\d.]+[kM]?\s*tokens?(?:,[^\]]*)?\]|\[\d{2}:\d{2}:\d{2}[^\]]*\])\s*)+$/;
   let prev;
   do { prev = s; s = s.replace(re, "").trimEnd(); } while (s !== prev);
   return s;

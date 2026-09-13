@@ -446,16 +446,17 @@ export class InteractiveMode {
         if (savedCompactExecute !== undefined) {
             globalThis.__genshinCompactExecute = savedCompactExecute;
         }
-        // 2026-09-13（房东）：Intention 工具输出隐藏/显示（默认隐藏，/s 面板可切）
+        // 2026-09-13（用户）：Intention 工具输出隐藏/显示（默认隐藏，/s 面板可切）
         const savedIntentionShow = this.settingsManager.settings?.intentionShow;
         if (savedIntentionShow !== undefined) globalThis.__genshinIntentionShow = savedIntentionShow;
-        // 2026-09-13（房东）：Execute 摘要/结果 与 Wait 输出 的显示开关（默认：摘要隐藏、结果全部、Wait 隐藏）
+        // 2026-09-13（用户）：Execute 摘要/结果 与 Wait 输出 的显示开关（默认：摘要隐藏、结果全部、Wait 隐藏）
         const s0 = this.settingsManager.settings;
         if (s0?.executeSummary !== undefined) globalThis.__genshinExecuteSummary = s0.executeSummary;
         if (s0?.executeResult !== undefined) globalThis.__genshinExecuteResult = s0.executeResult;
         if (s0?.waitShow !== undefined) globalThis.__genshinWaitShow = s0.waitShow;
-        // 2026-09-13（房东）：工具结果耗时戳 [0.009s] 默认隐藏
+        // 2026-09-13（用户）：工具结果耗时戳 [0.009s] 默认隐藏
         if (s0?.toolElapsed !== undefined) globalThis.__genshinToolElapsed = s0.toolElapsed;
+        if (s0?.amemDisplay !== undefined) globalThis.__genshinAmemDisplay = s0.amemDisplay;
         // Load tool expanded from persisted settings
         const savedToolExpanded = this.settingsManager.settings?.toolExpanded;
         if (savedToolExpanded !== undefined) {
@@ -578,7 +579,7 @@ export class InteractiveMode {
         const modelCommand = slashCommands.find((command) => command.name === "model");
         if (modelCommand) {
             modelCommand.getArgumentCompletions = (prefix) => {
-                // 2026-09-13（房东）：支持 --global / --this-agent 参数补全
+                // 2026-09-13（用户）：支持 --global / --this-agent 参数补全
                 const trimmed = (prefix || "").trim();
                 // ① 输入以 -- 开头 → 补全参数
                 if (trimmed.startsWith("--")) {
@@ -2327,7 +2328,7 @@ export class InteractiveMode {
                     }
                     this.ui.requestRender();
                 }, () => {
-                    // 2026-09-13（房东）：多级菜单按 ESC 应「返回上一层」，而不是直接关掉整个面板。
+                    // 2026-09-13（用户）：多级菜单按 ESC 应「返回上一层」，而不是直接关掉整个面板。
                     // 机制：进入子页面前把上一层 wrapper 压栈；onCancel 时先弹栈恢复上一层，栈空才恢复编辑器。
                     const _stack = (globalThis.__genshinSettingsModalStack ||= []);
                     const _back = _stack.pop();
@@ -2360,7 +2361,7 @@ export class InteractiveMode {
                     invalidate: () => { list.invalidate?.(); panel.invalidate?.(); },
                     handleInput: (d) => list.handleInput(d),
                 };
-                // 2026-09-13（房东）：多级菜单 ESC = 返回上一层——记录上一层模态以便弹回
+                // 2026-09-13（用户）：多级菜单 ESC = 返回上一层——记录上一层模态以便弹回
                 const _st = (globalThis.__genshinSettingsModalStack ||= []);
                 if (globalThis.__genshinCurrentSettingsModal) _st.push(globalThis.__genshinCurrentSettingsModal);
                 globalThis.__genshinCurrentSettingsModal = wrapper;
@@ -2893,7 +2894,9 @@ export class InteractiveMode {
         const textBlocks = typeof message.content === "string"
             ? [{ type: "text", text: message.content }]
             : message.content.filter((c) => c.type === "text");
-        return textBlocks.map((c) => c.text).join("");
+        // teyvat 2026-09-13：bioclock 在 message_end 给 user 消息尾部追加 "[YYYY-MM-DD HH:MM:SS.mmm | ctx N%]" 并持久化；
+        // 实时渲染时组件在 message_start 就建好（无标签），但 /reload、attach、恢复历史走这里 → 用户气泡末尾多出 ctx 数。显示层剥掉。
+        return textBlocks.map((c) => c.text).join("").replace(/\s*\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?(?: \| ctx \d+%)?\]$/, "");
     }
     /**
      * Show a status message in the chat.
@@ -4239,7 +4242,7 @@ export class InteractiveMode {
         });
     }
     async handleModelCommand(searchTerm) {
-        // 2026-09-13（房东）：支持 --global / --this-agent 参数。
+        // 2026-09-13（用户）：支持 --global / --this-agent 参数。
         // 原则（用户定稿）：无论什么参数，都不修改其他已存在的 agent，只修改新的 agent。
         //   --this-agent（默认）：只改本 agent → session.setModel → savePerAgentModel（写 SocialData/registry.json）
         //   --global：改全局默认（未来新 agent 的默认模型）→ setDefaultModelAndProvider（写 settings.json）——不改已运行 agent

@@ -80,7 +80,7 @@ export function registerHibernateTool(_pi: ExtensionAPI) {
       const untilStr = until ? theme.fg("dim", ` until ${until}`) : "";
       const { Text: T, Container: C } = require("@earendil-works/pi-tui");
       const c = new C();
-      // 2026-09-13（房东）：多行摘要的后续行要对齐到 ✻ 之后（缩进 2 列 = GUTTER），和其他消息一致。
+      // 2026-09-13（用户）：多行摘要的后续行要对齐到 ✻ 之后（缩进 2 列 = GUTTER），和其他消息一致。
       // 原实现把整个 summary（含 \n）塞进一个 Text → 后续行顶格（x=0）无 padding。
       const lines = (s || "hibernating").split("\n");
       c.addChild(new T(theme.fg("dim", "✻") + " " + theme.fg("dim", lines[0]) + untilStr, 0, 0));

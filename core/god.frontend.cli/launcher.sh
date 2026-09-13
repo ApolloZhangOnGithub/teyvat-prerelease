@@ -27,7 +27,7 @@ export PAIMON_CONFIG="$PAIMON_HOME/config"
 [ -d "$HOME/.local/share/node24/bin" ] && PATH="$HOME/.local/share/node24/bin:$PATH"
 
 # git 访问 GitHub 的代理自包含：检测本机 Clash 等代理监听端口自动 export（Linux 无代理直连 GitHub 被墙）
-# 2026-09-09（房东实测：Clash Verge 监听 7892/17897——原硬编码 7897/7890 探测不到 → 裸连波动 HTTP2 framing/超时）：
+# 2026-09-09（用户实测：Clash Verge 监听 7892/17897——原硬编码 7897/7890 探测不到 → 裸连波动 HTTP2 framing/超时）：
 # 改智能检测——①从代理进程（clash/mihomo/verge）实际监听端口发现（lsof/ss）②常见端口交集优先
 # ③无进程则常见端口列表 /dev/tcp 探测。不能硬编码单一端口。
 _proxy_port=""
@@ -315,7 +315,7 @@ case "$NAME" in
     VER_JSON="$HOME/.teyvat/agent/version.json"
     CHANNEL="minutely"
     [ -f "$VER_JSON" ] && CHANNEL=$(node -e "try{console.log(JSON.parse(require('fs').readFileSync('$VER_JSON','utf8')).channel)}catch{console.log('minutely')}" 2>/dev/null)
-    # 2026-09-09（房东定稿：dev/minutely 线 genshin update 应显示无需更新）：
+    # 2026-09-09（用户定稿：dev/minutely 线 genshin update 应显示无需更新）：
     # minutely = dev 源码自动构建线——每次 make dev-minutely 自动部署已最新，手动 update 无意义。
     # 不跑源码 pull/install（Windows WSL 等环境跑 dev 线 update 会误走源码逻辑/失败）。
     if [ "$CHANNEL" = "minutely" ]; then
@@ -693,7 +693,7 @@ if [ "$MODE" = "kill" ]; then
     if [ -z "$TARGET" ]; then echo "$(_l "没有第 $NAME 个运行中的 agent" "No running agent #$NAME")"; exit 1; fi
     NAME="$TARGET"
   fi
-  # 2026-09-09 09:17（房东实测仍注销——ISSUE 155 修复在 cli.ts 是旁路，genshin k 真实路径在 launcher 内联）：
+  # 2026-09-09 09:17（用户实测仍注销——ISSUE 155 修复在 cli.ts 是旁路，genshin k 真实路径在 launcher 内联）：
   # 旧：ps aux | grep "genshin:.*${NAME}" 宽匹配 + NAME 未转义——短名/前缀匹配多个 agent + 取错 PID → 杀错进程
   # → systemd user session scope 结构下连带注销整桌面（Linux；macOS launchd 隔离无此问题）。
   # 修：精确匹配 agent 主进程标识 cmdline "genshin:<name>(main,"——绝不宽匹配、不碰其他进程。
@@ -793,7 +793,7 @@ if [ -z "$NAME" ] && [ -z "$MODE" ]; then
       echo -e "  \033[33m*\033[0m 新版本可用: \033[1m$_NEW\033[0m (当前 $_CUR)  运行 \033[1mgenshin update\033[0m 更新"
     fi
   fi
-  # 2026-09-13（房东：这行是垃圾）——备份状态行**先禁用**；代码原文全部保留（恢复时删掉下面这行 `if false; then` 及其尾部 `fi` 即可）。
+  # 2026-09-13（用户：这行是垃圾）——备份状态行**先禁用**；代码原文全部保留（恢复时删掉下面这行 `if false; then` 及其尾部 `fi` 即可）。
   if false; then
   # 2026-09-12：云备份状态行（用户定稿：genshin 裸命令看板常驻状态行；文案逐字照打）
   # 未配置态实时判 services.json（不读状态文件——否则新机永远不显示提示）；已配置读 backup-status.json

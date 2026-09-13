@@ -84,8 +84,10 @@ function renderContextUsage(): string[] {
   const personDir: string | undefined = (globalThis as any).__genshinPersonDir;
   if (!personDir) return ["  No person directory."];
 
-  const modelMax = parseInt(process.env.PI_MODEL_MAX_TOKENS || "") || 1000000;
-  const model = process.env.PI_MODEL || "deepseek";
+  // 2026-09-13：分母/模型名从 live 模型取——PI_MODEL_MAX_TOKENS / PI_MODEL 全仓从未设置，之前恒 1M、恒 "deepseek"（200k 模型百分比偏小 5 倍）
+  let live: any = null; try { live = (globalThis as any).__genshinGetModel?.(); } catch { /* 取不到用兜底 */ }
+  const modelMax = (typeof live?.contextWindow === "number" && live.contextWindow > 0 ? live.contextWindow : 0) || parseInt(process.env.PI_MODEL_MAX_TOKENS || "") || 1000000;
+  const model = (live?.id as string) || process.env.PI_MODEL || "unknown-model";
   const windowLabel = modelMax >= 1000000
     ? (modelMax / 1000000).toFixed(0) + "M context"
     : (modelMax / 1000).toFixed(0) + "k context";
@@ -131,12 +133,15 @@ function renderContextUsage(): string[] {
     grid.push(row);
   }
 
+  // 两个口径分开：api = 上一轮真实 prompt（活窗口，footer 同源）；est = 记忆文件体量（下面按类别拆的就是它）
+  const apiTok = Number((globalThis as any).__genshinPondSess?.prevPrompt || 0);
   const info = [
     `${B}${A}Context Usage${R}`,
     `${B}${model} (${windowLabel})${R}`,
-    `${fmt(used)}/${fmt(total)} tokens (${pct(used)}%)`,
+    apiTok > 0 ? `api window (last turn): ${fmt(apiTok)}/${fmt(total)} tokens (${pct(apiTok)}%)` : `${D}api window: n/a (no completed turn yet)${R}`,
+    `memory files est: ${fmt(used)}/${fmt(total)} tokens (${pct(used)}%)`,
     ``,
-    `${D}Estimated usage by category${R}`,
+    `${D}Estimated usage by category (memory files on disk)${R}`,
   ];
   for (const c of cats) {
     if (c.tokens > 0) info.push(`${c.color}\u25C9${R} ${c.name}: ${fmt(c.tokens)} tokens (${pct(c.tokens)}%)`);

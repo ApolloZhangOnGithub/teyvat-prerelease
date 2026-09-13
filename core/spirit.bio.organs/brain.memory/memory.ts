@@ -6,7 +6,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { homedir } from "node:os";
 import { getSessionRole, getPrompt } from "#kernel_ribosome";
-import { memoryDir,  personDataDir as _personDataDir, memoryDataDir, sessionDirFor, estimateTokens, monitorDataFile, runtimeCacheDir as _runtimeCacheDir } from "#paths";
+import { memoryDir,  personDataDir as _personDataDir, memoryDataDir, sessionDirFor, estimateTokens, monitorDataFile, runtimeCacheDir as _runtimeCacheDir, readGrowthLast } from "#paths";
 import { registerPaimonTool, sendCustomMessage, resultContent } from "#kernel_backbone";
 import { renderToolCall, renderMessage } from "#tui_blockrender";
 import { createHash, randomBytes } from "node:crypto";
@@ -215,6 +215,13 @@ export default function registerMemory(pi: ExtensionAPI) {
     return { messages: next };
   });
 
+  // 切模型：上一轮 prompt 是旧模型算的，分子分母不再同源（1M→200k 会显示 245% 被钳成 100%，反向骤降）——清掉，等下一次回复再建
+  pi.on("model_select", async () => {
+    _pondSess.prevPrompt = null; _pondSess.prevOut = 0;
+    (globalThis as any).__genshinContextGauge = "";
+    _refreshModelMax();
+  });
+
   pi.on("session_start", async (_event, ctx) => {
     personDir = getPersonDir(ctx.sessionManager.getSessionFile());
     dnaState = "wake"; // always wake on new session
@@ -415,7 +422,7 @@ export default function registerMemory(pi: ExtensionAPI) {
       lastSig = sig;
       // 原始归档（完整历史，不清洗，模型不读）
         appendFile(path.join(personDir, "context.archive.jsonl"), jsonl);
-        // 2026-09-09（房东在意 bug：归档 rewrite context.md 后 nerves stream 池指向旧 inode → 后续 append 落孤儿文件 + 强杀不冲刷——11 分钟对话丢失实证）：context.md 必须同步写当前路径（appendFileSync 每次 open）——归档 rename 后不丢、被 SIGKILL 最多丢正在写的一行
+        // 2026-09-09（用户在意 bug：归档 rewrite context.md 后 nerves stream 池指向旧 inode → 后续 append 落孤儿文件 + 强杀不冲刷——11 分钟对话丢失实证）：context.md 必须同步写当前路径（appendFileSync 每次 open）——归档 rename 后不丢、被 SIGKILL 最多丢正在写的一行
         appendFileSync(path.join(personDir, "context.md"), scrubSecrets(jsonl));
 
       // ── Record structured event for event list ──
@@ -445,17 +452,22 @@ export default function registerMemory(pi: ExtensionAPI) {
     // context >= 95% 时只允许 amem/status/wait/hibernate/intentions——其他工具一律拦截
     if (!AMEM_EXEMPT_TOOLS.has(event.toolName)) {
       try {
-        // 2026-09-13（H3）：之前读 personDir/monitor/growth.jsonl（从未存在）→ 这个拦截从未生效；改走 monitorDataPath（与写入同源）
-        const gPath = monitorDataPath("growth.jsonl");
-        if (gPath && fs.existsSync(gPath)) {
-          const lines = fs.readFileSync(gPath, "utf8").trim().split("\n");
-          const last = JSON.parse(lines[lines.length - 1]);
-          if (last.ratio >= 95) {
-            return { block: true, reason: i18n(
-              `context 使用已达 ${last.ratio.toFixed(1)}%，必须先执行 amem archive 清理记忆再做其他操作。`,
-              `Context usage at ${last.ratio.toFixed(1)}%, you must run amem archive to free memory before any other action.`
-            ) };
-          }
+        // 2026-09-13（H3）：之前读 personDir/monitor/growth.jsonl（从未存在）→ 这个拦截从未生效。
+        // 口径：api（上一轮真实 prompt，进程内即时值）为主——那才是接近 API 上限的信号；est（记忆文件体量）决定 amem 帮不帮得上：
+        //   api ≥95% 且 est ≥60% → 拦：先 amem（归档后 context 事件换快照，窗口下一轮就降）；
+        //   api ≥95% 但 est 很小 → 是活对话本身撑大的，amem 归档不了——不拦（拦了就把 agent 锁死在"必须先 amem"），交给 URGENT 提示 /compact 或 self-reboot；
+        //   没有 api 值（首轮）→ 只看 est。
+        const pid = personDir ? path.basename(personDir) : "";
+        const g = pid ? readGrowthLast(pid) : null;
+        const est = g?.ratio ?? 0;
+        _refreshModelMax();
+        const api = _pondSess.prevPrompt ? (_pondSess.prevPrompt / modelMax) * 100 : null;
+        const ratio = api ?? est;
+        if (ratio >= 95 && (api === null || est >= 60)) {
+          return { block: true, reason: i18n(
+            `context 使用已达 ${ratio.toFixed(1)}%（记忆文件 est ${est.toFixed(1)}%），必须先执行 amem archive 清理记忆再做其他操作。`,
+            `Context usage at ${ratio.toFixed(1)}% (memory files est ${est.toFixed(1)}%), you must run amem archive to free memory before any other action.`
+          ) };
         }
       } catch (e) { /* growth.jsonl 读取失败不阻塞 */ }
     }
@@ -675,7 +687,8 @@ export default function registerMemory(pi: ExtensionAPI) {
       trimmed = true;
       // 截断可见化：记录丢了多长，避免"静默遗忘"——agent 至少知道最旧记忆没进来。
       try {
-        monitorAppend("growth.jsonl",
+        // 2026-09-13：单独一个文件——混进 growth.jsonl 会让"读最后一行"的读者拿到没有 ratio 的行（readGrowthLast 已能跳过，但分开更干净）
+        monitorAppend("snapshot_trim.jsonl",
           JSON.stringify({ ts: new Date().toISOString(), event: "snapshot_trim", dropped: beforeLen - context.length, kept: context.length }) + "\n");
       } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
     }
@@ -695,6 +708,7 @@ export default function registerMemory(pi: ExtensionAPI) {
   // 缓存铁律：前缀每轮一致才命中。记忆快照已在 session_start 注入一次；这里一律往「后面」append 消息。
   pi.on("before_agent_start", async (_event, _ctx) => {
     if (!personDir) return;
+    _refreshModelMax(); // 2026-09-13：扩展加载时 __genshinGetModel 尚未注册，modelMax 是 1M 兜底——首轮/切模型后不刷新会把 200k 模型按 1M 算（ratio 偏小 5 倍）
     const context = readFile(path.join(personDir, "context.md"));
     const workMem = readFile(path.join(personDir, "work_memory.md"));
     const cortex = readFile(path.join(personDir, "neocortex.md"));
@@ -1300,6 +1314,9 @@ export default function registerMemory(pi: ExtensionAPI) {
         const cleaned = raw.replace(/^amem\s+\w+:\s*/, "");
         return renderMessage.summary(theme, { ...ctx, isError: true }, cleaned);
       }
+      // 2026-09-13（用户）：Amem 输出三态——隐藏 / 折叠（默认，只显一行摘要）/ 显示（完整含参数表格）
+      const amemDisplay = (globalThis as any).__genshinAmemDisplay ?? "fold";
+      if (amemDisplay === "hide") return renderMessage.silent();
       const { Text: Txt, Container: C } = require("@earendil-works/pi-tui");
       const GUTTER = 2;
       const indent = " ".repeat(GUTTER);
@@ -1308,6 +1325,8 @@ export default function registerMemory(pi: ExtensionAPI) {
       const firstLine = lines[0] || "";
       const summary = firstLine.replace(/^amem\s+\w+\s*/, "").replace(/^"[^"]*"\s*→\s*/, "→ ");
       c.addChild(new Txt(indent + theme.fg("dim", "⎿  ") + theme.fg("toolOutput", summary || firstLine), 0, 0));
+      // 2026-09-13（用户）：折叠模式 = 只显示上面的摘要行，不显示参数表格
+      if (amemDisplay === "fold") return c;
       // 参数表格：找出所有 key: value 行，key 列对齐
       const kvPairs: [string, string][] = [];
       const plainLines: string[] = [];

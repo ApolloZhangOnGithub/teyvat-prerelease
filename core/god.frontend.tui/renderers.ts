@@ -59,6 +59,10 @@ export function checkRenderPipeline(env: "tui" | "headless"): string[] {
 (globalThis as any).__genshinCheckRenderPipeline = checkRenderPipeline;
 
 export function registerMessageRenderers(pi: ExtensionAPI) {
+  // R002 校验要"真的注册了什么"：包一层记录实际注册的 type（之前函数末尾把 RENDER_PARTS 全部标成已注册，R002 永远不会 FAIL，校验形同虚设）
+  const _origRegister = pi.registerMessageRenderer.bind(pi);
+  const _actuallyRegistered = new Set<string>();
+  (pi as any).registerMessageRenderer = (type: string, renderer: any) => { _actuallyRegistered.add(type); return _origRegister(type, renderer); };
   pi.registerMessageRenderer("continuous-resume", (message: any, _opts: any, theme: any) => {
     const raw = (message.content ?? "").toString();
     const clean = raw.replace(/^\[系统\]\s*/, "");
@@ -120,8 +124,9 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
     return new T(arrow + " " + body, 0, 0);
   };
 
-  // memory-capacity: not rendered (user feedback: "garbage"). ctx % shown in bioclock timestamps + footer.
-  pi.registerMessageRenderer("memory-capacity", () => { const { Container: C } = require("@earendil-works/pi-tui"); return new C(); });
+  // memory-capacity：2026-09-13 恢复渲染——之前注册的是空 Container（"garbage"反馈后），而 backbone 里该类型又是 feed:false，
+  // 结果 80% 容量提醒既不显示也不喂模型，整条链路（memory.ts 每轮估算 5 个文件 → 发消息）是死的。现在只给人看一行（不喂模型，去重已在 memory.ts）。
+  pi.registerMessageRenderer("memory-capacity", (message: any, _opts: any, theme: any) => _sysMsg(theme, (message.content ?? "").toString()));
   pi.registerMessageRenderer("memory-reminder", (message: any, _opts: any, theme: any) => {
     return _sysMsg(theme, (message.content ?? "").toString());
   });
@@ -196,7 +201,7 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
     // 2026-09-08（用户：cmd-done 还带 [background: N running]——.79 只剥了 execute 同步返回路径，cmd-done 推送没剥）：任意位置剥 background 行
     output = output.replace(/\n*\[background: [^\]]*running[^\]]*\]/g, "");
     // 用户展示剥离：bioclock 耗时戳 [HH:MM:SS.mmm +Xs]（只对用户隐藏，模型消息里保留）
-    output = output.replace(/\n*\[\d{2}:\d{2}:\d{2}\.\d{3}\s*\+\d+(?:\.\d+)?s\]\s*$/, "").trimEnd();
+    output = output.replace(/\n*\[\d{2}:\d{2}:\d{2}[^\]]*\]\s*$/, "").trimEnd(); // 2026-09-13：bioclock 标签带 " | ctx N%" 后缀，旧正则不认
     const exitStr = exitCode !== undefined ? `exit ${exitCode}` : (elapsed === 0 ? "instantly" : `${elapsed}s`);
     const statusColor = isError ? "error" : "success";
     // 合并检测：如果前一个组件就是同 recId 的 execute Created，跳过独立 Result 头——
@@ -260,7 +265,7 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
       let display = output;
       // 非合并时输出用 ⎿ 折线连接（和 tool result 一致）
       const resultPrefix = indent + theme.fg("dim", SYM.result + "  ");
-      // 2026-09-13（房东定稿）：「Execute 结果」三态——隐藏 / 摘要（纯前 5 行）/ 全部
+      // 2026-09-13（用户定稿）：「Execute 结果」三态——隐藏 / 摘要（纯前 5 行）/ 全部
       // （隐藏=不渲染结果区；摘要=只给前 5 行、无省略提示行；全部=原样）
       const resultMode = (globalThis as any).__genshinExecuteResult ?? "full";
       if (resultMode === "hide") display = "";
@@ -277,6 +282,7 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
     }
     return c;
   });
-  // 全部渲染器注册完成 → 标记部件就位（R002 校验用）
-  for (const p of RENDER_PARTS) _registeredParts.add(p.type);
+  // 全部渲染器注册完成 → 只把实际注册过的 type 标记就位（R002 校验用），并恢复原方法
+  (pi as any).registerMessageRenderer = _origRegister;
+  for (const t of _actuallyRegistered) _registeredParts.add(t);
 }

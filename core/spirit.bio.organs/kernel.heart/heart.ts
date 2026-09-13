@@ -15,7 +15,31 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, unl
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { getSessionRole, getPrompt, getActiveToolChrPrompts } from "#kernel_ribosome";
-import { runtimeCacheDir, memoryDir, memoryDataDir, logerr, writeFileAtomic, monitorDataFile } from "#paths";
+import { runtimeCacheDir, memoryDir, memoryDataDir, logerr, writeFileAtomic, readGrowthLast } from "#paths";
+
+// ISSUE 188：context 95%+ 的 URGENT 注入（冻结/非冻结两条路径共用）。
+// 2026-09-13：读 growth.jsonl 改走 readGrowthLast（末行可能是别的事件行）；口径分两个数——
+//   api_ratio（上一轮真实 prompt）为主：那才是接近 API 上限的信号；
+//   ratio（记忆文件估算）决定 amem 帮不帮得上：文件也大 → 叫它 amem；文件不大、是活对话本身撑大的 → amem 归档不了，
+//   提示 /compact 或 self-reboot——别把它锁死在"必须先 amem"里（memory.ts 的 tool_call 门禁同一规则）。
+function _urgentContextNote(): string {
+  try {
+    const pid: string = (globalThis as any).__genshinPersonId || "";
+    if (!pid) return "";
+    const g = readGrowthLast(pid);
+    if (!g) return "";
+    const est = g.ratio || 0;
+    const api = typeof g.api_ratio === "number" ? g.api_ratio : null;
+    const r = api ?? est;
+    if (r < 95) return "";
+    if (api === null || est >= 60) {
+      return i18n(`\n\n[URGENT] context 使用已达 ${r.toFixed(1)}%（记忆文件 est ${est.toFixed(1)}%），距离 API 限制极近。你必须立即执行 amem archive 清理记忆再做其他任何事。不要忽略。`,
+        `\n\n[URGENT] context usage at ${r.toFixed(1)}% (memory files est ${est.toFixed(1)}%), dangerously close to API limit. You MUST immediately run amem archive to free memory before doing anything else. Do NOT ignore this.`);
+    }
+    return i18n(`\n\n[URGENT] 活对话窗口已达 ${r.toFixed(1)}%，但记忆文件只占 ${est.toFixed(1)}%——是本次会话的对话本身撑大的，amem 归档降不下来。请立刻收尾当前工作并 self-reboot 进入新会话，或用 /compact。`,
+      `\n\n[URGENT] live context window at ${r.toFixed(1)}% while memory files are only ${est.toFixed(1)}% — this session's own conversation is what is big; amem cannot shrink it. Wrap up now and self-reboot into a fresh session, or use /compact.`);
+  } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); return ""; }
+}
 import { sendCustomMessage, messageTriggersTurn } from "#kernel_backbone";
 import { registerMessageRenderers } from "#tui_renderers";
 import { heartState, limits, setUI, hasUserMessage, setHasUserMessage, errorBackoffMs, setErrorBackoffMs, transition, resetLimits, dlog, personId, wakeRestartFile, isWorkerSession, onHeartStateChange } from "./heart-state.ts";
@@ -108,18 +132,7 @@ export default function (pi: ExtensionAPI) {
       }
       if (_frozenHeartSystemPrompt) {
         // ISSUE 188：即使冻结缓存也检查 context 用量——95%+ 强制 amem
-        let urgentAmem = "";
-        try {
-          // 2026-09-13：路径改走 #paths.monitorDataFile（之前读 MemoryData/<id>/monitor/growth.jsonl——从未存在，此分支从未生效）
-          const pid: string = (globalThis as any).__genshinPersonId || "";
-          const gp = pid ? monitorDataFile(pid, "growth.jsonl") : "";
-          if (gp && existsSync(gp)) {
-            const gl = readFileSync(gp, "utf8").trim().split("\n");
-            const lr = JSON.parse(gl[gl.length - 1]).ratio || 0;
-            if (lr >= 95) urgentAmem = i18n(`\n\n[URGENT] context 使用已达 ${lr.toFixed(1)}%，距离 API 限制极近。你必须立即执行 amem archive 清理记忆再做其他任何事。不要忽略。`, `\n\n[URGENT] context usage at ${lr.toFixed(1)}%. You MUST run amem archive immediately before anything else.`);
-          }
-        } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
-        return { systemPrompt: _frozenHeartSystemPrompt + urgentAmem };
+        return { systemPrompt: _frozenHeartSystemPrompt + _urgentContextNote() };
       }
       let extra = "";
       try {
@@ -144,24 +157,7 @@ export default function (pi: ExtensionAPI) {
       const stableTitle = process.title.replace(/,([0-9a-f]{8,})\)\s*$/, ")");
       _frozenHeartSystemPrompt = event.systemPrompt + "\n\n" + HEARTBEAT_PROMPT + toolChr + "\n\n" + i18n("[系统] 你是 ", "[System] You are ") + stableTitle + extra + langNote;
       // ISSUE 188：context 95%+ 强制 amem——绕过冻结缓存，每轮检查用量
-      let urgentAmem = "";
-      try {
-        // 2026-09-13：路径改走 #paths.monitorDataFile（之前读 MemoryData/<id>/monitor/growth.jsonl——从未存在，ISSUE 188 从未生效）
-        const pid: string = (globalThis as any).__genshinPersonId || "";
-        const growthPath = pid ? monitorDataFile(pid, "growth.jsonl") : "";
-        if (growthPath && existsSync(growthPath)) {
-          const gLines = readFileSync(growthPath, "utf8").trim().split("\n");
-          const last = JSON.parse(gLines[gLines.length - 1]);
-          const ratio = last.ratio || 0;
-          if (ratio >= 95) {
-            urgentAmem = i18n(
-              `\n\n[URGENT] context 使用已达 ${ratio.toFixed(1)}%，距离 API 限制极近。你必须立即执行 amem archive 清理记忆再做其他任何事。不要忽略。`,
-              `\n\n[URGENT] context usage at ${ratio.toFixed(1)}%, dangerously close to API limit. You MUST immediately run amem archive to free memory before doing anything else. Do NOT ignore this.`
-            );
-          }
-        }
-      } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
-      return { systemPrompt: _frozenHeartSystemPrompt + urgentAmem };
+      return { systemPrompt: _frozenHeartSystemPrompt + _urgentContextNote() };
     }
     if (role === "metaconsciousness") {
       try {

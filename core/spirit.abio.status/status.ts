@@ -9,7 +9,7 @@ import { homedir } from "node:os";
 import { registerPaimonTool } from "#kernel_backbone";
 import { renderToolCall, renderMessage } from "#tui_blockrender";
 import { i18n } from "#tui_localizations";
-import { monitorDataFile } from "#paths";
+import { readGrowthLast } from "#paths";
 const T = (zh: string, en: string) => i18n(zh, en);
 
 // ── Codeforces 风格履历段位（CF 官方 rating 颜色，2015 "Second Revolution of Colors" 改革后至今）──
@@ -266,20 +266,18 @@ export function registerStatusTool(_pi: ExtensionAPI) {
           if (model) lines.push(`Model: ${model}`);
           // Context usage: 读 growth.jsonl 最后一行拿最新快照
           try {
-            // 2026-09-13：路径改走 #paths.monitorDataFile（之前读 MemoryData/<id>/monitor/growth.jsonl——从未存在，Context 行从未显示过）
-            const growthPath = monitorDataFile(pid, "growth.jsonl");
-            if (existsSync(growthPath)) {
-              const gLines = readFileSync(growthPath, "utf8").trim().split("\n");
-              const last = JSON.parse(gLines[gLines.length - 1]);
-              const used = last.tokens || 0;
+            // 2026-09-13：读 growth.jsonl 走 readGrowthLast（路径唯一真相源 + 跳过非 ratio 行）；两个口径分开显示——
+            // api = 上一轮真实 prompt（活窗口，与 footer 同源）；est = 记忆文件体量估算（之前只显示 est 却叫 "Context"，与 footer 对不上）
+            const g = readGrowthLast(pid);
+            if (g) {
               const cap = contextWindow || parseInt(process.env.PI_MODEL_MAX_TOKENS || "") || 0;
               const fmtT = (n: number) => n < 1000 ? n + "" : n < 1e6 ? (n / 1000).toFixed(1) + "k" : (n / 1e6).toFixed(1) + "M";
-              if (cap > 0) {
-                const pct = Math.round((used / cap) * 100);
-                lines.push(`Context: ${fmtT(used)} / ${fmtT(cap)} tokens (${pct}%)`);
-              } else if (used > 0) {
-                lines.push(`Context: ${fmtT(used)} tokens`);
-              }
+              const pctOf = (n: number) => cap > 0 ? ` (${Math.round((n / cap) * 100)}%)` : "";
+              const capStr = cap > 0 ? ` / ${fmtT(cap)}` : "";
+              const api = typeof g.api_tokens === "number" ? g.api_tokens : 0;
+              const est = g.tokens || 0;
+              if (api > 0) lines.push(`Context (api, last turn): ${fmtT(api)}${capStr} tokens${pctOf(api)}`);
+              if (est > 0) lines.push(`Memory files (est): ${fmtT(est)}${capStr} tokens${pctOf(est)}`);
             }
           } catch (e) { console.error("[spirit.abio.status/status.ts] " + ((e as any)?.message || e)); }
 

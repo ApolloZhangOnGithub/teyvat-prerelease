@@ -63,11 +63,12 @@ function getAllItems() {
   const executeResult = g.__genshinExecuteResult ?? "full";
   const waitShow = g.__genshinWaitShow === true;
   const toolElapsed = g.__genshinToolElapsed === true;
+  const amemDisplay = g.__genshinAmemDisplay ?? "fold";
   const breakAnd = g.__genshinExecuteBreakAnd ?? false;
 
   const toolMode = toolExpanded ? T("完整", "Full") : T("摘要", "Summary");
   const readMode = readExpanded ? T("完整", "Full") : T("摘要", "Summary");
-  // 2026-09-13（房东定稿）：Execute 摘要 = 显示/隐藏；Execute 结果 = 隐藏/摘要/全部；Wait 输出 = 隐藏/显示（默认隐藏）
+  // 2026-09-13（用户定稿）：Execute 摘要 = 显示/隐藏；Execute 结果 = 隐藏/摘要/全部；Wait 输出 = 隐藏/显示（默认隐藏）
   const exeSummaryMode = executeSummary ? T("显示", "Show") : T("隐藏", "Hide");
   const exeResultMode = executeResult === "hide" ? T("隐藏", "Hide") : executeResult === "summary" ? T("摘要", "Summary") : T("全部", "Full");
   const waitShowMode = waitShow ? T("显示", "Show") : T("隐藏", "Hide");
@@ -78,11 +79,13 @@ function getAllItems() {
     { id: "renderMode", label: T("渲染模式", "Render Mode"), currentValue: renderMode, values: ["line", "streaming", "block"] },
     { id: "thinking", label: "Thinking", currentValue: thinkHidden ? T("隐藏", "Hidden") : (g.__genshinThinkingFirstLine ? T("首行", "First line") : T("完整", "Full")), values: [T("首行", "First line"), T("完整", "Full"), T("隐藏", "Hidden")] },
     { id: "codeHighlight", label: T("代码高亮", "Code Highlight"), currentValue: codeHighlight ? T("开", "On") : T("关", "Off"), values: [T("关", "Off"), T("开", "On")] },
-    // 2026-09-13（房东）：Intention 工具输出——隐藏 / 显示（默认隐藏）
+    // 2026-09-13（用户）：Intention 工具输出——隐藏 / 显示（默认隐藏）
     { id: "intention", label: T("Intention 输出", "Intention Output"), currentValue: ((g as any).__genshinIntentionShow ?? false) ? T("显示", "Show") : T("隐藏", "Hide"), values: [T("隐藏", "Hide"), T("显示", "Show")] },
     { id: "toolExpanded", label: T("工具输出", "Tool Output"), currentValue: toolMode, values: [T("摘要", "Summary"), T("完整", "Full")] },
-    // 2026-09-13（房东）：工具结果耗时戳 [0.009s] 默认隐藏
+    // 2026-09-13（用户）：工具结果耗时戳 [0.009s] 默认隐藏
     { id: "toolElapsed", label: T("工具耗时", "Tool Elapsed"), currentValue: toolElapsed ? T("显示", "Show") : T("隐藏", "Hide"), values: [T("隐藏", "Hide"), T("显示", "Show")] },
+    // 2026-09-13（用户）：Amem 输出三态——隐藏/折叠/显示（默认折叠）
+    { id: "amemDisplay", label: T("Amem 输出", "Amem Output"), currentValue: amemDisplay === "hide" ? T("隐藏", "Hide") : amemDisplay === "show" ? T("显示", "Show") : T("折叠", "Fold"), values: [T("隐藏", "Hide"), T("折叠", "Fold"), T("显示", "Show")] },
   ];
 
   if (toolExpanded) {
@@ -172,7 +175,7 @@ function handleChange(id: string, value: string) {
       break;
     }
     case "intention": {
-      // 2026-09-13（房东）：Intention 工具输出隐藏/显示（默认隐藏）
+      // 2026-09-13（用户）：Intention 工具输出隐藏/显示（默认隐藏）
       const on = value === T("显示", "Show");
       g.__genshinIntentionShow = on;
       save("intentionShow", on);
@@ -194,31 +197,38 @@ function handleChange(id: string, value: string) {
       save("editExpanded", g.__genshinEditExpanded);
       break;
     case "executeSummary": {
-      // 2026-09-13（房东定稿）：调用行摘要 显示/隐藏（隐藏=仅标题）
+      // 2026-09-13（用户定稿）：调用行摘要 显示/隐藏（隐藏=仅标题）
       const on = value === T("显示", "Show");
       g.__genshinExecuteSummary = on;
       save("executeSummary", on);
       break;
     }
     case "executeResult": {
-      // 2026-09-13（房东定稿）：结果区 隐藏/摘要/全部
+      // 2026-09-13（用户定稿）：结果区 隐藏/摘要/全部
       const mode = value === T("隐藏", "Hide") ? "hide" : value === T("摘要", "Summary") ? "summary" : "full";
       g.__genshinExecuteResult = mode;
       save("executeResult", mode);
       break;
     }
     case "waitShow": {
-      // 2026-09-13（房东）：Wait 输出 隐藏/显示（默认隐藏）
+      // 2026-09-13（用户）：Wait 输出 隐藏/显示（默认隐藏）
       const on = value === T("显示", "Show");
       g.__genshinWaitShow = on;
       save("waitShow", on);
       break;
     }
     case "toolElapsed": {
-      // 2026-09-13（房东）：工具结果耗时戳 [0.009s] 默认隐藏
+      // 2026-09-13（用户）：工具结果耗时戳 [0.009s] 默认隐藏
       const on = value === T("显示", "Show");
       g.__genshinToolElapsed = on;
       save("toolElapsed", on);
+      break;
+    }
+    case "amemDisplay": {
+      // 2026-09-13（用户）：Amem 输出 隐藏/折叠/显示（默认折叠）
+      const mode = value === T("隐藏", "Hide") ? "hide" : value === T("显示", "Show") ? "show" : "fold";
+      g.__genshinAmemDisplay = mode;
+      save("amemDisplay", mode);
       break;
     }
     case "breakAnd":

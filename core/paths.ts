@@ -100,6 +100,18 @@ export function agentFileDir(id: string): string { return join(AGENT_FILE_DATA, 
 // 而 heart.ts / status.ts / memory.ts 的 tool_call 门禁三处读的是 MemoryData/<id>/monitor/growth.jsonl（磁盘上从未存在）
 // → ISSUE 188 的「95% 强制 amem」与 status 的 Context 行一直是死代码。读写统一走这里，不再各自拼路径。
 export function monitorDataFile(id: string, file: string): string { return join(AGENT_FILE_DATA, "MonitorData", id, file); }
+// growth.jsonl 最新一条：从尾部向前找第一条含 ratio 的记录。
+// 2026-09-13：文件里还混有 snapshot_trim 事件行（没有 tokens/ratio）——只读"最后一行"会拿到它，门禁/URGENT/status 静默失效一轮。
+// 字段：tokens/ratio = 记忆文件体量估算（est）；api_tokens/api_ratio = 上一轮真实 prompt（活窗口）。
+export function readGrowthLast(id: string): { ts?: string; bytes?: number; tokens?: number; ratio?: number; api_tokens?: number; api_ratio?: number | null } | null {
+  let raw = "";
+  try { raw = readFileSync(monitorDataFile(id, "growth.jsonl"), "utf8"); } catch { return null; }
+  const lines = raw.trim().split("\n");
+  for (let i = lines.length - 1; i >= 0 && i >= lines.length - 50; i--) {
+    try { const o = JSON.parse(lines[i]); if (o && typeof o.ratio === "number") return o; } catch { /* 坏行跳过 */ }
+  }
+  return null;
+}
 export function identityDir(id: string): string { return join(IDENTITY_DATA, id); }
 export function blackboxDir(id: string): string { return join(BLACKBOX_DATA, id); }
 export function socialDataDir(): string { return SOCIAL_DATA; }

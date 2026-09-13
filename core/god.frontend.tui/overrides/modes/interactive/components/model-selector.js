@@ -101,7 +101,7 @@ export class ModelSelectorComponent extends Container {
     // cost 从 models.dev 换算已是每百万美元、limit.context→contextWindow、limit.output→maxTokens、reasoning）。
     // 架构通用：MODELSDEV_PROVIDERS 映射表加 provider id 即启用其他 provider。
     // 离线/超时/解析失败 → 返回 []（用内置目录，永不卡 /m）。
-    // 2026-09-13（房东：bigmodel 下也不全）：启用 bigmodel→zhipuai、deepseek→deepseek（models.dev 的 provider 键）。
+    // 2026-09-13（用户：bigmodel 下也不全）：启用 bigmodel→zhipuai、deepseek→deepseek（models.dev 的 provider 键）。
     MODELSDEV_PROVIDERS = { openrouter: "openrouter", bigmodel: "zhipuai", deepseek: "deepseek" };
     MODELSDEV_URL = "https://models.dev/api.json";
     MODELSDEV_TTL_MS = 24 * 60 * 60 * 1000;
@@ -227,7 +227,7 @@ export class ModelSelectorComponent extends Container {
             try {
                 availableModels = [...availableModels, ...await this.loadModelsDevExtras(availableModels)];
             } catch (e) { console.error("[teyvat model-selector] models.dev 合并失败（用内置目录）: " + (e?.message ?? e)); }
-            // 2026-09-13（房东：下架模型当然要过滤）：对**启用了 models.dev 目录的 provider**，
+            // 2026-09-13（用户：下架模型当然要过滤）：对**启用了 models.dev 目录的 provider**，
             // 把内置目录里那些 models.dev 已不存在的模型（= 官方已下架，选了会报错）从列表里去掉。
             // （未启用目录的 provider 不动——它们没有权威现存清单，贸然过滤会误删）
             try {

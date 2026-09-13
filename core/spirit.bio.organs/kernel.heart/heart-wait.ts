@@ -33,7 +33,7 @@ export function registerWaitTool(pi: ExtensionAPI) {
       message: Type.Optional(Type.String({ messageDescription: "Optional message shown during wait (e.g. reason)" })),
     }),
     renderCall(args: any, theme: any) {
-      // 2026-09-13（房东）：Wait 输出支持隐藏/显示——默认隐藏（开关存 settings.waitShow，/s 面板可切）
+      // 2026-09-13（用户）：Wait 输出支持隐藏/显示——默认隐藏（开关存 settings.waitShow，/s 面板可切）
       if (!(globalThis as any).__genshinWaitShow) return renderMessage.silent();
       const s = args?.seconds ?? "?";
       const title = args?.title || "";
@@ -98,7 +98,7 @@ export function registerWaitTool(pi: ExtensionAPI) {
       (globalThis as any).__genshinWaitWasForUser = waiting;
 
       // monitor：轮询 shell 命令，exit 0 = 条件满足，提前唤醒
-      // 2026-09-13（房东）——monitor **暂时禁用**：不读 params.monitor（下方轮询块条件也一并置 false）。
+      // 2026-09-13（用户）——monitor **暂时禁用**：不读 params.monitor（下方轮询块条件也一并置 false）。
       // 恢复时：把本行改回 params.monitor，并去掉下方 if 里的 false && 即可。
       const monitorCmd = undefined as string | undefined; // OLD: params.monitor
       const monitorInterval = Math.max(1, params.monitor_interval || 5);
@@ -120,7 +120,7 @@ export function registerWaitTool(pi: ExtensionAPI) {
         remaining--;
         if (remaining <= 0) { clearInterval(countdownTimer); return; }
         // monitor 轮询
-        // 2026-09-13（房东）：monitor 轮询暂时禁用（原条件 `monitorCmd && ++monitorTick >= monitorInterval`）
+        // 2026-09-13（用户）：monitor 轮询暂时禁用（原条件 `monitorCmd && ++monitorTick >= monitorInterval`）
         if (false && monitorCmd && ++monitorTick >= monitorInterval) {
           monitorTick = 0;
           try {

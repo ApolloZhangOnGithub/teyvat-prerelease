@@ -7,7 +7,7 @@
 import { Type } from "@sinclair/typebox";
 import { createReadToolDefinition } from "@earendil-works/pi-coding-agent";
 import { registerPaimonTool } from "#kernel_backbone";
-import { renderToolCall, renderMessage } from "#tui_blockrender";
+import { renderToolCall, renderMessage, stripResultTokenMark } from "#tui_blockrender";
 import { i18n } from "#tui_localizations";
 import { createDocxBackend } from "#office_docx";
 import { createPptxBackend } from "#office_pptx";
@@ -64,7 +64,8 @@ export default function registerReadTool(_pi: any): void {
     },
     renderResult(result: any, _opts: any, t: any, ctx: any) {
       if (ctx?.isError) return renderMessage.summary(t, { isError: true }, (result?.content || [])[0]?.text);
-      const text = (result?.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("\n");
+      // 2026-09-13：先剥掉尾部工具元数据标签（[id]/[result …]/[时间 | ctx]）再数行——否则 "N more lines" 多算 2-3 行，短文件时标签直接混进正文
+      const text = stripResultTokenMark((result?.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("\n")).trimEnd();
       const head = text.split("\n").slice(0, 12).join("\n");
       const more = text.split("\n").length > 12 ? `\n... (${text.split("\n").length - 12} more lines, expand to view)` : "";
       return renderMessage.output(t, ctx, [{ type: "text", text: head + more }]);

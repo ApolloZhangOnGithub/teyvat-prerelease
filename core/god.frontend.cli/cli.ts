@@ -814,7 +814,7 @@ function getEndpoint(): string {
 // 自动 GET {base-url}/models 拉模型清单 → 写 ~/.teyvat/config/models.json providers[name] → /m 即可切换。
 //
 // 2026-09-11：按 model id 查框架内置 catalog（pi-ai）——命中则用内置上限，未命中才用 CLI 默认值。
-//   缘起：房东发现 poixe 下 claude-opus-4-6 显示「33k context」，根因是本函数把 CLI 默认值
+//   缘起：用户发现 poixe 下 claude-opus-4-6 显示「33k context」，根因是本函数把 CLI 默认值
 //   32768/16384 无条件写进 models.json，覆盖了内置的 1M/128k。现在旗舰模型不会被压扁，
 //   第三方/本地小模型（内置查不到）仍走默认值（不为其特殊照顾）。
 //   注：pi-ai 只在 config provider 这条路径上动态 import，避免拖慢其他 genshin 子命令启动。
