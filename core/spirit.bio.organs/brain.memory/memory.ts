@@ -6,7 +6,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { homedir } from "node:os";
 import { getSessionRole, getPrompt } from "#kernel_ribosome";
-import { memoryDir,  personDataDir as _personDataDir, memoryDataDir, sessionDirFor, estimateTokens, monitorDataFile } from "#paths";
+import { memoryDir,  personDataDir as _personDataDir, memoryDataDir, sessionDirFor, estimateTokens, monitorDataFile, runtimeCacheDir as _runtimeCacheDir } from "#paths";
 import { registerPaimonTool, sendCustomMessage, resultContent } from "#kernel_backbone";
 import { renderToolCall, renderMessage } from "#tui_blockrender";
 import { createHash, randomBytes } from "node:crypto";
@@ -99,6 +99,21 @@ export default function registerMemory(pi: ExtensionAPI) {
   // prevPrompt/prevOut 持久化到 tokenmaxxed.json，跨 session 连续（重启/快照重冻结自动正确）。
   const _pondSess: { tokens: number; prevPrompt: number | null; prevOut: number } = { tokens: 0, prevPrompt: null, prevOut: 0 };
   (globalThis as any).__genshinPondSess = _pondSess;
+  // 本 session 累计 API 成本（pi 每条 assistant 消息报 usage.cost.total）。
+  // 2026-09-13：RuntimeCache/<id>/cost-<role>.json 原来的写入方早已下线（磁盘最新一份 7 月 9 日），
+  // 而 footer 钱包 / session_shutdown 的 cost_total 累计 / mobile 设置页三处读者仍在读 → 成本永远 0。现在由 message_end 写。
+  let _costSess = 0;
+  let _costDirReady = false;
+  function flushCost(): void {
+    if (!personDir) return;
+    try {
+      const pid = path.basename(personDir);
+      const dir = _runtimeCacheDir(pid);
+      if (!_costDirReady) { fs.mkdirSync(dir, { recursive: true }); _costDirReady = true; }
+      const role = getSessionRole() || "main";
+      writeFile(path.join(dir, `cost-${role}.json`), JSON.stringify({ role, cost: +_costSess.toFixed(6), ts: Date.now() }));
+    } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] flushCost: " + ((e as any)?.message || e)); }
+  }
 
   // ISSUE 106：实时落盘 —— 文件.tokenmaxxed += pond 增量后清零（已入账）。
   // footer/status 直接读文件即实时值，不再等 session_shutdown、无需 pond 叠加 hack。
@@ -163,6 +178,9 @@ export default function registerMemory(pi: ExtensionAPI) {
       (globalThis as any).__genshinContextGauge = `ctx ${promptPct}%`;
       // ISSUE 106：每轮实时落盘（入账后清零，footer/status 读文件即实时值）
       flushTokenmaxxed();
+      // 成本累计（见 flushCost 注释）
+      _costSess += u.cost?.total || 0;
+      flushCost();
     }
   });
 
@@ -187,6 +205,7 @@ export default function registerMemory(pi: ExtensionAPI) {
     // 必须重新基线：null → 首轮 novel=0（重注入不算认知），首轮 prompt 成为新基线。
     _pondSess.prevPrompt = null;
     _pondSess.prevOut = 0;
+    _costSess = 0; // 新 session 成本从 0 起算（cost-<role>.json 语义 = 本 session）
 
     // 只有主意识注入记忆快照。hc/sc/sl 小号有各自的活(读 context/feed/work_mem 编码)，
     // 绝不能把主意识那 ~90万 token 快照灌给它们 —— 会白白膨胀、甚至把小号撑挂(海马体死亡循环的元凶之一)。
@@ -466,7 +485,8 @@ export default function registerMemory(pi: ExtensionAPI) {
       let sessMain = 0, sessHippo = 0, sessSub = 0, sessSleeping = 0;
       for (const role of roles) {
         try {
-          const costPath = path.join(personDir, `cost-${role}.json`);
+          // 2026-09-13：cost-<role>.json 在 RuntimeCache/<id>/（footer 与 flushCost 同址），之前读 MemoryData/<id>/（从未有过这个文件）→ 累计永远 0
+          const costPath = path.join(_runtimeCacheDir(path.basename(personDir)), `cost-${role}.json`);
           if (!fs.existsSync(costPath)) continue; // 该角色无消费记录（新 agent/未启用）——不存在不刷 ENOENT
           let d: any = null;
           try { d = JSON.parse(readFile(costPath)); } catch {  /* 竞态截断：按 0 计不刷（下次写入自动修复）*/ }

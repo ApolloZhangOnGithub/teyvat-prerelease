@@ -394,10 +394,18 @@ export function registerPaimonTool(toolDef: any): void {
               } catch (e) { console.error("[spirit.bio.organs/kernel.backbone/backbone.ts] " + ((e as any)?.message || e)); }
             }
             const fmtTok = (n: number) => n < 1000 ? n + "" : n < 1e6 ? (n / 1000).toFixed(1) + "k" : (n / 1e6).toFixed(1) + "M";
-            const ctxPart = ctxTok > 0 ? `, contexted ${fmtTok(ctxTok)}` : "";
+            // 2026-09-13（ISSUE 203）：两个口径分开标——"ctx.md … est" 是记忆文件体量估算（amem 直接改的对象），
+            // "api …" 是上一轮 API 真实 prompt（活窗口，footer 同源）。之前统一叫 contexted，与 footer 的 contexted N% 同名不同义，看起来像乱跳。
+            const ctxPart = ctxTok > 0 ? `, ctx.md ${fmtTok(ctxTok)} est` : "";
+            let apiPart = "";
+            try {
+              const api = (globalThis as any).__genshinPondSess?.prevPrompt || 0;
+              const win = (globalThis as any).__genshinGetModel?.()?.contextWindow || 0;
+              if (api > 0) apiPart = `, api ${fmtTok(api)}${win > 0 ? ` (${Math.round((api / win) * 100)}%)` : ""}`;
+            } catch (e) { /* 取不到 API 值就只标 est */ }
             const lastContent = result.content[result.content.length - 1];
             if (lastContent?.type === "text") {
-              lastContent.text += `\n[result ${fmtTok(resTok)} tokens${ctxPart}]`;
+              lastContent.text += `\n[result ${fmtTok(resTok)} tokens${ctxPart}${apiPart}]`;
             }
           }
         }

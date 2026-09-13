@@ -340,8 +340,10 @@ export class ToolExecutionComponent extends Container {
         // Read 内容展开开关（/u 面板可调，默认折叠=不展开文件内容）
         if (toolName === "read" && globalThis.__genshinReadExpanded !== true) this.expanded = false;
         this.cwd = cwd;
-        // 从 UI 首次出现开始计时（含模型流式输出 tool call 参数的时间），而非 tool_execution_start
-        this._execStartTime = Date.now();
+        // 2026-09-13（房东）：耗时戳从 tool_execution_start（markExecutionStarted）算起，不含 think/参数流式时间。
+        // （原在构造时设 Date.now()——reasoning 模型里组件在 think 阶段就提前创建，耗时把 think 也算进去了。
+        //   改为 null，只有 markExecutionStarted 才设真实执行起点；若 tool_execution_start 未到则 elapsedMs=undefined→不显示耗时。）
+        this._execStartTime = null;
         this._showedSpinner = false;
         this.addChild(new Spacer(1));
         // Always create all shell variants. contentBox is used for default renderer-based composition.

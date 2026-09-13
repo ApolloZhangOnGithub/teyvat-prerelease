@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-13T10:58:29.209Z",
+  "generated": "2026-09-13T11:03:01.371Z",
   "apps": [
     {
       "name": "amap",
@@ -113,8 +113,8 @@
       "name": "settings",
       "dir": "settings",
       "tier": "apps",
-      "build": 8,
-      "md5": "42c44b5ebe5ad7102777d4338959f2aa",
+      "build": 9,
+      "md5": "d29a7463ac414cb6c2a49f6ae093a486",
       "file": "settings.ts",
       "handler": "code"
     },

@@ -13,7 +13,7 @@ function asyncShSafe(cmd: string, timeout: number): Promise<string> {
 import type { MobileApp } from "../../system.kernel/kernel.ts";
 import { getRegion, setRegion } from "../calendar/calendar.ts";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { logerr } from "#paths";
+import { logerr, runtimeCacheDir, monitorDataFile } from "#paths";
 
 // apps/settings/settings.ts — 系统设置
 
@@ -37,14 +37,20 @@ async function getPiVersion(): Promise<string> {
   return raw.trim() || "?";
 }
 
+// 2026-09-13：路径改走 #paths——cost_total.json 由 memory.ts session_shutdown 写在 AgentFileData/MonitorData/<id>/，
+// cost-<role>.json 由 memory.ts message_end 写在 RuntimeCache/<id>/；之前两者都读 MemoryData/<id>/（从未存在）→ 设置页成本永远 0 且每次刷 ENOENT。
 function loadCostTotal(personDir: string): { main: number; hippocampus: number; metaconsciousness: number; total: number; sessions: number } {
-  const f = path.join(personDir, "cost_total.json");
-  try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch (e) { console.error("[universe.infotech/local.mobile/apps/settings/settings.ts] " + ((e as any)?.message || e)); return { main: 0, hippocampus: 0, metaconsciousness: 0, total: 0, sessions: 0 }; }
+  const f = monitorDataFile(path.basename(personDir), "cost_total.json");
+  const zero = { main: 0, hippocampus: 0, metaconsciousness: 0, total: 0, sessions: 0 };
+  if (!fs.existsSync(f)) return zero; // 首个 session 结束前本就没有（不是错误）
+  try { return { ...zero, ...JSON.parse(fs.readFileSync(f, "utf8")) }; } catch (e) { console.error("[universe.infotech/local.mobile/apps/settings/settings.ts] " + ((e as any)?.message || e)); return zero; }
 }
 
 function loadCostCurrent(personDir: string, role: string): number {
+  const f = path.join(runtimeCacheDir(path.basename(personDir)), `cost-${role}.json`);
+  if (!fs.existsSync(f)) return 0; // 该角色本 session 无消费记录（hc/sc 未启用时正常）
   try {
-    const d = JSON.parse(fs.readFileSync(path.join(personDir, `cost-${role}.json`), "utf8"));
+    const d = JSON.parse(fs.readFileSync(f, "utf8"));
     return d.cost || 0;
   } catch (e) { console.error("[universe.infotech/local.mobile/apps/settings/settings.ts] " + ((e as any)?.message || e)); return 0; }
 }

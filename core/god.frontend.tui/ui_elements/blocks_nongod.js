@@ -355,7 +355,8 @@ function stripResultTokenMark(text) {
   // [HH:MM:SS.mmm +Ns] 任意顺序连续/空格隔开——只剥元数据前缀段，不碰内容里的正常 [方括号]。
   // feed content 保留不剥（模型要）——渲染层显示剥离。
   let s = String(text ?? "");
-  const re = /(?:(?:\[(?:id|background|remaining):[^\]]*\]|\[result\s+[\d.]+[kM]?\s*tokens?(?:,\s*(?:ctx|contexted)\s+[\d.]+[kM]?)?\]|\[\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:\s+[+-]?\d+(?:\.\d+)?s)?\])\s*)+$/;
+  // 2026-09-13：[result …] 段逗号后接受任意标注（ctx.md X est / api X (N%) / 旧的 ctx|contexted X），backbone 改口径后这里不用再跟着改
+  const re = /(?:(?:\[(?:id|background|remaining):[^\]]*\]|\[result\s+[\d.]+[kM]?\s*tokens?(?:,[^\]]*)?\]|\[\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:\s+[+-]?\d+(?:\.\d+)?s)?\])\s*)+$/;
   let prev;
   do { prev = s; s = s.replace(re, "").trimEnd(); } while (s !== prev);
   return s;
