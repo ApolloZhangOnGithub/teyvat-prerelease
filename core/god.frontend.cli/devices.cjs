@@ -6,19 +6,20 @@
 const fs = require("fs");
 const os = require("os");
 const h = os.homedir();
+const PH = process.env.PAIMON_HOME || (h + "/.teyvat"); // 2026-09-13：走 PAIMON_HOME
 
 function readBinding() {
-  try { return JSON.parse(fs.readFileSync(h + "/.teyvat/UserAccount/binding.json", "utf8")); }
+  try { return JSON.parse(fs.readFileSync(PH + "/UserAccount/binding.json", "utf8")); }
   catch { console.error("未绑定：先 genshin login"); process.exit(1); }
 }
 function endpoint() {
   let e = "https://sync.paimon.beer";
   // 2026-09-13：services.json 的结构是顶层 s["genshin-sync"]（paths.ts / cli.ts 同口径），原读 s.services[...] 永远取不到自定义 endpoint
-  try { const s = JSON.parse(fs.readFileSync(h + "/.teyvat/UserAccount/services.json", "utf8")); const gs = s["genshin-sync"] || (s.services && s.services["genshin-sync"]); if (gs && gs.endpoint) e = gs.endpoint; } catch { /* services.json 缺失/损坏 → 用默认 sync.paimon.beer */ }
+  try { const s = JSON.parse(fs.readFileSync(PH + "/UserAccount/services.json", "utf8")); const gs = s["genshin-sync"] || (s.services && s.services["genshin-sync"]); if (gs && gs.endpoint) e = gs.endpoint; } catch { /* services.json 缺失/损坏 → 用默认 sync.paimon.beer */ }
   return e;
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const fmt = (s) => { if (!s) return ""; const dt = new Date(String(s).replace(" ", "T") + (String(s).includes("Z") ? "" : "Z")); if (isNaN(dt)) return String(s); return dt.toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).replace(/\//g, "-"); };
+const fmt = (s) => { if (!s) return ""; const dt = new Date(String(s).replace(" ", "T") + (String(s).includes("Z") ? "" : "Z")); if (isNaN(dt)) return String(s); return dt.toLocaleString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).replace(/\//g, "-"); };
 
 async function main() {
   const b = readBinding();
@@ -32,7 +33,7 @@ async function main() {
   const curId = b.deviceId;
 
   // 触发本机 genshin 结果上传（独立进程 spawn detached——父进程不等，查看不拖慢；2026-09-05）
-  try { require("child_process").spawn(process.execPath, [__dirname + "/upload-state.cjs"], { detached: true, stdio: "ignore" }).unref(); } catch { /* 上传失败静默 */ }
+  try { const up = require("child_process").spawn(process.execPath, [__dirname + "/upload-state.cjs"], { detached: true, stdio: "ignore" }); up.on("error", () => {}); up.unref(); } catch { /* 上传失败静默 */ } // 2026-09-13：加 error 监听
   // 拉设备列表（快——秒回显示）
   const lr = await fetch(ep + "/auth/devices", { headers: H({ "X-Device-Name": os.hostname() }) });
   if (!lr.ok) { console.log("server 查询失败: HTTP " + lr.status); process.exit(1); }

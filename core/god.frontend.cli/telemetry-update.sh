@@ -16,6 +16,9 @@ mkdir -p "$HOME/.teyvat" 2>/dev/null
 _DEVICE_ID=""; _TOKEN=""
 _BIND="$HOME/.teyvat/UserAccount/binding.json"
 [ -f "$_BIND" ] && _BIND_INFO=$(node -e "try{const b=JSON.parse(require('fs').readFileSync('$HOME/.teyvat/UserAccount/binding.json','utf8'));console.log((b.deviceId||'')+'|'+(b.token||''))}catch(e){console.log('')}" 2>/dev/null)
+# 2026-09-13：endpoint 走 services.json（顶层 genshin-sync.endpoint），不再硬编码
+_EP=$(node -e "try{const s=JSON.parse(require('fs').readFileSync('$HOME/.teyvat/UserAccount/services.json','utf8'));const g=s['genshin-sync']||(s.services&&s.services['genshin-sync']);console.log((g&&g.endpoint)||'')}catch(e){console.log('')}" 2>/dev/null)
+[ -z "$_EP" ] && _EP="https://sync.paimon.beer"
 _DEVICE_ID="${_BIND_INFO%%|*}"; _TOKEN="${_BIND_INFO#*|}"
 [ -z "$_DEVICE_ID" ] && _DEVICE_ID=$(cat "$HOME/.teyvat/RuntimeCache/.device-id" 2>/dev/null || hostname)
 _ENTRY=$(printf '{"ts":"%s","device_id":"%s","from":"%s","to":"%s","channel":"%s","trigger":"%s"}' "$TS" "$_DEVICE_ID" "$FROM_VER" "$TO_VER" "$CHANNEL" "$TRIGGER")
@@ -26,9 +29,10 @@ tail -200 "$LOG_FILE" > "$LOG_FILE.tmp" 2>/dev/null && mv "$LOG_FILE.tmp" "$LOG_
 # ── ② server 遥测上报（best effort——失败静默）──
 _PAYLOAD="{\"from\":\"$FROM_VER\",\"to\":\"$TO_VER\",\"channel\":\"$CHANNEL\",\"ts\":\"$TS\",\"trigger\":\"$TRIGGER\"}"
 if [ -n "$_TOKEN" ] && [ -n "$_DEVICE_ID" ]; then
-  curl -s -m 8 -X POST "https://sync.paimon.beer/sync/update-telemetry" \
+  # 2026-09-13：token 不进 argv（ps 可见）——经 stdin 的 curl 配置传 header
+  printf 'header = "Authorization: Bearer %s"\n' "$_TOKEN" | curl -s -m 8 -X POST "$_EP/sync/update-telemetry" \
+    -K - \
     -H "Content-Type: application/json" \
-    -H "Authorization: Bearer $_TOKEN" \
     -H "X-Device-Id: $_DEVICE_ID" \
     -H "User-Agent: genshin-sync/1.0" \
     -d "$_PAYLOAD" >/dev/null 2>&1 || true

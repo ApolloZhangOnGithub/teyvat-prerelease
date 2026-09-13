@@ -97,7 +97,7 @@ func brain.memory //记忆：主意识的记忆注入与工具（快照/增量/a
     belong memory
     belong lobes.temporal,lobes.limbic
     coded:memory.amem
-    tools amem,editcontext,nap,sleep
+    tools amem
 
 //海马体本体（hc- 后台编码进程）。core.ts 的 TRADITIONAL_HIPPOCAMPUS=false 已停用其 spawn，
 //REGISTRY 无登记。2026-08-20 用户定稿：@FUTURE 预留声明本身是技术债——改标 @ABANDONED（

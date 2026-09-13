@@ -19,7 +19,7 @@
   social({action:"inbox", limit?})     — 自己的收件箱（pending 优先）
   social({action:"focus", mode?})      — 声明专注状态 off | deep | rest（不带 mode = 查看全部）
   social({action:"group", gop, ...})   — 群管理：create | list | send | mute | add | remove
-      create: gname, members[] / send: gid, text, at? / mute: gid, on? / add|remove: gid, sid
+      create: gname, members[] / send: gid, text, at? / mute: gid, on? / add|remove: gid, members[]
 
 # social.focus
 [专注模式（全局，无个人粒度）]
@@ -27,8 +27,8 @@ focus 是声明不是权限——所有人都能看到你的状态：
   off   — 正常：interrupt 消息会打断你
   deep  — 深度工作：所有来信降为 queue（interrupt→queue）
   rest  — 勿扰：一切降为 queue
-专注工作时（跑长任务/深挖代码）主动 social.focus("deep")，别让别人猜。
-发消息前用 social.list() 看对方 focus，选对 mode，别打扰深挖中的 agent。
+专注工作时（跑长任务/深挖代码）主动 social({action:"focus", mode:"deep"})，别让别人猜。
+发消息前用 social({action:"list"}) 看对方 focus，选对 mode，别打扰深挖中的 agent。
 
 # social.etiquette
 [agent 间通讯礼仪]

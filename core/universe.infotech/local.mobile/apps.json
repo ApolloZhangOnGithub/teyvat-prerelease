@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-13T15:37:10.705Z",
+  "generated": "2026-09-13T15:58:43.071Z",
   "apps": [
     {
       "name": "amap",
@@ -104,8 +104,8 @@
       "name": "safari",
       "dir": "safari",
       "tier": "apps",
-      "build": 27,
-      "md5": "88bef592ce47ff2f9b46ea9d807e31b5",
+      "build": 28,
+      "md5": "53cd4199d1e8ecff0dd073f0a7e56bfd",
       "file": "safari.ts",
       "handler": "code"
     },

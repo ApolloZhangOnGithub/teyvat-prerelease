@@ -20,11 +20,11 @@ import { personDataDir as getPersonDir } from "#paths";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 const _require = createRequire(import.meta.url);
-import { exec, execSync } from "node:child_process";
+import { exec, execSync, spawn } from "node:child_process";
 
 // ── 浏览器服务（Safari 动态渲染用）──
 const BROWSER_PORT = process.env.BROWSER_PORT ? Number(process.env.BROWSER_PORT) : 0;
-const PORT_FILE = `${homedir()}/.teyvat/browser-service.port`;
+const PORT_FILE = `${process.env.PAIMON_HOME || homedir() + "/.teyvat"}/browser-service.port`; // 2026-09-13：走 PAIMON_HOME
 function readBrowserUrl(): string {
   // 2026-09-12（系统检查，ISSUE 181 同族）：browser-service.port 未启动时不存在 = 正常，不再当日志刷屏；仅非 ENOENT 记录
   try { const port = readFileSync(PORT_FILE, "utf8").trim(); if (port) return `http://127.0.0.1:${port}`; } catch (e) { if ((e as any)?.code !== "ENOENT") console.error("[universe.infotech/local.mobile/system.kernel/kernel.ts] " + ((e as any)?.message || e)); }
@@ -45,7 +45,9 @@ function startBrowserIfNeeded(): void {
     .then(() => { _browserReady = true; _browserStarting = false; })
     .catch(() => {
       // 没跑，启动
-      const child = exec(`node ${JSON.stringify(svcPath)}`, { env: { ...process.env, BROWSER_PORT: String(BROWSER_PORT) } });
+      // 2026-09-13（审计）：exec 带 stdout/stderr 管道——累计输出超 1MB 就 SIGTERM，agent 退出后子进程一 console.log 就 EPIPE 崩（Chrome 孤儿）；改 spawn detached + stdio ignore（safari.ts 同款）
+      const child = spawn(process.execPath, [svcPath], { env: { ...process.env, BROWSER_PORT: String(BROWSER_PORT) }, stdio: "ignore", detached: true });
+      child.on("error", (e: any) => { console.error("[universe.infotech/local.mobile/system.kernel/kernel.ts] browser-service spawn: " + (e?.message || e)); _browserStarting = false; });
       _browserPid = child.pid ?? null;
       child.unref();
       const poll = (n: number) => {

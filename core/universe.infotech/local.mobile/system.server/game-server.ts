@@ -18,7 +18,7 @@ function json(res: ServerResponse, code: number, body: any) {
 function readBody(req: IncomingMessage): Promise<any> {
   return new Promise((resolve) => {
     let data = "";
-    req.on("data", (chunk) => (data += chunk));
+    req.on("data", (chunk) => { if (data.length < (1 << 20)) data += chunk; }); // 2026-09-13：body 封顶 1MB
     req.on("end", () => { try { resolve(JSON.parse(data)); } catch (e) { console.error("[universe.infotech/local.mobile/system.server/game-server.ts] " + ((e as any)?.message || e)); resolve({}); } });
   });
 }
@@ -93,7 +93,8 @@ async function gomokuRoute(req: IncomingMessage, res: ServerResponse, path: stri
   // POST /gomoku/join
   if (method === "POST" && path === "/gomoku/join") {
     const { matchId, playerName } = await readBody(req);
-    const m = matches.get((matchId || "").toUpperCase()) as GomokuMatch | undefined;
+    if (typeof matchId !== "string") return json(res, 400, { ok: false, error: "matchId 必须是字符串" }); // 2026-09-13：数字 → toUpperCase TypeError → 未处理 rejection
+    const m = matches.get(matchId.toUpperCase()) as GomokuMatch | undefined;
     if (!m) return json(res, 404, { ok: false, error: "对局不存在" });
     if (m.tokens.length >= 2) return json(res, 400, { ok: false, error: "对局已满" });
     const token = uid();
@@ -106,7 +107,8 @@ async function gomokuRoute(req: IncomingMessage, res: ServerResponse, path: stri
   // POST /gomoku/move
   if (method === "POST" && path === "/gomoku/move") {
     const { matchId, token, row, col } = await readBody(req);
-    const m = matches.get((matchId || "").toUpperCase()) as GomokuMatch | undefined;
+    if (typeof matchId !== "string" || typeof token !== "string") return json(res, 400, { ok: false, error: "matchId/token 必须是字符串" });
+    const m = matches.get(matchId.toUpperCase()) as GomokuMatch | undefined;
     if (!m) return json(res, 404, { ok: false, error: "对局不存在" });
     const idx = m.tokens.indexOf(token);
     if (idx === -1) return json(res, 403, { ok: false, error: "鉴权失败" });
@@ -167,20 +169,26 @@ async function gomokuRoute(req: IncomingMessage, res: ServerResponse, path: stri
 
 // ── HTTP server ──
 const server = createServer(async (req, res) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  if (req.method === "OPTIONS") { res.writeHead(204); return res.end(); }
+  // 2026-09-13：整个 handler 包 try/catch——服务器跑在 agent 进程里，任何未捕获 rejection（`GET //[`、非法 JSON 字段）都会被 core.ts 记成 crash 并把本 session 结束原因标成 crash
+  try {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    if (req.method === "OPTIONS") { res.writeHead(204); return res.end(); }
 
-  const url = new URL(req.url || "/", `http://localhost:${PORT}`);
-  const path = url.pathname;
+    let path = "/";
+    try { path = new URL(req.url || "/", `http://localhost:${PORT}`).pathname; } catch { return json(res, 400, { ok: false, error: "bad url" }); }
 
-  if (path.startsWith("/gomoku")) return gomokuRoute(req, res, path);
-  // 后续游戏加在这里:
-  // if (path.startsWith("/chess")) return chessRoute(req, res, path);
+    if (path.startsWith("/gomoku")) return await gomokuRoute(req, res, path);
+    // 后续游戏加在这里:
+    // if (path.startsWith("/chess")) return chessRoute(req, res, path);
 
-  if (path === "/") return json(res, 200, { ok: true, matches: matches.size });
-  json(res, 404, { ok: false, error: "not found" });
+    if (path === "/") return json(res, 200, { ok: true, matches: matches.size });
+    json(res, 404, { ok: false, error: "not found" });
+  } catch (e) {
+    console.error("[universe.infotech/local.mobile/system.server/game-server.ts] " + ((e as any)?.message || e));
+    try { json(res, 500, { ok: false, error: "internal" }); } catch { /* 已响应 */ }
+  }
 });
 
 // 2026-09-11（prime-agent，收口 ISSUE 170 剩下的一半）：
@@ -191,11 +199,24 @@ const server = createServer(async (req, res) => {
 export function startGameServer() {
   if (server.listening) return;
   const host = process.env.PAIMON_GAME_HOST || "127.0.0.1";
-  server.listen(PORT, host, () => {
+  // 2026-09-13：每个 agent 都起一个、都覆盖同一个 port 文件——最后启动的那个退出后其他 agent 的对局全部 ECONNREFUSED。
+  // 先探已有的：port 文件指向的服务还活着就不再起第二个（对局共用它）。
+  const _tryExisting = async (): Promise<boolean> => {
+    try {
+      const p = (await import("node:fs")).readFileSync(PORT_FILE, "utf8").trim();
+      if (!p) return false;
+      const r = await fetch(`http://127.0.0.1:${p}/`, { signal: AbortSignal.timeout(500) });
+      return r.ok;
+    } catch { return false; }
+  };
+  _tryExisting().then((alive) => {
+    if (alive || server.listening) return;
+    server.listen(PORT, host, () => {
     const actualPort = (server.address() as any)?.port;
     const dir = runtimeCacheBaseDir();
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     writeFileSync(PORT_FILE, String(actualPort));
+    });
   });
 }
 

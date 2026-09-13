@@ -18,15 +18,14 @@ export function registerWaitTool(pi: ExtensionAPI) {
     messageDescription:
       "Pause for N seconds before auto-resuming. Use when you need to wait for something or give the user time.\n" +
       "- wait_for_user: true = spend pause listening for user input\n" +
-      "- monitor: shell command to poll — exit 0 = condition met, auto-wake early (e.g. 'test -f /tmp/done')\n" +
-      "- monitor_interval: seconds between monitor polls (default 5)\n" +
-      "- next_steps: what to do when you wake up",
-    promptSnippet: "wait({seconds:N}) to pause, wait({seconds:N, monitor:'test -f done.flag'}) to poll a condition, wait({seconds:N, wait_for_user:true}) to listen",
+      "- next_steps: what to do when you wake up\n" +
+      "- monitor / monitor_interval: DISABLED for now (passing monitor returns an error); background execute tasks push cmd-done when they finish",
+    promptSnippet: "wait({seconds:N}) to pause, wait({seconds:N, wait_for_user:true}) to listen (monitor polling is disabled)",
     parameters: Type.Object({
       seconds: Type.Number({ messageDescription: "Seconds to pause (1-86400)" }),
-      title: Type.Optional(Type.String({ messageDescription: "REQUIRED. Purpose of this wait (why), shows in call line. e.g. '等待训练完成', '等 GPU 资源'" })),
+      title: Type.Optional(Type.String({ messageDescription: "Purpose of this wait (why), shows in call line. e.g. '等待训练完成', '等 GPU 资源'" })),
       wait_for_user: Type.Optional(Type.Boolean({ messageDescription: "Listen for user input during wait" })),
-      monitor: Type.Optional(Type.String({ messageDescription: "Shell command to poll during wait — exit 0 means condition met, auto-terminates wait early (e.g. 'test -f /tmp/done', '! pgrep -f training')" })),
+      monitor: Type.Optional(Type.String({ messageDescription: "DISABLED (2026-09-13): passing it returns an error. Kept only for backward-compatible schemas." })),
       monitor_title: Type.Optional(Type.String({ messageDescription: "REQUIRED when monitor is set. Human-readable description of what monitor checks (e.g. '等待评估完成', 'GPU 释放'). Shows in footer status bar." })),
       monitor_interval: Type.Optional(Type.Number({ messageDescription: "Seconds between monitor polls (default 5)" })),
       next_steps: Type.Optional(Type.String({ messageDescription: "What to do when you wake up" })),

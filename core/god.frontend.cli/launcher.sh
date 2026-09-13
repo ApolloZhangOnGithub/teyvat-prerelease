@@ -378,8 +378,8 @@ case "$NAME" in
           exit 1
         fi
       else
-        if ! ( cd "$UP_DIR" && git pull --ff-only ); then
-          echo -e "  \033[31mERROR\033[0m prerelease pull 失败（网络/代理问题？）"
+        if ! ( cd "$UP_DIR" && git pull --ff-only --autostash 2>&1 | tail -2 ); then
+          echo -e "  \033[31mERROR\033[0m prerelease pull 失败（本地改动与更新冲突且 autostash 未解决——详见上方 git 输出；自动生成文件的脏改动可 git checkout -- 清理）"
           exit 1
         fi
       fi
@@ -414,7 +414,7 @@ case "$NAME" in
     elif [ -d "$SOURCE_DIR/.git" ]; then
       echo "  channel: $CHANNEL (source: $SOURCE_DIR)"
       cd "$SOURCE_DIR" || { echo "  ERROR: 进不去 $SOURCE_DIR"; exit 1; }
-      git pull --ff-only || { echo "  ERROR: git pull 失败"; exit 1; }
+      git pull --ff-only --autostash || { echo "  ERROR: git pull 失败（本地改动冲突——autostash 未解决，详见上方输出）"; exit 1; }
       # 2026-09-11（prime-agent）：原来是硬编码 `Codebase/deploy/install.sh` —— 那是 Continents 重构**之前**的布局，
       # 现在源码树是 A.core/ + C.deploy/（见 C.deploy/bootstrap.sh）；照旧路径必然 "No such file"，
       # 也就是 source 通道的 `genshin update` 一直是坏的。改为按候选探测 + 找不到就明确报错。

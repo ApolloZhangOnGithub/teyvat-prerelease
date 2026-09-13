@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teyvat IM (Cloud)</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font: 14px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f5f5; color: #1a1a1a; -webkit-font-smoothing: antialiased; }
+  .app { display: flex; height: 100vh; }
+
+  /* 登录视图 */
+  #loginView { display: none; align-items: center; justify-content: center; height: 100vh; }
+  .login-card { background: #fff; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,.10); padding: 32px 28px; width: 360px; text-align: center; }
+  .login-card h1 { font-size: 20px; margin: 0 0 6px; }
+  .login-card .sub { color: #999; font-size: 13px; margin-bottom: 22px; }
+  .btn-gh { display: inline-flex; align-items: center; gap: 10px; background: #24292f; color: #fff; border: 0; border-radius: 8px; padding: 11px 20px; font: inherit; font-size: 14px; cursor: pointer; }
+  .btn-gh:hover { background: #32383f; }
+  .btn-gh svg { width: 18px; height: 18px; fill: #fff; }
+  .or-divider { display: flex; align-items: center; gap: 10px; color: #bbb; font-size: 12px; margin: 18px 0 12px; }
+  .or-divider::before, .or-divider::after { content: ""; flex: 1; height: 1px; background: #eee; }
+  .token-row { display: flex; gap: 8px; }
+  .token-row input { flex: 1; padding: 9px 11px; border: 1px solid #ddd; border-radius: 8px; font: inherit; font-size: 13px; outline: none; }
+  .token-row button { padding: 0 14px; background: #07c160; color: #fff; border: 0; border-radius: 8px; font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+  .token-row button:hover { background: #06ad56; }
+  .token-hint { font-size: 11px; color: #aaa; text-align: left; margin-top: 8px; line-height: 1.7; }
+  .code-box { margin-top: 20px; display: none; }
+  .code-box .uc { font-size: 26px; font-weight: 700; letter-spacing: 4px; color: #07c160; padding: 10px; background: #f2fbf5; border-radius: 8px; }
+  .code-box .hint { font-size: 12px; color: #888; margin-top: 10px; line-height: 1.8; }
+  .code-box a { color: #07c160; }
+  .status { margin-top: 14px; font-size: 12px; color: #999; min-height: 18px; }
+
+  /* 主视图 */
+  #mainView { display: none; }
+  .sidebar { width: 260px; min-width: 260px; background: #f7f7f7; border-right: 1px solid #e2e2e2; display: flex; flex-direction: column; position: relative; }
+  /* 边栏拖动条（2026-09-13 用户需求） */
+  .side-drag { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; z-index: 30; }
+  .side-drag:hover, body.conv-resizing .side-drag { background: rgba(7,193,96,.35); }
+  body.conv-resizing { cursor: col-resize; user-select: none; }
+  .side-head { padding: 12px 14px 8px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #e6e6e6; }
+  .side-head .me { font-weight: 600; font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .side-head button { border: 0; background: transparent; color: #999; font-size: 12px; cursor: pointer; }
+  .side-head button:hover { color: #fa5151; }
+  .contact-list { flex: 1; overflow-y: auto; }
+  .contact { display: flex; gap: 10px; align-items: center; padding: 10px 12px; cursor: pointer; }
+  .contact:hover { background: #ededed; }
+  .contact.active { background: #d9d9d9; }
+  .avatar { width: 38px; height: 38px; border-radius: 5px; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 15px; flex: 0 0 auto; }
+  /* 状态机徽标（AHW 运行态 + FB 位置态 + O 离线） */
+  .st { display: inline-block; margin-left: 3px; padding: 0 5px; border-radius: 8px; font-size: 10px; font-weight: 600; color: #fff; vertical-align: middle; }
+  .st-A { background: #2fb344; } .st-W { background: #e8a33d; } .st-H { background: #2bb3c0; } .st-P { background: #d9534f; }
+  .st-F { background: #4a90d9; } .st-B { background: #718EF4; } .st-O { background: #c9a227; }
+  .contact .name { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .contact .meta { font-size: 11px; color: #999; }
+  .chat { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .chat-head { height: 52px; display: flex; align-items: center; padding: 0 18px; border-bottom: 1px solid #e6e6e6; font-weight: 600; }
+  .chat-head .sub { font-weight: 400; font-size: 12px; color: #999; margin-left: 8px; }
+  .chat-body { flex: 1; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+  .empty { color: #b0b0b0; text-align: center; margin: auto; font-size: 13px; }
+  .msg-row { display: flex; gap: 10px; align-items: flex-start; }
+  .msg-row.out { flex-direction: row-reverse; }
+  .bubble { max-width: 62%; padding: 9px 13px; border-radius: 6px; font-size: 14px; white-space: pre-wrap; word-break: break-word; }
+  .msg-row.in .bubble { background: #fff; }
+  .msg-row.out .bubble { background: #95ec69; }
+  .bubble .meta { display: block; font-size: 10px; color: rgba(0,0,0,.35); margin-top: 3px; }
+  .chat-foot { background: #fff; border-top: 1px solid #e6e6e6; padding: 10px 14px; display: flex; gap: 10px; }
+  #input { flex: 1; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font: inherit; outline: none; }
+  #send { padding: 0 20px; background: #07c160; color: #fff; border: 0; border-radius: 8px; cursor: pointer; font: inherit; }
+  #send:disabled { opacity: .4; }
+  #toast { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); background: rgba(30,30,34,.92); color: #fff; padding: 9px 18px; border-radius: 6px; font-size: 13px; display: none; z-index: 100; }
+</style>
+</head>
+<body>
+  <!-- 登录 -->
+  <div id="loginView">
+    <div class="login-card">
+      <h1>Teyvat IM</h1>
+      <div class="sub">用 GitHub 账号登录</div>
+      <button class="btn-gh" id="btnLogin">
+        <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+        使用 GitHub 登录
+      </button>
+      <div class="status" id="loginStatus"></div>
+      <div class="or-divider" id="orDiv" style="display:none">或</div>
+      <div class="token-row" id="tokenRow" style="display:none">
+        <input id="tokenInput" placeholder="粘贴 GitHub Token（gho_...）">
+        <button id="btnToken">用 Token 登录</button>
+      </div>
+      <div class="token-hint" id="tokenHint" style="display:none">
+        在你自己的电脑执行 <code>gh auth token</code> 复制输出，粘贴到上面即可。
+      </div>
+      <div style="text-align:center;margin-top:12px">
+        <a href="#" id="showToken" style="font-size:12px;color:#aaa">用 Token 登录</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- 主界面 -->
+  <div class="app" id="mainView">
+    <aside class="sidebar">
+      <div class="side-drag" id="sideDrag" title="拖动调整宽度（双击恢复默认）"></div>
+      <div class="side-head">
+        <span class="me" id="meName">-</span>
+        <button id="btnLogout">退出</button>
+      </div>
+      <div class="contact-list" id="contactList"></div>
+    </aside>
+    <main class="chat">
+      <header class="chat-head" id="chatHead">选择一个联系人</header>
+      <div class="chat-body" id="chatBody"><div class="empty">← 选择左侧联系人开始聊天</div></div>
+      <div class="chat-foot">
+        <input id="input" placeholder="Enter 发送" disabled>
+        <button id="send" disabled>发送</button>
+      </div>
+    </main>
+  </div>
+  <div id="toast"></div>
+
+<script>
+"use strict";
+const API = "https://sync.paimon.beer";
+const MY_SID = "c0de0001"; // 云版身份（与本地 web-im-demo 同 sid：共享同一 server 收件箱）
+let TOKEN = localStorage.getItem("paimon-im-token") || "";
+let DEVICE_ID = localStorage.getItem("paimon-im-device") || "";
+
+// ── E2E 端到端加密（2026-09-13）——ECDH P-256 + AES-256-GCM，与 agent 侧 communicate.ts 对齐 ──
+// 私钥 localStorage 持久化；公钥随消息 pub 字段分发；有对方公钥后正文加密（server 只见密文）；首联明文是设计内行为
+let MY_KP = null, MY_PUB = null;
+const PEER_PUBS = JSON.parse(localStorage.getItem("paimon-im-e2e-peers") || "{}");
+const _b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const _unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+async function e2eInit() {
+  try {
+    const saved = localStorage.getItem("paimon-im-e2e-kp");
+    if (saved) {
+      const j = JSON.parse(saved);
+      MY_KP = await crypto.subtle.importKey("pkcs8", _unb64(j.priv), { name: "ECDH", namedCurve: "P-256" }, false, ["deriveBits"]);
+      MY_PUB = j.pub;
+    } else {
+      const kp = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
+      const priv = _b64(await crypto.subtle.exportKey("pkcs8", kp.privateKey));
+      MY_PUB = _b64(await crypto.subtle.exportKey("spki", kp.publicKey));
+      MY_KP = kp.privateKey;
+      localStorage.setItem("paimon-im-e2e-kp", JSON.stringify({ priv, pub: MY_PUB }));
+    }
+  } catch (e) { console.error("e2e init failed", e); }
+}
+async function e2eKeyFor(peerPubB64) {
+  const peer = await crypto.subtle.importKey("spki", _unb64(peerPubB64), { name: "ECDH", namedCurve: "P-256" }, false, []);
+  const secret = await crypto.subtle.deriveBits({ name: "ECDH", public: peer }, MY_KP, 256);
+  const hashed = await crypto.subtle.digest("SHA-256", secret);   // 与 node 侧 sha256(secret) 对齐
+  return crypto.subtle.importKey("raw", hashed, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+async function e2eEncrypt(peerSid, text) {
+  const peer = PEER_PUBS[peerSid];
+  if (!peer || !MY_KP) return { text };
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await e2eKeyFor(peer);
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(text));
+  return { text: _b64(ct), enc: { v: 1, pub: MY_PUB, iv: _b64(iv) } };
+}
+async function e2eDecrypt(p) {
+  try {
+    if (p?.enc?.pub && p?.enc?.iv && MY_KP) {
+      const key = await e2eKeyFor(p.enc.pub);
+      const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: _unb64(p.enc.iv) }, key, _unb64(p.text));
+      PEER_PUBS[p.from] = p.enc.pub; localStorage.setItem("paimon-im-e2e-peers", JSON.stringify(PEER_PUBS));
+      return new TextDecoder().decode(pt);
+    }
+    if (p?.pub && p?.from) { PEER_PUBS[p.from] = p.pub; localStorage.setItem("paimon-im-e2e-peers", JSON.stringify(PEER_PUBS)); }
+  } catch (e) { console.error("e2e decrypt failed", e); return "[E2E 密文——无法解密]"; }
+  return p.text;
+}
+e2eInit();
+let ME = null, current = null, agents = [], msgsByPeer = {}, pollTimer = null;
+let STATE_MAP = {}, _stateAt = 0;   // 状态机：sid → "AF"/"HB"/…（/auth/devices 拉取）
+// ── 系统通知（2026-09-13）：页面在后台（失去焦点）时收到新消息 → 弹系统通知；点击聚焦并跳到该会话 ──
+let notifyAsked = false;
+function ensureNotifyPermission() {
+  if (typeof Notification === "undefined") return;
+  if (Notification.permission !== "default") { notifyAsked = true; return; }
+  if (notifyAsked) return;
+  notifyAsked = true;
+  try { const r = Notification.requestPermission(); if (r && r.catch) r.catch(() => {}); } catch (e) { /* 忽略 */ }
+}
+function sysNotify(name, text, peer) {
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  if (document.hasFocus()) return;   // tab 在前台 = 用户正在看，不打扰
+  try {
+    const n = new Notification(name, { body: String(text || "").slice(0, 120), tag: "teyvat-im-" + peer });
+    n.onclick = () => { window.focus(); const a = agents.find((x) => x.sid === peer); if (a) selectContact(a); n.close(); };
+  } catch (e) { console.error("sysNotify", e); }
+}
+// 权限请求需用户手势：首次点击页面时补一次（进入主界面时也试一次）
+document.addEventListener("click", ensureNotifyPermission, { once: true });
+// ── 边栏可拖动调宽（2026-09-13 用户需求）──
+(function initSideDrag() {
+  const el = document.querySelector(".sidebar");
+  const handle = document.getElementById("sideDrag");
+  if (!el || !handle) return;
+  const MIN = 180, MAX = 560;
+  const saved = parseInt(localStorage.getItem("paimon-im-sidebar-w") || "", 10);
+  if (saved >= MIN && saved <= MAX) { el.style.width = saved + "px"; el.style.minWidth = saved + "px"; }
+  let dragging = false;
+  handle.addEventListener("mousedown", (e) => { dragging = true; document.body.classList.add("conv-resizing"); e.preventDefault(); });
+  window.addEventListener("mousemove", (e) => {
+    if (!dragging) return;
+    const left = el.getBoundingClientRect().left;
+    const w = Math.min(MAX, Math.max(MIN, e.clientX - left));
+    el.style.width = w + "px"; el.style.minWidth = w + "px";
+  });
+  window.addEventListener("mouseup", () => {
+    if (!dragging) return;
+    dragging = false; document.body.classList.remove("conv-resizing");
+    localStorage.setItem("paimon-im-sidebar-w", String(parseInt(el.style.width, 10) || 0));
+  });
+  handle.addEventListener("dblclick", () => {
+    el.style.width = ""; el.style.minWidth = ""; localStorage.removeItem("paimon-im-sidebar-w");
+  });
+})();
+// 状态机徽标渲染（A 工作绿 / W 等待黄 / H 休眠青 / P 暂停红 · F 前台蓝 / B 后台鲸鱼蓝 / O 离线黄）
+function stateBadges(state) {
+  if (!state) return "";
+  const label = { A: "工作中", W: "等待中", H: "休眠", P: "暂停", F: "前台", B: "后台(detached)", O: "离线" };
+  return String(state).split("").filter(Boolean).map((ch) => `<span class="st st-${esc(ch)}" title="${esc(label[ch] || ch)}">${esc(ch)}</span>`).join("");
+}
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+function toast(m) { const t = $("toast"); t.textContent = m; t.style.display = ""; clearTimeout(t._t); t._t = setTimeout(() => (t.style.display = "none"), 2000); }
+function fmtTime(ts) { try { return new Date(ts).toTimeString().slice(0, 5); } catch { return ""; } }
+const COLORS = ["#4a90d9","#57b487","#d98b4a","#9b6bd9","#d95a7a","#4ab0d9"];
+function avatar(name) { let h = 0; for (const c of String(name || "?")) h = (h * 31 + c.charCodeAt(0)) >>> 0; return `<div class="avatar" style="background:${COLORS[h % COLORS.length]}">${esc(String(name || "?").slice(0, 1).toUpperCase())}</div>`; }
+
+async function api(path, opts = {}) {
+  const res = await fetch(API + path, {
+    ...opts,
+    headers: { Authorization: `Bearer ${TOKEN}`, "X-Device-Id": DEVICE_ID, "User-Agent": "genshin-sync/1.0", ...(opts.headers || {}) },
+  });
+  return res;
+}
+
+// ── 登录：GitHub 网页授权（OAuth code 跳转，唯一登录方式）──
+// client_id 不在前端明文硬编码：登录时从服务端 /auth/client-id 动态获取（client_id 本身公开，但统一走服务端，便于轮换）
+let _clientId = "";
+async function ghClientId() {
+  if (_clientId) return _clientId;
+  try {
+    const r = await fetch(API + "/auth/client-id");
+    const d = await r.json().catch(() => ({}));
+    _clientId = d.client_id || "";
+  } catch (e) { /* 忽略，下方提示 */ }
+  return _clientId;
+}
+async function ghLogin() {
+  const state = Math.random().toString(36).slice(2);
+  sessionStorage.setItem("paimon-im-oauth-state", state);
+  const cid = await ghClientId();
+  if (!cid) { $("loginStatus").textContent = "获取登录配置失败，请稍后重试"; return; }
+  const u = new URL("https://github.com/login/oauth/authorize");
+  u.searchParams.set("client_id", cid);
+  u.searchParams.set("scope", "read:user");
+  u.searchParams.set("state", state);
+  u.searchParams.set("redirect_uri", location.origin + "/im/");   // 自动跟随当前域名（sync.paimon.beer/im/ 或 paimon.beer/im/），必须与 App 里配置的 Callback URL 一致
+  location.href = u.toString();
+}
+async function handleOAuthCallback() {
+  const sp = new URLSearchParams(location.search);
+  const code = sp.get("code");
+  if (!code) return false;
+  const want = sessionStorage.getItem("paimon-im-oauth-state") || "";
+  const got = sp.get("state") || "";
+  history.replaceState(null, "", location.pathname);
+  if (want && got && want !== got) { $("loginStatus").textContent = "登录校验失败，请重试"; return true; }
+  $("loginStatus").textContent = "正在登录…";
+  try {
+    const r = await fetch(API + "/auth/github", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, redirect_uri: location.origin + "/im/" }) });
+    const d = await r.json();
+    if (d.token) { TOKEN = d.token; ME = d.user; localStorage.setItem("paimon-im-token", TOKEN); localStorage.setItem("paimon-im-login", (d.user && d.user.login) || "已登录"); if (!DEVICE_ID) { DEVICE_ID = Math.random().toString(16).slice(2, 10); localStorage.setItem("paimon-im-device", DEVICE_ID); } $("loginStatus").textContent = "登录成功"; enterMain(); return true; }
+    $("loginStatus").textContent = "登录失败：" + (d.error || "未知错误");
+  } catch (e) { $("loginStatus").textContent = "登录失败：" + e.message; }
+  return true;
+}
+
+// ── 主界面 ──
+function enterMain() {
+  $("loginView").style.display = "none";
+  $("mainView").style.display = "flex";
+  $("meName").textContent = (ME && ME.login) || "已登录";
+  loadAgents();
+  if (!pollTimer) pollTimer = setInterval(() => { loadAgents(); pullPending(); }, 4000);
+  pullPending();
+}
+
+async function loadAgents() {
+  try {
+    const r = await api("/sync/agent-presence");
+    if (r.status === 401) { toast("登录失效，请重新登录"); logout(); return; }
+    const d = await r.json();
+    agents = (d.agents || []).filter((a) => a.sid !== MY_SID);
+    // 状态机徽标（2026-09-13 dev-01 规格）：presence 无 state 字段 → 从 /auth/devices 的 device_states 补（60s 缓存）
+    if (Date.now() - _stateAt > 60_000) {
+      const rs = await api("/auth/devices");
+      if (rs.ok) {
+        const jd = await rs.json().catch(() => ({}));
+        const map = {};
+        for (const dev of (jd.devices || [])) for (const ag of (dev.agents || [])) if (ag && ag.sid) map[ag.sid] = ag.state || "";
+        STATE_MAP = map;
+        _stateAt = Date.now();
+      }
+    }
+    for (const a of agents) a.state = STATE_MAP[a.sid] || (a.online ? "" : "O");
+    renderContacts();
+  } catch (e) { /* 网络抖动忽略 */ }
+}
+
+function renderContacts() {
+  const el = $("contactList");
+  el.innerHTML = "";
+  if (!agents.length) { el.innerHTML = '<div class="empty" style="padding:20px">暂无联系人</div>'; return; }
+  for (const a of agents) {
+    const div = document.createElement("div");
+    div.className = "contact" + (current === a.sid ? " active" : "");
+    div.innerHTML = avatar(a.name || a.sid) +
+      `<div style="flex:1;min-width:0"><div class="name">${esc(a.name || a.sid)}${stateBadges(a.state)}</div><div class="meta">${esc(a.device_id || "")}</div></div>`;
+    div.onclick = () => selectContact(a);
+    el.appendChild(div);
+  }
+}
+
+function selectContact(a) {
+  current = a.sid;
+  $("chatHead").innerHTML = `${esc(a.name || a.sid)}${stateBadges(a.state)}<span class="sub">${esc(a.sid)}</span>`;
+  $("input").disabled = false; $("send").disabled = false;
+  renderContacts(); renderChat();
+  $("input").focus();
+}
+
+function renderChat() {
+  const el = $("chatBody");
+  const list = msgsByPeer[current] || [];
+  el.innerHTML = "";
+  if (!list.length) { el.innerHTML = '<div class="empty">还没有消息——发一条试试</div>'; return; }
+  for (const m of list) appendMsg(m);
+  el.scrollTop = el.scrollHeight;
+}
+function appendMsg(m) {
+  const el = $("chatBody");
+  const empty = el.querySelector(".empty"); if (empty) empty.remove();
+  const row = document.createElement("div");
+  const mine = m.from === MY_SID;
+  row.className = "msg-row " + (mine ? "out" : "in");
+  row.innerHTML = avatar(mine ? "我" : (m.from_name || m.from || "?")) +
+    `<div class="bubble">${esc(m.text)}<span class="meta">${fmtTime(m.ts)}</span></div>`;
+  el.appendChild(row);
+  el.scrollTop = el.scrollHeight;
+}
+
+// ── 发送 ──
+async function send() {
+  const input = $("input");
+  const text = input.value.trim();
+  if (!text || !current) return;
+  input.value = "";
+  const ts = Date.now();
+  const payload = { id: `msg_${ts.toString(36)}_${Math.random().toString(36).slice(2, 8)}`, from: MY_SID, from_name: (ME && ME.login) || "web", to: current, mode: "interrupt", mode_used: "interrupt", text, ts, injected: false };
+  // E2E：附本端公钥供对方学习；已有对方公钥则正文加密（server 只见密文）
+  if (MY_KP) {
+    payload.pub = MY_PUB;
+    const _e = await e2eEncrypt(current, payload.text);
+    payload.text = _e.text;
+    if (_e.enc) payload.enc = _e.enc;
+  }
+  try {
+    const r = await api("/messages/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ toPerson: current, type: "agent-social", payload }) });
+    if (!r.ok) { toast("发送失败 HTTP " + r.status); return; }
+    (msgsByPeer[current] = msgsByPeer[current] || []).push(payload);
+    renderChat();
+  } catch (e) { toast("发送失败：" + e.message); }
+}
+
+// ── 收消息（轮询 server pending）──
+let seenIds = new Set();
+async function pullPending() {
+  if (!TOKEN) return;
+  try {
+    const r = await api(`/messages/pending/${MY_SID}`);
+    if (!r.ok) return;
+    const d = await r.json();
+    let changed = false;
+    for (const m of (d.messages || [])) {
+      if (m.type !== "agent-social" || !m.payload) continue;
+      const p = m.payload;
+      if (!p.id || seenIds.has(p.id)) continue;
+      seenIds.add(p.id);
+      p.text = await e2eDecrypt(p);   // E2E：解密密文 / 学习对方公钥
+      const peer = p.from;
+      (msgsByPeer[peer] = msgsByPeer[peer] || []).push(p);
+      if (peer === current) changed = true; else { toast(`来自 ${p.from_name || peer} 的新消息`); sysNotify(p.from_name || peer, p.text, peer); }
+    }
+    if (changed) renderChat();
+  } catch (e) { /* 忽略 */ }
+}
+
+function logout() {
+  TOKEN = ""; ME = null; localStorage.removeItem("paimon-im-token");
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  $("mainView").style.display = "none";
+  $("loginView").style.display = "flex";
+  $("codeBox").style.display = "none";
+  $("btnLogin").disabled = false;
+  $("loginStatus").textContent = "";
+}
+
+$("btnLogin").onclick = ghLogin;
+$("showToken").onclick = (e) => { e.preventDefault(); for (const id of ["orDiv", "tokenRow", "tokenHint"]) $(id).style.display = ""; $("showToken").parentElement.style.display = "none"; };
+$("btnToken").onclick = async () => {
+  const t = $("tokenInput").value.trim();
+  if (!t) { toast("请先粘贴 token"); return; }
+  $("loginStatus").textContent = "验证 token…";
+  const old = TOKEN; TOKEN = t;
+  if (!DEVICE_ID) { DEVICE_ID = Math.random().toString(16).slice(2, 10); localStorage.setItem("paimon-im-device", DEVICE_ID); }
+  try {
+    const r = await api("/sync/agent-presence");
+    if (r.ok) {
+      localStorage.setItem("paimon-im-token", TOKEN);
+      const d = await r.json().catch(() => ({}));
+      ME = { login: "token 用户" };
+      $("loginStatus").textContent = "登录成功" + ((d.agents || []).length ? `（${d.agents.length} 个 agent）` : "");
+      enterMain();
+    } else {
+      TOKEN = old;
+      $("loginStatus").textContent = "Token 无效（HTTP " + r.status + "）";
+    }
+  } catch (e) { TOKEN = old; $("loginStatus").textContent = "验证失败：" + e.message; }
+};
+$("btnLogout").onclick = logout;
+$("send").onclick = send;
+$("input").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); send(); } });
+
+// 网页授权回调 / 已登录过 → 进主界面
+(async () => {
+  if (await handleOAuthCallback()) return;
+  if (!TOKEN) { $("loginView").style.display = "flex"; return; }
+  // 已登录：同步进主界面（不再闪登录页），后台再校验 token
+  ME = { login: localStorage.getItem("paimon-im-login") || "已登录" };
+  enterMain();
+  try {
+    const r = await api("/sync/agent-presence");
+    if (!r.ok) logout();
+  } catch (e) { /* 网络抖动不登出，保留本地态 */ }
+})();
+</script>
+</body>
+</html>

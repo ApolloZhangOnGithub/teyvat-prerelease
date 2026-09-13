@@ -235,6 +235,8 @@ class PlayleftBrowser {
   }
 
   async close() {
+    // 2026-09-13：先同步杀进程（exit 钩子里 await 之后不会再执行），再尽力关页
+    try { this._process.kill(); } catch (e) { /* 已退出 */ }
     for (const p of this._pages) await p.close().catch(() => {});
     try { this._process.kill(); } catch(e) { try { require("fs").appendFileSync((process.env.HOME||"")+"/.teyvat/LogData/genshin-catch-errors.log", "[16003] " + (e?.stack||e) + "\n"); } catch (e) { console.error("[universe.infotech/cloud.servers/playleft.cjs] " + (e?.message || e)); } }
   }
@@ -261,6 +263,7 @@ async function launch(options = {}) {
   const proc = spawn(chromePath, args, { stdio: "ignore" });
   // 2026-09-13：spawn 失败（Chrome 路径不存在）是异步 error 事件，无监听会让 browser_service 进程崩溃且不写 port 文件
   proc.on("error", (e) => { console.error("[playleft] chrome spawn failed: " + (e && e.message ? e.message : e)); });
+  if (typeof options.onExit === "function") proc.on("exit", () => { try { options.onExit(); } catch (e) { /* 回调异常不影响 */ } }); // 2026-09-13：Chrome 退出通知调用方清句柄
 
   // 等 CDP 端口就绪
   for (let i = 0; i < 30; i++) {

@@ -130,7 +130,7 @@ export function registerHibernateTool(_pi: ExtensionAPI) {
       const bgCount = (globalThis as any).__genshinBgCount || (process as any).__genshinBgCount || 0;
       if (bgCount > 0) {
         const bgList = backgroundTasksSummary();
-        return { content: [{ type: "text", text: i18n(`还有 ${bgCount} 个后台 Execute 任务在运行：\n${bgList}\n请使用 Wait 等待任务结束，或 @N kill 终止。`, `${bgCount} background Execute task(s) still running:\n${bgList}\nUse Wait for them to finish, or @N kill to terminate.`) }], details: {}, isError: true };
+        return { content: [{ type: "text", text: i18n(`还有 ${bgCount} 个后台 Execute 任务在运行：\n${bgList}\n请用 wait 等待任务结束，或 execute({action:'kill', id:N}) 终止。`, `${bgCount} background Execute task(s) still running:\n${bgList}\nUse Wait for them to finish, or execute({action:'kill', id:N}) to terminate.`) }], details: {}, isError: true };
       }
       // ── Social Tool：inbox 有未处理消息 → 先注入处理，禁止 hibernate ──
       if (hasPendingSocial()) {

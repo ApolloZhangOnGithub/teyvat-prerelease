@@ -34,9 +34,16 @@ function getProxyAgent(): any {
   return null;
 }
 
+const _PAIMON_HOME = process.env.PAIMON_HOME || `${homedir()}/.teyvat`;
+// 2026-09-13：browser-service 现在要求 Bearer token（port 文件旁的 browser-service.token，0600）
+function browserHeaders(): Record<string, string> {
+  const h: Record<string, string> = { "Content-Type": "application/json" };
+  try { const t = fs.readFileSync(`${_PAIMON_HOME}/browser-service.token`, "utf8").trim(); if (t) h["Authorization"] = "Bearer " + t; } catch { /* 服务未启动时没有 token 文件 */ }
+  return h;
+}
 function getBrowserUrl(): string {
   if (process.env.PI_BROWSER) return process.env.PI_BROWSER;
-  try { const port = fs.readFileSync(`${homedir()}/.teyvat/browser-service.port`, "utf8").trim(); if (port) return `http://127.0.0.1:${port}`; } catch (e: any) { safariLog("getBrowserUrl failed: " + e.message); }
+  try { const port = fs.readFileSync(`${_PAIMON_HOME}/browser-service.port`, "utf8").trim(); if (port) return `http://127.0.0.1:${port}`; } catch (e: any) { safariLog("getBrowserUrl failed: " + e.message); }
   return "http://127.0.0.1:19222";
 }
 
@@ -76,7 +83,7 @@ function findChromium(): string | null {
 
 async function ensureSvc(): Promise<boolean> {
   _svcError = "";
-  try { const r = await fetch(getBrowserUrl(), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "ping" }), signal: AbortSignal.timeout(500) }); return r.ok; } catch (e: any) { safariLog("ensureSvc ping failed: " + e.message); }
+  try { const r = await fetch(getBrowserUrl(), { method: "POST", headers: browserHeaders(), body: JSON.stringify({ action: "ping" }), signal: AbortSignal.timeout(500) }); return r.ok; } catch (e: any) { safariLog("ensureSvc ping failed: " + e.message); }
   if (_svcStarting) return false;
   _svcStarting = true;
   try {
@@ -102,7 +109,7 @@ async function ensureSvc(): Promise<boolean> {
     // 2026-09-11（prime-agent）：spawn 失败是异步 error 事件，无监听 → 未处理 'error' → agent 闪退。
     child.on("error", (e: any) => { _svcError = `browser-service spawn 失败: ${e?.code || e?.message || e}`; safariLog("ensureSvc spawn error: " + _svcError); });
     child.unref();
-    for (let i = 0; i < 10; i++) { await new Promise(r => setTimeout(r, 500)); try { const url = getBrowserUrl(); const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "ping" }), signal: AbortSignal.timeout(500) }); if (r.ok) return true; } catch (e: any) { if (i === 9) safariLog("ensureSvc failed after 10 retries: " + e.message); } }
+    for (let i = 0; i < 10; i++) { await new Promise(r => setTimeout(r, 500)); try { const url = getBrowserUrl(); const r = await fetch(url, { method: "POST", headers: browserHeaders(), body: JSON.stringify({ action: "ping" }), signal: AbortSignal.timeout(500) }); if (r.ok) return true; } catch (e: any) { if (i === 9) safariLog("ensureSvc failed after 10 retries: " + e.message); } }
     _svcError = "browser-service 启动超时（10 次重试均失败）";
   } catch (e: any) { _svcError = `browser-service 启动失败: ${e.message}`; safariLog("ensureSvc spawn failed: " + e.message); } finally { _svcStarting = false; }
   return false;
@@ -111,13 +118,13 @@ async function ensureSvc(): Promise<boolean> {
 async function bc(action: string, params: Record<string, any> = {}, session = "safari"): Promise<any> {
   const url = getBrowserUrl();
   try {
-    const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, session, ...params }), signal: AbortSignal.timeout(30000) });
+    const res = await fetch(url, { method: "POST", headers: browserHeaders(), body: JSON.stringify({ action, session, ...params }), signal: AbortSignal.timeout(30000) });
     return await res.json();
   } catch (e) { console.error("[universe.infotech/local.mobile/apps/safari/safari.ts] " + ((e as any)?.message || e));
     if (await ensureSvc()) {
       try {
         const newUrl = getBrowserUrl();
-        const res = await fetch(newUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, session, ...params }), signal: AbortSignal.timeout(30000) });
+        const res = await fetch(newUrl, { method: "POST", headers: browserHeaders(), body: JSON.stringify({ action, session, ...params }), signal: AbortSignal.timeout(30000) });
         return await res.json();
       } catch (e: any) { return { error: `browser: ${e.message}` }; }
     }

@@ -243,6 +243,15 @@ export const stmt = {
     UPDATE messages SET delivered = 1 WHERE id = ?
   `),
 
+  // 历史消息（2026-09-13 IM：全量历史，含已投递；前端据此重建会话与聊天记录，消息不再“丢”）
+  listAllMessages: db.prepare(`
+    SELECT id, from_person, to_person, type, payload, created_at
+    FROM messages
+    WHERE github_id = ?
+    ORDER BY id DESC
+    LIMIT ?
+  `),
+
   getAllLocks: db.prepare(`
     SELECT person_id, device_id, acquired_at, heartbeat FROM locks WHERE github_id = ?
   `),
@@ -252,7 +261,7 @@ export const stmt = {
   `),
 
   expireMessages: db.prepare(`
-    DELETE FROM messages WHERE created_at < datetime('now', '-7 days')
+    DELETE FROM messages WHERE created_at < datetime('now', '-90 days')
   `),
 
   // 设备状态主动上传/拉取（2026-09-05）

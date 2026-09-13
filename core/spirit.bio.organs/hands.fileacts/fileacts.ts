@@ -322,7 +322,7 @@ export function validateExecute(cmd: string, selfId?: string, cwd?: string): { b
   const SINGLE_CMD_TAIL = "[^;&|\\n<>`$]*$";
   if (new RegExp("^\\s*(?:cd\\s+(?:\"\"|\\S+)\\s*&&\\s*)?make\\b" + SINGLE_CMD_TAIL, "i").test(stripped)) return { blocked: false };
   if (/\bnpm\s+(?:i|install)\b/i.test(cmd) && /runtime/.test(cmd) && new RegExp("^\\s*(?:cd\\s+(?:\"\"|\\S+)\\s*&&\\s*)?npm\\s+(?:i|install)\\b" + SINGLE_CMD_TAIL, "i").test(stripped)) return { blocked: false };
-  if (/\brm\b/i.test(cmd)) return { blocked: true, message: i18n("请使用 Execute 工具执行 trash 命令来将文件移入回收站。", "Use the Execute tool with the trash command to move files to the recycle bin.") };
+  if (/\brm\b/i.test(cmd)) return { blocked: true, message: i18n("禁止删除：按项目规范把文件改名为 .REMOVED（mv x x.REMOVED）；确需移出请用 trash 移入回收站。", "Deleting is forbidden: rename the file to .REMOVED (mv x x.REMOVED) per project rule; if it must go, use trash to move it to the recycle bin.") };
   if (/\bsed\b/i.test(cmd)) return { blocked: true, message: i18n("请勿使用 sed 命令。你可使用 Read 命令读取文件。", "Do not use the sed command. Use the Read command to read files.") };
   if (/\b(?:python[23]?|bash|sh|zsh|node|perl|ruby)\s+-(?:c|e|eval)\b/.test(cmd)) return { blocked: true, message: i18n(`禁止直接执行解释器内联代码（python/bash/sh/node/perl/ruby -c/-e）。请在你的工作目录 ${agentWorkDir()}/ 下创建脚本文件再运行。`, `Inline interpreter code (python/bash/sh/node/perl/ruby -c/-e) is forbidden. Create a script file in your workdir ${agentWorkDir()}/ and run it.`) };
   if (/\bpython[23]?\s*<</.test(cmd) || /\bpython[23]?\s+-\s*$/.test(cmd)) return { blocked: true, message: i18n(`禁止直接执行 python 内联代码。请在你的工作目录 ${agentWorkDir()}/ 下创建 .py 文件，然后用 python <文件名>.py 运行。`, `Inline python code is forbidden. Create a .py file in your workdir ${agentWorkDir()}/ then run it with python <filename>.py.`) };
@@ -582,7 +582,7 @@ export default function (pi: ExtensionAPI) {
         let size = -1;
         try { size = (await fsStat(path)).size; } catch (e) { console.error("[spirit.bio.organs/hands.fileacts/fileacts.ts] " + ((e as any)?.message || e)); }
         if (size !== 0) {
-          return { block: true, reason: i18n(`文件已存在且非空。使用 Edit 修改已有文件，或使用 Execute trash 后重新创建。Write 仅可适用于创建新文件或覆盖空文件（0 字节）。`, `File already exists and is not empty. Use Edit to modify the existing file, or Execute trash and recreate. Write is only for creating new files or overwriting empty (0-byte) files.`) };
+          return { block: true, reason: i18n(`文件已存在且非空。使用 Edit 修改已有文件，或先把旧文件改名为 .REMOVED 再新建。Write 仅可适用于创建新文件或覆盖空文件（0 字节）。`, `File already exists and is not empty. Use Edit to modify the existing file, or Execute trash and recreate. Write is only for creating new files or overwriting empty (0-byte) files.`) };
         }
       }
 

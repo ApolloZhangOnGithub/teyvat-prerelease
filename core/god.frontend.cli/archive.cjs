@@ -187,15 +187,26 @@ for (const p of picked) {
 }
 // 2026-09-13：写回前剥掉 computeAndSort 挂上的临时字段（_active/_ago）——之前整表写回，plist.json 165 条全部带上了陈旧的 _active，
 // 本文件 L49 的"组织成员是否存活"检查读到的正是这些陈旧值
-fs.writeFileSync(PLIST, JSON.stringify(list.map(p => { const { _active, _ago, ...rest } = p; return rest; }), null, 2));
+// 2026-09-13：确认提示期间别的进程可能已写 plist（lastSeen / 新 agent）——重读后按 id 只改 archived/archivedAt，tmp+rename 原子写
+{
+  let fresh;
+  try { fresh = JSON.parse(fs.readFileSync(PLIST, 'utf8')); } catch (e) { fresh = null; console.error('[god.frontend.cli/archive.cjs] plist 重读失败，用内存副本写回: ' + (e?.message || e)); }
+  const base = Array.isArray(fresh) ? fresh : list;
+  const byId = new Map(picked.map(p => [p.id, p]));
+  for (const p of base) { const q = byId.get(p.id); if (q) { p.archived = q.archived; p.archivedAt = q.archivedAt; } }
+  const out = base.map(p => { const { _active, _ago, ...rest } = p; return rest; });
+  const tmp = PLIST + '.tmp-' + process.pid;
+  fs.writeFileSync(tmp, JSON.stringify(out, null, 2));
+  fs.renameSync(tmp, PLIST);
+}
 // 归档后自动压缩，恢复后自动解压
 for (const p of picked) {
   const COMPRESS = __dirname + '/compress.cjs'; // 2026-09-13：原写 xscompress.cjs（不存在）
   const { spawn } = require('child_process');
   if (MODE === 'archive') {
-    spawn('node', [COMPRESS, 'compress', p.id], { stdio: 'ignore', detached: true }).unref();
+    const c1 = spawn('node', [COMPRESS, 'compress', p.id], { stdio: 'ignore', detached: true }); c1.on('error', (e) => console.error('[archive.cjs] compress spawn: ' + (e?.message || e))); c1.unref(); // 2026-09-13：无 error 监听会以未捕获事件炸掉（plist 已写完后）
   } else {
-    spawn('node', [COMPRESS, 'decompress', p.id], { stdio: 'ignore', detached: true }).unref();
+    const c2 = spawn('node', [COMPRESS, 'decompress', p.id], { stdio: 'ignore', detached: true }); c2.on('error', (e) => console.error('[archive.cjs] decompress spawn: ' + (e?.message || e))); c2.unref();
   }
 }
 console.log(T((MODE === 'archive' ? '已归档 ' : 'OK 已恢复 ') + [...picked].map(p => p.name).join('、'), (MODE === 'archive' ? 'Archived ' : 'OK restored ') + [...picked].map(p => p.name).join(', ')));

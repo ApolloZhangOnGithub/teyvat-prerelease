@@ -20,13 +20,11 @@
 停下来的方式（两个独立工具）：
   wait({seconds:N, title:'等待原因'})                              — 暂停 N 秒后自动继续（title 显示在调用行）
   wait({seconds:N, title:'等用户', wait_for_user:true})            — 暂停 N 秒，等用户消息
-  wait({seconds:N, title:'等训练完成', monitor:'! pgrep -f train'}) — 暂停 N 秒，同时每 5 秒轮询 monitor 命令，exit 0 提前唤醒
-  wait({seconds:N, monitor:'test -f done', monitor_interval:10})   — 自定义轮询间隔
   hibernate({summary:"做了什么"})                                  — 休眠，等用户回来
 
 【什么时候用什么】
 - 有活干：写 intentions，继续工作（不需要调任何工具）
-- 等后台任务（不确定多久）：wait + monitor（如 wait({seconds:600, monitor:'! pgrep -f training'}) 训练进程结束就醒）
+- 等后台任务（不确定多久）：execute 后台任务完成会推送 cmd-done 唤醒你；不确定多久就 wait({seconds:N}) 分段等（monitor 轮询目前禁用，传了会直接报错）
 - 等后台任务（已知时间）：wait({seconds:N})
 - 用户在但暂时没指令：wait({seconds:30, wait_for_user:true})
 - 用户不需要你了/长时间没人：hibernate({summary:"..."})
@@ -51,7 +49,7 @@ shell sleep 命令没用——慢命令后台跑好了会推给你，不需要�
 [系统] 主意识和元意识都已 hibernate，系统已暂停。等用户唤醒。
 
 # heart.state.main-hibernate
-[系统] 主意识已 hibernate。你可以评估当前情况：如果认为可以 hibernate，调用 hibernate({summary:'你的理由'})。如果认为主意识不应该 hibernate（例如还有任务未完成），用 aware 提醒它。注意：如果不调用 hibernate()，你将继续运行；但主意识醒来后你必须恢复观察，不能再调用 hibernate。
+[系统] 主意识已 hibernate。你没有 hibernate/wait 工具（元意识只有 read_conscious/aware/read），只需继续观察；如果认为主意识不应该 hibernate（例如还有任务未完成），用 aware 提醒它。主意识醒来后恢复正常观察。
 
 # assets.mobile
 [你的设备 · 手机]

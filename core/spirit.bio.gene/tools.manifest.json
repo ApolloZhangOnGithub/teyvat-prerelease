@@ -60,7 +60,7 @@
       "default": true,
       "locked": false,
       "group": "运行",
-      "desc": "主动记忆管理：manage/sweep/fetch/revert (hash-lock)",
+      "desc": "主动记忆管理：manage/archive(旧名 sweep)/fetch/revert/mark_enter/mark_exit (hash-lock 两步)",
       "chr": "memory.amem"
     },
     "nap": {
@@ -73,8 +73,9 @@
     "sleep": {
       "default": false,
       "locked": false,
+      "abandoned": true,
       "group": "运行",
-      "desc": "独立睡眠进程"
+      "desc": "（已废弃，调用只返回错误）记忆整理用 amem archive"
     },
     "mouth": {
       "default": false,
@@ -107,7 +108,7 @@
       "default": true,
       "locked": false,
       "group": "核心",
-      "desc": "网络: fetch URL(正文过滤) / search 搜索"
+      "desc": "网络: fetch URL(正文过滤) / search 搜索 / upload 临时分享文件"
     },
     "social": {
       "default": true,
@@ -121,8 +122,7 @@
     "metaconsciousness": [
       "read_conscious",
       "aware",
-      "read",
-      "wait"
+      "read"
     ],
     "hippocampus": [
       "read",

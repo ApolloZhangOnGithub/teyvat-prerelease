@@ -39,8 +39,11 @@ const Y='\x1b[33m', G='\x1b[32m', D='\x1b[90m', M='\x1b[35m', R='\x1b[0m', BOLD=
 import { getCfRank, cfPaint } from "./cf-rank.cjs";
 // 2026-09-12：teyvat 云备份（genshin b）——见 backup.ts / PROPOSAL 041
 import { cmdBackup } from "./backup.ts";
-function loadPlist(): any[] { try { return JSON.parse(fs.readFileSync(PLIST,'utf8')) } catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); return [] } }
-function savePlist(l: any[]) { fs.mkdirSync(path.dirname(PLIST),{recursive:true}); fs.writeFileSync(PLIST,JSON.stringify(l,null,2)) }
+// 2026-09-13（审计）：① 解析失败时原来返回 [] 且后续 savePlist 会把 165 条 plist 写成 []/单条——现在解析失败标记 _plistBroken、savePlist 拒写；② 写入改原子（165 个 agent + launcher 并发读）
+let _plistBroken = false;
+let _createdNew = false; // 本次调用刚创建的新 agent（用户在 Enter? 处拒绝时要撤回，不留幽灵条目）
+function loadPlist(): any[] { try { const l = JSON.parse(fs.readFileSync(PLIST,'utf8')); _plistBroken = false; return l } catch (e) { if ((e as any)?.code !== 'ENOENT') { _plistBroken = true; console.error("[god.frontend.cli/cli.ts] plist.json 解析失败，本次不会回写: " + ((e as any)?.message || e)); } return [] } }
+function savePlist(l: any[]) { if (_plistBroken) { console.error('  plist.json 已损坏，拒绝覆盖写（请先手动修复 ' + PLIST + '）'); return; } fs.mkdirSync(path.dirname(PLIST),{recursive:true}); writeFileAtomic(PLIST, JSON.stringify(l,null,2)) }
 const SUBCOMMANDS: Record<string,string> = {
   'archive':'archive', 'a':'archive',
   'unarchive':'unarchive', 'ua':'unarchive',
@@ -316,17 +319,19 @@ function enterAgent(name: string, mode='') {
       id=keep.id;
       const now2=new Date().toISOString();
       list.push({id,name,kind:'coding-agent',deployment:'local',created:keep.created||now2,lastSeen:now2,note:'',model:'',hostname:os.hostname()});
+      _createdNew = true;
       savePlist(list);
     }else{
       id=randomBytes(4).toString('hex');
       const now2=new Date().toISOString();
       list.push({id,name,kind:'coding-agent',deployment:'local',created:now2,lastSeen:now2,note:'',model:'',hostname:os.hostname()});
+      _createdNew = true;
       savePlist(list);
     }
     pname=name; kind='coding-agent';
   }
 
-  if(!confirm(`Enter ${pname}?`)) process.exit(0);
+  if(!confirm(`Enter ${pname}?`)) { if (_createdNew) { savePlist(loadPlist().filter((x:any)=>x.id!==id)); } process.exit(0); } // 2026-09-13：拒绝进入时撤回刚建的条目
 
   // Update lastSeen
   const p=list.find((x:any)=>x.id===id);
@@ -549,13 +554,14 @@ function cmdOrg(name?: string, agent?: string) {
 function cmdArchive(targets: string[], doArchive: boolean) {
   const list=loadPlist();
   const now=Date.now(), ps=psAux();
-  computeAndSort(list.filter((p:any)=>!p.archived),ps,now);
+  const sorted=list.filter((p:any)=>!p.archived);
+  computeAndSort(sorted,ps,now); // 2026-09-13：序号必须按显示顺序（list.cjs 同源排序）取，原来 computeAndSort 排的是临时副本，索引却打在未排序的 list 上 → archive 2 ≠ 显示的 #2
 
   for(const t of targets){
     let p: any;
     if(/^\d+$/.test(t)){
-      const active=list.filter((x:any)=>x._active);
-      const offline=list.filter((x:any)=>!x._active);
+      const active=sorted.filter((x:any)=>x._active);
+      const offline=sorted.filter((x:any)=>!x._active);
       p=doArchive?offline[parseInt(t)-1]:active[parseInt(t)-1];
     }else{
       p=list.find((x: any)=>x.name===t||x.id===t);
@@ -711,13 +717,15 @@ function cmdClone(name: string) {
   if (fs.existsSync(srcFile)) { try { copyDir(srcFile, path.join(PAIMON, 'AgentFileData', newId)); console.log('OK'); } catch (e) { console.log('FAIL: ' + ((e as any)?.message || e)); } } else console.log('OK');
 
   // plist 双向关系：克隆体 clonedFrom/clonedAt，原体 clonedChildren 追加
-  list.push({ id: newId, name: newName, kind: src.kind || 'coding-agent', deployment: 'local', created: now, lastSeen: now, note: '', model: src.model || '', clonedFrom: src.id, clonedAt: now });
-  const srcEntry = list.find((p: any) => p.id === src.id);
+  // 2026-09-13：确认提示期间别的进程可能已改 plist（lastSeen / 新建 agent）——写回前重读，按 id 合并，不用提示前的旧副本覆盖
+  const listNow = loadPlist();
+  listNow.push({ id: newId, name: newName, kind: src.kind || 'coding-agent', deployment: 'local', created: now, lastSeen: now, note: '', model: src.model || '', clonedFrom: src.id, clonedAt: now });
+  const srcEntry = listNow.find((p: any) => p.id === src.id);
   if (srcEntry) {
     if (!Array.isArray(srcEntry.clonedChildren)) srcEntry.clonedChildren = [];
     srcEntry.clonedChildren.push(newId);
   }
-  savePlist(list);
+  savePlist(listNow);
 
   // identity.json
   const idDir = path.join(PAIMON, 'IdentityData', newId);

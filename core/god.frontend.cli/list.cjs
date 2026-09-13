@@ -69,7 +69,8 @@ function fmtColor(b, text) {
   return '\x1b[31m' + text + R;
 }
 
-const allList = JSON.parse(fs.readFileSync(PLIST, 'utf8'));
+let allList;
+try { allList = JSON.parse(fs.readFileSync(PLIST, 'utf8')); } catch (e) { console.error('  plist.json 读取/解析失败（另一个进程正在写？稍后重试）: ' + (e && e.message ? e.message : e)); process.exit(1); } // 2026-09-13
 const list = filter === 'help' ? [] : allList.filter(filter === 'archived' ? (p => p.archived) : (p => !p.archived));
 
 if (!list.length && filter !== 'help') {

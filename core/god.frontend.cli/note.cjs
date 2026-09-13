@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const PAIMON = path.join(os.homedir(), '.teyvat');
+const PAIMON = process.env.PAIMON_HOME || path.join(os.homedir(), '.teyvat'); // 2026-09-13：走 PAIMON_HOME
 // 2026-09-13：launcher 的 `genshin note <name>` 把名字原样当 id 传进来 → 在 MemoryData/<name>/ 建垃圾目录（实证 MemoryData/lzy-01-ai/notes.jsonl）。
 // 这里按 plist 把 name 解析成 id；非 8 位 hex 且查不到就报错退出。
 let id = process.argv[2];

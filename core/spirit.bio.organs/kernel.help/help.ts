@@ -63,6 +63,8 @@ export default function registerHelp(pi: any): void {
         const detail = hdef?.detail || "";
         if (detail) lines.push(`\n${detail}`);
         else lines.push(`\n${T("（暂无详细说明，摘要如上）", "(no detailed description; summary above)")}`);
+        // 2026-09-13：参数说明（registerPaimonTool 从 TypeBox schema 收集；? = 可选）
+        if (hdef?.params?.length) lines.push(`\n${T("参数", "Parameters")}:\n` + hdef.params.map((p: string) => `  - ${p}`).join("\n"));
         return { content: [{ type: "text", text: lines.join("\n") }], details: { tool: nm } };
       }
 

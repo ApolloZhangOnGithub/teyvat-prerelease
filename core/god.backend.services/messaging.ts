@@ -90,3 +90,20 @@ messagingRouter.get("/pending/:personId", (c) => {
     })),
   });
 });
+
+// 历史消息（2026-09-13 IM）：全量历史（含已投递），前端据此重建会话与聊天记录（消息不再“丢”）。
+// 返回顺序 id 降序（最新在前），前端自行按 payload.from/to 归会话。
+function safeParse(s: string): any {
+  try { return JSON.parse(s); } catch { return { text: s }; }
+}
+messagingRouter.get("/history", (c) => {
+  const user = c.get("user") as AuthUser;
+  const limit = Math.min(Math.max(parseInt(c.req.query("limit") || "500", 10) || 500, 1), 2000);
+  const rows = stmt.listAllMessages.all(user.githubId, limit) as any[];
+  return c.json({
+    messages: rows.map((r) => ({
+      id: r.id, from_person: r.from_person, to_person: r.to_person,
+      type: r.type, payload: safeParse(r.payload), ts: r.created_at,
+    })),
+  });
+});

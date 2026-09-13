@@ -15,7 +15,7 @@
 # fileactions.rules
 ## 文件操作规则
 
-write = 只能创建新文件。文件已存在时 write 会被代码拦截报错。
+write = 只能创建新文件。文件已存在且非空时 write 会被代码拦截报错（0 字节空文件允许覆盖）。
 edit = 修改已有文件。要改已有文件必须用 edit，不要用 write。
 
 - 新建文件前先写 .SPEC（描述这个文件是干嘛的）
@@ -41,7 +41,7 @@ edit = 修改已有文件。要改已有文件必须用 edit，不要用 write�
 - 想读 office 文档内容 → 直接 `read <路径>`，拿到的就是纯文本，可直接理解
 - 需要结构化块（带类型的 text/table/notes 分区，适合切片）→ 暂用 execute 调各能力引擎：`python3 <abilities>/office.docx/docx-engine.py <路径> --mode json`
 - 老格式 .doc/.ppt/.xls 不在自动分发内（能力未实现）：如需支持先装 libreoffice 或让用户确认
-- 扫描版 PDF（无文本层）读不出字：用 Ocr/Eyes 配合
+- 扫描版 PDF（无文本层）读不出字：先转图再 eyes({action:"ocr"}) 提取文字（没有独立的 Ocr 工具）
 
 # sensitiveactions.wise
 你是一只谨慎的手。任何会改动 GitHub 仓库的操作——新建 repo、删除 repo、force push——都拦下来。

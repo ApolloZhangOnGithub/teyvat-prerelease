@@ -5,13 +5,14 @@ const fs = require("fs");
 const os = require("os");
 const { execFile } = require("child_process");
 const h = os.homedir();
+const PH = process.env.PAIMON_HOME || (PH); // 2026-09-13：走 PAIMON_HOME
 
 let b;
-try { b = JSON.parse(fs.readFileSync(h + "/.teyvat/UserAccount/binding.json", "utf8")); } catch { process.exit(0); /* 未绑定直接退出 */ }
+try { b = JSON.parse(fs.readFileSync(PH + "/UserAccount/binding.json", "utf8")); } catch { process.exit(0); /* 未绑定直接退出 */ }
 if (!b?.token || !b?.deviceId) process.exit(0);
 
 let ep = "https://sync.paimon.beer";
-try { const s = JSON.parse(fs.readFileSync(h + "/.teyvat/UserAccount/services.json", "utf8")); const gs = s["genshin-sync"] || (s.services && s.services["genshin-sync"]); if (gs && gs.endpoint) ep = gs.endpoint; } catch { /* 缺失/损坏 → 默认 */ } // 2026-09-13：结构对齐 paths.ts（顶层 genshin-sync）
+try { const s = JSON.parse(fs.readFileSync(PH + "/UserAccount/services.json", "utf8")); const gs = s["genshin-sync"] || (s.services && s.services["genshin-sync"]); if (gs && gs.endpoint) ep = gs.endpoint; } catch { /* 缺失/损坏 → 默认 */ } // 2026-09-13：结构对齐 paths.ts（顶层 genshin-sync）
 
 const gbin = process.env.GENSHIN_BIN || h + "/.local/bin/genshin";
 execFile(gbin, [], { encoding: "utf8", timeout: 20000, maxBuffer: 4 * 1024 * 1024 }, async (err, stdout) => {
@@ -25,8 +26,8 @@ execFile(gbin, [], { encoding: "utf8", timeout: 20000, maxBuffer: 4 * 1024 * 102
       body: JSON.stringify({ agents: out }),
     });
     // 本地同步日志（保留最近 30 个活跃日）
-    const logF = h + "/.teyvat/LogData/sync-device.jsonl";
-    fs.mkdirSync(h + "/.teyvat/LogData", { recursive: true });
+    const logF = PH + "/LogData/sync-device.jsonl";
+    fs.mkdirSync(PH + "/LogData", { recursive: true });
     fs.appendFileSync(logF, new Date().toISOString() + " " + os.hostname() + "\n");
     const lines = fs.readFileSync(logF, "utf8").split("\n").filter(Boolean);
     const seen = new Set(); const keep = [];

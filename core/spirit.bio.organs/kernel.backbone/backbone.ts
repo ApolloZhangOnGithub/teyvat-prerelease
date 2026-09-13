@@ -336,11 +336,11 @@ const TOOL_QUEUE: any[] = [];
 
 // help 库：name → { desc, detail }。注册时自动收集 messageDescription，
 // help 工具按需查询（系统提示只给一行摘要，详情走 help，省 token）。
-const TOOL_HELP: Record<string, { desc: string; detail: string }> = {};
-export function getToolHelp(name: string): { desc: string; detail: string } | undefined {
+const TOOL_HELP: Record<string, { desc: string; detail: string; params?: string[] }> = {};
+export function getToolHelp(name: string): { desc: string; detail: string; params?: string[] } | undefined {
   return TOOL_HELP[name];
 }
-export function getAllToolHelp(): Record<string, { desc: string; detail: string }> {
+export function getAllToolHelp(): Record<string, { desc: string; detail: string; params?: string[] }> {
   return TOOL_HELP;
 }
 
@@ -365,7 +365,11 @@ export function registerPaimonTool(toolDef: any): void {
   try {
     const detail = (toolDef.messageDescription || "").trim();
     const desc = (toolDef.promptSnippet || detail.split("\n")[0] || toolDef.name).trim();
-    TOOL_HELP[toolDef.name] = { desc: desc.slice(0, 120), detail };
+    // 2026-09-13：把参数说明也收进 help（core.CHR 承诺 help <name> 有参数说明，此前只有 messageDescription）
+    const _props = toolDef.parameters?.properties || {};
+    const _req = new Set<string>(Array.isArray(toolDef.parameters?.required) ? toolDef.parameters.required : []);
+    const params = Object.entries(_props).map(([k, v]: [string, any]) => `${k}${_req.has(k) ? "" : "?"}${v?.type ? " (" + (Array.isArray(v.type) ? v.type.join("|") : v.type) + ")" : ""}${(v?.messageDescription || v?.description) ? ": " + String(v.messageDescription || v.description) : ""}`);
+    TOOL_HELP[toolDef.name] = { desc: desc.slice(0, 120), detail, params };
   } catch (e) { console.error("[spirit.bio.organs/kernel.backbone/backbone.ts] " + ((e as any)?.message || e)); }
 
   // 2026-09-13（审计）：feedResult:false 的拦截此前只写在注释里，没有任何代码实现——mouth/aware/nap 的结果一直原样喂给模型。
@@ -375,7 +379,10 @@ export function registerPaimonTool(toolDef: any): void {
     toolDef.execute = async function (...args: any[]) {
       const result = await _origExecNoFeed.apply(this, args);
       try {
-        if (result && !result.isError && Array.isArray(result.content) && result.content.length) {
+        // mouth 的 @ 指令（@ / @pause / @stop …）是状态查询，结果必须回传（mouth.CHR 教模型用它看队列）；只有普通朗读才换成 ok
+        const _p = args?.[1];
+        const _feedThrough = toolDef.name === "mouth" && typeof _p?.text === "string" && _p.text.trim().startsWith("@");
+        if (result && !result.isError && !_feedThrough && Array.isArray(result.content) && result.content.length) {
           result.details = { ...(result.details || {}), _content: result.content };
           result.content = [{ type: "text", text: "ok" }];
         }

@@ -283,9 +283,14 @@ export function cmdDoctor(args: string[] = []) {
 
     const totalMB = [...found.values()].reduce((s, x) => s + x.mb, 0);
     // 逐个 sid 收集"该不该删"的证据：曾叫什么、是否改名残留、有没有未投递数据
+    // 2026-09-13："无进程"以前只是嘴上说说——annotate 从不查 ps；一个 id 掉出 plist 但还在跑的 agent 会被把 SessionData/RuntimeCache 搬走
+    let _psAll = '';
+    try { _psAll = execSync('ps -axo command', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); } catch { /* ps 不可用则按无进程 */ }
     const annotate = (sid: string): { label: string; unsafe: boolean } => {
       const bits: string[] = [];
       let unsafe = false;
+      if (_psAll.includes(`,${sid},`) || _psAll.includes(`/${sid}/`)) { bits.push('进程仍在运行'); unsafe = true; }
+      try { const mp = path.join(PAIMON, 'MemoryData', sid, 'main.pid'); if (fs.existsSync(mp) && Date.now() - fs.statSync(mp).mtimeMs < 2 * 60 * 1000) { bits.push('main.pid 2 分钟内有心跳'); unsafe = true; } } catch { /* 无 pid 文件 */ }
       try {
         const idf = path.join(PAIMON, 'IdentityData', sid, 'identity.json');
         if (fs.existsSync(idf)) {
@@ -568,4 +573,5 @@ export function cmdDoctor(args: string[] = []) {
   }
 
   console.log(`\n  ${passed} passed, ${failed} failed, ${warned} warned, ${skipped} skipped\n`);
+  if (failed > 0) process.exitCode = 1; // 2026-09-13：原来永远 exit 0，launcher 照样当成功
 }

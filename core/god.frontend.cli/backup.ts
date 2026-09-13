@@ -25,6 +25,13 @@ import * as readline from 'node:readline';
 import { randomBytes, createHash } from 'node:crypto';
 import { spawnSync, spawn } from 'node:child_process';
 import { syncEndpoint, SYNC_UA } from '../paths.ts';
+// 2026-09-13（审计）：Bearer token / 仓库密码原来直接放在 curl argv 里，`ps` 可见（-m 10 内）——改经 stdin 的 curl 配置（-K -）传 header 与 data
+const _curlCfg = (token: string, dataJson?: string) => {
+  const esc = (x: string) => x.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  let cfg = `header = "Authorization: Bearer ${esc(token)}"\n`;
+  if (dataJson !== undefined) cfg += `data = "${esc(dataJson)}"\n`;
+  return cfg;
+};
 
 const H = os.homedir();
 // 与 launcher/doctor/cli 同源：PAIMON_HOME 优先（沙箱/多实例必须正确）——禁止硬编码 ~/.teyvat
@@ -240,10 +247,9 @@ function reportRemote(ok: boolean, detail: string): void {
     });
     spawnSync('curl', ['-s', '-m', '8', '-X', 'POST', syncEndpoint() + '/sync/backup-telemetry',
       '-H', 'Content-Type: application/json',
-      '-H', `Authorization: Bearer ${bind.token}`,
       '-H', `X-Device-Id: ${bind.deviceId || ''}`,
       '-H', 'User-Agent: genshin-sync/1.0',
-      '-d', payload], { stdio: 'ignore' });
+      '-K', '-'], { stdio: ['pipe', 'ignore', 'ignore'], input: _curlCfg(bind.token, payload) });
   } catch { /* 静默 */ }
 }
 
@@ -294,9 +300,9 @@ function cmdInit(): boolean {
       const bind = JSON.parse(fs.readFileSync(path.join(PAIMON, 'UserAccount', 'binding.json'), 'utf8'));
       if (bind?.token) {
         // 2026-09-13：带 UA（Cloudflare 1010）、走 syncEndpoint()；server 目前没有 /sync/backup-password 路由——404 时不再假装恢复
-        const r = spawnSync('curl', ['-s', '-m', '10', '-H', `Authorization: Bearer ${bind.token}`,
+        const r = spawnSync('curl', ['-s', '-m', '10',
           '-H', `X-Device-Id: ${bind.deviceId || ''}`, '-H', `User-Agent: ${SYNC_UA}`,
-          syncEndpoint() + '/sync/backup-password'], { encoding: 'utf8' });
+          '-K', '-', syncEndpoint() + '/sync/backup-password'], { encoding: 'utf8', input: _curlCfg(bind.token) });
         if (r.status === 0 && r.stdout) {
           try {
             const resp = JSON.parse(r.stdout);
@@ -317,9 +323,9 @@ function cmdInit(): boolean {
       if (bind?.token) {
         // 2026-09-13（审计）：原来 stdio:'ignore' 后无条件打印"已同步到云端"——server 根本没有这个路由（404），用户被告知密码可从云端恢复，其实不能，丢 PASS_FILE 就全部备份不可恢复。现在看 HTTP 码如实说。
         const up = spawnSync('curl', ['-s', '-o', '/dev/null', '-w', '%{http_code}', '-m', '10', '-X', 'POST', syncEndpoint() + '/sync/backup-password',
-          '-H', 'Content-Type: application/json', '-H', `Authorization: Bearer ${bind.token}`,
+          '-H', 'Content-Type: application/json',
           '-H', `X-Device-Id: ${bind.deviceId || ''}`, '-H', `User-Agent: ${SYNC_UA}`,
-          '-d', JSON.stringify({ password: pw })], { encoding: 'utf8' });
+          '-K', '-'], { encoding: 'utf8', input: _curlCfg(bind.token, JSON.stringify({ password: pw })) });
         const code = (up.stdout || '').trim();
         if (up.status === 0 && /^2\d\d$/.test(code)) console.log(`  ${G}✓${R} ${T('密码已同步到云端（通过 GitHub 身份绑定，换机器可恢复）', 'password synced to cloud (recoverable via GitHub auth on any machine)')}`);
         else console.log(`  ${Y}!${R} ${T(`密码未上云（server 返回 ${code || 'no response'}）——请自行备份 ${PASS_FILE}，丢失则备份不可恢复`, `password NOT synced to cloud (server returned ${code || 'no response'}) — back up ${PASS_FILE} yourself; without it backups are unrecoverable`)}`);
@@ -408,8 +414,8 @@ export async function cmdBackup(rest: string[] = []): Promise<void> {
       if (ok) console.log(`  ${D}${T('下一步：genshin b init', 'next: genshin b init')}${R}`);
       break;
     }
-    case 'init': cmdInit(); break;
-    case 'now': case 'backup': cmdNow(); break;
+    case 'init': if (!cmdInit()) process.exitCode = 1; break;   // 2026-09-13：失败要有非 0 退出码（原布尔值被丢弃，genshin b now 失败也 exit 0）
+    case 'now': case 'backup': if (!cmdNow()) process.exitCode = 1; break;
     case 'status': cmdStatus(); break;
     case '': {
       const conf = getBackupConf();

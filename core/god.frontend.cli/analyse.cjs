@@ -37,9 +37,10 @@ function analyse() {
   for (const a of agents) {
     const d = path.join(MEM_DIR, a.id);
     const sessDir = path.join(PAIMON_HOME, 'SessionData', a.id);
-    const s_main = dirSize(path.join(sessDir, 'MainSessions')) + dirSize(sessDir); // 含 flat session 文件
     const s_hippo = dirSize(path.join(sessDir, 'HippocampusSessions'));
     const s_subcon = dirSize(path.join(sessDir, 'SubconsciousSessions'));
+    // 2026-09-13：dirSize 是递归的——原 MainSessions + 整个 sessDir 把 main/hippo/subcon 都算了两遍；main = 总量减去两个子目录
+    const s_main = Math.max(0, dirSize(sessDir) - s_hippo - s_subcon);
     const bb = dirSize(path.join(PAIMON_HOME, 'BlackboxData', a.id));
     const m_context = fileSize(path.join(d, 'context.md')) + fileSize(path.join(d, 'context.archive.jsonl'));
     const m_working = fileSize(path.join(d, 'work_memory.md'));

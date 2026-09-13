@@ -9,7 +9,7 @@ import { logerr } from "#paths";
 function serverUrl(): string {
   if (process.env.GAME_SERVER_URL) return process.env.GAME_SERVER_URL;
   try {
-    const port = readFileSync(join(homedir(), ".teyvat/RuntimeCache/game-server-port"), "utf8").trim();
+    const port = readFileSync(join(process.env.PAIMON_HOME || join(homedir(), ".teyvat"), "RuntimeCache/game-server-port"), "utf8").trim(); // 2026-09-13：走 PAIMON_HOME
     if (port) return `http://localhost:${port}`;
   } catch (e) { console.error("[universe.infotech/local.mobile/apps/steam/steam-006_gomoku.ts] " + ((e as any)?.message || e)); }
   return "http://localhost:19223";

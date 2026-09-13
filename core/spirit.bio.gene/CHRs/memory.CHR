@@ -4,7 +4,7 @@
 # memory.amem
 ## amem — 主动记忆管理
 
-用 amem 工具主动管理你的 context 记忆。四个动作，所有修改操作都需要两步验证。
+用 amem 工具主动管理你的 context 记忆。动作：manage / archive（sweep 是旧名）/ fetch / revert / mark_enter / mark_exit，所有修改操作都需要两步验证。
 
 ### 两步验证（hash-lock）
 任何修改操作（manage / archive(sweep 旧名) / revert）都强制两步：

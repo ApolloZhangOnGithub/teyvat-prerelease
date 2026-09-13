@@ -446,7 +446,7 @@ export default function registerMemory(pi: ExtensionAPI) {
 
   // ── tool_call: context 95%+ 强制 amem + 禁止直接写记忆文件 ─────
   const MEMORY_FILES = ["work_memory.md", "context.md", "neocortex.md", "deep_cortex.md"];
-  const AMEM_EXEMPT_TOOLS = new Set(["amem", "status", "wait", "hibernate", "intentions"]);
+  const AMEM_EXEMPT_TOOLS = new Set(["amem", "status", "wait", "hibernate", "intentions", "help"]); // 2026-09-13：core.CHR 教模型先 help amem 再用——95% 门禁里 help 也得放行
   pi.on("tool_call", async (event) => {
     if (getSessionRole() !== "main") return;
 
@@ -749,8 +749,8 @@ export default function registerMemory(pi: ExtensionAPI) {
     const memTokens = estimateTokens(dna) + estimateTokens(dlc) + estimateTokens(context) + estimateTokens(workMem) + estimateTokens(cortex);
     const usageRatio = memTokens / modelMax;
     const rawPct = Math.round(usageRatio * 100);
-    // ratio = 记忆文件体量估算（est）——门禁/告警必须用它：amem 归档后立刻下降，agent 才能从 95% 拦截里出来；
-    // API 活窗口（api_tokens/api_ratio）只作记录：amem 后它不会立刻降（ISSUE 204），若拿它做门禁会把 agent 锁死在"必须先 amem"里。
+    // ratio = 记忆文件体量估算（est）；api_ratio = 上一轮 API 真实 prompt。2026-09-13 起门禁是 api 为主、est 决定文案：
+    // api≥95% 且 est≥60% 才拦其他工具叫 amem；api 高 est 低说明是活对话撑大的，改提示 self-reboot / compact（ISSUE 234：amem 后快照经 context 事件替换，api 下一轮才降）。
     const _apiTokNow = _pondSess.prevPrompt ?? 0;
     monitorAppend("growth.jsonl",
       JSON.stringify({ ts: new Date().toISOString(), bytes: context.length, tokens: memTokens, ratio: +(usageRatio * 100).toFixed(1), api_tokens: _apiTokNow, api_ratio: _apiTokNow ? +((_apiTokNow / modelMax) * 100).toFixed(1) : null }) + "\n");
@@ -916,7 +916,7 @@ export default function registerMemory(pi: ExtensionAPI) {
 
   // ── amem tool（主动记忆管理）─────────────────────────────────────
   // 文档: B.docs/Dev.Common/Wiki/Amem(Brain Tool).WIKI
-  // 四个 action: manage / sweep / fetch / revert
+  // action: manage / archive（sweep 旧名）/ fetch / revert / mark_enter / mark_exit
   // 所有修改操作强制两步：check(→hash_key) → apply(hash_key)
   // 最近 100K token 保护区：禁止编辑尾部内容，保护缓存和当前工作相关性
 
@@ -2243,11 +2243,8 @@ echo "[nav] done"
     name: "sleep",
     label: "Sleeping (Deep)",
     messageDescription:
-      "Enter deep sleep. Launches an INDEPENDENT sleep session (separate pi instance with sleep.dlc) " +
-      "that consolidates work_memory into cortex using 1% partial edit. " +
-      "The sleep session runs in tmux (sl-<personId>), just like hippocampus (hc) and metaconsciousness (sc). " +
-      "You (the main consciousness) should hibernate after calling this — the sleep session does the work.",
-    promptSnippet: "Sleeping: launch independent sleep session (separate pi instance, one-shot consolidation)",
+      "DEPRECATED — always returns an error. Memory consolidation is done with amem archive.",
+    promptSnippet: "Sleep (deprecated, returns error) — use amem archive",
     renderCall(_args: any, theme: any) {
       return renderToolCall.label(theme, "Sleep");
     },
@@ -2258,7 +2255,7 @@ echo "[nav] done"
     parameters: Type.Object({}),
     async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
       return {
-        content: [{ type: "text", text: i18n("Sleep 不可用（已废弃）。记忆整理请用 amem archive。", "Sleep unavailable. Use nap instead.") }],
+        content: [{ type: "text", text: i18n("Sleep 不可用（已废弃）。记忆整理请用 amem archive。", "Sleep is deprecated. Use amem archive for memory consolidation.") }],
         details: {},
         isError: true,
       };

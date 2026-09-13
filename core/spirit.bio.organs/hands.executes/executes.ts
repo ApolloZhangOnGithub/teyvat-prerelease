@@ -256,7 +256,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
       title: Type.String({ messageDescription: i18n("REQUIRED. Purpose of this command (why you run it), e.g. '确认权重已下载' - same command can have different intents; title captures the intent. Shows in @ list / /b / cmd-done instead of raw command", "REQUIRED. Purpose of this command (why you run it), e.g. 'verify weights downloaded' - same command can have different intents; title captures the intent. Shows in @ list / /b / cmd-done instead of raw command") }),
       stream: Type.Optional(Type.Boolean({ messageDescription: "Stream output as command runs (long commands only)" })),
       terminal: Type.Optional(Type.Boolean({ messageDescription: "Run in tmux TTY (for progress bars, interactive commands, long training)" })),
-      name: Type.Optional(Type.String({ messageDescription: "Terminal short name (e.g. train). Required for peek/close via @N" })),
+      name: Type.Optional(Type.String({ messageDescription: "Display label for a terminal task (e.g. train); manage it with action:'show'/'kill' + id" })),
       cwd: Type.Optional(Type.String({ messageDescription: "Working directory for this command (all modes; avoids hand-writing cd prefixes - explicit per-call, no state kept)" })),
       notify: Type.Optional(Type.Boolean({ messageDescription: "Send a completion message when a background/terminal command finishes (default true; set false to stay quiet)" })),
       action: Type.Optional(Type.String({ messageDescription: "Operation mode (teyvat convention like social/amem): 'list'=list background tasks (alias of '@'), 'show'=view task N detail (alias of '@N', use with id), 'kill'=terminate background task(s) (use with id, e.g. 33 or [33, 34]) - when action present, command is not executed (except list/show which only inspect)" })),
@@ -651,7 +651,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
           } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); running.delete(ttyId); updateBgCount(); }
         })();
         return {
-          content: [{ type: "text", text: i18n(`Terminal ${tName || n.slice(TMUX_PFX().length)} - 使用 @N 查看画面,@N kill 关闭。`, `Terminal ${tName || n.slice(TMUX_PFX().length)} - use @N to view, @N kill to close.`) }],
+          content: [{ type: "text", text: i18n(`Terminal ${tName || n.slice(TMUX_PFX().length)} - execute({action:'show', id:N}) 查看画面，execute({action:'kill', id:N}) 关闭。`, `Terminal ${tName || n.slice(TMUX_PFX().length)} - execute({action:'show', id:N}) to view, execute({action:'kill', id:N}) to close.`) }],
           details: {
             execId: `#${ttyId}`,
             recId,
