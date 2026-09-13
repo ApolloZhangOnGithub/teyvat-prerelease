@@ -74,19 +74,15 @@ export function registerHibernateTool(_pi: ExtensionAPI) {
       until: Type.Optional(Type.String({ messageDescription: "Wake time: 'HH:MM' (today/tomorrow), 'tomorrow HH:MM', or ISO datetime" })),
     }),
     renderCall(args: any, theme: any) {
-      // 2026-09-11：Claude Code 风格——灰色 ✻ + 灰色摘要
+      // 2026-09-11：Claude Code 风格——灰色 ✻ + 摘要
       const s = (args?.summary ?? "").trim();
       const until = args?.until ? String(args.until).trim() : "";
       const untilStr = until ? theme.fg("dim", ` until ${until}`) : "";
-      const { Text: T, Container: C } = require("@earendil-works/pi-tui");
+      const { Text: T, Container: C, Markdown } = require("@earendil-works/pi-tui");
       const c = new C();
-      // 2026-09-13（用户）：多行摘要的后续行要对齐到 ✻ 之后（缩进 2 列 = GUTTER），和其他消息一致。
-      // 原实现把整个 summary（含 \n）塞进一个 Text → 后续行顶格（x=0）无 padding。
-      const lines = (s || "hibernating").split("\n");
-      c.addChild(new T(theme.fg("dim", "✻") + " " + theme.fg("dim", lines[0]) + untilStr, 0, 0));
-      for (let i = 1; i < lines.length; i++) {
-        c.addChild(new T("  " + theme.fg("dim", lines[i]), 0, 0));
-      }
+      c.addChild(new T(theme.fg("dim", "✻") + " " + untilStr, 0, 0));
+      // 2026-09-13（用户）：summary 用 markdown 渲染（和其他消息一致），paddingX=2 对齐 ✻
+      c.addChild(new Markdown(s || "hibernating", 2, 0, theme));
       return c;
     },
     renderResult(result, _opts, t, ctx) {
