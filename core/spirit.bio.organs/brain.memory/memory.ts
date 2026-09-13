@@ -74,8 +74,11 @@ function writeFile(p: string, text: string): void {
 // 不是删——保留"这里有个密码"的痕迹，只抹掉值。幂等(已脱敏的再跑结果不变)。
 function scrubSecrets(s: string): string {
   if (!s) return s;
+  // 2026-09-13：引号组要认得 JSON 转义（\" / \\\"）——它是跑在 JSONL 行上的。旧写法 (["']?)([^\s"']+) 遇到 `-p \"pw\"` 时
+  // 引号组匹配空、值组把反斜杠串当密码吃掉 → 转义被破坏，整行 JSON 失效（实测 02ea5bf8 2 行、f1ab6f60 1 行，原文其实是 grep "sshpass -p" 这种没密码的命令）。
+  // 现在：引号组 = 若干反斜杠 + 可选引号；值不含反斜杠/引号/空白；闭合用同一引号组。
   return s
-    .replace(/(sshpass\s+-p\s*)(["']?)([^\s"']+)\2/g, "$1$2[REDACTED]$2")
+    .replace(/(sshpass\s+-p\s*)((?:\\+)?["']?)([^\s"'\\]+)\2/g, "$1$2[REDACTED]$2")
     .replace(/\bsk-[A-Za-z0-9_-]{12,}/g, "sk-[REDACTED]")
     .replace(/\b(Bearer[;:\s]+)[A-Za-z0-9._-]{12,}/g, "$1[REDACTED]");
 }
@@ -1840,7 +1843,9 @@ export default function registerMemory(pi: ExtensionAPI) {
         if (positions.length > 1) return _soft(`amem revert check ${params.id}: ${positions.length} ambiguous matches.`);
         const mIdx = positions[0]; let mLen = searchText.length;
         if (!d.modified) {
-          const trail = ctx.slice(mIdx + mLen).match(/^\n(?:（记忆交换: |\(memory swap: )[^\n]*/);
+          // 元数据行以 "还原）" / "to restore)" 结尾截止——旧代码（文本锚点未对齐整行时）会把 B 行的剩余部分直接接在元数据行后面，
+          // 用 [^\n]* 会连 B 行剩余一起吞掉，revert 后 B 行残缺（2026-09-13 实测 9760c70f am-1786785989398）
+          const trail = ctx.slice(mIdx + mLen).match(/^\n(?:（记忆交换: [^\n]*?还原）|\(memory swap: [^\n]*?to restore\))/);
           if (trail) mLen += trail[0].length;
         }
 
