@@ -1324,7 +1324,12 @@ export default function registerMemory(pi: ExtensionAPI) {
       const c = new C();
       const lines = raw.split("\n").filter((l: string) => l.trim());
       const firstLine = lines[0] || "";
-      const summary = firstLine.replace(/^amem\s+\w+\s*/, "").replace(/^"[^"]*"\s*→\s*/, "→ ");
+      const summary = firstLine
+        .replace(/^amem\s+\w+\s*/, "")
+        .replace(/^"[^"]*"\s*→\s*/, "")
+        .replace(/\s*\([^)]*\)/, "")
+        .replace(/,\s*archived\s+\S+/, "")
+        .trim();
       c.addChild(new Txt(indent + theme.fg("dim", "⎿  ") + theme.fg("toolOutput", summary || firstLine), 0, 0));
       // 2026-09-13（用户）：折叠模式 = 只显示上面的摘要行，不显示参数表格
       if (amemDisplay === "fold") return c;
