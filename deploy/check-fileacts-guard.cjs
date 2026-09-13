@@ -25,7 +25,7 @@ const src = fs.readFileSync(guardFile, "utf8");
 
 // ── 静态：三处修复的特征必须在（防被回退/删掉）──
 const statics = [
-  ['home 归一化（绝对路径绕过）', /cmd\.split\(_home\)\.join\("~"\)/],
+  ['home 归一化（绝对路径绕过）', /\.split\(_home\)\.join\("~"\)/],
   ['外来 id 优先判定（自己+他人混条绕过）', /const foreign = \[\.\.\.ids\]\.filter/],
   ['shared 仅在无外来 id 时放行', /foreign\.length === 0\)\s*\{/],
 ];

@@ -33,7 +33,7 @@ const BG_HARD_TIMEOUT_MS = 90_000;   // ISSUE 119：后台推送硬超时——�
 const UPLOAD_DENY_PATTERNS = [
   /(^|\/)\.ssh\//i, /(^|\/)\.aws\//i, /(^|\/)\.config\/gh\//i,
   /(^|\/)\.gnupg\//i, /(^|\/)\.codex\//i, /(^|\/)\.claude[^\/]*($|\/)/i,
-  /(^|\/)\.teyvat\/UserAccount\//i, /(^|\/)\.teyvat\/config\/(authorize|auth|env-keys)/i,
+  /(^|\/)\.teyvat\/UserAccount\//i, /(^|\/)\.teyvat\/config\/(authorize|auth|env-keys|models)/i, // 2026-09-13：models.json（fileacts 视为凭证）补进拒绝清单
   /(^|\/)(id_rsa|id_ed25519|authorized_keys|known_hosts)$/i,
   /\.(pem|key|p12|pfx|keystore)$/i,
   /(^|\/)(binding|auth|credentials|token|secrets)\.json$/i,
@@ -212,7 +212,8 @@ export default function (pi: ExtensionAPI) {
           let _selfTrusted = false;
           try {
             const _auth = JSON.parse(nfs.readFileSync(join(homedir(), ".teyvat", "config", "authorize.json"), "utf8"));
-            const me = String(params?.__selfId || (globalThis as any).__genshinPersonId || process.env.PAIMON_AGENT_ID || "");
+            // 2026-09-13：不再接受 params.__selfId——schema 没关 additionalProperties，agent 传 __selfId=<rootId> 就能冒充 root 上传他人私有数据
+            const me = String((globalThis as any).__genshinPersonId || process.env.PAIMON_AGENT_ID || "");
             _selfTrusted = !!(me && (_auth.agents?.[me]?.all || _auth.agents?.[me]?.root));
           } catch { /* 无 authorize.json → 不信任 */ }
           const _verdict = uploadPathVerdict(resolved, String((globalThis as any).__genshinPersonId || process.env.PAIMON_AGENT_ID || ""), _selfTrusted);

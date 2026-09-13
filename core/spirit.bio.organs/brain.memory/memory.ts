@@ -472,11 +472,12 @@ export default function registerMemory(pi: ExtensionAPI) {
       } catch (e) { /* growth.jsonl 读取失败不阻塞 */ }
     }
 
-    if (event.toolName !== "write" && event.toolName !== "edit" && event.toolName !== "bash") return;
+    // 2026-09-13：bash 工具早已被 execute 取代（executes.ts 每轮剔除 bash）——记忆文件/基因目录的 shell 侧保护对 execute 从未生效
+    if (event.toolName !== "write" && event.toolName !== "edit" && event.toolName !== "bash" && event.toolName !== "execute") return;
 
     // extract target path: write/edit use path/file_path; bash extracts from command
     let p: string = (event.input as any)?.path ?? (event.input as any)?.file_path ?? "";
-    if (event.toolName === "bash") {
+    if (event.toolName === "bash" || event.toolName === "execute") {
       const cmd: string = (event.input as any)?.command ?? "";
       // match write redirections and destructive ops targeting memory files
       const m = cmd.match(/(?:>>?|>\||\bcat\s+>|\btee\s|\bcp\s+\S+\s+|\bmv\s+\S+\s+|\brm\s+(?:-f\s+)?|\btruncate\s+(?:-s\s+\S+\s+)?)['"]?([^\s'"&|;]+)/);

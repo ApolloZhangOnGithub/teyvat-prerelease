@@ -13,11 +13,12 @@ import * as path from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
-// PAIMON_HOME: 测试沙箱钩子(Bun 的 homedir() 不跟进程内 HOME 修改)
-const ROOT = process.env.PAIMON_HOME || homedir();
-const ORG_DIR = path.join(ROOT, ".teyvat/AgentWorkDir/Organizational");
+// PAIMON_HOME 语义 = ~/.teyvat 本身（launcher 始终 export PAIMON_HOME="$HOME/.teyvat"，paths.ts 同约定）。
+// 2026-09-13 修复：之前把它当家目录再拼 ".teyvat/…" → launcher 环境下读写 ~/.teyvat/.teyvat/…，identity 的组织查询永远为空、setAgentOrg 静默 no-op
+const ROOT = process.env.PAIMON_HOME || path.join(homedir(), ".teyvat");
+const ORG_DIR = path.join(ROOT, "AgentWorkDir/Organizational");
 const ORG_FILE = path.join(ORG_DIR, "orgs.json");
-const PLIST_FILE = path.join(ROOT, ".teyvat/MemoryData/plist.json");
+const PLIST_FILE = path.join(ROOT, "MemoryData/plist.json");
 
 // ── 类型 ──────────────────────────────────────────────────────
 export interface Org {

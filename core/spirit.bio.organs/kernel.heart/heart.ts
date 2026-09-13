@@ -372,6 +372,8 @@ export default function (pi: ExtensionAPI) {
       };
       let statsTick = 0;
       setTimeout(() => { try { updateListStats(); } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); } }, 5000); // 启动后首刷
+      // 2026-09-13：/reload 会再次触发 session_start——之前每次都新建一个 30s 心跳且从不清理（重复写 pid、多份 wake-at 检查）。句柄挂全局，重入先清。
+      try { const _prev = (globalThis as any).__genshinHeartbeatInterval; if (_prev) clearInterval(_prev); } catch (e) { /* 首次无句柄 */ }
       const _heartbeatInterval = setInterval(() => {
         try {
           // 2026-09-11（prime-agent，ISSUE 182 收尾）：心跳不能只 touch mtime —— openSync(pidFile,"a") 在文件缺失时
@@ -438,6 +440,13 @@ export default function (pi: ExtensionAPI) {
               const wakeMsg = overslept
                 ? i18n(`[hibernate until ${targetHHMM} 结束，但已过点，继续工作]`, `[hibernate until ${targetHHMM} ended, but past the target — continue working]`)
                 : i18n(`[hibernate until ${targetHHMM} 结束]`, `[hibernate until ${targetHHMM} ended]`);
+              // 2026-09-13：到点必须真的唤醒——之前只发 continuous-resume 而状态仍 hibernated：before_agent_start 注入"你已休眠…立即停止"、
+              // agent_end 见 hibernated 直接 return → 开一个什么都不做的 turn 后再也不醒（wake-at 文件此时已删）。与 communicate.ts 的 interrupt 唤醒同构：
+              // 先 transition 到 working，再清 hibernate 标记文件。
+              try { transition({ kind: "working" }); } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] wake-until transition: " + ((e as any)?.message || e)); }
+              for (const _f of ["main-hibernate", "mc-hibernate"]) {
+                try { require("fs").unlinkSync(join(runtimeCacheDir(sessionPersonId), _f)); } catch (e) { if ((e as any)?.code !== "ENOENT") console.error("[spirit.bio.organs/kernel.heart/heart.ts] wake-until unlink: " + ((e as any)?.message || e)); }
+              }
               setTimeout(() => sendCustomMessage(pi, "continuous-resume", wakeMsg, { resumeType: "hibernate-until" }), 500);
               dlog(`wake-until: ${overslept ? "overslept" : "on time"} target=${targetHHMM}`);
               // 只有触发唤醒才删除文件、清除状态栏标签；未到时间保留，继续轮询（issue 071 修复补丁）
@@ -449,6 +458,7 @@ export default function (pi: ExtensionAPI) {
         } catch (e: any) { dlog(`wake-until check error: ${e?.message}`); }
       }, 30000);
       if (_heartbeatInterval.unref) _heartbeatInterval.unref();
+      (globalThis as any).__genshinHeartbeatInterval = _heartbeatInterval;
 
       try {
         const ctxPath = join(memoryDir(sessionPersonId), "context.md");
@@ -604,7 +614,7 @@ export default function (pi: ExtensionAPI) {
                   changeLine = i18n("\n\n[系统] ", "\n\n[System] ") + changes.join("\n");
                 }
               } catch (e: any) { dlog(`recap: change detection error: ${e?.message}`); }
-              sendCustomMessage(pi, "continuous-resume", userBackMsg + brewLine + changeLine, { resumeType: "restart", noTopSpacer: true }, { isTriggerNewTurn: true, deliverAs: "followup", isDisplayedInTUI: true });
+              sendCustomMessage(pi, "continuous-resume", userBackMsg + brewLine + changeLine, { resumeType: "restart", noTopSpacer: true }, { isTriggerNewTurn: true, deliverAs: "followUp", isDisplayedInTUI: true });
               dlog("recap: message sent");
             } catch (e: any) { dlog(`recap: sendMessage error: ${e?.message}`); }
           }, 1000);
@@ -650,7 +660,7 @@ export default function (pi: ExtensionAPI) {
             const now = new Date().toLocaleString(isEnglish() ? "en-US" : "zh-CN", { timeZone: "Asia/Shanghai", hour12: false });
             sendCustomMessage(pi, "continuous-resume",
               i18n(`[系统] 你自己触发了重启（self-reboot）。当前时间：${now}，原因：${selfRebootMsg}。重启后记忆快照已重新冻结，代码变更已生效。继续你的工作。`, `[System] You triggered a self-reboot. Current time: ${now}, reason: ${selfRebootMsg}. After restart the memory snapshot is re-frozen and code changes have taken effect. Continue your work.`),
-              { resumeType: "restart", noTopSpacer: true }, { isTriggerNewTurn: true, deliverAs: "followup", isDisplayedInTUI: true });
+              { resumeType: "restart", noTopSpacer: true }, { isTriggerNewTurn: true, deliverAs: "followUp", isDisplayedInTUI: true });
           } else {
             // 2026-08-20：sleep-wake-resume 已废弃（sleep/cortex 机制禁用）——非 self-reboot 的唤醒重启（含
             // Ctrl+C 转后台触发的重启）不再发"睡醒了"（残留误报，用户暴怒）。静默：等用户消息即可。

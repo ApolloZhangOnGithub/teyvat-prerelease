@@ -6,6 +6,8 @@ import { Type } from "@sinclair/typebox";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url); // 2026-09-13：@model 里 require(pi-ai models.generated.js) 在 ESM 下 ReferenceError 被 catch 吞掉 → 官方 catalog 从未合并进列表
 import { registerPaimonTool } from "#kernel_backbone";
 import { renderToolCall, renderMessage } from "#tui_blockrender";
 import { i18n } from "#tui_localizations";

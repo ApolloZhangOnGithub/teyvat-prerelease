@@ -335,10 +335,11 @@ export class Markdown {
                 // Build a heading-specific style context so inline tokens (codespan, bold, etc.)
                 // restore heading styling after their own ANSI resets instead of falling back to
                 // the default text style.
-                // teyvat: 标题一律【粗体】，去掉 theme.heading 的黄色；h1 额外加下划线作层级区分。
+                // teyvat: 标题一律【粗体】，去掉 theme.heading 的黄色。
+                // 2026-09-13（用户定稿）：h1 不再额外加下划线——assistant 块渲染不需要上下划线。
                 let headingStyleFn;
                 if (headingLevel === 1) {
-                    headingStyleFn = (text) => this.theme.bold(this.theme.underline(text));
+                    headingStyleFn = (text) => this.theme.bold(text);
                 }
                 else {
                     headingStyleFn = (text) => this.theme.bold(text);

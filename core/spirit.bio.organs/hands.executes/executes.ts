@@ -645,9 +645,8 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
       if (/^\s*sleep\s+[\d.]+\s*(;\s*)?$/.test(cmd)) {
         return { content: [{ type: "text", text: "Sleep is blocked. Execute is running asyncedly in this framework. please don't use sleep command." }], details: { blocked: true }, isError: true };
       }
-      // 放行 npm install 在 runtime 目录下
-      const v = /\bnpm\s+(i|install)\b/i.test(cmd) && /runtime/.test(cmd)
-        ? { blocked: false } : validateExecute(cmd, personId());
+      // 2026-09-13：`npm install` + "runtime" 的豁免收进 validateExecute（之前在这里跳过整个校验——`echo runtime; npm i; rm -rf ~` 全部规则失效）；cwd 一并参与路径判定
+      const v = validateExecute(cmd, personId(), (params as any).cwd || undefined);
       if (v.blocked) {
         return { content: [{ type: "text", text: v.message! }], details: { blocked: true }, isError: true };
       }
@@ -802,6 +801,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
       const bgTimer = setTimeout(() => {
         const entry = running.get(id);
         if (entry && !entry.killedByUser) {
+          (entry as any).timedOut = true; // 2026-09-13：成功分支据此不再重复发"完成"（之前超时后 execPromise 正常 resolve、code 0 → "超时"+"完成 exit 0" 双通知）
           try { ac.abort(); } catch (e) { console.error("[executes.ts] bg timeout abort: " + ((e as any)?.message || e)); }
           try { outboxSend(pi, "continuous-cmd-done", i18n(`超时 (${Math.round(bgTimeoutMs / 60000)}min):\n$ ${cmd}\n(自动终止)`, `Timeout (${Math.round(bgTimeoutMs / 60000)}min):\n$ ${cmd}\n(auto-killed)`), { title: entry.title }, { deliverAs: "interrupt" }); } catch (e) { console.error("[executes.ts] bg timeout notify: " + ((e as any)?.message || e)); }
         }
@@ -845,7 +845,10 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
           // remaining = 本任务之外还在运行的(发送时本任务仍在 running,需减 1)
           const remNow = Math.max(0, running.size - 1);
           const remInfo = remNow > 0 ? `\n[remaining: ${remNow}]` : "";
-          try {
+          // 2026-09-13：被 kill / 超时终止的进程，pi.exec 也会正常 resolve（code 为 null→0、killed=true）——之前一律报"完成 (exit 0)"，
+          // 超时时还与上面的"超时"通知叠成双条。终止的只记录不再发"完成"；用户手动 kill 的由 kill 路径自己通知。
+          const wasKilled = !!(r as any).killed || !!entry?.killedByUser || !!(entry as any)?.timedOut;
+          if (!wasKilled) try {
             // 2026-08-15 修复"后台命令完成结果丢失"(实测 context 里 continuous-cmd-done 0 条):
             // followUp 在 agent run 进行中到达时走 pi 的 followUp 分支只排队不注入,run 结束后
             // 队列无 flush → 消息永久丢失。改 interrupt:强制 30ms 后 flush 注入,不管 run 状态,

@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { readFile as fsReadFile, writeFile as fsWriteFile } from "node:fs/promises";
 import { createHash, randomBytes } from "node:crypto";
 import { homedir } from "node:os";
-import { execSync } from "node:child_process";
+import { execSync, execFileSync } from "node:child_process";
 
 import { getPrompt } from "#kernel_ribosome";
 import { registerPaimonTool, sendCustomMessage, resultContent } from "#kernel_backbone";
@@ -42,7 +42,8 @@ function getAgentName(): string {
 
 function readMeta(filePath: string): XattrFileMeta | null {
   try {
-    const raw = execSync(`xattr -p ${XATTR_KEY} "${filePath}"`, { encoding: "utf8", timeout: 2000, stdio: ["ignore","pipe","ignore"] });
+    // 2026-09-13：改 execFileSync（argv 传参）——之前把 agent 提供的文件名拼进 shell 字符串，`x$(touch /tmp/pwn).md` 这类文件名会在 xattr 阶段执行且不经 validateExecute
+    const raw = execFileSync("xattr", ["-p", XATTR_KEY, filePath], { encoding: "utf8", timeout: 2000, stdio: ["ignore","pipe","ignore"] });
     return JSON.parse(raw.trim());
   } catch { /* 2026-09-11（系统检查）：无 com.genshin.meta 属性 = 正常（绝大多数文件无 meta），xattr -p 非零退出不该打日志（原 → 50× spam）；返回 null 由调用方按无元数据处理 */
     return null;
@@ -51,7 +52,7 @@ function readMeta(filePath: string): XattrFileMeta | null {
 
 function writeMetaRaw(filePath: string, json: string): boolean {
   try {
-    execSync(`xattr -w ${XATTR_KEY} '${json.replace(/'/g, `'\\''`)}' "${filePath}"`, { timeout: 2000, stdio: "ignore" });
+    execFileSync("xattr", ["-w", XATTR_KEY, json, filePath], { timeout: 2000, stdio: "ignore" }); // 2026-09-13：argv 传参，不拼 shell
     return true;
   } catch (e) { console.error("[spirit.bio.organs/hands.fileacts/fileacts.ts] " + ((e as any)?.message || e));
     return false;
@@ -187,7 +188,8 @@ function isWalletProtected(path: string): boolean {
 }
 
 function isSystemProtected(path: string): boolean {
-  const p = path.replace(/\\/g, "/");
+  // 2026-09-13：统一小写比较——APFS 默认大小写不敏感，`/Users/x/.SSH/id_rsa`、`/.TEYVAT/config/…` 之前都不命中保护
+  const p = path.replace(/\\/g, "/").toLowerCase();
   return p.includes("/.ssh/") || p.includes("/.ssh") ||
     p.includes("/.teyvat/agent/auth.json") ||
     p.includes("/.teyvat/trust.json") ||
@@ -195,7 +197,7 @@ function isSystemProtected(path: string): boolean {
     p.includes("/fileacts.ts") ||
     p.includes("/pi-coding-agent/dist/") ||
     p.includes("/.teyvat/") ||
-    p.includes("/R.release/") ||
+    p.includes("/r.release/") ||
     p.includes("/.local/bin/pi") || p.includes("/.local/bin/genshin") ||
     p.includes("/.local/lib/teyvat/") ||
     isWalletProtected(path);
@@ -257,15 +259,40 @@ function parseMv(cmd: string): { src: string; dst: string; isRename: boolean } |
   return { src, dst, isRename };
 }
 
+// 他人私有数据目录判定（read/ls/grep/glob/write 等所有带 path 的工具共用；execute 走 validateExecute 里的同口径正则）
+// 2026-09-13：之前"他人数据目录边界"只存在于 execute——`read ~/.teyvat/MemoryData/<other>/context.md` 直接通过，而 execute 里 cat 同一文件被拦。
+export function checkPrivateDataPath(p: string, selfId: string): string | null {
+  if (!p) return null;
+  const abs = resolve(p.replace(/^~(?=\/|$)/, homedir()));
+  const m = abs.match(/\/\.teyvat\/(?:MemoryData|SessionData|RuntimeCache|BlackboxData|IdentityData|AgentFileData|AppData|ExecuteData|LogData|ErrorData)\/([0-9a-f]{8})(?=\/|$)/i);
+  if (!m) return null;
+  const id = m[1].toLowerCase();
+  if (selfId && id === selfId.toLowerCase()) return null;
+  try { const auth = JSON.parse(readFileSync(AUTH_FILE, "utf8")); if (selfId && auth.agents?.[selfId]?.root) return null; } catch { /* 无 authorize.json → 不放行 */ }
+  return i18n(`禁止访问其他 agent（${id}）的私有数据目录。`, `Access to another agent's (${id}) private data directory is forbidden.`);
+}
+
+// 去掉引号串（make/npm 的 msg/detail 参数可能含 rm/kill/;/&& 等词——它们是数据不是命令），用于"整条命令只由一个 X 命令构成"的判定
+function _stripQuoted(cmd: string): string {
+  return cmd.replace(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/g, '""');
+}
+
 // ── Execute 命令校验（由 kernel.heart/process.ts 调用）──
-export function validateExecute(cmd: string, selfId?: string): { blocked: boolean; message?: string } {
-  // make 命令豁免（2026-09-07 用户：make 部署时不要误判拦截）——提前到内容词检查之前：
-  // make 的 msg/detail 参数是部署描述数据（可能含 rm/kill/路径等词），不是要执行的命令，不应触发内容词拦截。
-  // cd 路径可能带空格（引号包裹，如 cd "/Users/.../Agent Intelligence/...")——正则需支持引号路径。
-  if (/^\s*(?:cd\s+("[^"]*"|\S+)\s*&&\s*)?make\s/i.test(cmd)) return { blocked: false };
+// 2026-09-13 收紧（审计实测的绕过）：
+//   ① make 豁免原来是"命令以 make 开头就整条放行"——`make -n; rm -rf ~/x` 直接过。现在：去掉引号串后整条必须只由 `[cd X &&] make …` 构成（不能再接 ; && || | 换行 $() 反引号）。
+//   ② `npm install` 且含 "runtime" 的豁免原来写在 executes.ts 里、跳过整个 validateExecute——`echo runtime; npm i; rm -rf ~` 全部规则失效。同样收进这里、同样要求整条命令结构单一。
+//   ③ cwd 参数原来不参与校验——`execute({command:"cat context.md", cwd:"~/.teyvat/MemoryData/<other>"})` 绕过他人目录守卫。现在拼成 `cd <cwd> && cmd` 后再做路径匹配。
+//   ④ 内联代码禁令原来锚定行首且只认 python/bash——`cd . && python3 -c`、`sh -c`、`node -e`、`perl -e` 全放行。
+//   ⑤ 凭据文件（~/.ssh、UserAccount、authorize/auth/models.json 等）在 execute 里毫无限制，与 read/upload 的保护不一致——补上。
+//   ⑥ 自授权：RuntimeCache/<self>/*-auth* 是 self-reboot/switch-model 的授权标志，自己目录放行规则让 agent 能 `echo > …-auth.json` 自授权——写操作拦下。
+export function validateExecute(cmd: string, selfId?: string, cwd?: string): { blocked: boolean; message?: string } {
+  const stripped = _stripQuoted(cmd);
+  const SINGLE_CMD_TAIL = "[^;&|\\n<>`$]*$";
+  if (new RegExp("^\\s*(?:cd\\s+(?:\"\"|\\S+)\\s*&&\\s*)?make\\b" + SINGLE_CMD_TAIL, "i").test(stripped)) return { blocked: false };
+  if (/\bnpm\s+(?:i|install)\b/i.test(cmd) && /runtime/.test(cmd) && new RegExp("^\\s*(?:cd\\s+(?:\"\"|\\S+)\\s*&&\\s*)?npm\\s+(?:i|install)\\b" + SINGLE_CMD_TAIL, "i").test(stripped)) return { blocked: false };
   if (/\brm\b/i.test(cmd)) return { blocked: true, message: i18n("请使用 Execute 工具执行 trash 命令来将文件移入回收站。", "Use the Execute tool with the trash command to move files to the recycle bin.") };
   if (/\bsed\b/i.test(cmd)) return { blocked: true, message: i18n("请勿使用 sed 命令。你可使用 Read 命令读取文件。", "Do not use the sed command. Use the Read command to read files.") };
-  if (/^\s*python[23]?\s+-c\b/.test(cmd) || /^\s*bash\s+-c\b/.test(cmd)) return { blocked: true, message: i18n(`禁止直接执行 python/bash 内联代码。请在你的工作目录 ${agentWorkDir()}/ 下创建脚本文件再运行。`, `Inline python/bash code is forbidden. Create a script file in your workdir ${agentWorkDir()}/ and run it.`) };
+  if (/\b(?:python[23]?|bash|sh|zsh|node|perl|ruby)\s+-(?:c|e|eval)\b/.test(cmd)) return { blocked: true, message: i18n(`禁止直接执行解释器内联代码（python/bash/sh/node/perl/ruby -c/-e）。请在你的工作目录 ${agentWorkDir()}/ 下创建脚本文件再运行。`, `Inline interpreter code (python/bash/sh/node/perl/ruby -c/-e) is forbidden. Create a script file in your workdir ${agentWorkDir()}/ and run it.`) };
   if (/\bpython[23]?\s*<</.test(cmd) || /\bpython[23]?\s+-\s*$/.test(cmd)) return { blocked: true, message: i18n(`禁止直接执行 python 内联代码。请在你的工作目录 ${agentWorkDir()}/ 下创建 .py 文件，然后用 python <文件名>.py 运行。`, `Inline python code is forbidden. Create a .py file in your workdir ${agentWorkDir()}/ then run it with python <filename>.py.`) };
   if (/(kill|pkill|killall)\s.*genshin/i.test(cmd)) return { blocked: true, message: i18n("禁止杀掉 genshin 进程。用 genshin -k <序号> 或 /stop 正常终止。", "Killing the genshin process is forbidden. Use genshin -k <index> or /stop to terminate normally.") };
   // 禁止访问其他人数据目录；自己 ID 的 MemoryData/AgentFileData/ExecuteData 等放行
@@ -279,8 +306,17 @@ export function validateExecute(cmd: string, selfId?: string): { blocked: boolea
   //          同上，外来 id 优先判定为拦截。
   {
     const _home = homedir();
-    const norm = _home ? cmd.split(_home).join("~") : cmd;   // 绝对路径 → ~，与既有写法统一
-    const PRIVATE_RE = /(?:~\/\.local\/lib\/genshin\/|~\/\.teyvat\/|\$HOME\/\.teyvat\/)(?:extensions|extensions-stable|MemoryData|SessionData|RuntimeCache|BlackboxData|IdentityData|AgentFileData|AppData|ExecuteData|LogData|config|UserAccount)/i;
+    const withCwd = cwd ? `cd ${cwd} && ${cmd}` : cmd;                       // ③ cwd 参与路径判定
+    const norm = (_home ? withCwd.split(_home).join("~") : withCwd).replace(/\$HOME\//g, "~/").replace(/\/(?:\.\/)+/g, "/");   // 绝对路径/$HOME → ~，路径中的 /./ 归一（`~/.teyvat/./MemoryData/<other>` 曾绕过）
+    // ⑤ 凭据文件：与 read（isSystemProtected）/ upload（UPLOAD_DENY_PATTERNS）同口径——execute 里 cat ~/.ssh/id_rsa | curl … 之前直接放行
+    if (/~\/\.(?:ssh|aws|gnupg|codex)\/|~\/\.config\/gh\/|~\/\.teyvat\/(?:UserAccount\/|config\/(?:authorize|auth|env-keys|models)\b)|\b(?:id_rsa|id_ed25519)\b/i.test(norm)) {
+      return { blocked: true, message: i18n("凭据/授权文件禁止在 Execute 里访问（~/.ssh、UserAccount、config/authorize|auth|models 等）。", "Credential/authorization files cannot be accessed via Execute (~/.ssh, UserAccount, config/authorize|auth|models, …).") };
+    }
+    // ⑥ 自授权标志文件写保护
+    if (/RuntimeCache\/[0-9a-f]{8}\/[^\s"'|;&]*-auth(?:\.json)?\b/i.test(norm) && /(?:>|>>|\btee\b|\bcp\b|\bmv\b|\btouch\b|\binstall\b|\bdd\b|\bln\b)/.test(stripped)) {
+      return { blocked: true, message: i18n("授权标志文件（RuntimeCache/<id>/*-auth*）只能由用户通过 /a 写入，agent 不能自授权。", "Authorization flag files (RuntimeCache/<id>/*-auth*) are written only by the user via /a; agents cannot self-authorize.") };
+    }
+    const PRIVATE_RE = /(?:~\/\.local\/lib\/genshin\/|~\/\.teyvat\/)(?:extensions|extensions-stable|MemoryData|SessionData|RuntimeCache|BlackboxData|IdentityData|AgentFileData|AppData|ExecuteData|LogData|config|UserAccount)/i;
     if (PRIVATE_RE.test(norm)) {
       const ids = new Set(
         [...norm.matchAll(/(?:MemoryData|AgentFileData|SessionData|RuntimeCache|BlackboxData|IdentityData|AppData|ExecuteData|LogData)\/([0-9a-f]{8})\b/gi)]
@@ -414,13 +450,20 @@ export default function (pi: ExtensionAPI) {
       }
     }
 
+    // ── 他人私有数据目录：所有带 path 的工具（含 read/ls/grep/glob）统一守卫 ──
+    if (authPath) {
+      const foreign = checkPrivateDataPath(authPath, agentId());
+      if (foreign) return { block: true, reason: foreign };
+    }
+
     // ── 系统保护: SSH密钥/凭证/钱包/自身代码/pi dist ──
+    const apl = (authPath || "").toLowerCase(); // 2026-09-13：大小写不敏感文件系统上统一小写比较
     if (authPath && isSystemProtected(authPath)) {
       const isRead = ["read","view","ls","list","glob","grep","find"].includes(event.toolName);
-      if (authPath.includes("/.ssh/") || authPath.includes("auth.json") || authPath.includes("models.json")) {
+      if (apl.includes("/.ssh/") || apl.includes("auth.json") || apl.includes("models.json")) {
         return { block: true, reason: i18n(`系统保护 — ${authPath.split("/").pop()} 是凭证文件，agent 不可访问。`, `System protected — ${authPath.split("/").pop()} is a credential file, not accessible to agents.`) };
       }
-      if (authPath.includes("/pi-coding-agent/dist/") || authPath.includes("/.teyvat/agent/") || authPath.includes("/.local/lib/teyvat/")) {
+      if (apl.includes("/pi-coding-agent/dist/") || apl.includes("/.teyvat/agent/") || apl.includes("/.local/lib/teyvat/")) {
         if (!isRead) {
           return { block: true, reason: i18n(`请不要直接修改 ~/.local/lib/teyvat/ 下的文件。请修改开发源码 ~/Documents/Agent Intelligence/MODERN/TEYVAT/teyvat-main/A.core/ 下的对应文件，然后 cd C.deploy && make dev-minutely 部署。`, `Do not modify files under ~/.local/lib/teyvat/ directly. Edit the dev tree at ~/Documents/Agent Intelligence/MODERN/TEYVAT/teyvat-main/A.core/ and run: cd C.deploy && make dev-minutely.`) };
         }
@@ -428,7 +471,7 @@ export default function (pi: ExtensionAPI) {
           return { block: true, reason: i18n(`请不要读 ~/.teyvat/agent/。请阅读 ~/Documents/Agent Intelligence/MODERN/TEYVAT/teyvat-main/A.core/ 开发目录中的源文件。`, `Do not read ~/.teyvat/agent/. Read the source files in ~/Documents/Agent Intelligence/MODERN/TEYVAT/teyvat-main/A.core/.`) };
         }
       }
-      if (authPath.includes("/R.release/") && !isRead) {
+      if (apl.includes("/r.release/") && !isRead) {
         return { block: true, reason: i18n(`RELEASE 保护 — 不要改已经发布的版本。`, `RELEASE protected — do not modify released versions.`) };
       }
       if (!isRead) {
@@ -483,9 +526,12 @@ export default function (pi: ExtensionAPI) {
     // ── FILE_RULES enforcement ─────────────────────────────────
     for (const rule of FILE_RULES) {
       const tn = event.toolName;
-      if (rule.on !== tn) continue;
+      // 2026-09-13：bash 工具早已被 execute 取代（executes.ts 每轮 setActiveTools 剔除 bash）——按 "bash" 登记的规则（git push --force / reset --hard / clean -f / gh repo delete）
+      // 对 execute 从未生效，与 promotor.dna "GitHub 敏感操作拦截" 声明不符。execute 的命令同样过这些规则。
+      const isCmdTool = tn === "bash" || tn === "execute";
+      if (rule.on !== tn && !(rule.on === "bash" && isCmdTool)) continue;
       if (rule.pattern) {
-        const cmd = tn === "bash" ? ((event.input as any).command ?? "") : "";
+        const cmd = isCmdTool ? ((event.input as any).command ?? "") : "";
         if (new RegExp(rule.pattern).test(cmd)) {
           return { block: true, reason: rule.block };
         }
@@ -624,9 +670,11 @@ export default function (pi: ExtensionAPI) {
   });
 
   // ── tool_result: track edits for changelog ───────────────────────
-  (pi as any).on("input", async (event: any, _ctx: any) => {
+  // 2026-09-13：原来挂在 "input" 事件上（InputEvent 只有 text/images/source，没有 toolName）→ 整块从未执行：
+  // readmesSeen 永远不填（dir.README 门一旦命中永久锁死）、syntaxCheck / .SPEC hash 自动更新 / CHANGELOG / mv 伴随文件迁移全部死代码。
+  // 改挂 tool_result（该事件带 toolName/input/isError）；顺手去掉每次工具结果都发一条的 tool-result-debug 消息。
+  (pi as any).on("tool_result", async (event: any, _ctx: any) => {
     if (event.toolName !== undefined) {
-      try { sendCustomMessage(pi, "tool-result-debug", `tool_result: ${event.toolName}`); } catch (e) { console.error("[spirit.bio.organs/hands.fileacts/fileacts.ts] " + ((e as any)?.message || e)); }
       // 记录"看过哪些目录"：ls/read/grep/glob、bash 里的 ls/find，以及成功写过的目录(写过就算看过了)。
       if (!event.isError) {
       const inp = (event.input as any) || {};
