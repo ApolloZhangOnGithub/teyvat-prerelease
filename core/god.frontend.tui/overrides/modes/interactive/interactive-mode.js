@@ -446,6 +446,14 @@ export class InteractiveMode {
         if (savedCompactExecute !== undefined) {
             globalThis.__genshinCompactExecute = savedCompactExecute;
         }
+        // 2026-09-13（房东）：Intention 工具输出隐藏/显示（默认隐藏，/s 面板可切）
+        const savedIntentionShow = this.settingsManager.settings?.intentionShow;
+        if (savedIntentionShow !== undefined) globalThis.__genshinIntentionShow = savedIntentionShow;
+        // 2026-09-13（房东）：Execute 摘要/结果 与 Wait 输出 的显示开关（默认：摘要隐藏、结果全部、Wait 隐藏）
+        const s0 = this.settingsManager.settings;
+        if (s0?.executeSummary !== undefined) globalThis.__genshinExecuteSummary = s0.executeSummary;
+        if (s0?.executeResult !== undefined) globalThis.__genshinExecuteResult = s0.executeResult;
+        if (s0?.waitShow !== undefined) globalThis.__genshinWaitShow = s0.waitShow;
         // Load tool expanded from persisted settings
         const savedToolExpanded = this.settingsManager.settings?.toolExpanded;
         if (savedToolExpanded !== undefined) {

@@ -111,6 +111,17 @@ export class ModelSelectorComponent extends Container {
     MODELSDEV_URL = "https://models.dev/api.json";
     MODELSDEV_TTL_MS = 24 * 60 * 60 * 1000;
     MODELSDEV_CACHE_FILE = () => join(homedir(), ".teyvat", "RuntimeCache", process.env.PAIMON_AGENT_ID || "unknown", "modelsdev-catalog.json");
+    // 2026-09-13：OpenRouter 官方现存清单（下架过滤的权威依据）
+    OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
+    OPENROUTER_ALIVE_FILE = () => join(homedir(), ".teyvat", "RuntimeCache", process.env.PAIMON_AGENT_ID || "unknown", "openrouter-alive.json");
+    readOpenRouterAlive() {
+        try {
+            const f = this.OPENROUTER_ALIVE_FILE();
+            if (!existsSync(f)) return null;
+            const j = JSON.parse(readFileSync(f, "utf8"));
+            return Array.isArray(j?.ids) && j.ids.length > 100 ? new Set(j.ids) : null;
+        } catch { return null; }
+    }
     readModelsDevCache() {
         try {
             const f = this.MODELSDEV_CACHE_FILE();
@@ -138,6 +149,24 @@ export class ModelSelectorComponent extends Container {
                     mkdirSync(dirname(f), { recursive: true });
                     writeFileSync(f + ".tmp", text);
                     renameSync(f + ".tmp", f); // 原子替换，避免读到半写文件
+                    // 2026-09-13：顺带拉 **OpenRouter 官方现存清单**（下架过滤的权威依据——
+                    // models.dev 是聚合目录、不及时清理已下架模型，拿它当“现存”依据会一个都过滤不掉）。
+                    try {
+                        const f2 = this.OPENROUTER_ALIVE_FILE();
+                        let fresh2 = false;
+                        try { fresh2 = Date.now() - statSync(f2).mtimeMs < this.MODELSDEV_TTL_MS; } catch { /* 无缓存 */ }
+                        if (!fresh2) {
+                            const r2 = await fetch(this.OPENROUTER_MODELS_URL, { signal: AbortSignal.timeout(30000) });
+                            if (r2 && r2.ok) {
+                                const j2 = await r2.json();
+                                const ids = Array.isArray(j2?.data) ? j2.data.map((m) => m.id).filter(Boolean) : [];
+                                if (ids.length > 100) {
+                                    writeFileSync(f2 + ".tmp", JSON.stringify({ ts: Date.now(), ids }));
+                                    renameSync(f2 + ".tmp", f2);
+                                }
+                            }
+                        }
+                    } catch (e) { console.error("[teyvat model-selector] OpenRouter 现存清单同步失败: " + (e?.message ?? e)); }
                 } catch (e) { console.error("[teyvat model-selector] models.dev 缓存同步失败: " + (e?.message ?? e)); }
             })();
         } catch (e) { console.error("[teyvat model-selector] models.dev 同步触发失败: " + (e?.message ?? e)); }
@@ -198,6 +227,32 @@ export class ModelSelectorComponent extends Container {
             try {
                 availableModels = [...availableModels, ...await this.loadModelsDevExtras(availableModels)];
             } catch (e) { console.error("[teyvat model-selector] models.dev 合并失败（用内置目录）: " + (e?.message ?? e)); }
+            // 2026-09-13（房东：下架模型当然要过滤）：对**启用了 models.dev 目录的 provider**，
+            // 把内置目录里那些 models.dev 已不存在的模型（= 官方已下架，选了会报错）从列表里去掉。
+            // （未启用目录的 provider 不动——它们没有权威现存清单，贸然过滤会误删）
+            try {
+                const cat0 = this.readModelsDevCache();
+                if (cat0) {
+                    const alive = new Set();
+                    for (const [prov, mdKey] of Object.entries(this.MODELSDEV_PROVIDERS)) {
+                        const mdProv = cat0[mdKey];
+                        if (!mdProv?.models) continue;
+                        for (const mdModel of Object.values(mdProv.models)) alive.add(`${prov}::${mdModel.id}`);
+                    }
+                    if (alive.size > 0) {
+                        // openrouter 用**官方清单**（models.dev 会滞后、清不掉下架模型）；其他启用的 provider 用 models.dev
+                        const aliveOR = this.readOpenRouterAlive();
+                        const kept = availableModels.filter((m) => {
+                            if (m.provider === "openrouter") return aliveOR ? aliveOR.has(m.id) : true;
+                            if (this.MODELSDEV_PROVIDERS[m.provider]) return alive.has(`${m.provider}::${m.id}`);
+                            return true;
+                        });
+                        const dropped = availableModels.length - kept.length;
+                        if (dropped > 0) console.error(`[teyvat model-selector] 过滤已下架模型 ${dropped} 个`);
+                        availableModels = kept;
+                    }
+                }
+            } catch (e) { console.error("[teyvat model-selector] 下架过滤失败（保留全部）: " + (e?.message ?? e)); }
             // 补元数据：openWeights / family / _vendor / _series
             // openWeights 数据源：open-weights.json（从 OpenRouter API 抓取维护的权威映射）> models.dev catalog > 未知
             let owMap = {};

@@ -33,6 +33,8 @@ export function registerWaitTool(pi: ExtensionAPI) {
       message: Type.Optional(Type.String({ messageDescription: "Optional message shown during wait (e.g. reason)" })),
     }),
     renderCall(args: any, theme: any) {
+      // 2026-09-13（房东）：Wait 输出支持隐藏/显示——默认隐藏（开关存 settings.waitShow，/s 面板可切）
+      if (!(globalThis as any).__genshinWaitShow) return renderMessage.silent();
       const s = args?.seconds ?? "?";
       const title = args?.title || "";
       const wu = args?.wait_for_user ? " (for user)" : "";

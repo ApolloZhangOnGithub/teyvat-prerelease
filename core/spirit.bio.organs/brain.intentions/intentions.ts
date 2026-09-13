@@ -91,10 +91,14 @@ export default function (_pi: ExtensionAPI) {
       force: Type.Optional(Type.Boolean({ messageDescription: "Force overwrite non-empty stack (skip error)" })),
     }),
     renderCall(args: any, theme: any) {
+      // 2026-09-13（房东定稿）：Intention 用「隐藏 / 显示」而不是折叠（折叠没意义）——默认隐藏。
+      // 开关存 settings.intentionShow（/s 面板可切），运行时读 globalThis.__genshinIntentionShow。
+      if (!(globalThis as any).__genshinIntentionShow) return renderMessage.silent();
       // renderCall 只渲染标题行（dot + Intention），不渲染 ⎿ 结果——那是 renderResult 的职责
       return renderToolCall.label(theme, "Intention");
     },
     renderResult(result: any, _options: any, theme: any, ctx: any) {
+      if (!(globalThis as any).__genshinIntentionShow) return renderMessage.silent();
       const content = result?.details?._content || result?.content || [];
       let text = content?.[0]?.text || "";
       // 2026-08-18 用户定稿：剥离 feed 层 append 的 [result N tokens, ctx X.Xk]（backbone.ts 拼进 content

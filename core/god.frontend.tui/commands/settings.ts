@@ -59,15 +59,17 @@ function getAllItems() {
   const toolExpanded = g.__genshinGetToolExpanded?.() ?? false;
   const readExpanded = g.__genshinReadExpanded ?? false;
   const codeHighlight = g.__genshinCodeHighlight ?? false;
-  const executeDisplay = g.__genshinExecuteDisplay ?? "title";
-  const compactExecute = g.__genshinCompactExecute ?? false;
+  const executeSummary = g.__genshinExecuteSummary === true;
+  const executeResult = g.__genshinExecuteResult ?? "full";
+  const waitShow = g.__genshinWaitShow === true;
   const breakAnd = g.__genshinExecuteBreakAnd ?? false;
 
   const toolMode = toolExpanded ? T("完整", "Full") : T("摘要", "Summary");
   const readMode = readExpanded ? T("完整", "Full") : T("摘要", "Summary");
-  // 2026-09-13（房东定稿）：「Execute 调用」= 调用行显示什么（标题/摘要组合）；「Execute 结果」= 结果区是否只显示 5 行。
-  const exeCallMode = executeDisplay === "title" ? T("仅标题", "Title") : executeDisplay === "summary" ? T("标题+摘要", "Title+Summary") : T("标题+完整", "Title+Full");
-  const exeResultMode = compactExecute ? T("只显示 5 行", "First 5 lines") : T("完整", "Full");
+  // 2026-09-13（房东定稿）：Execute 摘要 = 显示/隐藏；Execute 结果 = 隐藏/摘要/全部；Wait 输出 = 隐藏/显示（默认隐藏）
+  const exeSummaryMode = executeSummary ? T("显示", "Show") : T("隐藏", "Hide");
+  const exeResultMode = executeResult === "hide" ? T("隐藏", "Hide") : executeResult === "summary" ? T("摘要", "Summary") : T("全部", "Full");
+  const waitShowMode = waitShow ? T("显示", "Show") : T("隐藏", "Hide");
 
   const items: any[] = [
     ...featureEntries(),
@@ -75,6 +77,8 @@ function getAllItems() {
     { id: "renderMode", label: T("渲染模式", "Render Mode"), currentValue: renderMode, values: ["line", "streaming", "block"] },
     { id: "thinking", label: "Thinking", currentValue: thinkHidden ? T("隐藏", "Hidden") : (g.__genshinThinkingFirstLine ? T("首行", "First line") : T("完整", "Full")), values: [T("首行", "First line"), T("完整", "Full"), T("隐藏", "Hidden")] },
     { id: "codeHighlight", label: T("代码高亮", "Code Highlight"), currentValue: codeHighlight ? T("开", "On") : T("关", "Off"), values: [T("关", "Off"), T("开", "On")] },
+    // 2026-09-13（房东）：Intention 工具输出——隐藏 / 显示（默认隐藏）
+    { id: "intention", label: T("Intention 输出", "Intention Output"), currentValue: ((g as any).__genshinIntentionShow ?? false) ? T("显示", "Show") : T("隐藏", "Hide"), values: [T("隐藏", "Hide"), T("显示", "Show")] },
     { id: "toolExpanded", label: T("工具输出", "Tool Output"), currentValue: toolMode, values: [T("摘要", "Summary"), T("完整", "Full")] },
   ];
 
@@ -85,10 +89,11 @@ function getAllItems() {
       { id: "readExpanded", label: T("  Read", "  Read"), currentValue: readMode, values: [T("摘要", "Summary"), T("完整", "Full")] },
       { id: "writeExpanded", label: T("  Write", "  Write"), currentValue: writeExpanded ? T("完整", "Full") : T("摘要", "Summary"), values: [T("摘要", "Summary"), T("完整", "Full")] },
       { id: "editExpanded", label: T("  Edit", "  Edit"), currentValue: editExpanded ? T("完整", "Full") : T("摘要", "Summary"), values: [T("摘要", "Summary"), T("完整", "Full")] },
-      { id: "executeDisplay", label: T("  Execute 调用", "  Execute Call"), currentValue: exeCallMode, values: [T("仅标题", "Title"), T("标题+摘要", "Title+Summary"), T("标题+完整", "Title+Full")] },
-      { id: "compactExecute", label: T("  Execute 结果", "  Execute Result"), currentValue: exeResultMode, values: [T("完整", "Full"), T("只显示 5 行", "First 5 lines")] },
+      { id: "executeSummary", label: T("  Execute 摘要", "  Execute Summary"), currentValue: exeSummaryMode, values: [T("隐藏", "Hide"), T("显示", "Show")] },
+      { id: "executeResult", label: T("  Execute 结果", "  Execute Result"), currentValue: exeResultMode, values: [T("隐藏", "Hide"), T("摘要", "Summary"), T("全部", "Full")] },
+      { id: "waitShow", label: T("  Wait 输出", "  Wait Output"), currentValue: waitShowMode, values: [T("隐藏", "Hide"), T("显示", "Show")] },
     );
-    if (executeDisplay !== "title") {
+    if (executeSummary) {
       items.push({ id: "breakAnd", label: T("    && 换行", "    && Break"), currentValue: breakAnd ? T("拆分", "Split") : T("不拆", "Keep"), values: [T("不拆", "Keep"), T("拆分", "Split")] });
     }
   }
@@ -163,6 +168,13 @@ function handleChange(id: string, value: string) {
       save("codeHighlight", on);
       break;
     }
+    case "intention": {
+      // 2026-09-13（房东）：Intention 工具输出隐藏/显示（默认隐藏）
+      const on = value === T("显示", "Show");
+      g.__genshinIntentionShow = on;
+      save("intentionShow", on);
+      break;
+    }
     case "toolExpanded":
       g.__genshinToggleToolExpand?.(value === T("完整", "Full"));
       break;
@@ -178,18 +190,25 @@ function handleChange(id: string, value: string) {
       g.__genshinEditExpanded = value === T("完整", "Full");
       save("editExpanded", g.__genshinEditExpanded);
       break;
-    case "executeDisplay": {
-      // 2026-09-13（房东定稿）：仅标题 / 标题+摘要 / 标题+完整
-      const mode = value === T("仅标题", "Title") ? "title" : value === T("标题+摘要", "Title+Summary") ? "summary" : "full";
-      g.__genshinExecuteDisplay = mode;
-      save("executeDisplay", mode);
+    case "executeSummary": {
+      // 2026-09-13（房东定稿）：调用行摘要 显示/隐藏（隐藏=仅标题）
+      const on = value === T("显示", "Show");
+      g.__genshinExecuteSummary = on;
+      save("executeSummary", on);
       break;
     }
-    case "compactExecute": {
-      // 2026-09-13（房东定稿）：「Execute 结果」只管结果区——是否只显示 5 行
-      const on = value === T("只显示 5 行", "First 5 lines");
-      g.__genshinCompactExecute = on;
-      save("compactExecute", on);
+    case "executeResult": {
+      // 2026-09-13（房东定稿）：结果区 隐藏/摘要/全部
+      const mode = value === T("隐藏", "Hide") ? "hide" : value === T("摘要", "Summary") ? "summary" : "full";
+      g.__genshinExecuteResult = mode;
+      save("executeResult", mode);
+      break;
+    }
+    case "waitShow": {
+      // 2026-09-13（房东）：Wait 输出 隐藏/显示（默认隐藏）
+      const on = value === T("显示", "Show");
+      g.__genshinWaitShow = on;
+      save("waitShow", on);
       break;
     }
     case "breakAnd":

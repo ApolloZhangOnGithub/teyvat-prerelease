@@ -1039,11 +1039,14 @@ export default function registerMemory(pi: ExtensionAPI) {
     let from = 0;
     while (from < text.length && r.length < 200) {
       const bi = text.indexOf(b, from); if (bi < 0) break;
-      const ei = text.indexOf(e, bi + b.length); if (ei < 0) break;
-      const end = ei + e.length;
       // 命中起点属于哪条记录；若在工具区内则跳到下一行继续搜
       const hit = _rowAt(rows, bi);
       if (hit?.isToolZone) { from = hit.end + 1; continue; }
+      // 结束锚点同样跳过工具区行（toolResult/toolCall 里出现的锚点文字不算结束点——否则范围会在工具输出中间截止）
+      let ei = text.indexOf(e, bi + b.length);
+      while (ei >= 0) { const er = _rowAt(rows, ei); if (er?.isToolZone) { ei = text.indexOf(e, er.end + 1); continue; } break; }
+      if (ei < 0) break;
+      const end = ei + e.length;
       const snapped = _snapToRows(rows, bi, end);
       const sig = `${snapped.begin}:${snapped.end}`;
       if (!seen.has(sig)) {
@@ -1504,7 +1507,7 @@ export default function registerMemory(pi: ExtensionAPI) {
             }
             if (tq) {
               const tBase = tq.length < 14 ? tq + ":59".slice(0, 14 - tq.length) : tq;
-              if (ms > _tsToMs(tBase)) return false;
+              if (ms > _tsToMs(tBase) + 999) return false; // 2026-09-13：到秒精度的 ts_to 含整秒（check/概览输出的 ts 就是到秒，agent 照抄不能把最后一条排除掉）
             }
             return true;
           });
@@ -1742,7 +1745,7 @@ export default function registerMemory(pi: ExtensionAPI) {
               }
               if (tq) {
                 const tBase = tq.length < 14 ? tq + ":59".slice(0, 14 - tq.length) : tq;
-                if (ms > _tsToMs(tBase)) return false;
+                if (ms > _tsToMs(tBase) + 999) return false; // 2026-09-13：到秒精度的 ts_to 含整秒（check/概览输出的 ts 就是到秒，agent 照抄不能把最后一条排除掉）
               }
               return true;
             });

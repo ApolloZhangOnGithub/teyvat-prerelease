@@ -260,15 +260,15 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
       let display = output;
       // 非合并时输出用 ⎿ 折线连接（和 tool result 一致）
       const resultPrefix = indent + theme.fg("dim", SYM.result + "  ");
-      // 2026-09-13（房东定稿）：「Execute 结果」只管这里——完整=全部显示；只显示 5 行=前 5 行 + 省略提示。
-      // （与 executes.ts renderResult 的 5 行口径统一；原先这里还有“省略中间+末 5 行”分支，与那边不一致，已去掉；
-      //  上一步加的 fold（折叠）三态也一并回退——房东要的是两态：是否只显示 5 行。）
-      if (compact) {
-        // 2026-09-13（房东定稿）：只显示 5 行 = **纯前 5 行**，不加省略提示行（那行占空间、恶心）
+      // 2026-09-13（房东定稿）：「Execute 结果」三态——隐藏 / 摘要（纯前 5 行）/ 全部
+      // （隐藏=不渲染结果区；摘要=只给前 5 行、无省略提示行；全部=原样）
+      const resultMode = (globalThis as any).__genshinExecuteResult ?? "full";
+      if (resultMode === "hide") display = "";
+      else if (resultMode === "summary") {
         const outLines = output.split("\n");
-        if (outLines.length > 5) display = outLines.slice(0, 5).join("\n");
+        display = outLines.length > 5 ? outLines.slice(0, 5).join("\n") : output;
       }
-      // 完整模式：display 保持 output（全部显示），无需额外处理
+      // 全部：display 保持 output
       if (display) {
       const contIndent = " ".repeat(GUTTER + 3);
       const rendered = lineNumbered(display, theme);
