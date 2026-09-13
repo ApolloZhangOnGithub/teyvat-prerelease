@@ -706,10 +706,11 @@ export default function registerMemory(pi: ExtensionAPI) {
       // 替换对话历史中的旧 memory-snapshot 消息（不是追加——追加会导致旧+新共存，prompt 变大）
       let replaced = false;
       try {
-        const msgs = (pi as any).agent?.state?.messages;
+        const session = (globalThis as any).__genshinAgentSession;
+        const msgs = session?.agent?.state?.messages || session?.state?.messages;
         if (Array.isArray(msgs)) {
           for (const m of msgs) {
-            if (m.customType === "memory-snapshot" && typeof m.content === "string") {
+            if (m.customType === "memory-snapshot") {
               m.content = freshFrozen;
               replaced = true;
               break;
@@ -717,7 +718,6 @@ export default function registerMemory(pi: ExtensionAPI) {
           }
         }
       } catch (e) { console.error("[memory.ts] replace snapshot: " + ((e as any)?.message || e)); }
-      // 替换成功就不再 sendCustomMessage（避免追加第二份）；替换失败才追加（fallback）
       if (!replaced) sendCustomMessage(pi, "memory-snapshot", freshFrozen);
     }
 

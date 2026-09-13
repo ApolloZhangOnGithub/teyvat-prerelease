@@ -2276,6 +2276,7 @@ export class InteractiveMode {
         globalThis.__genshinGetToolExpanded = () => this.toolOutputExpanded;
         globalThis.__genshinHandleModelCommand = (searchTerm) => this.handleModelCommand(searchTerm);
         globalThis.__genshinChatContainer = this.chatContainer;
+        globalThis.__genshinAgentSession = this.session;
         globalThis.__genshinShowSettingsList = (title, getItems, onChange) => {
             return new Promise((resolve) => {
                 const { SettingsList } = require("@earendil-works/pi-tui");
