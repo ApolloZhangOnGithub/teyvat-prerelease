@@ -6,7 +6,9 @@ export const BUILTIN_SLASH_COMMANDS = [
     { name: "export", description: "Export session (HTML default, or specify path: .html/.jsonl)" },
     { name: "import", description: "Import and resume a session from a JSONL file" },
     { name: "share", description: "Share session as a secret GitHub gist" },
-    { name: "copy", description: "Copy last agent message to clipboard" },
+    // 2026-09-14（ISSUE 252）：移除内置 copy 占坑——teyvat 已禁用 pi 原生命令，此名空闲供 registerCommand("copy") 使用；
+    // 撞名会让扩展命令被 autocomplete 跳过且不可达（诊断只在启动横幅 [Extension issues]，不进日志）。
+    // 其余内置名如需启用同样走本清单移除 + make check-command-conflict.cjs 把关。
     { name: "name", description: "Set session display name" },
     { name: "session", description: "Show session info and stats" },
     { name: "changelog", description: "Show changelog entries" },

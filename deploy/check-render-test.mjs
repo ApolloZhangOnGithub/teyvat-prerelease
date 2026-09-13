@@ -147,18 +147,19 @@ try {
   delete globalThis.__genshinExecuteResult;
   // E1 快命令
   const e1 = flat(B.renderExecuteResult(t, { kind: "fast", exitCode: 0, elapsedMs: 120, endTs: fixedTs, output: "hello\nworld" }));
-  check("E1 快命令摘要行 = ⎿ Done in 0.12s at HH:MM:SS", e1[0] === "  ⎿  Done in 0.12s at 09:39:52", e1[0]);
+  // 2026-09-14（用户定稿）：结果行统一 Result 风格——Result "标题" done in 2s（renderToolCall.label noDot，与 Execute 调用行同构）
+  check("E1 快命令摘要行 = Result done in 0.12s at HH:MM:SS", e1[0] === "  Result done in 0.12s at 09:39:52", e1[0]);
   check("E1b 快命令输出带行号缩进", e1.length === 3 && /^\s{5}\s*1\s+hello$/.test(e1[1]) && /2\s+world$/.test(e1[2]), JSON.stringify(e1));
   const e1x = flat(B.renderExecuteResult(t, { kind: "fast", exitCode: 2, elapsedMs: 3000, endTs: fixedTs, output: "" }));
-  check("E1c 非 0 退出码显示 exit N、整秒无小数", e1x[0] === "  ⎿  Done in 3s, exit 2 at 09:39:52", e1x[0]);
+  check("E1c 非 0 退出码显示 exit N、整秒无小数", e1x[0] === "  Result done in 3s, exit 2 at 09:39:52", e1x[0]);
   // E2 Created
   const e2 = flat(B.renderExecuteResult(t, { kind: "created", created: 1, total: 2, terminal: true, tname: "deploy9", recId: "260913-093952-a1b2c3d4", endTs: fixedTs }));
   check("E2 Created 行", e2[0] === "  ⎿  Created 1 terminal process named deploy9 (2 in total), id 260913-093952-a1b2c3d4 at 09:39:52", e2[0]);
   // E3 cmd-done：merged → ⎿；非 merged → ▸；exit≠0 / failed 判错（前缀符号由 fg 直接透传，这里只看文本）
   const e3 = flat(B.renderExecuteResult(t, { kind: "done", status: "done", title: "确认权重已下载", recId: "x", exitCode: 0, elapsedMs: 16000, endTs: fixedTs, output: "ok", remaining: 2, merged: true }));
-  check("E3 cmd-done merged", e3[0] === "  ⎿  确认权重已下载 Done in 16s (2 remaining) at 09:39:52", e3[0]);
+  check("E3 cmd-done merged", e3[0] === "  Result \"确认权重已下载\" done in 16s (2 remaining) at 09:39:52", e3[0]);
   const e3b = flat(B.renderExecuteResult(t, { kind: "done", status: "failed", title: "t", exitCode: -1, elapsedMs: 5000, endTs: fixedTs, output: "boom", merged: false }));
-  check("E3b cmd-done failed 非 merged 用 ▸", e3b[0] === "▸ t Failed after 5s, exit -1 at 09:39:52", e3b[0]);
+  check("E3b cmd-done failed 统一 Result 样式", e3b[0] === "  Result \"t\" failed after 5s, exit -1 at 09:39:52", e3b[0]);
   // E4 三态：summary 只留 5 行；hide 快命令整块不显示、cmd-done 只藏输出
   globalThis.__genshinExecuteResult = "summary";
   const e4 = flat(B.renderExecuteResult(t, { kind: "fast", exitCode: 0, elapsedMs: 10, endTs: fixedTs, output: "1\n2\n3\n4\n5\n6\n7" }));

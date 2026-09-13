@@ -76,20 +76,13 @@ export function registerHibernateTool(_pi: ExtensionAPI) {
       until: Type.Optional(Type.String({ messageDescription: "Wake time: 'HH:MM' (today/tomorrow), 'tomorrow HH:MM', or ISO datetime" })),
     }),
     renderCall(args: any, theme: any) {
-      // 2026-09-11：Claude Code 风格——灰色 ✻ + 摘要
+      // 2026-09-14 修复：✻ 与摘要合并成单个 Markdown 同行渲染。此前 Text(✻) + Markdown(summary) 放进
+      // Container 会垂直堆叠——✻ 独占第一行、摘要落到第二行，中间就是房东报的「雪花后多一个空行」。
       const s = (args?.summary ?? "").trim();
       const until = args?.until ? String(args.until).trim() : "";
-      const untilStr = until ? theme.fg("dim", ` until ${until}`) : "";
-      const { Text: T, Container: C, Markdown } = require("@earendil-works/pi-tui");
-      const c = new C();
-      c.addChild(new T(theme.fg("dim", "✻") + " " + untilStr, 0, 0));
-      // 2026-09-13（用户）：summary 用 markdown 渲染（和其他消息一致），paddingX=2 对齐 ✻
-      // 2026-09-13（修复）：Markdown 要用真正的 MarkdownTheme（含 listBullet/代码块色等方法）——
-      // renderCall 的 theme 是普通渲染 theme，多行 summary 含列表时调 theme.listBullet 炸 → 异常被
-      // tool-execution 静默吞 → 只剩 ✻ 行+空（房东报的“雪花后多一个空行”）。__genshinMarkdownTheme 由
-      // interactive-mode 挂载（getMarkdownTheme()），headless 无渲染不受影响；fallback 到 theme 保证非 TUI 不炸。
-      c.addChild(new Markdown(s || "hibernating", 2, 0, (globalThis as any).__genshinMarkdownTheme || theme));
-      return c;
+      const untilStr = until ? ` until ${until}` : "";
+      const { Markdown } = require("@earendil-works/pi-tui");
+      return new Markdown("✻ " + untilStr + (s || "hibernating"), 0, 0, (globalThis as any).__genshinMarkdownTheme || theme);
     },
     renderResult(result, _opts, t, ctx) {
       // ctx.isError 对 Paimon 工具不可靠，直接从 content 文本判断

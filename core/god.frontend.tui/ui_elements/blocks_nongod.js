@@ -488,7 +488,8 @@ export function renderExecuteResult(theme, state) {
   const mode = globalThis.__genshinExecuteResult ?? "full";
   const indent = " ".repeat(GUTTER);
   const c = C();
-  const clock = st.endTs != null ? theme.fg("dim", ` at ${fmtClock(st.endTs)}`) : "";
+  // 2026-09-14（用户）：at 时间戳开关——/s「at 时间戳」（globalThis.__genshinResultAt，默认开）
+  const clock = st.endTs != null && (globalThis.__genshinResultAt ?? true) ? theme.fg("dim", ` at ${fmtClock(st.endTs)}`) : "";
   if (st.kind === "created") {
     const kind = st.terminal ? "terminal process" : "bash process";
     const named = st.terminal && st.tname ? ` named ${st.tname}` : "";
@@ -504,18 +505,18 @@ export function renderExecuteResult(theme, state) {
   const elapsed = theme.bold(fmtElapsedMs(st.elapsedMs || 0));
   let head;
   switch (st.status) {
-    case "failed": head = `Failed after ${elapsed}`; break;
-    case "timeout": head = `Timed out after ${elapsed}`; break;
-    case "terminated": head = `Terminated after ${elapsed}`; break;
-    default: head = st.kind === "done" && !(st.elapsedMs > 0) ? "Done instantly" : `Done in ${elapsed}`;
+    case "failed": head = theme.fg("error", `failed after ${elapsed}`); break;
+    case "timeout": head = theme.fg("error", `timed out after ${elapsed}`); break;
+    case "terminated": head = theme.fg("error", `terminated after ${elapsed}`); break;
+    default: head = st.kind === "done" && !(st.elapsedMs > 0) ? "done instantly" : `done in ${elapsed}`;
   }
   const remPart = st.remaining > 0 ? ` (${st.remaining} remaining)` : "";
-  const titlePart = st.kind === "done" && st.title ? `${st.title} ` : "";
-  // merged = 紧挨同 recId 的 Created 行 → ⎿ 折线；非 merged 的后台完成 → ▸ 独立行（exit≠0 红、否则绿）
-  let prefix;
-  if (st.kind === "done" && !st.merged) prefix = (isErr ? theme.fg("error", SYM.arrow) : theme.fg("success", SYM.arrow)) + " ";
-  else prefix = indent + (isErr && st.kind === "done" ? theme.fg("error", SYM.result + "  ") : theme.fg("dim", SYM.result + "  "));
-  c.addChild(T(prefix + titlePart + head + exitPart + remPart + clock));
+  // 2026-09-14（用户定稿）：结果行统一 Result 风格——Result "标题" done in 2s at 01:54:01
+  // 与 Execute 调用行同构（renderToolCall.label），原 ⎿ 标题 Done in 2s / ▸ 独立行两种旧样式废弃。
+  // merged（紧挨 Created 的折线）判定保留在 renderers.ts 传 state，但画法统一。
+  const titleQ = st.kind === "done" && st.title ? '"' + st.title + '" ' : "";
+  const body = titleQ + head + exitPart + remPart + clock;
+  c.addChild(renderToolCall.label(theme, "Result", body, { noDot: true }));
   let out = String(st.output ?? "").trimEnd();
   if (mode === "hide") out = "";
   else if (mode === "summary" && out) { const ls = out.split("\n"); if (ls.length > 5) out = ls.slice(0, 5).join("\n"); }

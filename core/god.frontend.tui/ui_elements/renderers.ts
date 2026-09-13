@@ -156,6 +156,10 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
   pi.registerMessageRenderer("continuous-error-retry", (message: any, _opts: any, theme: any) => {
     return _sysMsg(theme, (message.content ?? "").toString(), "warning");
   });
+  // 2026-09-14（用户多次要求）：syntax-error 用黄色 system 提示块（同 warning 样式），不再走通用 fallback 菱形块
+  pi.registerMessageRenderer("syntax-error", (message: any, _opts: any, theme: any) => {
+    return _sysMsg(theme, (message.content ?? "").toString(), "warning");
+  });
   // 2026-09-13（ISSUE 226）：cmd-done 渲染只做"details → state"映射，画法在 blocks_nongod.renderExecuteResult（与快命令/Created 同一入口）。
   // executes.ts 发送时随 details 带 { status, recId, exitCode, elapsedSec, endTs, cmd, output, remaining }；
   // 没有 details.status 的是旧格式历史消息（重启回放）→ parseLegacyCmdDone 从文本反解析兜底。
