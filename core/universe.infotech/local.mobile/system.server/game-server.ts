@@ -114,7 +114,8 @@ async function gomokuRoute(req: IncomingMessage, res: ServerResponse, path: stri
     const player = (idx + 1) as 1 | 2;
     if (m.turn !== player) return json(res, 400, { ok: false, error: "还没轮到你" });
     if (m.winner !== 0) return json(res, 400, { ok: false, error: "对局已结束" });
-    if (row < 0 || row >= GSIZE || col < 0 || col >= GSIZE) return json(res, 400, { ok: false, error: "坐标超出范围" });
+    // 2026-09-13：row/col 直接来自 JSON——null/1.5/对象都能过 <0/>=GSIZE 的比较，随后 m.board[row][col] TypeError → async handler 未处理 rejection → 服务器跑在 agent 进程内，整个 agent 退出
+    if (!Number.isInteger(row) || !Number.isInteger(col) || row < 0 || row >= GSIZE || col < 0 || col >= GSIZE) return json(res, 400, { ok: false, error: "坐标超出范围" });
     if (m.board[row][col] !== 0) return json(res, 400, { ok: false, error: "该位置已有棋子" });
 
     m.board = m.board.map(r => [...r]);

@@ -239,7 +239,8 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
     const remaining = remMatch ? parseInt(remMatch[1]) : 0;
     if (remMatch) output = output.replace(/\n*\[remaining:.*$/, "");
     const remPart = remaining > 0 ? ` (${remaining} remaining)` : "";
-    const ts = new Date();
+    // 2026-09-13：用消息自带时间戳——CustomMessageComponent 每次 invalidate 都重跑渲染器，取渲染时刻会让历史 "Done at" 全部变成当前时间（重启回放全显示重启时刻）
+    const ts = new Date(typeof message?.timestamp === "number" ? message.timestamp : Date.now());
     const hh = String(ts.getHours()).padStart(2, "0");
     const mm = String(ts.getMinutes()).padStart(2, "0");
     const ss = String(ts.getSeconds()).padStart(2, "0");

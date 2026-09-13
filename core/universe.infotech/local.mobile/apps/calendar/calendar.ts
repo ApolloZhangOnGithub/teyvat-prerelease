@@ -444,7 +444,8 @@ function qingmingDate(year: number): string {
   // L = Math.floor(Y/4)
   const Y = year % 100;
   const D = 0.2422;
-  const C = year < 2000 ? 4.81 : (year < 2100 ? 5.59 : 5.59); // simplified
+  // 2026-09-13：寿星公式常数是 20 世纪 5.59、21 世纪 4.81——之前写反，2021/23/24/25/27/28 六年清明都算晚一天
+  const C = year < 2000 ? 5.59 : 4.81;
   const L = Math.floor(Y / 4);
   const day = Math.floor(Y * D + C) - L;
   return `${year}-04-${String(day).padStart(2, "0")}`;
@@ -507,12 +508,12 @@ function cnHolidays(year: number): Holiday[] {
   h.push({ date: `${year}-10-02`, name: "国庆节·第2天", emoji: "", type: "public" });
   h.push({ date: `${year}-10-03`, name: "国庆节·第3天", emoji: "", type: "public" });
 
-  // 腊八 (腊月初八)
-  const lb = lunarDate(year, 12, 8);
+  // 腊八 (腊月初八)、小年 (腊月廿三)
+  // 2026-09-13：落在公历 year 年 1 月的腊月属于农历 year-1 年——之前用 lunarDate(year,12,…) 算出的是次年 1 月的日期，
+  // 而 getHolidaysForDate 按公历年取表，永远匹配不上（"节日 2026" 列的是 2027-01 的腊八）。
+  const lb = lunarDate(year - 1, 12, 8);
   if (lb) h.push({ date: lb, name: "腊八节", emoji: "", type: "traditional", lunar: "腊月初八" });
-
-  // 小年 (腊月廿三)
-  const xn = lunarDate(year, 12, 23);
+  const xn = lunarDate(year - 1, 12, 23);
   if (xn) h.push({ date: xn, name: "小年", emoji: "", type: "traditional", lunar: "腊月廿三" });
 
   return h;

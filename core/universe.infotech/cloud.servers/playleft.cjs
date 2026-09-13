@@ -258,6 +258,8 @@ async function launch(options = {}) {
   ];
 
   const proc = spawn(chromePath, args, { stdio: "ignore" });
+  // 2026-09-13：spawn 失败（Chrome 路径不存在）是异步 error 事件，无监听会让 browser_service 进程崩溃且不写 port 文件
+  proc.on("error", (e) => { console.error("[playleft] chrome spawn failed: " + (e && e.message ? e.message : e)); });
 
   // 等 CDP 端口就绪
   for (let i = 0; i < 30; i++) {

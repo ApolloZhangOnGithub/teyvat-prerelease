@@ -1,12 +1,27 @@
 """amap app backend — 高德地图 API 调用"""
-import subprocess, json, sys
+import subprocess, json, sys, os, urllib.parse
 
-KEY = 'c18a114cbf5cb6010e21f565b07dffee'
+# 2026-09-13：API Key 不再硬编码进源码（原来的 key 已随仓库外泄，须在高德控制台轮换）。
+# 读取顺序：~/.teyvat/UserAccount/services.json 的 amap.apiKey（README 所述的 /config 配置）→ 环境变量 AMAP_KEY。
+def _load_key():
+    try:
+        with open(os.path.expanduser('~/.teyvat/UserAccount/services.json'), encoding='utf-8') as f:
+            s = json.load(f)
+        k = (s.get('amap') or {}).get('apiKey') or ((s.get('services') or {}).get('amap') or {}).get('apiKey')
+        if k:
+            return k
+    except Exception:
+        pass
+    return os.environ.get('AMAP_KEY', '')
+
+KEY = _load_key()
 
 def api(endpoint, params=None):
     if params is None: params = {}
+    if not KEY:
+        return {'status': '0', 'info': 'amap.apiKey 未配置：用 /config 在 services.json 写入 amap.apiKey'}
     params['key'] = KEY
-    qs = '&'.join(f'{k}={v}' for k, v in params.items())
+    qs = urllib.parse.urlencode(params)  # 2026-09-13：原手拼不编码，关键词含空格/&/# 时 curl 报 URL 非法
     r = subprocess.run(['curl', '-s', f'https://restapi.amap.com/v3/{endpoint}?{qs}'],
                        capture_output=True, text=True, timeout=10)
     return json.loads(r.stdout)

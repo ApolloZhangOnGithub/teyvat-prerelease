@@ -150,7 +150,7 @@ function getConversations(msgs: WechatMsg[], me: string, convState?: ConvState, 
     let conv = map.get(key);
     if (!conv) { conv = { key, label, type, lastMsg: m, unread: 0 }; map.set(key, conv); }
     if (m.ts > conv.lastMsg.ts) conv.lastMsg = m;
-    if (m.to === me) conv.unread++;
+    if (m.to === me && m.ts > getReadTs(me, key)) conv.unread++; // 2026-09-13：按已读时间戳算未读——之前统计全部历史，未读数只增不减
   }
   return [...map.values()]
     .filter(c => !cs.deleted.includes(c.key) && !cs.archived.includes(c.key))
@@ -944,11 +944,13 @@ async function checkNotifications(personDir: string) {
         const alarms = JSON.parse(readFileSync(af, "utf8"));
         const now = new Date();
         const cur = `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
+        const today = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
         let fired = 0;
         for (const a of alarms) {
-          if (a.enabled && a.time === cur && !a._notified) {
+          // 2026-09-13：按"今天已响"记日期——原 _notified=true 写回后从不清零，重复闹钟一生只响一次
+          if (a.enabled && a.time === cur && a._notifiedDate !== today) {
             pushNotification(`[Clock] ${a.label || "闹钟"} (${a.time})`);
-            a._notified = true;
+            a._notifiedDate = today; delete a._notified;
             fired++;
           }
         }

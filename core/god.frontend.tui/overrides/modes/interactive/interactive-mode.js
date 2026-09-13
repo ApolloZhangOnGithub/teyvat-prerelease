@@ -426,7 +426,7 @@ export class InteractiveMode {
         this.footer = new FooterComponent(this.session, this.footerDataProvider);
         this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
         this.footer.setRequestRender(() => this.ui.requestRender());
-        this.statusBar = new StatusBar(this.footer, () => this.ui.requestRender());
+        this.statusBar = new StatusBar(this.footer, () => this.ui.requestRender(), this.chatContainer);
         globalThis.__genshinStatusBar = this.statusBar;
         this.statusBar.setTokenCallbacks(
             () => this._getTurnOutputTokens(),
@@ -473,6 +473,7 @@ export class InteractiveMode {
         // 2026-09-13（用户）：footer 模型名/版本号可隐藏（默认显示）
         globalThis.__genshinFooterModel = this.settingsManager?.globalSettings?.footerModel ?? true;
         globalThis.__genshinFooterVersion = this.settingsManager?.globalSettings?.footerVersion ?? true;
+        globalThis.__genshinStatebarPosition = this.settingsManager?.globalSettings?.statebarPos ?? "messages";
         // /u 持久化的行为偏好恢复
         if (this.settingsManager?.globalSettings?.ctrlCToBg !== undefined) globalThis.__genshinCtrlCToBg = this.settingsManager.globalSettings.ctrlCToBg;
         if (this.settingsManager?.globalSettings?.codeHighlight !== undefined) globalThis.__genshinCodeHighlight = this.settingsManager.globalSettings.codeHighlight;

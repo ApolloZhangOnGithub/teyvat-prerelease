@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-13T11:24:19.001Z",
+  "generated": "2026-09-13T11:30:44.257Z",
   "apps": [
     {
       "name": "amap",
@@ -14,8 +14,8 @@
       "name": "appstore",
       "dir": "appstore",
       "tier": "apps",
-      "build": 4,
-      "md5": "27d1e3d985de99006f92e57f4adc8a54",
+      "build": 5,
+      "md5": "1999f52a9f1d25eb8fd9d3bc23449184",
       "file": "appstore.ts",
       "handler": "code"
     },
@@ -41,8 +41,8 @@
       "name": "calendar",
       "dir": "calendar",
       "tier": "apps",
-      "build": 6,
-      "md5": "99b7a223b7703bb429917e0b137bb18c",
+      "build": 7,
+      "md5": "554e7fd80e6d9adcfe90e694cf9f86c0",
       "file": "calendar.ts",
       "handler": "code"
     },
@@ -68,8 +68,8 @@
       "name": "ipod",
       "dir": "ipod",
       "tier": "apps",
-      "build": 13,
-      "md5": "42786f275e33bf171b6820b65181ddd9",
+      "build": 14,
+      "md5": "640e0c0595c471a532ffea8f47427711",
       "file": "ipod.ts",
       "handler": "code"
     },
@@ -86,8 +86,8 @@
       "name": "photos",
       "dir": "photos",
       "tier": "apps",
-      "build": 8,
-      "md5": "df6188e5e95813542db3ab00f1500792",
+      "build": 9,
+      "md5": "3adc1806db71f3ca1f43d29637ce99c3",
       "file": "photos.ts",
       "handler": "code"
     },
@@ -104,8 +104,8 @@
       "name": "safari",
       "dir": "safari",
       "tier": "apps",
-      "build": 26,
-      "md5": "5da0acb5ecaa6445671b596cf8665557",
+      "build": 27,
+      "md5": "88bef592ce47ff2f9b46ea9d807e31b5",
       "file": "safari.ts",
       "handler": "code"
     },
@@ -113,8 +113,8 @@
       "name": "settings",
       "dir": "settings",
       "tier": "apps",
-      "build": 9,
-      "md5": "d29a7463ac414cb6c2a49f6ae093a486",
+      "build": 10,
+      "md5": "2f7dee579ae6c7102e047bc83ff86a0b",
       "file": "settings.ts",
       "handler": "code"
     },
@@ -122,8 +122,8 @@
       "name": "steam",
       "dir": "steam",
       "tier": "apps",
-      "build": 6,
-      "md5": "bdd38702082e76320bda277af5d29c15",
+      "build": 7,
+      "md5": "f1edcc5b96563d497442b3dcf9d6d5a8",
       "file": "steam.ts",
       "handler": "code"
     },
@@ -149,8 +149,8 @@
       "name": "wechat",
       "dir": "wechat",
       "tier": "apps",
-      "build": 23,
-      "md5": "aecdcfe2bff80ab5041bd9fed0668f85",
+      "build": 24,
+      "md5": "c5252ee7cda03762872db0d0be27c0c4",
       "file": "wechat.ts",
       "handler": "code"
     },
@@ -158,8 +158,8 @@
       "name": "wechatread",
       "dir": "wechatread",
       "tier": "apps",
-      "build": 14,
-      "md5": "a280d46cbe9ec9ac5980face52567376",
+      "build": 15,
+      "md5": "94413431e087758c97fca0cdd20c6d32",
       "file": "wechatread.ts",
       "handler": "code"
     }

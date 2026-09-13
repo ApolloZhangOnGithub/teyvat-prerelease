@@ -298,7 +298,8 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
         const c = new Container();
         const sec = ((result?.details?.elapsedMs || 0) / 1000);
         const secStr = sec < 1 ? sec.toFixed(2) : sec.toFixed(1);
-        const ts = new Date();
+        // 2026-09-13：时间戳取执行结束时刻（details.endTs），不取渲染时刻——心跳状态切换会让全部历史组件重渲染，历史 Result 行的时间会整体跳到"现在"
+        const ts = new Date(result?.details?.endTs || Date.now());
         const hh = String(ts.getHours()).padStart(2, "0");
         const mm = String(ts.getMinutes()).padStart(2, "0");
         const ss = String(ts.getSeconds()).padStart(2, "0");
@@ -366,7 +367,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
         // id 统一用 ExecuteData 记录 id(details.recId),不用任务编号 #N
         const recId = result?.details?.recId;
         const idPart = recId ? `, id ${recId}` : `, id ${execId}`;
-        const ts = new Date();
+        const ts = new Date(result?.details?.createdInfo?.ts || Date.now()); // 2026-09-13：取创建时刻，不取渲染时刻（同上）
         const hh = String(ts.getHours()).padStart(2, "0");
         const mm = String(ts.getMinutes()).padStart(2, "0");
         const ss = String(ts.getSeconds()).padStart(2, "0");
@@ -741,7 +742,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
             terminal: true,
             tname: tName || "",
             title: (params as any).title || "",
-            createdInfo: { created: 1, total: running.size, elapsed: Math.max(1, Math.round((Date.now() - entry.startTime) / 1000)) },
+            createdInfo: { created: 1, ts: Date.now(), total: running.size, elapsed: Math.max(1, Math.round((Date.now() - entry.startTime) / 1000)) },
           },
         };
       }
@@ -776,7 +777,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
           // 无 createdInfo(未创建后台进程)
           // 2026-09-08(用户:别用 replace 剥垃圾--信息源头分开):renderText = 用户显示的干净文本(无 bgInfo/recInfo 元信息行)--
           // renderResult 已优先读 details.renderText(L374)--有它就不再走 content 剥除 fallback。content 保留元信息(模型 feed 需要 background/id 状态)。
-          details: { exitCode: r.code, execId: recId, elapsedMs: Date.now() - startTime, renderText: `${output || "(no output)"}${exitInfo}` },
+          details: { exitCode: r.code, execId: recId, elapsedMs: Date.now() - startTime, endTs: Date.now(), renderText: `${output || "(no output)"}${exitInfo}` }, // endTs：渲染层显示 "at HH:MM:SS" 用它，不再取渲染时刻
         };
       }
 
@@ -884,7 +885,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
           execId: `#${id}`,
           recId: shortRecId(cmd),
           title: (params as any).title || "",
-          createdInfo: { created: 1, total: running.size, elapsed: Math.max(1, Math.round((Date.now() - startTime) / 1000)) },
+          createdInfo: { created: 1, ts: Date.now(), total: running.size, elapsed: Math.max(1, Math.round((Date.now() - startTime) / 1000)) },
         },
       };
     },

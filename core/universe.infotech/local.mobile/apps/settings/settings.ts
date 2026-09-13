@@ -13,7 +13,7 @@ function asyncShSafe(cmd: string, timeout: number): Promise<string> {
 import type { MobileApp } from "../../system.kernel/kernel.ts";
 import { getRegion, setRegion } from "../calendar/calendar.ts";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { logerr, runtimeCacheDir, monitorDataFile } from "#paths";
+import { logerr, runtimeCacheDir, monitorDataFile, userFile } from "#paths";
 
 // apps/settings/settings.ts — 系统设置
 
@@ -87,13 +87,15 @@ export async function settingsCmd(args: any, _ctx: any, personDir: string): Prom
   if (a === "地区 中国") { setRegion(personDir, "CN"); return { content: [{ type: "text", text: "地区已切换为 **中国**。" }], details: {} }; }
   if (a === "地区 美国") { setRegion(personDir, "US"); return { content: [{ type: "text", text: "地区已切换为 **美国**。" }], details: {} }; }
   if (a === "dev" || a === "开发者模式") {
-    const statePath = path.join(homedir(), ".teyvat/RuntimeCache", personDir.split("/").pop()!, "mobile-state.json");
-    let st: any = {};
-    try { st = JSON.parse(fs.readFileSync(statePath, "utf8")); } catch (e) { console.error("[universe.infotech/local.mobile/apps/settings/settings.ts] " + ((e as any)?.message || e)); }
-    st.devMode = !st.devMode;
-    fs.mkdirSync(path.dirname(statePath), { recursive: true });
-    fs.writeFileSync(statePath, JSON.stringify(st));
-    return { content: [{ type: "text", text: `开发者模式: ${st.devMode ? "开启 🟢" : "关闭 ⚪"}${st.devMode ? " (app 代码修改后无需重启)" : ""}` }], details: {} };
+    // 2026-09-13：kernel.loadApp 从 settings.json 的 developerMode 实时读取——之前写到 RuntimeCache/<id>/mobile-state.json 的 devMode
+    //（无人读，且被 kernel 下一次 saveState 用内存旧值覆盖）→ 这个开关一直是死的
+    const sp = userFile("settings.json");
+    let sf: any = {};
+    try { sf = JSON.parse(fs.readFileSync(sp, "utf8")); } catch (e) { /* 首次无 settings.json */ }
+    sf.developerMode = !sf.developerMode;
+    fs.mkdirSync(path.dirname(sp), { recursive: true });
+    fs.writeFileSync(sp, JSON.stringify(sf, null, 2));
+    return { content: [{ type: "text", text: `开发者模式: ${sf.developerMode ? "开启 🟢" : "关闭 ⚪"}${sf.developerMode ? " (app 代码修改后无需重启)" : ""}` }], details: {} };
   }
   return { content: [{ type: "text", text: `未知操作: ${a}。可用: status | 地区 | 开发者模式` }], details: {} };
 }

@@ -619,7 +619,8 @@ function cmdRename(oldName: string, newName: string) {
 // CLONE
 // ═══════════════════════════════════════════════════════════════════
 function copyDir(src: string, dst: string) {
-  fs.cpSync(src, dst, { recursive: true });
+  // 2026-09-13：/h 过的 agent 在 AgentFileData/<id>/headless-in 留有 FIFO，cpSync 遇到会抛 ERR_FS_CP_FIFO_PIPE（之前 catch 只打日志、照样印 OK，克隆体数据不完整）。只复制目录/普通文件/符号链接。
+  fs.cpSync(src, dst, { recursive: true, filter: (s: string) => { try { const st = fs.lstatSync(s); return st.isDirectory() || st.isFile() || st.isSymbolicLink(); } catch { return false; } } });
 }
 function copyDirExcept(src: string, dst: string, exclude: Set<string>) {
   fs.cpSync(src, dst, { recursive: true, filter: (s: string) => !exclude.has(path.basename(s)) });
@@ -703,12 +704,11 @@ function cmdClone(name: string) {
   // 复制工作区 + 文件数据
   const srcWork = path.join(PAIMON, 'AgentWorkDir', 'Individual', src.id);
   process.stdout.write(`  复制工作区... `);
-  if (fs.existsSync(srcWork)) { try { copyDir(srcWork, path.join(PAIMON, 'AgentWorkDir', 'Individual', newId)); } catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); } }
-  console.log('OK');
+  // 2026-09-13：复制失败要如实打印（之前 catch 后仍印 OK，用户不知道克隆体不完整）
+  if (fs.existsSync(srcWork)) { try { copyDir(srcWork, path.join(PAIMON, 'AgentWorkDir', 'Individual', newId)); console.log('OK'); } catch (e) { console.log('FAIL: ' + ((e as any)?.message || e)); } } else console.log('OK');
   const srcFile = path.join(PAIMON, 'AgentFileData', src.id);
   process.stdout.write(`  复制文件数据... `);
-  if (fs.existsSync(srcFile)) { try { copyDir(srcFile, path.join(PAIMON, 'AgentFileData', newId)); } catch (e) { console.error("[god.frontend.cli/cli.ts] " + ((e as any)?.message || e)); } }
-  console.log('OK');
+  if (fs.existsSync(srcFile)) { try { copyDir(srcFile, path.join(PAIMON, 'AgentFileData', newId)); console.log('OK'); } catch (e) { console.log('FAIL: ' + ((e as any)?.message || e)); } } else console.log('OK');
 
   // plist 双向关系：克隆体 clonedFrom/clonedAt，原体 clonedChildren 追加
   list.push({ id: newId, name: newName, kind: src.kind || 'coding-agent', deployment: 'local', created: now, lastSeen: now, note: '', model: src.model || '', clonedFrom: src.id, clonedAt: now });

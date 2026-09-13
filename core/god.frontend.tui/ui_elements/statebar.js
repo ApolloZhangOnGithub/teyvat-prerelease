@@ -5,6 +5,7 @@
 
 import { formatTokens } from "./footer.js";
 import { theme } from "../theme/theme.js";
+import { Text } from "@earendil-works/pi-tui";
 import { debug } from '#gene_riboswitch';
 
 const SPARKLE_CHARS = ['·', '✢', '✳', '✶', '✻', '✽'];
@@ -106,9 +107,37 @@ export class StatusBar {
   _shimmerStartTime = 0;
   _tickFn = null;
 
-  constructor(footer, requestRender) {
+  constructor(footer, requestRender, chatContainer) {
     this._footer = footer;
     this._requestRender = requestRender;
+    this._chatContainer = chatContainer;
+    this._msgStatusText = null;
+  }
+
+  // 2026-09-13（用户）：状态栏渲染出口——位置 footer（旧行为）或消息底部（默认）。
+  // 集中所有 setSpinner/updateSpinnerText 走这里，按位置分派，避免散落。
+  _spinner(text) {
+    const pos = globalThis.__genshinStatebarPosition ?? "messages";
+    if (pos === "footer" || !this._chatContainer) {
+      this._footer.updateSpinnerText(text);
+      return;
+    }
+    // 消息底部：chatContainer 末尾的 Text（消息之后、footer 之上）
+    if (!this._msgStatusText) {
+      this._msgStatusText = new Text("", 0, 0);
+      this._chatContainer.addChild(this._msgStatusText);
+    }
+    if (this._msgStatusText.text === text) return;
+    this._msgStatusText.text = text;
+    this._requestRender?.();
+  }
+  _invalidate() {
+    const pos = globalThis.__genshinStatebarPosition ?? "messages";
+    if (pos === "footer" || !this._chatContainer) {
+      this._footer.invalidate?.();
+      return;
+    }
+    this._requestRender?.();
   }
 
   setTokenCallbacks(getOutput, getStreaming) {
@@ -127,7 +156,7 @@ export class StatusBar {
       // 只 invalidate footer 区域，不触发全屏 requestRender（LESSON 061：动画不降帧，优化走局部重绘）。
       // 全屏 requestRender 每 120ms 遍历所有组件（200+ 历史消息）= CPU 爆炸（82% vs Claude 3%）。
       // footer 的 invalidate 会在下一个真正的 render cycle（text_delta/用户输入触发的）中一并重绘。
-      this._footer?.invalidate?.();
+      this._invalidate();
     }, SPARKLE_INTERVAL);
   }
 
@@ -192,13 +221,13 @@ export class StatusBar {
       this._thinkStartTime = null;
       this._tickFn = () => this._workingTick();
       this._startSparkle();
-      this._footer?.setSpinner(theme.fg("warning", this._sparkle()) + " " + this._shimmerLabel("warning", "Working..."), null);
+      this._spinner(theme.fg("warning", this._sparkle()) + " " + this._shimmerLabel("warning", "Working..."), null);
     } else if (status === "resting") {
       if (prevStatus !== "resting") {
         this._startTime = Date.now();
       }
       this._tickFn = null;
-      this._footer?.setSpinner(theme.fg("accent", (globalThis.__genshinSYM?.snow || "❄")) + " " + theme.fg("accent", "Waiting..."), null);
+      this._spinner(theme.fg("accent", (globalThis.__genshinSYM?.snow || "❄")) + " " + theme.fg("accent", "Waiting..."), null);
       if (!globalThis.__restTimers) globalThis.__restTimers = new Map();
       if (globalThis.__restTimers.has("main")) clearInterval(globalThis.__restTimers.get("main"));
       const rid = setInterval(() => {
@@ -215,7 +244,7 @@ export class StatusBar {
         globalThis.__genshinSessionEndVerb = SESSION_VERBS.hibernate;
       }
       this._tickFn = null;
-      this._footer?.setSpinner(theme.fg("accent", (globalThis.__genshinSYM?.snow || "❄")) + " " + theme.fg("accent", "Hibernating..."), null);
+      this._spinner(theme.fg("accent", (globalThis.__genshinSYM?.snow || "❄")) + " " + theme.fg("accent", "Hibernating..."), null);
       if (!globalThis.__hbTimers) globalThis.__hbTimers = new Map();
       if (globalThis.__hbTimers.has("main")) clearInterval(globalThis.__hbTimers.get("main"));
       const id = setInterval(() => {
@@ -227,7 +256,7 @@ export class StatusBar {
     } else {
       this._startTime = null;
       this._tickFn = null;
-      this._footer?.setSpinner(colored(def.color, def.label), null);
+      this._spinner(colored(def.color, def.label), null);
     }
     this._requestRender?.();
   }
@@ -250,7 +279,7 @@ export class StatusBar {
     const prefix = (this._status === "resting" || this._status === "hibernated")
       ? theme.fg(def.color, (globalThis.__genshinSYM?.snow || "❄")) + " "
       : "";
-    this._footer?.updateSpinnerText(prefix + colored(def.color, text));
+    this._spinner(prefix + colored(def.color, text));
   }
 
   setThinking(active) {
@@ -287,7 +316,7 @@ export class StatusBar {
     const reloadSince = globalThis.__genshinReloadingSince;
     if (reloadSince) {
       const secs = Math.round((Date.now() - reloadSince) / 1000);
-      this._footer?.updateSpinnerText(theme.fg("warning", "Reloading... (" + secs + "s)"));
+      this._spinner(theme.fg("warning", "Reloading... (" + secs + "s)"));
       return;
     }
     const elapsed = fmtElapsed(Date.now() - this._startTime);
@@ -318,7 +347,7 @@ export class StatusBar {
     const sparkle = theme.fg("warning", this._sparkle());
     const label = this._shimmerLabel("warning", "Working...");
     const detail = parts.join(" · ");
-    this._footer?.updateSpinnerText(sparkle + " " + label + (detail ? " (" + detail + ")" : ""));
+    this._spinner(sparkle + " " + label + (detail ? " (" + detail + ")" : ""));
   }
 
   _restingTick() {
@@ -337,7 +366,7 @@ export class StatusBar {
       const label = waitForUser ? "Waiting for user..." : "Waiting...";
       const detail = theme.fg(def.color, parts.join(" · "));
       const monPart = monTitle ? " " + theme.fg("dim", monTitle) : "";
-      this._footer?.updateSpinnerText(theme.fg(def.color, (globalThis.__genshinSYM?.snow || "❄")) + " " + theme.fg(def.color, label) + " (" + detail + ")" + monPart);
+      this._spinner(theme.fg(def.color, (globalThis.__genshinSYM?.snow || "❄")) + " " + theme.fg(def.color, label) + " (" + detail + ")" + monPart);
     }
   }
 
@@ -373,7 +402,7 @@ export class StatusBar {
     const snowflake = theme.fg("warning", (globalThis.__genshinSYM?.snow || "❄"));
     const label = theme.fg("warning", "Hibernating...");
     const text = snowflake + " " + label + (detail ? " (" + detail + ")" : "");
-    this._footer?.updateSpinnerText(text);
+    this._spinner(text);
     this._requestRender?.();
   }
 

@@ -66,7 +66,8 @@ export function isToolError(toolName, text, ctx) {
   }
   else if (toolName === "execute") {
     // 执行失败形态：Traceback / XxxError 行 / 退出码非 0 标记
-    if (/^(?:Traceback|[A-Za-z]+Error|ERR:)/m.test(t) || /\(exit [1-9]\d*\)/.test(t)) return true;
+    // 2026-09-13：XxxError 后必须跟冒号/空白/行尾——`ls` 列出一个叫 ValueError.log 的文件曾把整块判红；(exit N) 只认行尾（帮助文本里的 "(exit 1)" 不算）
+    if (/^(?:Traceback|[A-Za-z]+Error(?::|\s|$)|ERR:)/m.test(t) || /\(exit [1-9]\d*\)\s*$/m.test(t)) return true;
   }
   else if (toolName === "amem") {
     // amem 错误形态：ERR: 开头（pi 对扩展工具不传 isError，靠文本检测染红）
@@ -119,7 +120,7 @@ export function markdownBullet(md, dotStr, width) {
 export function hangWrapText(text, width, h) {
   const { visibleWidth, wrapTextWithAnsi } = h;
   const stripped = String(text).replace(new RegExp(String.fromCharCode(27) + "\\[[0-9;]*m", "g"), "");
-  const pm = stripped.match(/^(\s*(?:(?:[•◦●○$⎿⏺∴▸→◆◇]|\d+\s*│)\s+|\d+\s*[+\- ]|\s*\d+\t)?)/);
+  const pm = stripped.match(/^(\s*(?:(?:[•◦●○$⎿⏺∴▸→◆◇]|\d+\s*│)\s+|\d+\s*[+\-]\s|\s*\d+\t)?)/);
   const indW = (pm && pm[1]) ? visibleWidth(pm[1]) : 0;
   if (indW <= 0 || indW >= width) return wrapTextWithAnsi(text, width);
   if (visibleWidth(text) <= width) return wrapTextWithAnsi(text, width);
@@ -158,7 +159,7 @@ export function wrapHanging(lines, width, h) {
   for (const line of lines) {
     if (typeof line !== "string" || isImageLine(line) || visibleWidth(line) <= width) { out.push(line); continue; }
     const stripped = line.replace(new RegExp(String.fromCharCode(27) + "\\[[0-9;]*m", "g"), "");
-    const pm = stripped.match(/^(\s*(?:(?:[•◦●○$⎿⏺∴▸→◆◇]|\d+\s*│)\s+|\d+\s*[+\- ]|\s*\d+\t)?)/);
+    const pm = stripped.match(/^(\s*(?:(?:[•◦●○$⎿⏺∴▸→◆◇]|\d+\s*│)\s+|\d+\s*[+\-]\s|\s*\d+\t)?)/);
     const indW = pm && pm[1] ? visibleWidth(pm[1]) : 0;
     const indent = (indW > 0 && indW < width) ? " ".repeat(indW) : "";
     let col = 0; const total = visibleWidth(line); let first = true;
@@ -220,7 +221,7 @@ function bulletText(dotStr, text, cont) {
       const h = { visibleWidth: _visibleWidth, wrapTextWithAnsi: _wrapTextWithAnsi };
       // 先按 \n 拆行，每行独立折行
       const rawLines = this.text.split('\n');
-      const firstPrefix = rawLines[0].replace(/\x1b\[[0-9;]*m/g, '').match(/^(\s*(?:(?:[•◦●○$⎿⏺∴▸→]|\d+\s*│)\s+|\d+\s*[+\- ]|\s*\d+\t)?)/)?.[0] || '';
+      const firstPrefix = rawLines[0].replace(/\x1b\[[0-9;]*m/g, '').match(/^(\s*(?:(?:[•◦●○$⎿⏺∴▸→]|\d+\s*│)\s+|\d+\s*[+\-]\s|\s*\d+\t)?)/)?.[0] || '';
       const indentW = firstPrefix ? _visibleWidth(firstPrefix) : 0;
       // 提取第一行的 ANSI SGR 码注入后续行，避免 \n 后丢失颜色
       const ansiCodes = rawLines[0].match(/\x1b\[[0-9;]*m/g) || [];

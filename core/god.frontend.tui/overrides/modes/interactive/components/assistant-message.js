@@ -1,4 +1,4 @@
-import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
+import { Container, Markdown, Spacer, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { getMarkdownTheme, theme } from "../theme/theme.js";
 // teyvat 统一块渲染引擎(源:god.frontend.tui/ui_elements/blocks_nongod.js,install.sh 部署到此目录)
 import { markdownBullet, GUTTER } from "./blocks_nongod.js";
@@ -116,7 +116,8 @@ export class AssistantMessageComponent extends Container {
                     this.contentContainer.addChild({
                         render: (w) => {
                             const maxW = Math.max(10, w - GUTTER - 4);
-                            const truncated = full.length > maxW ? full.substring(0, maxW) + "…" : full;
+                            // teyvat 2026-09-13：按显示宽度截断（CJK 占 2 列）——之前按字符数截，中文行超出终端宽度被 alt-screen 硬切，省略号也被切掉
+                            const truncated = truncateToWidth(full, maxW, "…");
                             return [theme.fg("thinkingText", "∴") + " " + theme.fg("thinkingText", truncated)];
                         },
                         invalidate: () => {},

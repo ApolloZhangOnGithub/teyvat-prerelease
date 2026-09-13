@@ -2,7 +2,7 @@ import type { MobileApp } from "../../system.kernel/kernel.ts";
 import { addAgentApp, removeAgentApp } from "../../system.kernel/kernel.ts";
 import { PROGRAM_FILES_MOBILE } from "#paths";
 import path from "node:path";
-import { readFileSync, existsSync, mkdirSync, readdirSync, writeFileSync, copyFileSync, renameSync, statSync } from "node:fs";
+import { readFileSync, existsSync, mkdirSync, readdirSync, writeFileSync, copyFileSync, renameSync, statSync, lstatSync } from "node:fs";
 
 function scanApps(): string[] {
   if (!existsSync(PROGRAM_FILES_MOBILE)) return [];
@@ -160,7 +160,7 @@ async function handleUninstall(name: string): Promise<string> {
   }
 
   // 只读/改名目标：name 已在函数开头经 appDirFor() 校验（非法名提前 return）→ 这里不会穿越
-  const removedDir = path.join(PROGRAM_FILES_MOBILE, `@removed.${name}`);
+  const removedDir = path.join(PROGRAM_FILES_MOBILE, `@removed.${name}.${Date.now()}`); // 2026-09-13：加时间戳——同名二次卸载时目标已存在，renameSync ENOTEMPTY 失败
   try {
     renameSync(appDir, removedDir);
   } catch (e: any) {
@@ -178,7 +178,7 @@ function handleInfo(name: string): string {
 
   const appDir = path.join(PROGRAM_FILES_MOBILE, dir);   // 只读：dir 来自 scanApps()（目录列表）
   const files = readdirSync(appDir).filter(f => f.endsWith(".ts") && !f.includes(".test"));
-  const isSymlink = (() => { try { const s = statSync(appDir); return s.isSymbolicLink(); } catch (e) { console.error("[universe.infotech/local.mobile/apps/appstore/appstore.ts] " + ((e as any)?.message || e)); return false; } })();
+  const isSymlink = (() => { try { const s = lstatSync(appDir); return s.isSymbolicLink(); } catch (e) { console.error("[universe.infotech/local.mobile/apps/appstore/appstore.ts] " + ((e as any)?.message || e)); return false; } })(); // 2026-09-13：statSync 跟随链接后恒 false（install.sh 把内置 app 做成 symlink，"内置 (symlink)" 从未显示）
 
   const lines = [
     `═══ ${dir} ═══`,

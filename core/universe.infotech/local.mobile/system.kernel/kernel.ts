@@ -37,7 +37,8 @@ let _browserStarting = false;
 function startBrowserIfNeeded(): void {
   if (_browserReady || _browserStarting) return;
   _browserStarting = true;
-  const svcPath = path.resolve(fileURLToPath(import.meta.url), "../../../universe.infotech/cloud.servers/browser_service.cjs");
+  // 2026-09-13：原写法多拼了一层（…/universe.infotech/universe.infotech/cloud.servers/…，不存在）→ existsSync 为假直接 return，浏览器服务从未被 kernel 拉起（safari.ts:98 早就修过同一 bug）
+  const svcPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../cloud.servers/browser_service.cjs");
   if (!existsSync(svcPath)) { _browserStarting = false; return; }
   // 先异步检查是否已经跑着
   fetch(readBrowserUrl(), { signal: AbortSignal.timeout(500) })
@@ -314,7 +315,8 @@ function findApp(input: string): MobileApp | null {
 }
 
 function isBack(input: string): boolean {
-  return /^(主屏幕|主页|home|退出|exit)$/i.test(input.trim());
+  // 2026-09-13：各 app 的提示都写"返回 — 回主屏幕"，但这里不认"返回"——weather 把它当城市去查、appstore 回"未知命令"（CLI 版 mobile.ts 是认的）
+  return /^(主屏幕|主页|home|退出|exit|返回|back)$/i.test(input.trim());
 }
 
 async function handleInput(input: string, personDir: string): Promise<string> {
@@ -390,7 +392,8 @@ async function handleInput(input: string, personDir: string): Promise<string> {
       mks(wd, { recursive: true });
       const msg = { from: process.env.PAIMON_AGENT_NAME || "unknown", to: target, text: text.trim(), ts: Date.now() };
       afs(join(wd, "wechat.jsonl"), JSON.stringify(msg) + "\n");
-      try { const wd2 = join(homedir(), ".teyvat/RuntimeCache", target, "wake"); mks(wd2, { recursive: true }); afs(join(wd2, "wechat.wake"), JSON.stringify({ from: msg.from, ts: Date.now() }) + "\n"); } catch (e) { console.error("[universe.infotech/local.mobile/system.kernel/kernel.ts] " + ((e as any)?.message || e)); }
+      // 2026-09-13：target 来自 agent 输入，之前未校验直接拼路径（../../x 可在任意位置 mkdir）——只接受 8 位 hex id
+      if (/^[a-f0-9]{8}$/i.test(String(target))) { try { const wd2 = join(homedir(), ".teyvat/RuntimeCache", target, "wake"); mks(wd2, { recursive: true }); afs(join(wd2, "wechat.wake"), JSON.stringify({ from: msg.from, ts: Date.now() }) + "\n"); } catch (e) { console.error("[universe.infotech/local.mobile/system.kernel/kernel.ts] " + ((e as any)?.message || e)); } }
       const ctx = state.currentApp ? i18n(` (当前在 ${state.currentApp})`, ` (now in ${state.currentApp})`) : "";
       return i18n(`已发送给 ${target}${ctx}\n${text.slice(0, 50)}${text.length > 50 ? "..." : ""}`, `Sent to ${target}${ctx}\n${text.slice(0, 50)}${text.length > 50 ? "..." : ""}`);
     } catch (e: any) { return i18n("发送失败: ", "Send failed: ") + e.message; }
@@ -599,7 +602,9 @@ export default function (pi: ExtensionAPI) {
         _lastMsgLine = lines.length;
       } catch (e) { console.error("[universe.infotech/local.mobile/system.kernel/kernel.ts] " + ((e as any)?.message || e)); }
     };
-    setInterval(pollMsgs, 5000);
+    // 2026-09-13：session_start 可能重入（/new、resume）——之前每次都新建轮询且不清理，两个轮询各推一遍同一条 WeChat 通知
+    try { const _prev = (globalThis as any).__genshinMobilePollTimer; if (_prev) clearInterval(_prev); } catch (e) { /* 首次无句柄 */ }
+    (globalThis as any).__genshinMobilePollTimer = setInterval(pollMsgs, 5000);
     // 延迟到第一个 before_agent_start 后执行，确保 memory snapshot 已注入前缀（否则 cache miss）
     let _pollStarted = false;
     pi.on("before_agent_start", () => {
@@ -687,10 +692,12 @@ export default function (pi: ExtensionAPI) {
       }
       const pd = personDir!;
       // 快速操作同步返回，慢速操作走后台队列
-      // 先启动 handleInput，用同一个 Promise 避免竞态重复调用
-      const handlePromise = handleInput(input, pd).then(screen => ({ screen: screen || i18n("(无返回)", "(no output)") }));
+      // 2026-09-13：①真正串行执行——之前只把"等待"排队，handleInput 立即并发启动，两次调用共享同一 state（A app 的状态可能写进 B）；
+      //             ②慢路径异常不再 .catch(() => {}) 吞掉——agent 会永远停在"Mobile 加载中"，现在发一条出错通知
+      const handlePromise = _mobileQueue.then(() => handleInput(input, pd)).then(screen => ({ screen: screen || i18n("(无返回)", "(no output)") }));
+      _mobileQueue = handlePromise.then(() => undefined, () => undefined);
       const fastResult = await Promise.race([
-        handlePromise,
+        handlePromise.catch((e: any) => ({ screen: i18n(`Mobile 出错: ${e?.message || e}`, `Mobile error: ${e?.message || e}`) })),
         new Promise(r => setTimeout(() => r(null), 200)),
       ]);
       if (fastResult) {
@@ -699,14 +706,16 @@ export default function (pi: ExtensionAPI) {
         return { content: [{ type: "text", text: screen }], details: {} };
       }
       // 慢速操作：复用同一个 handlePromise，不重复触发
-      _mobileQueue = _mobileQueue.then(() => handlePromise).then((result: any) => {
+      handlePromise.then((result: any) => {
         const screen = result.screen || i18n("(无返回)", "(no output)");
         saveState(screen);
         const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
         try {
           sendCustomMessage(pi, "continuous-cmd-done", i18n(`Mobile 完成 (${elapsed}s):\n${screen.slice(0, 8000)}`, `Mobile done (${elapsed}s):\n${screen.slice(0, 8000)}`));
         } catch (e) { console.error("[universe.infotech/local.mobile/system.kernel/kernel.ts] " + ((e as any)?.message || e)); }
-      }).catch(() => {});
+      }).catch((e: any) => {
+        try { sendCustomMessage(pi, "continuous-cmd-done", i18n(`Mobile 出错: ${e?.message || e}`, `Mobile error: ${e?.message || e}`)); } catch (e2) { console.error("[universe.infotech/local.mobile/system.kernel/kernel.ts] " + ((e2 as any)?.message || e2)); }
+      });
       const label = input.startsWith("http") ? input : (input.length > 80 ? input.slice(0, 77) + "..." : input);
       return { content: [{ type: "text", text: i18n(`Mobile 加载中... (${label})`, `Mobile loading... (${label})`) }], details: { loading: true } };
     },

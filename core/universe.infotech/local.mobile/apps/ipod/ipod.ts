@@ -1,5 +1,5 @@
 // ipod.ts — Self-contained player. Background polling for realtime injection.
-import * as fs from "node:fs"; import * as path from "node:path"; import { execSync } from "child_process"; import { fileURLToPath } from "node:url";
+import * as fs from "node:fs"; import * as path from "node:path"; import { execSync, execFileSync } from "child_process"; import { fileURLToPath } from "node:url";
 import type { MobileApp } from "../../system.kernel/kernel.ts";
 import { pushNotification } from "../../system.kernel/kernel.ts";
 import { logerr } from "#paths";
@@ -31,11 +31,12 @@ L.push(`│ ${s.out}`);L.push("└───────────────�
 const EAR_CTL = (process.env.HOME || "") + "/.teyvat/RuntimeCache/ear_control.json";
 function start(s:P,d:string):P{if(!s.file)return s;
 try{fs.writeFileSync(EAR_CTL,"{}")}catch (e) { console.error("[universe.infotech/local.mobile/apps/ipod/ipod.ts] " + ((e as any)?.message || e)); }  // clear stale control file
-try{execSync("kill $(pgrep -f ears-recorder) 2>/dev/null || true",{timeout:3,stdio:"ignore"})}catch (e) { console.error("[universe.infotech/local.mobile/apps/ipod/ipod.ts] " + ((e as any)?.message || e)); }
+// 2026-09-13：只杀自己起的文件模式录音器（原 pgrep -f ears-recorder 会把 head.ears 的实时麦克风录音一起杀掉）；timeout 单位是毫秒（原写 3/15/5 ≈ 必 ETIMEDOUT）
+try{execSync("kill $(pgrep -f 'ears-recorder.ts --mode file') 2>/dev/null || true",{timeout:3000,stdio:"ignore"})}catch (e) { console.error("[universe.infotech/local.mobile/apps/ipod/ipod.ts] " + ((e as any)?.message || e)); }
 startPoll(d);
 try{const out=d.replace("/MemoryData/","/RuntimeCache/")+"/ear_output.jsonl";try{fs.writeFileSync(out,"")}catch (e) { console.error("[universe.infotech/local.mobile/apps/ipod/ipod.ts] " + ((e as any)?.message || e)); }
-execSync(`${BUN} "${R}" --mode file "${s.file}" "${out}" --backend ${s.bk} --lang en --speed ${s.sp} --chunk ${s.ck||1600} </dev/null >/dev/null 2>&1 &`,{timeout:15,stdio:"ignore"});
-s.out=` ${path.basename(s.file)}`;try{const r=execSync(`ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${s.file}"`,{timeout:5,encoding:"utf8"});s.dur=parseFloat(r)||0}catch (e) { console.error("[universe.infotech/local.mobile/apps/ipod/ipod.ts] " + ((e as any)?.message || e)); }}
+execSync(`${BUN} "${R}" --mode file "${s.file}" "${out}" --backend ${s.bk} --lang en --speed ${s.sp} --chunk ${s.ck||1600} </dev/null >/dev/null 2>&1 &`,{timeout:15000,stdio:"ignore"});
+s.out=` ${path.basename(s.file)}`;try{const r=execFileSync("ffprobe",["-v","quiet","-show_entries","format=duration","-of","csv=p=0",s.file],{timeout:5000,encoding:"utf8"});s.dur=parseFloat(r)||0}catch (e) { console.error("[universe.infotech/local.mobile/apps/ipod/ipod.ts] " + ((e as any)?.message || e)); }}
 catch(e:any){s.out=`err: ${e.message}`}return s}
 function halt(s:P):P{stopPoll();try{fs.writeFileSync(EAR_CTL,JSON.stringify({state:"stop"}))}catch (e) { console.error("[universe.infotech/local.mobile/apps/ipod/ipod.ts] " + ((e as any)?.message || e)); }s.out="halted";return s}
 function ctrl(s:P,act:string,val?:number):P{try{fs.writeFileSync(EAR_CTL,JSON.stringify({state:act,...(val!==undefined?{seconds:val}:{})}))}catch (e) { console.error("[universe.infotech/local.mobile/apps/ipod/ipod.ts] " + ((e as any)?.message || e)); }return s}

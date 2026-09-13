@@ -1,5 +1,5 @@
 import type { MobileApp } from "../../system.kernel/kernel.ts";
-import { execSync } from "node:child_process";
+import { execSync, execFileSync } from "node:child_process";
 import { readdirSync, existsSync, mkdirSync, readFileSync, writeFileSync, symlinkSync, lstatSync, renameSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { Buffer } from "node:buffer";
@@ -223,7 +223,8 @@ function stripHtml(html: string): string {
 }
 
 function epubUnzip(epub: string, innerPath: string): string {
-  return execSync(`unzip -p ${JSON.stringify(epub)} ${JSON.stringify(innerPath)}`,{encoding:"utf8",maxBuffer:10*1024*1024,timeout:15000});
+  // 2026-09-13：argv 传参——innerPath 来自 epub 自己的 container.xml/.opf（下载/共享来的书不可信），JSON.stringify 的双引号挡不住 $(…)/反引号展开
+  return execFileSync("unzip", ["-p", epub, innerPath], {encoding:"utf8",maxBuffer:10*1024*1024,timeout:15000});
 }
 
 function parseEpub(epub: string): Book|null {

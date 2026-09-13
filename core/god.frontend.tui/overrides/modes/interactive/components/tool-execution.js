@@ -10,6 +10,8 @@ import { debug } from "#gene_riboswitch";
 // 而 Makefile 的 ESM 检查因 glob 失效一直没抓到（2026-07-29 修）。
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
+// teyvat 2026-09-13：状态点替换正则——只认行首（可带 ANSI/空白前缀）的 •/◦/⏺；WSL 下 SYM.dot 是 "*" 也要认（blocks_nongod 在 import 时已设 __genshinSYM）
+const __dotRe = new RegExp("^((?:\\x1b\\[[0-9;]*m|\\s)*)[•◦⏺" + (globalThis.__genshinSYM && globalThis.__genshinSYM.dot === "*" ? "\\*" : "") + "]");
 initBlockrender(Text, Container, visibleWidth, wrapTextWithAnsi);
 // 从文件路径推断语言（用于代码高亮）
 function langFromPath(p) {
@@ -478,6 +480,7 @@ export class ToolExecutionComponent extends Container {
         // 总是重置计时——从实际执行开始算，不算模型流式输出参数的时间
         // （edit/write 模型花 10s 流式输出 old_string/new_string，实际执行瞬间完成，用户不想看 11s）
         this._execStartTime = Date.now();
+        this._execEndTime = null;
         this.executionStarted = true;
         this.updateDisplay();
         this.ui.requestRender();
@@ -540,6 +543,8 @@ export class ToolExecutionComponent extends Container {
     updateResult(result, isPartial = false) {
         this.result = result;
         this.isPartial = isPartial;
+        // teyvat 2026-09-13：结果定稿时记下结束时刻——耗时标注用它而不是渲染时的 Date.now()（心跳状态切换会 invalidate 全部历史组件重渲染，历史行的 [2s] 几分钟后变成 [5m12s]）
+        if (!isPartial && !this._execEndTime) this._execEndTime = Date.now();
         this.updateDisplay();
         this.maybeConvertImagesForKitty();
     }
@@ -648,8 +653,10 @@ export class ToolExecutionComponent extends Container {
                 if (this.callRendererComponent && !this.result) {
                     const dot = blockDot(theme, { partial: this.isDotPartial(), error: this.isDotError(), blink: (this.toolName === "wait" || this.toolName === "hibernate") && this.isDotPartial() });
                     (function replaceDot(node) {
-                        if (node && typeof node.text === 'string' && (node.text.includes('•') || node.text.includes('◦') || node.text.includes('⏺'))) {
-                            node.text = node.text.replace(/[•◦⏺]/, dot);
+                        // teyvat 2026-09-13：只替换行首（可带 ANSI/空白前缀）的状态点——之前对每个 text 节点替换首个 •/◦/⏺，命令或摘要正文里的 • 也被换成彩色状态点；
+                        // WSL 下状态点是 "*"（SYM.dot），也要认，否则结果到达后点永远停在 partial 色
+                        if (node && typeof node.text === 'string' && __dotRe.test(node.text)) {
+                            node.text = node.text.replace(__dotRe, "$1" + dot);
                         }
                         if (node && typeof node.children !== 'undefined') {
                             for (const child of node.children) replaceDot(child);
@@ -664,8 +671,10 @@ export class ToolExecutionComponent extends Container {
                     // 展开视图：把 • 替换成带状态颜色的版本（递归处理 Text 和 Box 子节点）
                     const dot = blockDot(theme, { partial: this.isDotPartial(), error: this.isDotError(), blink: (this.toolName === "wait" || this.toolName === "hibernate") && this.isDotPartial() });
                     (function replaceDot(node) {
-                        if (node && typeof node.text === 'string' && (node.text.includes('•') || node.text.includes('◦') || node.text.includes('⏺'))) {
-                            node.text = node.text.replace(/[•◦⏺]/, dot);
+                        // teyvat 2026-09-13：只替换行首（可带 ANSI/空白前缀）的状态点——之前对每个 text 节点替换首个 •/◦/⏺，命令或摘要正文里的 • 也被换成彩色状态点；
+                        // WSL 下状态点是 "*"（SYM.dot），也要认，否则结果到达后点永远停在 partial 色
+                        if (node && typeof node.text === 'string' && __dotRe.test(node.text)) {
+                            node.text = node.text.replace(__dotRe, "$1" + dot);
                         }
                         if (node && typeof node.children !== 'undefined') {
                             for (const child of node.children) replaceDot(child);
@@ -728,7 +737,8 @@ export class ToolExecutionComponent extends Container {
                 && this.result && !this.isPartial
                 && hs !== "resting" && hs !== "hibernated"
                 && this.callRendererComponent && !this.callRendererComponent._waitSuffixed
-                && !(this.toolCallId && globalThis.__genshinWaitInterruptedId === this.toolCallId)) {
+                && !(this.toolCallId && globalThis.__genshinWaitInterruptedId === this.toolCallId)
+                && (this.result?.details?.wait || this.args?.seconds)) { // teyvat 2026-09-13：hibernate 没有秒数（details 只有摘要）——之前醒来后每条摘要末尾追加 "→ Waited ?s"
                 const waitSecs = this.result?.details?.wait || this.args?.seconds || "?";
                 const suffix = " → " + `Waited ${waitSecs}s`;
                 (function appendToLastText(node) {
@@ -778,7 +788,7 @@ export class ToolExecutionComponent extends Container {
                     try {
                         const ctx = this.getRenderContext(this.resultRendererComponent);
                         ctx.isAsync = this._showedSpinner;
-                        const component = resultRenderer({ content: this.result.content, details: this.result.details }, { expanded: this.expanded, isPartial: this.isPartial, args: this.args, elapsedMs: this._execStartTime ? Date.now() - this._execStartTime : undefined }, theme, ctx);
+                        const component = resultRenderer({ content: this.result.content, details: this.result.details }, { expanded: this.expanded, isPartial: this.isPartial, args: this.args, elapsedMs: this._execStartTime ? ((this._execEndTime || Date.now()) - this._execStartTime) : undefined }, theme, ctx);
                         this.resultRendererComponent = component;
                         renderContainer.addChild(component);
                         hasContent = true;

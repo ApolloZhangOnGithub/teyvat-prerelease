@@ -128,6 +128,7 @@ function getAllItems() {
   const footerProvider = g.__genshinFooterProvider ?? false;
   const footerModel = g.__genshinFooterModel ?? true;
   const footerVersion = g.__genshinFooterVersion ?? true;
+  const statebarPos = g.__genshinStatebarPosition ?? "messages";
   const footerTokensValue = !footerTokenmaxxed ? T("隐藏", "Hide") : tokenmaxxedColorful ? T("多彩", "Colorful") : T("显示", "Show");
   items.push(
     { id: "_hdr_footer", label: T("── 底栏 ──", "── Footer ──"), currentValue: "", values: [] },
@@ -136,6 +137,7 @@ function getAllItems() {
     { id: "footerProvider", label: T("供应商", "Provider"), currentValue: footerProvider ? T("显示", "Show") : T("隐藏", "Hide"), values: [T("隐藏", "Hide"), T("显示", "Show")] },
     { id: "footerModel", label: T("模型", "Model"), currentValue: footerModel ? T("显示", "Show") : T("隐藏", "Hide"), values: [T("隐藏", "Hide"), T("显示", "Show")] },
     { id: "footerVersion", label: T("版本号", "Version"), currentValue: footerVersion ? T("显示", "Show") : T("隐藏", "Hide"), values: [T("隐藏", "Hide"), T("显示", "Show")] },
+    { id: "statebarPos", label: T("状态栏位置", "Statebar"), currentValue: statebarPos === "footer" ? T("底栏", "Footer") : T("消息底部", "Messages"), values: [T("消息底部", "Messages"), T("底栏", "Footer")] },
   );
 
   // ── 实验 ──
@@ -282,6 +284,11 @@ function handleChange(id: string, value: string) {
     case "footerVersion":
       g.__genshinFooterVersion = value === T("显示", "Show");
       save("footerVersion", g.__genshinFooterVersion);
+      break;
+    case "statebarPos":
+      // 2026-09-13（用户）：状态栏位置 消息底部/底栏（默认消息底部）
+      g.__genshinStatebarPosition = value === T("底栏", "Footer") ? "footer" : "messages";
+      save("statebarPos", g.__genshinStatebarPosition);
       break;
     case "xattr": {
       const on = value === T("开", "On");

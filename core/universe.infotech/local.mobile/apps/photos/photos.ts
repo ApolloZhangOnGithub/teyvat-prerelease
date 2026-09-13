@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { homedir } from "node:os";
 import { logerr } from "#paths";
 
-const PHOTOS_DIR = path.join(homedir(), ".teyvat/AppData/shared/Photos");
+const PHOTOS_DIR = path.join(homedir(), ".teyvat/AppData/shared/photos"); // 2026-09-13：与写入方（kernel/wechat/本文件 L74 的 shared/photos）统一小写——APFS 不区分大小写才碰巧能用，Linux 上相册永远为空
 
 interface MobilePic {
   type: "mobilepic" | "mobilelog";

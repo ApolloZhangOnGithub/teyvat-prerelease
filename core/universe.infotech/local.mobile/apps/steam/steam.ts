@@ -386,7 +386,7 @@ export const app: MobileApp = {
         return { screen: "═══ 狼人杀 ═══\n\n输入「新游戏」开始\n「菜单」回 Steam", state: s };
       }
       if (hit.name === "2048") {
-        G2048.setPersonId(personDir.match(/memory\/([a-f0-9]+)/)?.[1] || '');
+        G2048.setPersonId((personDir.split("/").pop() || '') /* 2026-09-13：personDir 是 …/MemoryData/<id>，旧正则 memory\/ 永不匹配 → personId 恒空，所有 agent 的存档互相覆盖 */);
         s.g2048 = G2048.load() || new G2048();
         return { screen: s.g2048.screen(), state: s };
       }
@@ -582,7 +582,7 @@ export const app: MobileApp = {
     // ── 2048 ──
     if (s.cur === "2048") {
       if (!s.g2048) {
-        G2048.setPersonId(personDir.match(/memory\/([a-f0-9]+)/)?.[1] || '');
+        G2048.setPersonId((personDir.split("/").pop() || '') /* 2026-09-13：personDir 是 …/MemoryData/<id>，旧正则 memory\/ 永不匹配 → personId 恒空，所有 agent 的存档互相覆盖 */);
         s.g2048 = G2048.load() || new G2048();
       }
       if (/^(新局|new|restart)$/i.test(trimmed)) { s.g2048 = new G2048(); s.g2048.save(); return { screen: s.g2048.screen(), state: s }; }
@@ -724,13 +724,13 @@ export const app: MobileApp = {
     // ── 别踩白块儿 ──
     if (s.cur === "别踩白块儿") {
       if (!s.pianoTiles) {
-        PianoTiles.setPersonId(personDir.match(/memory\/([a-f0-9]+)/)?.[1] || '');
+        PianoTiles.setPersonId((personDir.split("/").pop() || '') /* 2026-09-13：personDir 是 …/MemoryData/<id>，旧正则 memory\/ 永不匹配 → personId 恒空，所有 agent 的存档互相覆盖 */);
         s.pianoTiles = new PianoTiles();
         s.pianoTiles.bestScore = PianoTiles.loadBest();
       }
       if (/^(新局|new)$/i.test(trimmed)) {
         const prevDiff = s.pianoTiles.difficulty;
-        PianoTiles.setPersonId(personDir.match(/memory\/([a-f0-9]+)/)?.[1] || '');
+        PianoTiles.setPersonId((personDir.split("/").pop() || '') /* 2026-09-13：personDir 是 …/MemoryData/<id>，旧正则 memory\/ 永不匹配 → personId 恒空，所有 agent 的存档互相覆盖 */);
         s.pianoTiles = new PianoTiles(prevDiff);
         s.pianoTiles.bestScore = PianoTiles.loadBest();
         return { screen: s.pianoTiles.screen(), state: s };

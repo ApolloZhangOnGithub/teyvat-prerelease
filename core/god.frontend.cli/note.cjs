@@ -9,7 +9,16 @@ const path = require('path');
 const os = require('os');
 
 const PAIMON = path.join(os.homedir(), '.teyvat');
-const id = process.argv[2];
+// 2026-09-13：launcher 的 `genshin note <name>` 把名字原样当 id 传进来 → 在 MemoryData/<name>/ 建垃圾目录（实证 MemoryData/lzy-01-ai/notes.jsonl）。
+// 这里按 plist 把 name 解析成 id；非 8 位 hex 且查不到就报错退出。
+let id = process.argv[2];
+if (id && !/^[a-f0-9]{8}$/.test(id)) {
+  try {
+    const list = JSON.parse(fs.readFileSync(path.join(PAIMON, 'MemoryData/plist.json'), 'utf8'));
+    const p = list.find(x => x.name === id || x.id === id);
+    if (p) id = p.id; else { console.error(`agent "${id}" 不存在（name/id 均未匹配）`); process.exit(1); }
+  } catch (e) { console.error('plist.json 读取失败: ' + (e && e.message ? e.message : e)); process.exit(1); }
+}
 const msg = process.argv.slice(3).join(' ').trim();
 
 function readNotes(noteFile) {
