@@ -304,6 +304,11 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event: any, ctx: any) => {
     if (isWorkerSession(ctx)) return;
     setUI(ctx.ui);
+    // 2026-09-13（support 转达用户：IM GUI 多 agent 显示同一 model——headless 无 TUI 桥时
+    // getSysInfo 走共享 settings 回退 → 所有 headless agent 上报同一 defaultModel）：
+    // session_start 把当前 model 挂到 __genshinGetModel（interactive-mode L510 只在 TUI 定义）。
+    // ctx.model 是框架维护的当前值（/m 切换随 ctx 更新）；TUI 模式下 interactive-mode 会再覆盖（语义一致）。
+    (globalThis as any).__genshinGetModel = () => ctx.model;
     // ── 自检：wait/hibernate 的 terminate:true 依赖 agent-session.js override ──
     // override 未部署（npm update 覆盖 / install 遗漏）时 wait 后 agent loop 不终止，
     // 导致 heart 卡 resting、"Already resting. Ignoring wait." 死循环（2026-08-13 报修）。

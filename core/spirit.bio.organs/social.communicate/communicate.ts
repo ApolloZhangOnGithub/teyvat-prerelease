@@ -221,7 +221,9 @@ function getSysInfo(): { version: string; model: string } {
     // 2026-08-18 修复：模型优先取当前 session 实际模型（/m 切换后立即反映，headless 无 TUI 桥则回退）；
     // 回退读 agent 级 settings（~/.teyvat/agent/settings.json，setModel 持久化 defaultModel 处）——
     // 原读 ~/.teyvat/settings.json（全局）在 /m 切换后不更新。
-    const curModel = (globalThis as any).__genshinGetModel?.()?.id;
+    // 2026-09-13（同上）：兼容两种返回形态——interactive-mode 的 AgentSession.model（带 .id）与 heart 挂的 ctx.model（Model 对象，同样 .id；SessionContext.model 形态则是 .modelId）
+    const _gm = (globalThis as any).__genshinGetModel?.();
+    const curModel = _gm?.id ?? _gm?.modelId;
     if (curModel) {
       model = curModel;
     } else {

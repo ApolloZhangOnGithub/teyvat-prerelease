@@ -51,7 +51,9 @@ function finishCurrent() {
 // 2026-08-20：语音状态/音频一律用 teyvat 专属目录（~/.teyvat/RuntimeCache），不写系统 /tmp——
 // 安全 + 无冲突（多 agent 共用 /tmp 会互踩）+ 不依赖系统自动清理（用户定稿：永远不用 tmp）。
 // 必须与 ears.ts / ears-recorder.ts 同步（跨进程通信路径一致）。
-const voiceRc = (name: string) => join(homedir(), ".teyvat/RuntimeCache", name);
+// 2026-09-13：按 agent 隔离（RuntimeCache/<id>/）——此前 pi_mouth.mp3 / pi_mouth_speaking 全机共用，两个 agent 同时说话互相覆盖音频、
+// 一个 agent 的"正在说话"静音标志会让另一个 agent 的耳朵闭麦。personId 未设置时退回全局目录。
+const voiceRc = (name: string) => join(homedir(), ".teyvat/RuntimeCache", String((globalThis as any).__genshinPersonId || ""), name);
 
 function processQueue() {
   if (speaking) return;

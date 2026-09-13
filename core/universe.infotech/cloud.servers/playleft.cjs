@@ -247,7 +247,8 @@ async function launch(options = {}) {
   const chromePath = options.executablePath || process.env.CHROMIUM_PATH || defaultChrome;
   const port = options.port || (9000 + Math.floor(Math.random() * 1000));
 
-  const dataDir = options.userDataDir || require("path").join(require("os").tmpdir(), "playleft-chrome-" + port);
+  // 2026-09-13：不写系统 /tmp（用户定稿：永远不用 tmp）→ ~/.teyvat/RuntimeCache
+  const dataDir = options.userDataDir || require("path").join(require("os").homedir(), ".teyvat", "RuntimeCache", "playleft-chrome-" + port);
   const args = [
     "--headless", `--remote-debugging-port=${port}`,
     `--user-data-dir=${dataDir}`,

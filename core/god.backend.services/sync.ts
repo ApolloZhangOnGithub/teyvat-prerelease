@@ -2,16 +2,26 @@
 import { Hono } from "hono";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve, sep } from "node:path";
 import { stmt } from "./db.ts";
 import type { AuthUser } from "./auth.ts";
 import { broadcastToUser } from "./messaging.ts";
 
 const STORAGE_DIR = process.env.SYNC_STORAGE_DIR || "./storage";
 
-function storagePath(githubId: number, filePath: string): string {
-  return join(STORAGE_DIR, String(githubId), filePath);
+// 2026-09-13（审计 CRITICAL）：原来只 join——filePath 来自请求体/表单字段名，`../../data/sync.db`、`../<victimId>/…` 直接跨租户读、任意路径写。
+// 现在：只接受相对路径、无空段/./..、无反斜杠/NUL、≤512 字符，且 resolve 后必须仍在本租户根目录内；不合法返回 null（调用方 400）。
+function storagePath(githubId: number, filePath: string): string | null {
+  if (typeof filePath !== "string" || !filePath || filePath.length > 512) return null;
+  if (filePath.includes("\0") || filePath.includes("\\") || filePath.startsWith("/")) return null;
+  const segs = filePath.split("/");
+  if (segs.some((x) => !x || x === "." || x === "..")) return null;
+  const root = resolve(STORAGE_DIR, String(githubId));
+  const dst = resolve(root, filePath);
+  if (dst !== root && !dst.startsWith(root + sep)) return null;
+  return dst;
 }
+const MAX_PULL_PATHS = 100;
 
 function sha256(data: Buffer): string {
   return createHash("sha256").update(data).digest("hex");
@@ -64,10 +74,11 @@ syncRouter.post("/push", async (c) => {
         results.push({ path: filePath, version: 0, ok: false, error: `locked by device ${lockedByOthers[aid]}` });
         continue;
       }
+      const dst = storagePath(user.githubId, filePath);
+      if (!dst) { results.push({ path: filePath, version: 0, ok: false, error: "invalid path" }); continue; }
       const file = value as File;
       const buf = Buffer.from(await file.arrayBuffer());
       const hash = sha256(buf);
-      const dst = storagePath(user.githubId, filePath);
       mkdirSync(dirname(dst), { recursive: true });
       writeFileSync(dst, buf);
       stmt.upsertFile.run(user.githubId, filePath, hash, buf.length);
@@ -78,8 +89,10 @@ syncRouter.post("/push", async (c) => {
     return c.json({ results });
   }
 
-  const { path: filePath, content } = await c.req.json<{ path: string; content: string }>();
+  const { path: filePath, content } = await c.req.json<{ path: string; content: string }>().catch(() => ({} as any));
   if (!filePath || content === undefined) return c.json({ error: "path and content required" }, 400);
+  const dstJson = storagePath(user.githubId, filePath);
+  if (!dstJson) return c.json({ error: "invalid path" }, 400);
 
   // 检查该文件所属 agent 是否被其他设备锁定
   const m=filePath.match(/^(MemoryData|SessionData|IdentityData|AppData|MemoirData)\/([a-f0-9]{8})\//);
@@ -93,9 +106,9 @@ syncRouter.post("/push", async (c) => {
     }
   }
 
-  const buf = Buffer.from(content, "base64");
+  const buf = Buffer.from(String(content), "base64");
   const hash = sha256(buf);
-  const dst = storagePath(user.githubId, filePath);
+  const dst = dstJson;
   mkdirSync(dirname(dst), { recursive: true });
   writeFileSync(dst, buf);
   stmt.upsertFile.run(user.githubId, filePath, hash, buf.length);
@@ -106,12 +119,14 @@ syncRouter.post("/push", async (c) => {
 
 syncRouter.post("/pull", async (c) => {
   const user = c.get("user") as AuthUser;
-  const { paths } = await c.req.json<{ paths: string[] }>();
-  if (!paths?.length) return c.json({ error: "paths required" }, 400);
+  const { paths } = await c.req.json<{ paths: string[] }>().catch(() => ({} as any));
+  if (!Array.isArray(paths) || !paths.length) return c.json({ error: "paths required" }, 400);
+  if (paths.length > MAX_PULL_PATHS) return c.json({ error: `too many paths (max ${MAX_PULL_PATHS})` }, 400);
 
   const results: Array<{ path: string; content: string; hash: string; size: number } | { path: string; error: string }> = [];
   for (const p of paths) {
     const fp = storagePath(user.githubId, p);
+    if (!fp) { results.push({ path: String(p), error: "invalid path" }); continue; }
     if (!existsSync(fp)) {
       results.push({ path: p, error: "not found" });
       continue;
@@ -246,8 +261,8 @@ syncRouter.delete("/lock/:personId", (c) => {
 // 批量查询锁状态：客户端 push 前检查哪些 agent 被其他设备锁定
 syncRouter.post("/locks/batch", async (c) => {
   const user = c.get("user") as AuthUser;
-  const { agentIds } = await c.req.json() as any || {};
-  if(!Array.isArray(agentIds)) return c.json({ error: "agentIds array required" }, 400);
+  const { agentIds } = (await c.req.json().catch(() => ({}))) as any || {};
+  if(!Array.isArray(agentIds) || agentIds.length > 1000) return c.json({ error: "agentIds array required (max 1000)" }, 400);
   stmt.expireLocks.run();
   const locked:Record<string,string>={};
   for(const aid of agentIds){

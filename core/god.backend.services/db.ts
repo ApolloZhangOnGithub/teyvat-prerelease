@@ -144,12 +144,23 @@ export const stmt = {
       last_seen_at = datetime('now')
   `),
 
+  // 2026-09-13（审计）：device_id 是全局主键——冲突更新必须限定同一 github_id，否则 B 带上 A 的 X-Device-Id 就能改写 A 的设备行（改名/清单/synced_at）。
+  // WHERE 不满足时 UPSERT 整体不生效（静默无操作）。
   upsertDevice: db.prepare(`
     INSERT INTO devices (device_id, github_id, device_name, created_at)
     VALUES (?, ?, ?, datetime('now'))
     ON CONFLICT(device_id) DO UPDATE SET
       last_seen_at = datetime('now'),
       device_name = excluded.device_name
+    WHERE devices.github_id = excluded.github_id
+  `),
+  // 只在设备行不存在时写入名字；已存在只 touch（resolveUser 用——不再覆盖用户备注名）
+  insertDeviceIfMissing: db.prepare(`
+    INSERT INTO devices (device_id, github_id, device_name, created_at)
+    VALUES (?, ?, ?, datetime('now'))
+    ON CONFLICT(device_id) DO UPDATE SET
+      last_seen_at = datetime('now')
+    WHERE devices.github_id = excluded.github_id
   `),
   // 只 touch 活跃不覆盖 device_name（保留用户备注名）——2026-09-05
   touchDevice: db.prepare(`
@@ -248,6 +259,7 @@ export const stmt = {
       agents_json = excluded.agents_json,
       version = excluded.version,
       synced_at = datetime('now')
+    WHERE device_states.github_id = excluded.github_id
   `),
   getDeviceStates: db.prepare(`
     SELECT device_id, agents_json, version, synced_at FROM device_states WHERE github_id = ?
@@ -306,6 +318,10 @@ export const stmt = {
   `),
   cleanupExpiredShares: db.prepare(`
     DELETE FROM share_files WHERE expires_at < datetime('now')
+  `),
+  // 2026-09-13：清理前先列出过期 id——磁盘文件要一起删（原来只删表行，SHARE_DIR 永久泄漏）
+  listExpiredShares: db.prepare(`
+    SELECT id FROM share_files WHERE expires_at < datetime('now')
   `),
   // update 遥测（2026-09-09）
   insertUpdateHistory: db.prepare(`

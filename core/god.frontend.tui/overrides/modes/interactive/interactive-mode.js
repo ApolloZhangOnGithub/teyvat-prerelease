@@ -76,6 +76,13 @@ import { InteractiveThemeController } from "./theme/theme-controller.js";
 // ESM 下 require 未定义：显式建垫片。原先裸用 require() 会在执行到时抛错，
 // 而 Makefile 的 ESM 检查因 glob 失效一直没抓到（2026-07-29 修）。
 import { createRequire } from "node:module";
+// teyvat 2026-09-13：临时文件目录——不用系统 /tmp（用户定稿：永远不用 tmp；多 agent 共用一个 session.html 会互相覆盖）→ RuntimeCache/<id>/tmp
+function __genshinTmpDir() {
+    const id = globalThis.__genshinPersonId || process.env.PAIMON_AGENT_ID || "_";
+    const d = path.join(os.homedir(), ".teyvat", "RuntimeCache", String(id), "tmp");
+    try { fs.mkdirSync(d, { recursive: true }); } catch { return os.tmpdir(); } // 建不了就退回系统 tmp
+    return d;
+}
 const require = createRequire(import.meta.url);
 let _highlight;
 try { _highlight = (await import("cli-highlight")).highlight; } catch (e) { console.error("[god.frontend.tui/overrides/modes/interactive/interactive-mode.js] " + (e?.message || e)); }
@@ -2398,7 +2405,7 @@ export class InteractiveMode {
         try {
             const image = await readClipboardImage();
             if (image) {
-                const tmpDir = os.tmpdir();
+                const tmpDir = __genshinTmpDir();
                 const ext = extensionForImageMimeType(image.mimeType) ?? "png";
                 const fileName = `pi-clipboard-${crypto.randomUUID()}.${ext}`;
                 const filePath = path.join(tmpDir, fileName);
@@ -3789,7 +3796,7 @@ export class InteractiveMode {
             return;
         }
         const currentText = this.editor.getExpandedText?.() ?? this.editor.getText();
-        const tmpFile = path.join(os.tmpdir(), `pi-editor-${Date.now()}.pi.md`);
+        const tmpFile = path.join(__genshinTmpDir(), `pi-editor-${Date.now()}.pi.md`);
         try {
             // Write current content to temp file
             fs.writeFileSync(tmpFile, currentText, "utf-8");
@@ -5294,7 +5301,7 @@ export class InteractiveMode {
             return;
         }
         // Export to a temp file
-        const tmpFile = path.join(os.tmpdir(), "session.html");
+        const tmpFile = path.join(__genshinTmpDir(), `session-${process.pid}.html`);
         try {
             await this.session.exportToHtml(tmpFile);
         }

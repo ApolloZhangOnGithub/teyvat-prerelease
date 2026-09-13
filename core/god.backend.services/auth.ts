@@ -1,6 +1,39 @@
 // 文档: B.docs/Dev.Common/Wiki/Services(God Level Support).WIKI
 import { Hono } from "hono";
+import { createRequire } from "node:module";
 import { stmt } from "./db.ts";
+
+// 2026-09-13：GitHub OAuth 需访问 github.com（国内直连 10s 超时；api.github.com 部分可达）。
+// Node 原生 fetch（undici）不读 GITHUB_PROXY 环境变量，必须显式设置全局 dispatcher。
+// ⚠️ 不能用 top-level await——tsx 以 CJS 加载时抛 ERR_REQUIRE_ASYNC_MODULE（2026-09-13 线上实证导致服务起不来）；改用 createRequire 同步加载。
+if (process.env.GITHUB_PROXY) {
+  try {
+    const undici = createRequire(import.meta.url)("undici");
+    undici.setGlobalDispatcher(new undici.ProxyAgent(process.env.GITHUB_PROXY));
+    console.log("[auth] using GITHUB_PROXY=" + process.env.GITHUB_PROXY);
+  } catch (e) {
+    console.error("[auth] GITHUB_PROXY setup failed (继续直连): " + ((e as any)?.message || e));
+  }
+}
+
+// 2026-09-13：GitHub OAuth 请求重试（alice 实测：单次成功率仅 ~50%——GFW 对 github.com 概率性 SYN 丢包；
+// 失败发生在 TCP 连接阶段（请求未达 GitHub）→ authorization code 未被消耗，**可安全重试**。
+// 短超时（4s）+ 重试 4 次 + 短退避 → 成功率 50% → ~94%；不要用手动 --resolve 固定其他 GitHub IP（实测全不通，必须默认 DNS）。
+async function fetchWithRetry(url: string, init: RequestInit, opts: { attempts?: number; timeoutMs?: number } = {}): Promise<Response> {
+  const attempts = opts.attempts ?? 4;
+  const timeoutMs = opts.timeoutMs ?? 4000;
+  const delays = [200, 500, 1000, 1500];
+  let lastErr: any = null;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+    } catch (e) {
+      lastErr = e;
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, delays[Math.min(i, delays.length - 1)]));
+    }
+  }
+  throw lastErr;
+}
 
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID || "";
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET || "";
@@ -12,24 +45,51 @@ export interface AuthUser {
   deviceId: string;
 }
 
-const tokenCache = new Map<string, AuthUser>();
+// 2026-09-13（审计）：① 缓存带 TTL（10 分钟）+ 容量上限——原来命中过的 token 到进程重启前都有效，GitHub 侧撤销毫无作用；
+// ② 401 的 token 负缓存 60s——原来每个非法 Bearer 都打一次 api.github.com；③ token/deviceId 先做字符校验——
+// 含 >255 字符的值放进 fetch header 会同步抛 TypeError；④ 缓存 miss 时不再覆盖设备备注名（原 upsertDevice 每次都 SET device_name）。
+const TOKEN_RE = /^[A-Za-z0-9_\-]{10,255}$/;
+const ID_RE = /^[A-Za-z0-9_\-]{1,64}$/;
+const CACHE_TTL_MS = 10 * 60 * 1000;
+const NEG_TTL_MS = 60 * 1000;
+const CACHE_MAX = 5000;
+const tokenCache = new Map<string, { user: AuthUser; at: number }>();
+const negCache = new Map<string, number>();
+
+function _evict<K, V>(m: Map<K, V>, max: number) { while (m.size > max) { const k = m.keys().next().value as K; m.delete(k); } }
 
 export async function resolveUser(token: string, deviceId: string, deviceName?: string): Promise<AuthUser | null> {
+  if (!TOKEN_RE.test(token) || !ID_RE.test(deviceId)) return null;
+  const now = Date.now();
   const cached = tokenCache.get(token);
-  if (cached && cached.deviceId === deviceId) return cached;
+  if (cached && now - cached.at < CACHE_TTL_MS) {
+    if (cached.user.deviceId === deviceId) return cached.user;
+    // 同一 token 换设备：用户信息可复用，只补设备行
+    const user: AuthUser = { ...cached.user, deviceId };
+    stmt.insertDeviceIfMissing.run(deviceId, user.githubId, deviceName?.trim() || deviceId);
+    tokenCache.set(token, { user, at: cached.at });
+    return user;
+  }
+  const neg = negCache.get(token);
+  if (neg && now - neg < NEG_TTL_MS) return null;
 
-  const res = await fetch("https://api.github.com/user", {
-    headers: { Authorization: `Bearer ${token}`, "User-Agent": "genshin-sync" },
-  });
-  if (!res.ok) return null;
+  let res: Response | null = null;
+  try {
+    res = await fetch("https://api.github.com/user", {
+      headers: { Authorization: `Bearer ${token}`, "User-Agent": "genshin-sync" },
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch { return null; }
+  if (!res.ok) { negCache.set(token, now); _evict(negCache, CACHE_MAX); return null; }
 
   const gh = (await res.json()) as { id: number; login: string; avatar_url: string };
   const user: AuthUser = { githubId: gh.id, login: gh.login, avatarUrl: gh.avatar_url, deviceId };
 
   stmt.upsertUser.run(gh.id, gh.login, gh.avatar_url);
-  // device_name 优先用 client 上报的 hostname（X-Device-Name），无则回落 deviceId（2026-09-05：设备要可识别名称）
-  stmt.upsertDevice.run(deviceId, gh.id, deviceName?.trim() || deviceId);
-  tokenCache.set(token, user);
+  // device_name 优先用 client 上报的 hostname（X-Device-Name），无则回落 deviceId（2026-09-05：设备要可识别名称）；已有行只 touch，不覆盖备注名
+  stmt.insertDeviceIfMissing.run(deviceId, gh.id, deviceName?.trim() || deviceId);
+  tokenCache.set(token, { user, at: now });
+  _evict(tokenCache, CACHE_MAX);
   return user;
 }
 
@@ -72,6 +132,7 @@ authRouter.post("/device-state", async (c) => {
   if (!user) return c.json({ error: "invalid token" }, 401);
   const { agents } = await c.req.json<{ agents?: string }>().catch(() => ({}));
   if (typeof agents !== "string") return c.json({ error: "agents required" }, 400);
+  if (agents.length > 20000) return c.json({ error: "agents too large (max 20000)" }, 413); // 与 header 路径同上限
   stmt.upsertDeviceState.run(deviceId, user.githubId, JSON.stringify(agents), "");
   stmt.logSync.run(deviceId, user.githubId);
   stmt.pruneSyncLog.run(user.githubId, user.githubId);
@@ -122,7 +183,7 @@ authRouter.put("/devices/:deviceId", async (c) => {
 authRouter.post("/github", async (c) => {
   const { code } = await c.req.json<{ code: string }>();
   if (!code) return c.json({ error: "code required" }, 400);
-  const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
+  const tokenRes = await fetchWithRetry("https://github.com/login/oauth/access_token", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({
@@ -152,7 +213,7 @@ authRouter.post("/github", async (c) => {
 });
 
 authRouter.post("/device-flow/start", async (c) => {
-  const res = await fetch("https://github.com/login/device/code", {
+  const res = await fetchWithRetry("https://github.com/login/device/code", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ client_id: GITHUB_CLIENT_ID, scope: "read:user" }),
@@ -162,7 +223,7 @@ authRouter.post("/device-flow/start", async (c) => {
 
 authRouter.post("/device-flow/poll", async (c) => {
   const { device_code } = await c.req.json<{ device_code: string }>();
-  const res = await fetch("https://github.com/login/oauth/access_token", {
+  const res = await fetchWithRetry("https://github.com/login/oauth/access_token", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({

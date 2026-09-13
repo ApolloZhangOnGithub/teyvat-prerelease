@@ -5,7 +5,6 @@ import { writeFile, mkdir } from "node:fs/promises";
 import { appendFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { tmpdir } from "node:os";
 import { debug } from '#gene_riboswitch';
 let _errorLogPath = join(homedir(), ".teyvat/LogData/unknown/error.log");
 const _log = (code: string, e: unknown) => { try { const d = _errorLogPath.replace(/\/[^/]+$/, ""); if (!existsSync(d)) mkdirSync(d, { recursive: true }); appendFileSync(_errorLogPath, `[${new Date().toISOString()}] [spawner][${code}] ${e}\n`); } catch (e) { console.error("[spirit.bio.organs/brain.metaconsciousness/metaconsciousness-spawner.ts] " + ((e as any)?.message || e)); } };
@@ -52,7 +51,10 @@ export function createmetaconsciousness(
       await mkdir(sessionDir, { recursive: true });
 
       const feedPath = getTranscriptPath() ?? global.__genshinChannelDir + "/conscious-feed.jsonl";
-      const promptFile = join(tmpdir(), `mc-prompt-${personId}.md`);
+      // 2026-09-13：不写系统 /tmp（用户定稿：永远不用 tmp——多 agent 共用、可被其他进程读写、依赖系统清理）→ 本 agent 的 RuntimeCache
+      const mcRcDir = join(homedir(), ".teyvat/RuntimeCache", String(personId));
+      mkdirSync(mcRcDir, { recursive: true });
+      const promptFile = join(mcRcDir, `mc-prompt-${personId}.md`);
       await writeFile(promptFile, `${getPrompt("metaconsciousness.observe")}
 
 Main session history (read it regularly for new content): ${feedPath}
@@ -60,7 +62,7 @@ Send thoughts to the main session with the aware tool.`);
 
       try {
         const initialPrompt = "开始你的工作：持续阅读主意识的历史记录，反思，发现问题就用 aware 告诉主意识。";
-        const launchScript = join(tmpdir(), `mc-launch-${personId}.sh`);
+        const launchScript = join(mcRcDir, `mc-launch-${personId}.sh`);
         const channelDir = global.__genshinChannelDir ?? "";
         await writeFile(launchScript, `#!/bin/bash
 # Self-healing metaconsciousness launcher (auto-generated). Restarts pi with backoff on exit.

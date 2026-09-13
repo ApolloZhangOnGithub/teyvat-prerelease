@@ -49,10 +49,11 @@ messagingRouter.post("/send", async (c) => {
   const user = c.get("user") as AuthUser;
   const { toPerson, type, payload } = await c.req.json<{
     toPerson: string; type?: string; payload: any;
-  }>();
+  }>().catch(() => ({} as any));
   if (!toPerson || payload === undefined) {
     return c.json({ error: "toPerson and payload required" }, 400);
   }
+  if (typeof toPerson !== "string" || toPerson.length > 64) return c.json({ error: "bad toPerson" }, 400);
 
   const msg = {
     fromPerson: user.deviceId,
@@ -80,6 +81,7 @@ messagingRouter.get("/pending/:personId", (c) => {
   for (const r of rows) stmt.markDelivered.run(r.id);
   return c.json({
     messages: rows.map((r) => ({
+      id: r.id, // 2026-09-13：带 id——注释一直说"client 按 msg id 去重"，回包却没有 id
       fromPerson: r.from_person,
       fromDevice: r.from_device,
       type: r.type,

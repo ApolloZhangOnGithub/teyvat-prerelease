@@ -34,6 +34,100 @@ const TRIGGERS_DIR = join(SOCIAL, "triggers");
 const HEARTBEAT_DIR = join(SOCIAL, "heartbeat");
 const GROUPS_DIR = join(SOCIAL, "groups");
 
+// ── 跨设备（AgentTableSync：sync.paimon.beer；对齐 communicate.ts）──
+const SYNC_UA = "genshin-sync/1.0";
+const USER_ACCOUNT = join(HOME, ".teyvat", "UserAccount");
+function syncEndpoint() {
+  try {
+    const svc = readJson(join(USER_ACCOUNT, "services.json"), {});
+    if (svc["genshin-sync"]?.endpoint) return svc["genshin-sync"].endpoint;
+  } catch { /* 无配置 → 默认 */ }
+  return "https://sync.paimon.beer";
+}
+function loadBinding() {
+  try {
+    const b = readJson(join(USER_ACCOUNT, "binding.json"), null);
+    if (b?.token && b?.deviceId) return b;
+  } catch { /* 未绑定 */ }
+  return null;
+}
+function syncHeaders(b) {
+  return { Authorization: `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "User-Agent": SYNC_UA };
+}
+// 远端 agent 列表（30s 缓存）
+let _remoteCache = { at: 0, agents: [] };
+async function listRemoteAgents() {
+  if (Date.now() - _remoteCache.at < 30_000) return _remoteCache.agents;
+  const b = loadBinding();
+  if (!b) return [];
+  try {
+    const res = await fetch(syncEndpoint() + "/sync/agent-presence", { headers: syncHeaders(b), signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return _remoteCache.agents;
+    const j = await res.json();
+    const agents = Array.isArray(j.agents) ? j.agents : [];
+    _remoteCache = { at: Date.now(), agents };
+    return agents;
+  } catch {
+    return _remoteCache.agents; // 网络失败 → 用旧缓存（降级不报错）
+  }
+}
+// 远端在线判定：last_seen 在 5 分钟内（与 server 的 expirePresence 窗口一致）
+function remoteLastSeen(r) {
+  const ls = (r && r.last_seen) || "";
+  const t = ls ? Date.parse(ls.replace(" ", "T") + "Z") : 0;
+  return t || Date.now();
+}
+function remoteOnline(r) {
+  return Date.now() - remoteLastSeen(r) < 5 * 60 * 1000;
+}
+// 上报自身 presence（跨设备可见）
+async function reportPresenceRemote() {
+  const b = loadBinding();
+  if (!b) return;
+  try {
+    await fetch(syncEndpoint() + "/sync/agent-presence", {
+      method: "POST",
+      headers: { ...syncHeaders(b), "Content-Type": "application/json" },
+      body: JSON.stringify({ sid: SELF_SID, name: SELF_NAME, focus: "off", version: "im-gui-demo", model: "web" }),
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch { /* 静默 */ }
+}
+// 拉远端发给我的消息 → 写本地 inbox（去重；SSE 会自动推）
+let _pullBusy = false;
+async function pullRemoteMessages() {
+  if (_pullBusy) return;
+  const b = loadBinding();
+  if (!b) return;
+  _pullBusy = true;
+  try {
+    const res = await fetch(syncEndpoint() + `/messages/pending/${SELF_SID}`, { headers: syncHeaders(b), signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return;
+    const j = await res.json().catch(() => ({ messages: [] }));
+    const seen2 = new Set(readMyInbox().map((m) => m.id));
+    for (const m of (j.messages || [])) {
+      if (m?.type !== "agent-social") continue;
+      const p = m?.payload;
+      if (!p || !p.id || seen2.has(p.id)) continue;
+      appendLine(inboxFile(SELF_SID), p);
+      seen2.add(p.id);
+    }
+  } catch { /* 静默 */ } finally {
+    _pullBusy = false;
+  }
+}
+
+// 版本：源码版本（VERSION 文件）× 运行时版本（启动时快照）分离
+function readVersionFile() {
+  try {
+    return readFileSync(join(__dir, "VERSION"), "utf8").trim();
+  } catch {
+    return "0.0.0";
+  }
+}
+const RUNTIME_VERSION = readVersionFile(); // 启动时快照（当前部署运行的版本）
+const STARTED_AT = Date.now();
+
 const SELF_SID = process.env.IM_DEMO_SID || "c0de0001";
 const SELF_NAME = process.env.IM_DEMO_NAME || "web-im-demo";
 const PORT = parseInt(process.env.IM_DEMO_PORT || "8790", 10);
@@ -163,13 +257,38 @@ function readMyInbox() {
     return [];
   }
 }
-// 与某 peer（sid 或 group:<gid>）的对话：我发的（out）+ 收到的
+function readInboxMessages(sid) {
+  const f = inboxFile(sid);
+  if (!existsSync(f)) return [];
+  try {
+    return readFileSync(f, "utf8")
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+// 与某 peer（sid 或 group:<gid>）的对话
 function conversation(peer) {
-  return readMyInbox().filter((m) =>
-    String(peer).startsWith("group:")
-      ? m.to === peer // 群：自己发的与别人发的 to 都是 group:<gid>
-      : (m.out && m.to === peer) || (!m.out && m.from === peer)
-  );
+  if (String(peer).startsWith("group:")) {
+    // 群：聚合所有群成员 inbox 里 to=group:<gid> 的消息（按 id 去重、按时间排序）
+    const gid = String(peer).slice(6);
+    const g = readJson(join(GROUPS_DIR, `${gid}.json`), null);
+    const members = [SELF_SID, ...((g && g.members) || [])];
+    const byId = new Map();
+    for (const m of members) {
+      for (const msg of readInboxMessages(m)) {
+        if (msg.to !== peer) continue;
+        if (byId.has(msg.id)) continue;
+        byId.set(msg.id, msg);
+      }
+    }
+    return [...byId.values()].sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  }
+  return readMyInbox().filter((m) => (m.out && m.to === peer) || (!m.out && m.from === peer));
 }
 
 // ── 归档标记（plist.json：{id,name,archived,...}[]，archive.cjs 写入）──
@@ -237,7 +356,7 @@ function sendToGroup(gid, text, mode) {
 }
 
 // 会话列表（微信式）：registry agent ∪ 群 ∪ 有消息往来的 peer，附最后一条消息
-function conversations() {
+async function conversations() {
   const { agents } = listAgents();
   const inbox = readMyInbox();
   const lastByPeer = {};
@@ -259,6 +378,19 @@ function conversations() {
       lastMsg: lastByPeer[key] || null,
     });
   }
+  // 跨设备 agent（先合并：有消息往来的远程 agent 也要用 remote 信息，否则会被下面当无信息孤儿标离线）
+  const remoteAgents = await listRemoteAgents();
+  const localSids = new Set(Object.keys(readJson(REGISTRY_FILE, {})));
+  for (const r of remoteAgents) {
+    if (!r || !r.sid || localSids.has(r.sid)) continue;
+    if (list.find((x) => x.sid === r.sid)) continue;
+    list.push({
+      sid: r.sid, name: r.name || r.sid, online: remoteOnline(r), remote: true,
+      deviceId: r.device_id || r.deviceId || "", model: r.model || "",
+      lastSeen: remoteLastSeen(r), archived: false, lastMsg: lastByPeer[r.sid] || null,
+    });
+  }
+  // 补：有消息往来、但既不在 registry 也不在当前 presence 的 peer（会话记录仍要显示）
   for (const [peer, m] of Object.entries(lastByPeer)) {
     if (!list.find((x) => x.sid === peer)) {
       list.push({ sid: peer, name: peer, online: false, model: "", lastSeen: 0, archived: !!archMap[peer], lastMsg: m });
@@ -270,8 +402,11 @@ function conversations() {
 }
 
 // ── 发送：写目标 inbox + triggers（+ 自己 inbox 镜像）───────────────────
-function sendTo(peerSid, text, mode = "interrupt") {
+async function sendTo(peerSid, text, mode = "interrupt") {
   if (String(peerSid).startsWith("group:")) return sendToGroup(String(peerSid).slice(6), text, mode);
+  // 不在本机 registry → 跨设备投递（POST /messages/send，server 落库 + 目标设备拉取）
+  const reg0 = readJson(REGISTRY_FILE, {});
+  if (!reg0[peerSid]) return await sendToRemote(peerSid, text, mode);
   const ts = Date.now();
   const id = `msg_${ts.toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const msg = {
@@ -296,6 +431,25 @@ function sendTo(peerSid, text, mode = "interrupt") {
   const outMsg = { ...msg, out: true }; // out: 标记「我发出的」（前端据此靠右渲染）
   appendLine(inboxFile(SELF_SID), outMsg); // 镜像到自己 inbox（对话时间线）
   return outMsg; // 修 bug：返回带 out —— 原先返回无 out，前端乐观渲染靠左，刷新后才对
+}
+
+// 跨设备发送（server 落库 → 目标设备 pullRemoteMessages 拉取）
+async function sendToRemote(peerSid, text, mode) {
+  const b = loadBinding();
+  if (!b) throw new Error("跨设备发送需要绑定 GitHub 账号（无 binding.json）");
+  const ts = Date.now();
+  const id = `msg_${ts.toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const msg = { id, from: SELF_SID, from_name: SELF_NAME, to: peerSid, mode, mode_used: mode, text, ts, injected: false };
+  const res = await fetch(syncEndpoint() + "/messages/send", {
+    method: "POST",
+    headers: { ...syncHeaders(b), "Content-Type": "application/json" },
+    body: JSON.stringify({ toPerson: peerSid, type: "agent-social", payload: msg }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) throw new Error(`跨设备投递失败 HTTP ${res.status}`);
+  const outMsg = { ...msg, out: true, remote: true };
+  appendLine(inboxFile(SELF_SID), outMsg);
+  return outMsg;
 }
 
 // ── SSE：轮询自己 inbox 新行 → 推给所有浏览器连接 ───────────────────────
@@ -328,7 +482,7 @@ function sendJson(res, code, obj) {
   res.end(body);
 }
 
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") {
     res.writeHead(204, CORS);
     return res.end();
@@ -347,6 +501,20 @@ const server = http.createServer((req, res) => {
     }
   }
 
+  // 版本信息（源码版本 vs 运行时版本：stale=true 表示源码已改但进程未重启）
+  if (req.method === "GET" && url.pathname === "/version") {
+    const src = readVersionFile();
+    return sendJson(res, 200, {
+      name: "im-gui-demo",
+      version: RUNTIME_VERSION,     // 运行时（部署中）版本
+      sourceVersion: src,           // 源码当前版本
+      stale: src !== RUNTIME_VERSION,
+      channel: "test",
+      startedAt: STARTED_AT,
+      sourceDir: __dir,
+    });
+  }
+
   // agent 列表
   if (req.method === "GET" && url.pathname === "/agents") {
     const { agents, total, online } = listAgents();
@@ -357,7 +525,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && url.pathname === "/conversations") {
     return sendJson(res, 200, {
       self: { sid: SELF_SID, name: SELF_NAME },
-      conversations: conversations(),
+      conversations: await conversations(),
     });
   }
 
@@ -396,11 +564,11 @@ const server = http.createServer((req, res) => {
       body += c;
       if (body.length > 65536) req.destroy();
     });
-    req.on("end", () => {
+    req.on("end", async () => {
       try {
         const { to, text, mode } = JSON.parse(body || "{}");
         if (!to || !text) return sendJson(res, 400, { error: "to and text required" });
-        const msg = sendTo(String(to), String(text), mode === "queue" ? "queue" : "interrupt");
+        const msg = await sendTo(String(to), String(text), mode === "queue" ? "queue" : "interrupt");
         return sendJson(res, 200, { ok: true, msg });
       } catch (e) {
         return sendJson(res, 500, { error: e.message });
@@ -440,7 +608,11 @@ const server = http.createServer((req, res) => {
 // ── 启动 / 退出 ────────────────────────────────────────────────────────
 registerSelf();
 touchHeartbeat();
+reportPresenceRemote();
+pullRemoteMessages();
 const hbTimer = setInterval(touchHeartbeat, HEARTBEAT_MS);
+setInterval(() => { reportPresenceRemote(); }, 60_000);   // 跨设备 presence 上报
+setInterval(pullRemoteMessages, 5_000);                  // 跨设备消息拉取
 
 server.listen(PORT, () => {
   console.log(`[im-demo] listening  http://localhost:${PORT}`);

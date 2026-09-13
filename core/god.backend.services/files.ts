@@ -2,7 +2,7 @@
 // 上传（鉴权）得 {url, password} → 24h 过期 + 自动随机密码 + 单文件 1MB 上限。
 // 路由：POST /auth/files（经 authRouter——自行鉴权）；GET /files/<id>?key=（公开下载——注册在 authMiddleware 前）
 import { createHash, randomBytes } from "node:crypto";
-import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { resolveUser } from "./auth.ts";
 import { stmt } from "./db.ts";
@@ -12,7 +12,7 @@ export const MAX_SHARE_BYTES = 1024 * 1024; // 单文件上限 1MB（用户 01:2
 mkdirSync(SHARE_DIR, { recursive: true });
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
-const BASE_URL = `https://sync.paimon.beer`;
+const BASE_URL = process.env.SYNC_PUBLIC_URL || `https://sync.paimon.beer`;
 
 // ── 上传（POST /auth/files——鉴权 agent）──
 // 请求: raw body（octet-stream）+ header X-File-Name（原始文件名）+ Content-Length ≤ 1MB
@@ -25,7 +25,9 @@ export async function uploadFile(c: any): Promise<Response> {
   const user = await resolveUser(auth.slice(7), deviceId, deviceName);
   if (!user) return c.json({ error: "invalid token" }, 401);
 
-  const filename = decodeURIComponent((c.req.header("X-File-Name") || "file")).replace(/[\\/:*?"<>|]/g, "_").slice(-120); // 2026-09-09：中文文件名支持——client 传 encodeURIComponent，这里 decode 还原
+  let rawName = c.req.header("X-File-Name") || "file";
+  try { rawName = decodeURIComponent(rawName); } catch { /* 非法 % 序列：按原样用，不 500 */ }
+  const filename = rawName.replace(/[\\/:*?"<>|]/g, "_").slice(-120); // 2026-09-09：中文文件名支持——client 传 encodeURIComponent，这里 decode 还原
   const cl = parseInt(c.req.header("Content-Length") || "0", 10);
   if (cl > MAX_SHARE_BYTES) {
     return c.json({ error: `file too large (max ${MAX_SHARE_BYTES} bytes = 1MB)`, maxBytes: MAX_SHARE_BYTES }, 413);
@@ -97,5 +99,13 @@ export async function downloadFile(c: any): Promise<Response> {
 
 // ── 过期清理（server.ts 60s interval 调——db 权威，磁盘懒清理已覆盖下载路径）──
 export function cleanupExpiredShares(): void {
-  try { stmt.cleanupExpiredShares.run(); } catch (e) { console.error("[god.backend.services/files.ts] " + ((e as any)?.message || e)); }
+  try {
+    // 2026-09-13：先删磁盘再删表行——原来只删表行，60s cron 抢在下载路径的懒清理之前，unlink 永远到不了，每个上传都永久留在 SHARE_DIR
+    const rows = stmt.listExpiredShares.all() as Array<{ id: string }>;
+    for (const r of rows) {
+      if (!/^[a-f0-9]{24}$/.test(r.id)) continue;
+      try { unlinkSync(join(SHARE_DIR, r.id)); } catch (e: any) { if (e?.code !== "ENOENT") console.error("[god.backend.services/files.ts] unlink " + r.id + ": " + (e?.message || e)); }
+    }
+    stmt.cleanupExpiredShares.run();
+  } catch (e) { console.error("[god.backend.services/files.ts] " + ((e as any)?.message || e)); }
 }

@@ -7,7 +7,7 @@ import { openSync, closeSync, appendFileSync, readFileSync, statSync, unlinkSync
 import { readFile } from "node:fs/promises";
 import { join, resolve, dirname } from "node:path";
 import { homedir } from "node:os";
-import { execSync, spawn, type ChildProcess } from "node:child_process";
+import { execSync, spawn, type ChildProcess, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { getPrompt } from "#kernel_ribosome";
 import { personDir as getPersonDir } from "#paths";
@@ -33,9 +33,14 @@ interface EarState {
   fileSpeed: number;
 }
 
-function isRecorderAlive(): boolean {
-  try { execSync("pgrep -f 'ears-recorder.ts'", { stdio: "ignore" }); return true; }
-  catch (e) { console.error("[spirit.bio.organs/head.ears/ears.ts] " + ((e as any)?.message || e)); return false; }
+// 2026-09-13：只认**自己**的录音进程——原 pgrep/pkill -f 'ears-recorder.ts' 不带路径，多 agent 时 A 的 keep-alive 看到 B 的录音进程就以为自己活着（永不重启），
+// A 的 stopRecorder 会把 B 的录音一起杀掉。录音进程 argv 里带本 agent 的 ear_output.jsonl 路径，用它做模式。
+function _recorderPattern(outFile: string): string {
+  return "ears-recorder\\.ts.*" + outFile.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function isRecorderAlive(outFile: string): boolean {
+  try { execFileSync("pgrep", ["-f", _recorderPattern(outFile)], { stdio: "ignore" }); return true; }
+  catch { return false; } // pgrep 无匹配 exit 1 = 没在跑，不是错误
 }
 
 export default function (pi: ExtensionAPI) {
@@ -54,16 +59,16 @@ export default function (pi: ExtensionAPI) {
   // NORM-011: ear 运行时数据放 RuntimeCache，不污染 MemoryData
   // 2026-08-20：语音通信/产物一律用 teyvat 专属目录（~/.teyvat/RuntimeCache），不写系统 /tmp——
   // 安全（tmp 系统共享可被其他进程读写）+ 无冲突（多 agent 共用 /tmp 文件会互踩）+ 不依赖系统自动清理（用户定稿：永远不用 tmp）。
-  const voiceRc = (name: string) => join(homedir(), ".teyvat/RuntimeCache", name);
-  const earFile = () => (state.personDir
-    ? `${state.personDir.replace('/MemoryData/', '/RuntimeCache/')}/ear_output.jsonl`
-    : voiceRc('ear_output.jsonl'));
+  // 2026-09-13：按 agent 隔离（RuntimeCache/<id>/）——此前 ear_control.json / pi_mouth_speaking / ear_output 全机共用一份，
+  // 两个 agent 同时开耳朵会互相暂停/静音；personDir 未知时退回全局目录（ears-recorder.ts 从输出路径推导控制文件目录，约定一致）
+  const voiceRc = (name: string) => join(state.personDir ? state.personDir.replace('/MemoryData/', '/RuntimeCache/') : join(homedir(), ".teyvat/RuntimeCache"), name);
+  const earFile = () => voiceRc('ear_output.jsonl');
 
   let _rapidExits = 0; // 录音进程连续秒退计数（见 startRecorder 的 exit 处理）
   function startRecorder(filePath: string = '') {
-    if (isRecorderAlive()) return;
-    recorderProc = null;
     const file = earFile();
+    if (isRecorderAlive(file)) return;
+    recorderProc = null;
     const logDir = join(homedir(), ".teyvat/LogData", process.env.PAIMON_AGENT_ID || "unknown");
     mkdirSync(logDir, { recursive: true });
     const logFile = join(logDir, "ear_debug.log");
@@ -109,14 +114,14 @@ export default function (pi: ExtensionAPI) {
 
   function stopRecorder() {
     if (recorderProc) { recorderProc.kill(); recorderProc = null; }
-    try { execSync("pkill -f 'ears-recorder.ts' 2>/dev/null || true"); } catch (e) { console.error("[spirit.bio.organs/head.ears/ears.ts] " + ((e as any)?.message || e)); } // || true：pkill 无匹配（录音进程不在）是正常，不抛 Command failed
+    try { execFileSync("pkill", ["-f", _recorderPattern(earFile())], { stdio: "ignore" }); } catch { /* pkill 无匹配（录音进程不在）exit 1 是正常 */ }
   }
 
   function startKeepAlive() {
     if (keepAliveTimer) return;
     keepAliveTimer = setInterval(() => {
       if (!state.listening || !state.personDir) return;
-      if (state.recorderType === 'mic' && !isRecorderAlive()) startRecorder();
+      if (state.recorderType === 'mic' && !isRecorderAlive(earFile())) startRecorder();
     }, 5000);
   }
 

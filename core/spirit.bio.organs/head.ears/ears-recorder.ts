@@ -23,8 +23,15 @@ import {
 // 2026-08-20：语音控制/状态/产物一律用 teyvat 专属目录（~/.teyvat/RuntimeCache），不写系统 /tmp——
 // 安全 + 无冲突（多 agent 共用 /tmp 会互踩）+ 不依赖系统自动清理（用户定稿：永远不用 tmp）。
 // 必须与 ears.ts / mouth.ts 同步（跨进程通信路径一致）。
-const CTL_FILE = join(homedir(), ".teyvat/RuntimeCache/ear_control.json");
-const MUTE_FILE = join(homedir(), ".teyvat/RuntimeCache/pi_mouth_speaking");
+// 2026-09-13：控制/静音文件与输出文件同目录（RuntimeCache/<id>/）——按 agent 隔离；ears.ts / mouth.ts 用同样的目录约定。
+// 全局默认值只在拿不到输出路径时兜底。
+let CTL_FILE = join(homedir(), ".teyvat/RuntimeCache/ear_control.json");
+let MUTE_FILE = join(homedir(), ".teyvat/RuntimeCache/pi_mouth_speaking");
+function bindVoiceDir(outputPath: string) {
+  const d = dirname(outputPath);
+  CTL_FILE = join(d, "ear_control.json");
+  MUTE_FILE = join(d, "pi_mouth_speaking");
+}
 const BYTES_PER_CHUNK = CHUNK_SIZE * 2;
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -330,11 +337,13 @@ async function main() {
   if (mode === "file") {
     const [mediaFile, outputJsonl] = positional;
     if (!mediaFile || !outputJsonl) { console.error("[ear] 缺少参数: <media_file> <output_jsonl>"); process.exit(2); }
+    bindVoiceDir(outputJsonl);
     await runFile(mediaFile, outputJsonl, opt("backend", "doubao"), opt("lang", "en"),
       parseFloat(opt("speed", "1.0")) || 1.0, parseInt(opt("chunk", "1600")) || 1600, opt("model", "small"));
   } else {
     const outputPath = positional[0];
     if (!outputPath) { console.error("[ear] 缺少参数: <output_jsonl>"); process.exit(2); }
+    bindVoiceDir(outputPath);
     await runMic(outputPath);
   }
 }

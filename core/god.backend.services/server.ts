@@ -1,6 +1,7 @@
 // 文档: B.docs/Dev.Common/Wiki/Services(God Level Support).WIKI
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { bodyLimit } from "hono/body-limit";
 import { serve } from "@hono/node-server";
 import { WebSocketServer } from "ws";
 import { authRouter, authMiddleware, resolveUser } from "./auth.ts";
@@ -12,6 +13,25 @@ import { uploadFile, downloadFile, cleanupExpiredShares } from "./files.ts";
 const app = new Hono();
 
 app.use("*", cors());
+// 2026-09-13（审计）：请求体上限——@hono/node-server 默认无限制，任何 GitHub 账号都能把内存/磁盘灌满。/sync/push 保留 20MB（多文件 multipart），其余 2MB。
+app.use("/sync/push", bodyLimit({ maxSize: 20 * 1024 * 1024 }));
+app.use("*", bodyLimit({ maxSize: 2 * 1024 * 1024 }));
+
+// 2026-09-13（审计，线上实证 GET /health → 401）：这三条公开路由必须注册在 authMiddleware 之前——Hono 按注册顺序匹配，
+// 之前排在 app.use("/*", authMiddleware()) 之后，bootstrap.sh 的 curl /health 每次都失败、本地隧道探测永远探不到、wiki auth_request 永远 denied。
+app.get("/health", (c) => c.json({ status: "ok", ts: new Date().toISOString() }));
+
+const TOKEN_RE = /^[A-Za-z0-9_\-]{10,255}$/;
+app.get("/auth/wiki-verify", async (c) => {
+  const token = c.req.header("X-Paimon-Token") || c.req.query("token") || "";
+  if (!token || !TOKEN_RE.test(token)) return c.text("denied", 403);
+  const res = await fetch("https://api.github.com/user", {
+    headers: { Authorization: `Bearer ${token}`, "User-Agent": "genshin-sync" },
+    signal: AbortSignal.timeout(10_000),
+  }).catch(() => null);
+  if (!res?.ok) return c.text("denied", 403);
+  return c.text("ok", 200);
+});
 
 // 临时文件分享（2026-09-08 ISSUE 142）：上传挂 authRouter（自行鉴权——必须在 app.route("/auth") 前注册才生效）；下载公开（authMiddleware 前）
 authRouter.post("/files", uploadFile);
@@ -25,31 +45,7 @@ app.route("/sync", syncRouter);
 app.use("/messages/*", authMiddleware());
 app.route("/messages", messagingRouter);
 
-app.get("/health", (c) => c.json({ status: "ok", ts: new Date().toISOString() }));
-
-app.get("/auth/wiki-verify", async (c) => {
-  const token = c.req.header("X-Paimon-Token") || c.req.query("token") || "";
-  if (!token) return c.text("denied", 403);
-
-  const res = await fetch("https://api.github.com/user", {
-    headers: { Authorization: `Bearer ${token}`, "User-Agent": "genshin-sync" },
-  });
-  if (!res.ok) return c.text("denied", 403);
-  return c.text("ok", 200);
-});
-
-app.get("/auth/wiki-cookie", async (c) => {
-  const token = c.req.query("token") || "";
-  if (!token) return c.text("missing token", 403);
-
-  const res = await fetch("https://api.github.com/user", {
-    headers: { Authorization: `Bearer ${token}`, "User-Agent": "genshin-sync" },
-  });
-  if (!res.ok) return c.text("invalid token", 403);
-
-  c.header("Set-Cookie", `genshin_token=${token}; Path=/; Max-Age=86400; Secure; HttpOnly; SameSite=Lax`);
-  return c.redirect("/");
-});
+// （/health 与 /auth/wiki-verify 已上移到 authMiddleware 之前；/auth/wiki-cookie 删除——把 GitHub token 放进 URL 与 cookie，且没有任何读者。）
 
 setInterval(() => {
   stmt.expireLocks.run();
@@ -64,19 +60,36 @@ const httpServer = serve({ fetch: app.fetch, port });
 const wss = new WebSocketServer({ noServer: true });
 
 httpServer.on("upgrade", (req, socket, head) => {
+  // 只接受根路径的升级；其余直接断开
+  let pathname = "/";
+  try { pathname = new URL(req.url || "/", `http://localhost:${port}`).pathname; } catch { /* 非法 URL → 断开 */ }
+  if (pathname !== "/" && pathname !== "/ws") { try { socket.destroy(); } catch { /* 已断 */ } return; }
   wss.handleUpgrade(req, socket, head, (ws) => {
     wss.emit("connection", ws, req);
   });
 });
 
+const ID_RE = /^[A-Za-z0-9_\-]{1,64}$/;
+// 2026-09-13（审计 HIGH）：connection 回调是 async 且无人 catch——token 含 >255 的字符时 fetch 同步抛 TypeError（ByteString），
+// 或 api.github.com 瞬时网络错误，都变成 unhandledRejection → 进程退出（任何人一条 wss://…/?token=%E4%BD%A0 就能打挂服务）。
 wss.on("connection", async (ws, req) => {
+  ws.on("error", (e: any) => console.error("[god.backend.services/server.ts] ws error: " + (e?.message || e)));
+  try {
+    await handleWsConnection(ws, req);
+  } catch (e: any) {
+    console.error("[god.backend.services/server.ts] ws handshake failed: " + (e?.message || e));
+    try { ws.close(1011, "internal error"); } catch { /* 已关 */ }
+  }
+});
+
+async function handleWsConnection(ws: any, req: any) {
   const url = new URL(req.url!, `http://localhost:${port}`);
   const token = url.searchParams.get("token");
   const deviceId = url.searchParams.get("deviceId");
   const personId = url.searchParams.get("personId");
 
-  if (!token || !deviceId || !personId) {
-    ws.close(4001, "missing params");
+  if (!token || !deviceId || !personId || !TOKEN_RE.test(token) || !ID_RE.test(deviceId) || !ID_RE.test(personId)) {
+    ws.close(4001, "missing or invalid params");
     return;
   }
 
@@ -88,7 +101,7 @@ wss.on("connection", async (ws, req) => {
   const pending = stmt.pullMessages.all(user.githubId, personId) as any[];
   for (const r of pending) {
     ws.send(JSON.stringify({
-      fromPerson: r.from_person, fromDevice: r.from_device,
+      id: r.id, fromPerson: r.from_person, fromDevice: r.from_device,
       type: r.type, payload: JSON.parse(r.payload), ts: r.created_at,
     }));
     stmt.markDelivered.run(r.id);
@@ -118,6 +131,6 @@ wss.on("connection", async (ws, req) => {
   ws.on("close", () => {
     cleanup();
   });
-});
+}
 
 console.log(`genshin sync server listening on :${port}`);
