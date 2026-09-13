@@ -578,6 +578,24 @@ export class InteractiveMode {
         const modelCommand = slashCommands.find((command) => command.name === "model");
         if (modelCommand) {
             modelCommand.getArgumentCompletions = (prefix) => {
+                // 2026-09-13（房东）：支持 --global / --this-agent 参数补全
+                const trimmed = (prefix || "").trim();
+                // ① 输入以 -- 开头 → 补全参数
+                if (trimmed.startsWith("--")) {
+                    const opts = [
+                        { id: "--this-agent", desc: "只改本 agent（默认）" },
+                        { id: "--global", desc: "改全局默认（新 agent 用，不改已运行 agent）" },
+                    ];
+                    return createFuzzyAutocompleteItems(opts, trimmed, (o) => o.id, (o) => ({
+                        value: o.id + " ",
+                        label: o.id,
+                        description: o.desc,
+                    }));
+                }
+                // ② 已输入 --global/--this-agent → 剥离后补全模型名
+                let term = trimmed;
+                const m = term.match(/^--(global|this-agent)\s+(.*)$/);
+                if (m) term = m[2];
                 // Get available models (scoped or from registry)
                 const models = this.session.scopedModels.length > 0
                     ? this.session.scopedModels.map((s) => s.model)
@@ -585,13 +603,13 @@ export class InteractiveMode {
                 if (models.length === 0)
                     return null;
                 // Create items with provider/id format
-                const items = models.map((m) => ({
-                    id: m.id,
-                    provider: m.provider,
-                    name: m.name,
-                    label: `${m.provider}/${m.id}`,
+                const items = models.map((mm) => ({
+                    id: mm.id,
+                    provider: mm.provider,
+                    name: mm.name,
+                    label: `${mm.provider}/${mm.id}`,
                 }));
-                return createFuzzyAutocompleteItems(items, prefix, getModelSearchText, (item) => ({
+                return createFuzzyAutocompleteItems(items, term, getModelSearchText, (item) => ({
                     value: item.label,
                     label: item.id,
                     description: item.provider,
@@ -4221,26 +4239,47 @@ export class InteractiveMode {
         });
     }
     async handleModelCommand(searchTerm) {
-        if (!searchTerm) {
+        // 2026-09-13（房东）：支持 --global / --this-agent 参数。
+        // 原则（用户定稿）：无论什么参数，都不修改其他已存在的 agent，只修改新的 agent。
+        //   --this-agent（默认）：只改本 agent → session.setModel → savePerAgentModel（写 SocialData/registry.json）
+        //   --global：改全局默认（未来新 agent 的默认模型）→ setDefaultModelAndProvider（写 settings.json）——不改已运行 agent
+        let global = false;
+        let term = (searchTerm || "").trim();
+        if (/^--global(?=\s|$)/.test(term)) {
+            global = true;
+            term = term.replace(/^--global(?=\s|$)/, "").trim();
+        }
+        else if (/^--this-agent(?=\s|$)/.test(term)) {
+            global = false;
+            term = term.replace(/^--this-agent(?=\s|$)/, "").trim();
+        }
+        if (!term) {
             this.showModelSelector();
             return;
         }
-        const model = await this.findExactModelMatch(searchTerm);
+        const model = await this.findExactModelMatch(term);
         if (model) {
             try {
-                await this.session.setModel(model);
-                this.footer.invalidate();
-                this.updateEditorBorderColor();
-                this.showStatus(`Model: ${model.id}`);
-                void this.maybeWarnAboutAnthropicSubscriptionAuth(model);
-                this.checkDaxnutsEasterEgg(model);
+                if (global) {
+                    // 改全局默认（只影响未来新 agent，不改已运行 agent）
+                    this.settingsManager.setDefaultModelAndProvider(model.provider, model.id);
+                    this.showStatus(`Default model (new agents): ${model.provider}/${model.id}`);
+                }
+                else {
+                    await this.session.setModel(model);
+                    this.footer.invalidate();
+                    this.updateEditorBorderColor();
+                    this.showStatus(`Model: ${model.id}`);
+                    void this.maybeWarnAboutAnthropicSubscriptionAuth(model);
+                    this.checkDaxnutsEasterEgg(model);
+                }
             }
             catch (error) {
                 this.showError(error instanceof Error ? error.message : String(error));
             }
             return;
         }
-        this.showModelSelector(searchTerm);
+        this.showModelSelector(term);
     }
     async findExactModelMatch(searchTerm) {
         const models = await this.getModelCandidates();

@@ -195,10 +195,33 @@ export default function registerMemory(pi: ExtensionAPI) {
   // ── session_start: 注入"记忆快照"一次（稳定前缀 = 缓存命中的关键）────────────
   // 醒来时把 DNA + cortex + work_memory + context(按预算切尾部) 揉成一份快照，注入一次。
   // 本会话中绝不再重发（见 before_agent_start）；新内容一律往「后面」append → 前缀不变 → 每轮命中缓存。
+  // ── 快照替换（ISSUE 204 根因修复，2026-09-13）──
+  // amem 归档后 context.md 缩水，磁盘上的冻结快照会重建，但活对话窗口里那条 memory-snapshot 消息还是旧的：
+  // 旧代码想"原地改 pi.agent.state.messages"——ExtensionAPI 根本没有 agent 属性，永远走不到；fallback 追加一份新快照又会让窗口不降反增。
+  // 正确入口：pi 的 context 事件（每次 LLM 调用前把 messages 克隆交给扩展，返回 {messages} 即替换）。
+  // 替换用的快照剔除本 session 产生的行（ts ≥ 本次 session_start）——这些行已经在活对话里，重复注入只会白白占窗口。
+  // 代价：前缀缓存失效一次（这是把窗口真正降下来的唯一方式，ISSUE 204 方案 a 的无重启版）。
+  let _snapshotOverride: string | null = null;
+  let _snapshotInjected = false;
+  let _sessionStartTs = Date.now();
+  pi.on("context", async (event) => {
+    if (!_snapshotOverride) return;
+    const msgs: any[] = (event as any).messages || [];
+    const idx = msgs.findIndex((m) => m && m.role === "custom" && m.customType === "memory-snapshot");
+    if (idx < 0) return;
+    if (msgs[idx].content === _snapshotOverride) return;
+    const next = msgs.slice();
+    next[idx] = { ...msgs[idx], content: _snapshotOverride };
+    return { messages: next };
+  });
+
   pi.on("session_start", async (_event, ctx) => {
     personDir = getPersonDir(ctx.sessionManager.getSessionFile());
     dnaState = "wake"; // always wake on new session
     if (!personDir) return;
+    _sessionStartTs = Date.now();
+    _snapshotInjected = false;
+    _snapshotOverride = null;
 
     // ISSUE 109：重启 = 快照重注入上文，上下文空间整体替换——旧 prevPrompt 与新 prompt
     // 无增量关系（跨 session 恢复会把重注入的上文误算为 novel，ISSUE 107 设计错误）。
@@ -250,6 +273,7 @@ export default function registerMemory(pi: ExtensionAPI) {
     }
     if (frozen) {
       sendCustomMessage(pi, "memory-snapshot", frozen);
+      _snapshotInjected = true;
     }
     // 冻结后新增的 work_memory / context → 尾部增量（小 miss，不破前缀）
     const tail = [
@@ -587,7 +611,8 @@ export default function registerMemory(pi: ExtensionAPI) {
 
   // 构建"记忆快照" = 稳定前缀。只在 session_start(醒来) 注入一次。
   // DNA + cortex + work_memory + context，【整份】，不切。
-  function buildSnapshot(): string {
+  // opts.excludeRowsSince：剔除 ts ≥ 该时刻的 JSONL 行（用于 context 事件里替换活窗口快照——本 session 的行已在对话里）
+  function buildSnapshot(opts?: { excludeRowsSince?: number }): string {
     if (!personDir) return "";
     let dnaIndex = readFile(path.join(personDir, "dna/index.md"));
     if (!dnaIndex) {
@@ -617,6 +642,10 @@ export default function registerMemory(pi: ExtensionAPI) {
       if (!t.startsWith("{")) return line;
       try {
         const obj = JSON.parse(t);
+        if (opts?.excludeRowsSince && obj) {
+          const rts = typeof obj.ts_start === "number" ? obj.ts_start : (typeof obj.ts === "number" ? obj.ts : 0);
+          if (rts >= opts.excludeRowsSince) return null;
+        }
         if (obj && obj.role === "toolResult") {
           if (obj.type === "bad_frame") return null;
           let text: any = obj.text ?? obj.content ?? "";
@@ -682,6 +711,13 @@ export default function registerMemory(pi: ExtensionAPI) {
       const fresh = buildSnapshot();
       writeFile(frozenPath, fresh);
       writeFile(metaPath2, JSON.stringify({ ctxLen: ctxNow2.length, wmLen: wmNow2.length }));
+      injectedWorkMemLen = wmNow2.length;
+      // 2026-09-13（ISSUE 204）：活窗口里的旧快照要换掉——交给 context 事件在下次 LLM 调用前替换（见 _snapshotOverride）。
+      // 之前这里只重写磁盘文件；下面原来的 2.5 段因为本段已把 meta 更新而永远不触发，模型一直看旧快照、窗口不降。
+      if (getSessionRole() === "main") {
+        if (_snapshotInjected) _snapshotOverride = buildSnapshot({ excludeRowsSince: _sessionStartTs });
+        else { sendCustomMessage(pi, "memory-snapshot", fresh); _snapshotInjected = true; _snapshotOverride = null; }
+      }
     }
 
     // 1) work_memory 增量 — 只跟踪长度用于 snapshot 重冻结判断，不注入 context。
@@ -732,34 +768,9 @@ export default function registerMemory(pi: ExtensionAPI) {
     // [DISABLED 2026-08-15] 主动强制睡眠已禁用，由 amem 工具替代主动记忆管理。
     // if (usageRatio >= 0.90) triggerSleeping(`记忆 ${rawPct}% ≥ 90%`).catch(() => {});
 
-    // 2.5) nap/sleep 后自动重载：context.md 被睡眠done缩水 → 重建快照、让 live 进程也清爽（不需重启）
-    const _rcDir = global.__genshinChannelDir || personDir.replace("MemoryData", "RuntimeCache");
-    const frozenMetaPath = _rcDir + "/snapshot.frozen.meta.json";
-    let frozenMeta = { ctxLen: 0, wmLen: 0 };
-    try { frozenMeta = { ...frozenMeta, ...JSON.parse(readFile(frozenMetaPath) || "{}") }; } catch { /* frozenMeta 竞态截断：默认值静默（须留注释，空 catch 触 LESSON 024 门禁）*/ }
-    if (context.length < frozenMeta.ctxLen - 5000) {
-      // context 显著缩水（amem/sleep done掉内容）→ 重建快照 + 替换对话中的旧快照消息
-      const freshFrozen = buildSnapshot();
-      writeFile(_rcDir + "/snapshot.frozen.txt", freshFrozen);
-      writeFile(frozenMetaPath, JSON.stringify({ ctxLen: context.length, wmLen: workMem.length }));
-      injectedWorkMemLen = workMem.length;
-      // 替换对话历史中的旧 memory-snapshot 消息（不是追加——追加会导致旧+新共存，prompt 变大）
-      let replaced = false;
-      try {
-        const session = (globalThis as any).__genshinAgentSession;
-        const msgs = session?.agent?.state?.messages || session?.state?.messages;
-        if (Array.isArray(msgs)) {
-          for (const m of msgs) {
-            if (m.customType === "memory-snapshot") {
-              m.content = freshFrozen;
-              replaced = true;
-              break;
-            }
-          }
-        }
-      } catch (e) { console.error("[memory.ts] replace snapshot: " + ((e as any)?.message || e)); }
-      if (!replaced) sendCustomMessage(pi, "memory-snapshot", freshFrozen);
-    }
+    // 2.5) [2026-09-13 移除] 原"context 缩水 → 重建快照 + 原地改 __genshinAgentSession 的 messages / fallback 追加"段：
+    //   上面第 0 段已把 meta 更新，本段条件永远不成立（死代码）；且原地改私有 state 是未文档化路径，headless 模式下没有 TUI 设的全局。
+    //   快照替换现在统一由第 0 段 + pi 的 context 事件（_snapshotOverride）完成——这是 pi 提供的正式改写入口。
 
     // [DISABLED 2026-08-15] cortex 自动沉降已禁用，由 amem 工具替代主动记忆管理。
     // if (estimateTokens(cortex) > Math.round(modelMax * 0.20)) {
