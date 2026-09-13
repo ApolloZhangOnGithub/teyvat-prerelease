@@ -1391,6 +1391,22 @@ case "$MODE" in
         sleep 0.1
       done
     fi
+    # 2026-09-14（debug-01，ISSUE 242）：上面只等「标记」不等「进程」——spawnHeadlessBg 先写
+    # detached 标记再 spawn；若子进程启动即崩（如 ISSUE 254 的 model-registry 重复 import 整包
+    # 崩溃），这里什么都不说，用户关终端后看到 [O]，误以为是关终端弄死了 agent（04:30 dev-01 实测）。
+    # 补：标记出现后再等 main.pid 变成活进程（headless 子进程 heart 启动即写 main.pid，最多 8s），
+    # 等不到就当场报错并直接给出崩溃日志位置。
+    if [ -n "$ID" ] && [ -f "$HOME/.teyvat/RuntimeCache/$ID/detached" ]; then
+      _ok=""
+      for _w in $(seq 1 40); do
+        _np=$(cat "$HOME/.teyvat/MemoryData/$ID/main.pid" 2>/dev/null)
+        if [ -n "$_np" ] && kill -0 "$_np" 2>/dev/null; then _ok=1; break; fi
+        sleep 0.2
+      done
+      if [ -z "$_ok" ]; then
+        echo "$(_l " ⚠ 转后台失败：headless 子进程启动即退出，agent 现为 [O]——崩溃原因见 ~/.teyvat/LogData/$ID/console.log 尾部" " ⚠ Detach failed: the headless child exited at startup (agent is [O]) — see the tail of ~/.teyvat/LogData/$ID/console.log")"
+      fi
+    fi
     # [DISABLED 2026-09-12] 退出后自动显示 agent 列表——有 bug（第一遍 genshin 执行出错、
     # 快照时序问题、清屏时序问题），暂禁用直到修好。
     # genshin 2>/dev/null || "$0" 2>/dev/null || true
