@@ -474,6 +474,7 @@ export class InteractiveMode {
         globalThis.__genshinFooterModel = this.settingsManager?.globalSettings?.footerModel ?? true;
         globalThis.__genshinFooterVersion = this.settingsManager?.globalSettings?.footerVersion ?? true;
         globalThis.__genshinStatebarPosition = this.settingsManager?.globalSettings?.statebarPos ?? "messages";
+        globalThis.__genshinFooterContexted = this.settingsManager?.globalSettings?.footerContexted ?? false;
         // /u 持久化的行为偏好恢复
         if (this.settingsManager?.globalSettings?.ctrlCToBg !== undefined) globalThis.__genshinCtrlCToBg = this.settingsManager.globalSettings.ctrlCToBg;
         if (this.settingsManager?.globalSettings?.codeHighlight !== undefined) globalThis.__genshinCodeHighlight = this.settingsManager.globalSettings.codeHighlight;
