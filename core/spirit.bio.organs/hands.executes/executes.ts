@@ -452,6 +452,22 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
         } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
         // ISSUE 140 v2:缩短 exit 延迟(500→100ms)减少框架在 exit 前处理 tool result 开新 turn 的窗口
         // __genshinRebootPending 已阻止 agent_end 续命,100ms 够写完磁盘但不够开新 API 请求
+        // 2026-09-13（用户拍板“自守护”）:【B】headless detached 进程不在 launcher 守护循环里——
+        // self-reboot exit 后无人拉起 = 死亡（21:27 support 自重启后掉线实证）。
+        // headless 模式下先 spawn 接续者（同 session-dir/fifo/日志，detached——新进程加载新代码）再退出。
+        if (process.env.PAIMON_HEADLESS_DAEMON === "1") {
+          try {
+            const spawnBg = (globalThis as any).__genshinSpawnHeadlessBg;
+            if (typeof spawnBg === "function") {
+              spawnBg(pid, "self-reboot-continuity");
+              console.error("[self-reboot] headless 自守护：接续者已 spawn（" + pid + "）");
+              // headless 无 launcher，wake-restart nonce 无人消费——删掉避免下次前台启动误触发额外重启
+              try { unlinkSync(join(rcDir, "wake-restart")); } catch { /* 不存在则跳过 */ }
+            } else {
+              console.error("[self-reboot] headless 自守护失败：__genshinSpawnHeadlessBg 未挂载（detach.ts 未加载）——进程将退出且无人拉起");
+            }
+          } catch (e) { console.error("[self-reboot] headless 自守护 spawn 失败: " + ((e as any)?.message || e)); }
+        }
         setTimeout(() => { process.exit(0); }, 100);
         return { content: [{ type: "text", text:
           i18n(`self-reboot: 进程将在 0.5s 后退出并由 launcher 自动重启。\nreason: ${reason}\n` +
