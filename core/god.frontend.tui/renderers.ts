@@ -260,29 +260,15 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
       let display = output;
       // 非合并时输出用 ⎿ 折线连接（和 tool result 一致）
       const resultPrefix = indent + theme.fg("dim", SYM.result + "  ");
-      if (compact === "fold") {
-        // 折叠模式（2026-09-13 房东）：只显示一行提示，不展开内容（/s → Execute 结果 可切回完整/摘要）
-        const nLines = output.split("\n").length;
-        c.addChild(new Text(resultPrefix + theme.fg("dim", `...(${nLines} lines folded)`), 0, 0));
-        display = "";
-      } else if (compact) {
-        const line = output.split("\n")[0].slice(0, 200) + (output.length > 200 ? "…" : "");
-        c.addChild(new Text(resultPrefix + theme.fg("toolOutput", line), 0, 0));
-        display = "";
-      } else {
+      // 2026-09-13（房东定稿）：「Execute 结果」只管这里——完整=全部显示；只显示 5 行=前 5 行 + 省略提示。
+      // （与 executes.ts renderResult 的 5 行口径统一；原先这里还有“省略中间+末 5 行”分支，与那边不一致，已去掉；
+      //  上一步加的 fold（折叠）三态也一并回退——房东要的是两态：是否只显示 5 行。）
+      if (compact) {
+        // 2026-09-13（房东定稿）：只显示 5 行 = **纯前 5 行**，不加省略提示行（那行占空间、恶心）
         const outLines = output.split("\n");
-        if (outLines.length > 6) {
-          const tailN = 5;
-          const skipped = outLines.length - tailN;
-          const startLine = skipped + 1;
-          const contIndent = " ".repeat(GUTTER + 3);
-          c.addChild(new Text(contIndent + theme.fg("dim", `...(${skipped} lines more)`), 0, 0));
-          const tailDisplay = outLines.slice(-tailN).join("\n");
-          const rendered = lineNumbered(tailDisplay, theme, undefined, startLine);
-          for (const line of rendered.split("\n")) c.addChild(new Text(contIndent + line, 0, 0));
-          display = "";
-        }
+        if (outLines.length > 5) display = outLines.slice(0, 5).join("\n");
       }
+      // 完整模式：display 保持 output（全部显示），无需额外处理
       if (display) {
       const contIndent = " ".repeat(GUTTER + 3);
       const rendered = lineNumbered(display, theme);

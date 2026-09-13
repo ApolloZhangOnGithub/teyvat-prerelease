@@ -275,17 +275,17 @@ let _lastBgHash = ""; // @ 缓存：避免相同输出重复占用 context
         const cmdShort = cmd.split("\n")[0].slice(0, 60) + (cmd.length > 60 ? "…" : "");
         return renderToolCall.label(theme, label, theme.fg("dim", cmdShort));
       }
-      // 命令处理（breakAnd/compact）在模式分支前统一执行，所有展示命令的模式都生效
+      // 命令处理（breakAnd）在模式分支前统一执行
       if ((globalThis as any).__genshinExecuteBreakAnd && cmd.includes(" && ")) {
         cmd = cmd.split(" && ").join(" &&\n");
       }
-      if ((globalThis as any).__genshinCompactExecute) {
+      // 2026-09-13（房东定稿）：三项 = 仅标题 / 标题+摘要 / 标题+完整。
+      // 命令截断改归「Execute 调用」自己（原先挂在 compactExecute 上——那是“结果区”的设置，越界了，已移出）。
+      if (display === "summary") {
         const lines = cmd.split("\n").filter((l: string) => l.trim());
-        if (lines.length > 3) {
-          cmd = lines.slice(0, 3).join("\n") + "\n... +" + (lines.length - 3) + " more";
-        }
+        const brief = lines.length > 3 ? lines.slice(0, 3).join("\n") + "\n... +" + (lines.length - 3) + " more" : cmd;
+        return renderToolCall.detail(theme, label, title, brief);
       }
-      if (display === "command") return renderToolCall.command(theme, label, cmd);
       return renderToolCall.detail(theme, label, title, cmd);
     },
     renderResult(result: any, _options: any, theme: any, ctx: any) {
@@ -374,14 +374,11 @@ let _lastBgHash = ""; // @ 缓存：避免相同输出重复占用 context
         const raw = resultContent(result);
         if (raw.length > 0 && raw[0].type === "text") {
           const lines = raw[0].text.split("\n");
-          if (lines.length > 7) {
+          // 2026-09-13（房东定稿）：只显示 5 行 = **纯前 5 行**，不加任何省略提示行
+          // （原 “... N lines more (lines x-y omitted)” 提示行已去掉——房东：那行占空间、很恶心）
+          if (lines.length > 5) {
             const head = lines.slice(0, 5).join("\n");
-            const tail = lines[lines.length - 1];
-            const skipped = lines.length - 6;
-            // 2026-08-14（ISSUE 093）：折叠标记带真实行号范围（被折叠的是第 6 行到倒数第 2 行）
-            const from = 6, to = lines.length - 1;
-            const compacted = [{ type: "text", text: head + `\n\x1b[2m... ${skipped} lines more (lines ${from}-${to} omitted)\x1b[0m\n` + tail }];
-            return renderMessage.output(theme, ctx, compacted);
+            return renderMessage.output(theme, ctx, [{ type: "text", text: head }]);
           }
         }
         return renderMessage.output(theme, ctx, raw);

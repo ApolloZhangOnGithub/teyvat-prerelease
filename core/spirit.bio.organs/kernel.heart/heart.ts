@@ -15,7 +15,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, unl
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { getSessionRole, getPrompt, getActiveToolChrPrompts } from "#kernel_ribosome";
-import { runtimeCacheDir, memoryDir, memoryDataDir, logerr, writeFileAtomic } from "#paths";
+import { runtimeCacheDir, memoryDir, memoryDataDir, logerr, writeFileAtomic, monitorDataFile } from "#paths";
 import { sendCustomMessage, messageTriggersTurn } from "#kernel_backbone";
 import { registerMessageRenderers } from "#tui_renderers";
 import { heartState, limits, setUI, hasUserMessage, setHasUserMessage, errorBackoffMs, setErrorBackoffMs, transition, resetLimits, dlog, personId, wakeRestartFile, isWorkerSession, onHeartStateChange } from "./heart-state.ts";
@@ -110,14 +110,13 @@ export default function (pi: ExtensionAPI) {
         // ISSUE 188：即使冻结缓存也检查 context 用量——95%+ 强制 amem
         let urgentAmem = "";
         try {
-          const pd: string = (globalThis as any).__genshinPersonDir || "";
-          if (pd) {
-            const gp = join(pd, "monitor/growth.jsonl");
-            if (existsSync(gp)) {
-              const gl = readFileSync(gp, "utf8").trim().split("\n");
-              const lr = JSON.parse(gl[gl.length - 1]).ratio || 0;
-              if (lr >= 95) urgentAmem = i18n(`\n\n[URGENT] context 使用已达 ${lr.toFixed(1)}%，距离 API 限制极近。你必须立即执行 amem archive 清理记忆再做其他任何事。不要忽略。`, `\n\n[URGENT] context usage at ${lr.toFixed(1)}%. You MUST run amem archive immediately before anything else.`);
-            }
+          // 2026-09-13：路径改走 #paths.monitorDataFile（之前读 MemoryData/<id>/monitor/growth.jsonl——从未存在，此分支从未生效）
+          const pid: string = (globalThis as any).__genshinPersonId || "";
+          const gp = pid ? monitorDataFile(pid, "growth.jsonl") : "";
+          if (gp && existsSync(gp)) {
+            const gl = readFileSync(gp, "utf8").trim().split("\n");
+            const lr = JSON.parse(gl[gl.length - 1]).ratio || 0;
+            if (lr >= 95) urgentAmem = i18n(`\n\n[URGENT] context 使用已达 ${lr.toFixed(1)}%，距离 API 限制极近。你必须立即执行 amem archive 清理记忆再做其他任何事。不要忽略。`, `\n\n[URGENT] context usage at ${lr.toFixed(1)}%. You MUST run amem archive immediately before anything else.`);
           }
         } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
         return { systemPrompt: _frozenHeartSystemPrompt + urgentAmem };
@@ -147,19 +146,18 @@ export default function (pi: ExtensionAPI) {
       // ISSUE 188：context 95%+ 强制 amem——绕过冻结缓存，每轮检查用量
       let urgentAmem = "";
       try {
-        const personDir: string = (globalThis as any).__genshinPersonDir || "";
-        if (personDir) {
-          const growthPath = join(personDir, "monitor/growth.jsonl");
-          if (existsSync(growthPath)) {
-            const gLines = readFileSync(growthPath, "utf8").trim().split("\n");
-            const last = JSON.parse(gLines[gLines.length - 1]);
-            const ratio = last.ratio || 0;
-            if (ratio >= 95) {
-              urgentAmem = i18n(
-                `\n\n[URGENT] context 使用已达 ${ratio.toFixed(1)}%，距离 API 限制极近。你必须立即执行 amem archive 清理记忆再做其他任何事。不要忽略。`,
-                `\n\n[URGENT] context usage at ${ratio.toFixed(1)}%, dangerously close to API limit. You MUST immediately run amem archive to free memory before doing anything else. Do NOT ignore this.`
-              );
-            }
+        // 2026-09-13：路径改走 #paths.monitorDataFile（之前读 MemoryData/<id>/monitor/growth.jsonl——从未存在，ISSUE 188 从未生效）
+        const pid: string = (globalThis as any).__genshinPersonId || "";
+        const growthPath = pid ? monitorDataFile(pid, "growth.jsonl") : "";
+        if (growthPath && existsSync(growthPath)) {
+          const gLines = readFileSync(growthPath, "utf8").trim().split("\n");
+          const last = JSON.parse(gLines[gLines.length - 1]);
+          const ratio = last.ratio || 0;
+          if (ratio >= 95) {
+            urgentAmem = i18n(
+              `\n\n[URGENT] context 使用已达 ${ratio.toFixed(1)}%，距离 API 限制极近。你必须立即执行 amem archive 清理记忆再做其他任何事。不要忽略。`,
+              `\n\n[URGENT] context usage at ${ratio.toFixed(1)}%, dangerously close to API limit. You MUST immediately run amem archive to free memory before doing anything else. Do NOT ignore this.`
+            );
           }
         }
       } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }

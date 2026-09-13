@@ -95,6 +95,11 @@ export function channelDir(id: string): string { return runtimeCacheDir(id); } /
 export function monitorDir(id: string): string { return runtimeCacheDir(id); } // alias
 export function sessionDirFor(id: string): string { return join(SESSION_DATA, id); }
 export function agentFileDir(id: string): string { return join(AGENT_FILE_DATA, id); }
+// ── 监控数据（growth.jsonl / cost_total.json）唯一真相源 ──
+// 2026-09-13：写入方（memory.ts monitorAppend）一直落在 AgentFileData/MonitorData/<id>/（靠 __genshinAgentFileDir + "/../MonitorData" 拼出来），
+// 而 heart.ts / status.ts / memory.ts 的 tool_call 门禁三处读的是 MemoryData/<id>/monitor/growth.jsonl（磁盘上从未存在）
+// → ISSUE 188 的「95% 强制 amem」与 status 的 Context 行一直是死代码。读写统一走这里，不再各自拼路径。
+export function monitorDataFile(id: string, file: string): string { return join(AGENT_FILE_DATA, "MonitorData", id, file); }
 export function identityDir(id: string): string { return join(IDENTITY_DATA, id); }
 export function blackboxDir(id: string): string { return join(BLACKBOX_DATA, id); }
 export function socialDataDir(): string { return SOCIAL_DATA; }

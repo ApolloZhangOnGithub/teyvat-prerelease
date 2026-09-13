@@ -6,7 +6,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { homedir } from "node:os";
 import { getSessionRole, getPrompt } from "#kernel_ribosome";
-import { memoryDir,  personDataDir as _personDataDir, memoryDataDir, sessionDirFor, estimateTokens } from "#paths";
+import { memoryDir,  personDataDir as _personDataDir, memoryDataDir, sessionDirFor, estimateTokens, monitorDataFile } from "#paths";
 import { registerPaimonTool, sendCustomMessage, resultContent } from "#kernel_backbone";
 import { renderToolCall, renderMessage } from "#tui_blockrender";
 import { createHash, randomBytes } from "node:crypto";
@@ -51,14 +51,16 @@ function appendFile(p: string, text: string): void {
 // 2026-09-09（用户报 bug：homedir 下被拉出 MonitorData/undefined + undefined 空目录）：
 // __genshinPersonDir/__genshinAgentFileDir/__genshinPersonId 未设时（启动早期/特定进程/session_shutdown 晚段）
 // 字符串拼接出 undefined 相对路径 → 在 cwd(~) 下 mkdir 垃圾。统一走本 helper：全局无效静默跳过（监控数据非核心，丢记录可接受）。
-function monitorDataPath(globalDir: string, file: string): string | null {
+// 2026-09-13（H3）：路径唯一真相源改 #paths.monitorDataFile（AgentFileData/MonitorData/<pid>/<file>）。
+// 之前这里用 __genshinAgentFileDir + "/../MonitorData" 拼出同一位置，但 heart.ts / status.ts / 本文件 tool_call 门禁
+// 三处读取全读 MemoryData/<pid>/monitor/growth.jsonl（磁盘上从未存在）→ ISSUE 188 的「95% 强制 amem」与 status 的 Context 行一直是死代码。
+function monitorDataPath(file: string): string | null {
   const pid = global.__genshinPersonId;
-  const dir = globalDir || global.__genshinPersonDir;
-  if (!dir || !pid || !/^[a-f0-9]{8}$/.test(pid)) return null;
-  return dir + "/../MonitorData/" + pid + "/" + file;
+  if (!pid || !/^[a-f0-9]{8}$/.test(pid)) return null;
+  return monitorDataFile(pid, file);
 }
 function monitorAppend(file: string, json: string): void {
-  const p = monitorDataPath(global.__genshinAgentFileDir || "", file) || monitorDataPath(global.__genshinPersonDir || "", file);
+  const p = monitorDataPath(file);
   if (!p) return;
   try { appendFile(p, json); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
 }
@@ -237,9 +239,9 @@ export default function registerMemory(pi: ExtensionAPI) {
   });
 
   // ── message_end: incremental append to context + file index ─────
-  // amem toolCall 与对应 tool 结果在两条消息里，靠这个计数器关联：
-  // toolCall 时 +1，tool 结果压缩时 -1。防错误结果（ERR: 开头）漏压缩。
-  let _pendingAmemResults = 0;
+  // 2026-09-13（L3）：amem 结果识别改用 pi ToolResultMessage.toolName（与 toolCall 一一对应），
+  // 不再用 _pendingAmemResults 顺序计数器——同一条 assistant 消息并行发 [read, amem] 时，计数器会把 read 的结果
+  // 压成 [memory op: …]、amem 的 ERR 结果反而漏压缩（hash 归一化漏过滤的残留变体）。
   pi.on("message_end", async (event) => {
     if (!personDir) return;
     // 只主意识写 context.md。hc/sc/sl 小号不写——它们的 tool output 会自噬膨胀。
@@ -278,6 +280,8 @@ export default function registerMemory(pi: ExtensionAPI) {
     }
 
     if (entries.length === 0 && typeof msg.content === "string" && !msg.content.trim()) return;
+    // amem 自身的工具结果（成功 "amem …" / 失败 "ERR: …" 都算）→ 下方压缩成 [memory op: …]，供 hash-lock 归一化识别
+    const isAmemResult = (role === "toolResult" || role === "tool") && msg.toolName === "amem";
 
     // ── context 自噬去重：连续相同条目不重复写入 ──
     let lastSig = "";
@@ -295,23 +299,28 @@ export default function registerMemory(pi: ExtensionAPI) {
 
       // amem tool calls: compress args for compact context recording
       if (e.type === "toolCall" && (e as any).tool?.name === "amem") {
-        // 标记待处理的 amem 结果——后续 tool 结果（无论成功/错误）都要压缩，
-        // 否则 ERR 开头的错误结果不被下方正则识别，导致 hash-lock 归一化漏过滤（自递归变体）。
-        _pendingAmemResults++;
         const a = (e as any).tool.args || {};
         const act = a.action || "manage";
+        const phase = a.hash_key ? "apply" : "check";
+        // 定位方式摘要（2026-09-13 L5：之前只记文本锚点，ts/时间范围/位置模式全记成 manage("","")，回看 context 不知道当时定位了什么）
+        const loc = a.anchor_ts ? `ts=${a.anchor_ts}`
+          : (a.ts_from || a.ts_to) ? `ts_range=${a.ts_from || ""}~${a.ts_to || ""}`
+          : (a.anchor_begin_index != null) ? `idx=${a.anchor_begin_index}..${a.anchor_end_index}`
+          : (a.anchor_begin || a.anchor_end) ? `${JSON.stringify(String(a.anchor_begin || "").slice(0, 50))},${JSON.stringify(String(a.anchor_end || "").slice(0, 50))}`
+          : (a.exclude_tail != null) ? `exclude_tail=${a.exclude_tail}` : "";
         if (act === "manage") {
-          const bAnc = String(a.anchor_begin || "").slice(0, 50);
-          const eAnc = String(a.anchor_end || "").slice(0, 50);
-          const revInfo = a.revision != null ? `${String(a.revision).length}c` : "check";
-          (e as any).tool = { name: "amem", compact: `manage(${JSON.stringify(bAnc)},${JSON.stringify(eAnc)}),rev(${revInfo})` };
+          const revInfo = a.revision != null ? `${String(a.revision).length}c` : phase;
+          (e as any).tool = { name: "amem", compact: `manage(${loc}),rev(${revInfo})` };
         } else if (act === "fetch") {
-          (e as any).tool = { name: "amem", compact: `fetch(${a.id || "index"})` };
+          const f = a.id ? `id=${a.id}`
+            : a.q ? `q=${JSON.stringify(String(a.q).slice(0, 30))}${a.review != null ? `,review=${a.review}` : ""}`
+            : a.review != null ? `review=${a.review}` : "index";
+          (e as any).tool = { name: "amem", compact: `fetch(${f})` };
         } else if (act === "sweep" || act === "archive") {
           const n = act === "archive" ? "archive" : "sweep";
-          (e as any).tool = { name: "amem", compact: `${n}(${(a.types||[]).join(",")},${a.hash_key?"apply":"check"})` };
+          (e as any).tool = { name: "amem", compact: `${n}(${(a.types||[]).join(",")};${loc};${phase})` };
         } else if (act === "revert") {
-          (e as any).tool = { name: "amem", compact: `revert(${a.id},${a.hash_key?"apply":"check"})` };
+          (e as any).tool = { name: "amem", compact: `revert(${a.id},${phase})` };
         } else if (act === "mark_enter") {
           (e as any).tool = { name: "amem", compact: "mark_enter" };
         } else if (act === "mark_exit") {
@@ -320,14 +329,11 @@ export default function registerMemory(pi: ExtensionAPI) {
       }
 
       // Deep-sleep / memory-management tool outputs
-      // amem 结果：成功以 "amem " 开头，错误以 "ERR: " 开头——后者必须靠 toolCall 标记识别。
-      // 有标记（_pendingAmemResults>0）或内容匹配已知前缀 → 压缩成 [memory op: ...]，
+      // amem 结果（按 toolName 识别，成功/ERR 都算）或旧记忆工具的已知前缀 → 压缩成 [memory op: ...]，
       // 保证 hash-lock 归一化（_amemCtxForHash 按 [memory op: 前缀过滤）能识别所有 amem 自身记录。
       // 2026-08-15 修复：实际写入 context.md 的 tool 结果 role 是 "toolResult"（不是 "tool"），
-      // 原条件 e.role === "tool" 永远不匹配 → 压缩从未生效，ERR 开头的错误结果漏过滤导致
-      // hash-lock 误报 context changed（残留变体）。这里同时匹配 tool / toolResult。
-      if ((e.role === "tool" || e.role === "toolResult") && (_pendingAmemResults > 0 || /^(Napped\.|Context edited|"dream|Slept|Deep sleep|Drinkcoffee|Dream sent|amem )/.test(combinedText.trim()))) {
-        if (_pendingAmemResults > 0) _pendingAmemResults--;
+      // 原条件 e.role === "tool" 永远不匹配 → 压缩从未生效。这里同时匹配 tool / toolResult。
+      if ((e.role === "tool" || e.role === "toolResult") && (isAmemResult || /^(Napped\.|Context edited|"dream|Slept|Deep sleep|Drinkcoffee|Dream sent|amem )/.test(combinedText.trim()))) {
         e.content = `[memory op: ${combinedText.slice(0, 80).replace(/\n/g, " ")}...]`;
         delete (e as any).text;
         delete (e as any).think;
@@ -383,9 +389,10 @@ export default function registerMemory(pi: ExtensionAPI) {
     // context >= 95% 时只允许 amem/status/wait/hibernate/intentions——其他工具一律拦截
     if (!AMEM_EXEMPT_TOOLS.has(event.toolName)) {
       try {
-        const gPath = path.join(personDir || "", "monitor/growth.jsonl");
-        if (personDir && require("fs").existsSync(gPath)) {
-          const lines = require("fs").readFileSync(gPath, "utf8").trim().split("\n");
+        // 2026-09-13（H3）：之前读 personDir/monitor/growth.jsonl（从未存在）→ 这个拦截从未生效；改走 monitorDataPath（与写入同源）
+        const gPath = monitorDataPath("growth.jsonl");
+        if (gPath && fs.existsSync(gPath)) {
+          const lines = fs.readFileSync(gPath, "utf8").trim().split("\n");
           const last = JSON.parse(lines[lines.length - 1]);
           if (last.ratio >= 95) {
             return { block: true, reason: i18n(
@@ -440,7 +447,7 @@ export default function registerMemory(pi: ExtensionAPI) {
     // Accumulate session costs into cost_total.json
     if (!personDir) return;
     try {
-      const costTotalPath = monitorDataPath(global.__genshinAgentFileDir, "cost_total.json");
+      const costTotalPath = monitorDataPath("cost_total.json");
       if (!costTotalPath) return; // 2026-09-09：全局未设（启动早期/小号）→ 不拼 undefined 路径（曾拉出 homedir 垃圾目录）
       const roles = ["main", "hippocampus", "metaconsciousness", "sleep"];
       let sessMain = 0, sessHippo = 0, sessSub = 0, sessSleeping = 0;
@@ -584,10 +591,7 @@ export default function registerMemory(pi: ExtensionAPI) {
           text = String(text).trim();
           return text ? `[tool: ${text.slice(0, 500).replace(/\n/g, " ")}]` : null;
         }
-      } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e));
-        // context.md 截断行（如 toolResult 被截断成无效 JSON）：数据污染噪音，非代码 bug，无法修复——
-        // 保留原文不压缩、不刷日志（2026-08-20：此前每次快照构建都报 Unexpected end of JSON input 刷屏）
-      }
+      } catch { /* context.md 坏行（截断/历史格式）：保留原文不压缩、不刷日志（2026-08-20 定稿；2026-09-13 复原——曾被 fix-empty-catch 自动回填成 console.error，每次快照构建刷 Unexpected end of JSON input）*/ }
       return line;
     }).filter((l): l is string => l !== null).join("\n");
 
