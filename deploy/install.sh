@@ -498,6 +498,8 @@ sed -i.bak 's/BUILD_MODE: "dev" | "release" = "dev"/BUILD_MODE: "dev" | "release
 # 生成 mobile apps manifest（build + MD5）
 if [ -f "$IMPL/universe.infotech/local.mobile/apps.build.sh" ]; then
   bash "$IMPL/universe.infotech/local.mobile/apps.build.sh" "$IMPL/universe.infotech/local.mobile" 2>/dev/null
+  # 2026-09-13：这一步在 rsync 之后跑，只刷了源码树——部署副本的 apps.json 永远慢一个版本；部署副本也刷一遍
+  [ -d "$PAIMON_EXT/teyvat/universe.infotech/local.mobile" ] && bash "$IMPL/universe.infotech/local.mobile/apps.build.sh" "$PAIMON_EXT/teyvat/universe.infotech/local.mobile" 2>/dev/null
 fi
 ok "extensions"
 
@@ -550,10 +552,23 @@ else
   warn "identity cli 源码缺失: ${IDENTITY_CLI#$IMPL/}，跳过安装"
 fi
 
-# ── 5d. npm dependencies: 自动安装 extensions package.json 中新增的依赖 ──
-if [ -f "$EXT_DIR/package.json" ]; then
+# ── 5d. npm dependencies: 自动安装 A.core package.json 中新增的依赖 ──
+# 2026-09-13 23:05 教训（claude-code 引入、debug-01/dev-01 发现并加了 5d-2 自愈 + Makefile ensure-dev-links）：在 A.core 跑 npm install 会把
+# 指向 runtime 的 @earendil-works/* 手工链接当"多余包"prune 掉 → 全项目 TS2307、部署卡死 3 分钟。根治：这一步不再在 A.core 跑 npm install
+# （EXT_DIR 置空 = 跳过），A.core 的依赖解析靠 launcher 的 NODE_PATH → runtime；5d-2 的重链保留作自愈。新依赖走 runtime 安装流程。
+EXT_DIR=""
+if [ -n "$EXT_DIR" ] && [ -f "$EXT_DIR/package.json" ]; then
   echo "  installing dependencies..."
   (cd "$EXT_DIR" && npm install --no-save --no-audit --no-fund --loglevel=error 2>&1) || true
+  # 5d-2（2026-09-13 dev-01）：npm install 的 prune 副作用自愈——npm 会把 node_modules 对齐 package.json，
+  # 删掉未声明的手工链接包（@earendil-works/* 与 @mariozechner/*——pi 包只存在于 runtime，A.core 里是链接），
+  # 导致全项目 TS2307×30、全团队部署卡死（23:05 实证，ISSUE 238）。立即从 runtime 重链（与 Makefile ensure-dev-links 同逻辑）。
+  if [ -d "$RUNTIME/node_modules/@earendil-works" ]; then
+    for p in pi-agent-core pi-ai pi-coding-agent pi-tui; do
+      [ -e "$EXT_DIR/node_modules/@earendil-works/$p" ] || ln -sfn "$RUNTIME/node_modules/@earendil-works/$p" "$EXT_DIR/node_modules/@earendil-works/$p"
+    done
+    [ -e "$EXT_DIR/node_modules/@mariozechner/pi-coding-agent" ] || { mkdir -p "$EXT_DIR/node_modules/@mariozechner" 2>/dev/null; ln -sfn "$RUNTIME/node_modules/@mariozechner/pi-coding-agent" "$EXT_DIR/node_modules/@mariozechner/pi-coding-agent" 2>/dev/null; }
+  fi
 fi
 
 # ── 6. shell completion ──
@@ -710,12 +725,7 @@ else
 fi
 
 echo ""
-# save manifest for next install's drift check
-: > "$MANIFEST"
-for f in $(find "$PI_DIST" "$PI_TUI_DIST" -name '*.js' -not -name '*.map' 2>/dev/null); do
-  h=$(md5 -q "$f" 2>/dev/null || md5sum "$f" 2>/dev/null | cut -d' ' -f1)
-  printf '%s\t%s\n' "$h" "$f" >> "$MANIFEST"
-done
+# （2026-09-13：manifest 生成移到文件末尾——原来在 read.js/model-resolver.js/model-registry.js 三个后置补丁之前算 md5，下一次 PAIMON_VER 为空的安装必报 DRIFT）
 
   # read/write/edit TUI: silent() → 显示 ⎿ 摘要（末尾执行，确保不被覆盖）
 TE="$PI_DIST/modes/interactive/components/tool-execution.js"
@@ -830,6 +840,13 @@ ENDPATCH
     echo 'export const debug = () => {};' > "$PI_PKG/dist/debug.js"
   fi
 fi
+
+# save manifest for next install's drift check（放在全部补丁之后，见上方注释）
+: > "$MANIFEST"
+for f in $(find "$PI_DIST" "$PI_TUI_DIST" -name '*.js' -not -name '*.map' 2>/dev/null); do
+  h=$(md5 -q "$f" 2>/dev/null || md5sum "$f" 2>/dev/null | cut -d' ' -f1)
+  printf '%s\t%s\n' "$h" "$f" >> "$MANIFEST"
+done
 
 echo -e "  ${GRN}done${R}""  Teyvat@$PIN"
 echo -e "  ${YEL}WARN 程序没有热加载，需要重启后检查变更${R}"

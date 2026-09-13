@@ -69,14 +69,14 @@ fi
 
 
 # 6. 消息渲染器检查：所有 isDisplayedInTUI 消息类型必须有 registerMessageRenderer
-MSG_TYPES_FILE="$IMPL/spirit.bio.organs/kernel.ribosome/backbone"
+MSG_TYPES_FILE="$IMPL/spirit.bio.organs/kernel.backbone/backbone.ts"  # 2026-09-13：原路径 kernel.ribosome/backbone 不存在，第 6 段一直静默跳过
 if [ -f "$MSG_TYPES_FILE" ]; then
   MISSING_RENDERERS=""
   while IFS= read -r line; do
     if echo "$line" | grep -q '"[a-z][^"]*":'; then
       TYPE=$(echo "$line" | grep -o '"[^"]*"' | head -1 | tr -d '"')
     fi
-    if echo "$line" | grep -q 'isDisplayedInTUI: true' && [ -n "$TYPE" ]; then
+    if echo "$line" | grep -qE 'render: true|isDisplayedInTUI: true' && [ -n "$TYPE" ]; then  # 2026-09-13：字段早已改名 render:（PROPOSAL 034）
       HAS_RENDERER=$(grep -r "registerMessageRenderer.*$TYPE" "$IMPL/" --include="*.ts" -l 2>/dev/null || echo "")
       if [ -z "$HAS_RENDERER" ]; then
         MISSING_RENDERERS="$MISSING_RENDERERS  $TYPE\n"
@@ -85,7 +85,7 @@ if [ -f "$MSG_TYPES_FILE" ]; then
   done < "$MSG_TYPES_FILE"
   if [ -n "$MISSING_RENDERERS" ]; then
     info "message types with isDisplayedInTUI=true but no registerMessageRenderer:"
-    echo -e "$MISSING_RENDERERS" | while read -r t; do [ -n "$t" ] && echo -e "       $YLW$t$R"; done
+    echo -e "$MISSING_RENDERERS" | while read -r t; do [ -n "$t" ] && echo -e "       $YLW$t$R"; done || true   # 2026-09-13：管道 while 的退出码（空行 read/空行 [ -n ] 都返回 1）在 set -e 下会炸 make——非致命提示不拦部署
     info "(run: grep -r registerMessageRenderer to add renderers)"
   else
     ok "all displayed message types have renderers"

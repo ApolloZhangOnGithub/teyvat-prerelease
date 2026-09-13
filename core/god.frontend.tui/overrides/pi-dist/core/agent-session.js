@@ -12,7 +12,7 @@
  *
  * Modes use this class and add their own I/O layer on top.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { basename, dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -31,7 +31,10 @@ function savePerAgentModel(provider, modelId) {
       reg[myId].model = modelId;
       reg[myId].modelProvider = provider;
       reg[myId].lastSeen = Date.now();
-      writeFileSync(regPath, JSON.stringify(reg, null, 2));
+      // 2026-09-13：registry.json 被所有 agent 与 launcher 并发读——tmp+rename 原子写，读者不会读到 0 字节
+      const tmp = regPath + ".tmp-" + process.pid;
+      writeFileSync(tmp, JSON.stringify(reg, null, 2));
+      renameSync(tmp, regPath);
     }
   } catch { /* 写失败不影响切换 */ }
 }
@@ -85,6 +88,16 @@ const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high"];
 // ============================================================================
 // AgentSession Class
 // ============================================================================
+// teyvat 2026-09-13（审计 HIGH）：memory-snapshot 以 "__gz__"+base64 持久化，解压原来只在两条 compaction 路径上——
+// --continue / /resume / /reload / 树导航 都把 session 消息原样搬进 agent.state，模型收到的是一坨 base64（几十万 token 且不可读）。
+function inflateSnapshots(messages) {
+    if (!Array.isArray(messages)) return;
+    for (const msg of messages) {
+        if (msg && msg.customType === "memory-snapshot" && typeof msg.content === "string" && msg.content.startsWith("__gz__")) {
+            try { msg.content = gunzipSync(Buffer.from(msg.content.slice(6), "base64")).toString("utf8"); } catch (e) { console.error("[god.frontend.tui/overrides/pi-dist/core/agent-session.js] " + (e?.message || e)); }
+        }
+    }
+}
 export class AgentSession {
     agent;
     sessionManager;
@@ -162,6 +175,7 @@ export class AgentSession {
         this._excludedToolNames = config.excludedToolNames ? new Set(config.excludedToolNames) : undefined;
         this._baseToolsOverride = config.baseToolsOverride;
         this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
+        inflateSnapshots(this.agent?.state?.messages); // 2026-09-13：恢复的 session 里的 gzip 快照先解压再进模型
         // Always subscribe to agent events for internal handling
         // (session persistence, extensions, auto-compaction, retry logic)
         this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
@@ -586,6 +600,10 @@ export class AgentSession {
             this.abortBranchSummary();
             this.abortBash();
             this.agent.abort();
+            // 2026-09-13：批量投递定时器不清 → /new /reload 后在已断开的旧 session 上跑一轮幽灵 _runAgentPrompt，触发消息也丢了
+            clearTimeout(this._batchTimer);
+            this._batchTimer = null;
+            this._pendingBatchMessages = [];
         }
         catch {
             // Dispose must succeed even if an abort hook throws.
@@ -1264,7 +1282,10 @@ export class AgentSession {
         if (previousModel && !modelsAreEqual(previousModel, model)) {
           const ctx = model.contextWindow ? `${Math.round(model.contextWindow/1000)}k` : '?';
           const msg = `[系统] 模型切换到 ${model.id} (${model.provider}, ${ctx} context)`;
-          this.agent.state.messages.push({ role: "user", content: msg, timestamp: Date.now() });
+          // 2026-09-13（审计）：原来直接 push 一条裸 user 消息——从 status 工具里切模型时它会插在 assistant(tool_calls) 与 tool 结果之间，
+          // OpenAI 兼容供应商拒收，配对补丁再伪造 "No result provided"；且不落 session 文件，重启即丢。改走 custom 消息、下一轮送达。
+          try { await this.sendCustomMessage({ customType: "model-switch", content: msg, display: false }, { deliverAs: "nextTurn" }); }
+          catch (e) { console.error("[god.frontend.tui/overrides/pi-dist/core/agent-session.js] model-switch notice: " + (e?.message || e)); }
         }
     }
     /**
@@ -2474,6 +2495,7 @@ export class AgentSession {
             // Update agent state
             const sessionContext = this.sessionManager.buildSessionContext();
             this.agent.state.messages = sessionContext.messages;
+            inflateSnapshots(this.agent.state.messages); // 2026-09-13：树导航同样要解压
             // Emit session_tree event
             await this._extensionRunner.emit({
                 type: "session_tree",

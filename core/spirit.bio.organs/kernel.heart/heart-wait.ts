@@ -76,7 +76,7 @@ export function registerWaitTool(pi: ExtensionAPI) {
       // 若 wait 外（paused/hibernated 等）遗留了 user/command 标记，正常结束也会被误标
       // 成 interrupt（2026-08-15 用户报：同时出现红色 interrupted 折线和绿色 Waited 行）
       (globalThis as any).__genshinWaitReason = "";
-      const secs = Math.max(1, params.seconds);
+      const secs = Math.min(86400, Math.max(1, Number(params.seconds) || 1)); // 2026-09-13：文档说 1–86400 但 schema 不限，>2147483 会让 setTimeout 溢出成 1ms
       const waiting = params.wait_for_user === true;
       setHasUserMessage(false);
       // 中断标记按 toolCallId 记录（__genshinWaitInterruptedId），不再用全局布尔复位——

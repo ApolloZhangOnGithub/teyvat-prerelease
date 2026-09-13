@@ -54,9 +54,11 @@ export function onHeartStateChange(cb: () => void): () => void {
   return () => { const i = _subscribers.indexOf(cb); if (i >= 0) _subscribers.splice(i, 1); };
 }
 
+let _uiUnsub: (() => void) | null = null;
 export function setUI(ui: any) {
   (globalThis as any).__genshinRefreshUI = refreshUI;
-  onHeartStateChange(() => {
+  _uiUnsub?.(); // 2026-09-13：heart.ts 每次 session_start（含 /reload）都调 setUI——原来订阅只加不减，N 次 reload 后每次状态切换刷 N 遍并持有 N 个 ui 引用
+  _uiUnsub = onHeartStateChange(() => {
     try {
       if (typeof ui.invalidate === "function") ui.invalidate();
       if (typeof ui.requestRender === "function") ui.requestRender();

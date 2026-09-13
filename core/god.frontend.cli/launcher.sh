@@ -314,12 +314,13 @@ case "$NAME" in
         exit 1
       fi
       if ! curl -s --max-time 1 "http://localhost:8790/" >/dev/null 2>&1; then
-        nohup node "$IM_SRV" >/dev/null 2>&1 &
+        # [2026-09-13] 经 im-daemon 启动：spawn detached + unref —— 完全脱离本终端/父进程，退出终端或 agent 退出都不会带走它
+        node "$(dirname "$IM_SRV")/im-daemon.mjs" "$IM_SRV" /tmp/im-server.log >/dev/null 2>&1
         sleep 1
       fi
       IM_URL="http://localhost:8790/"
     else
-      IM_URL="${IM_PUBLIC_URL:-https://paimon.beer/im/}"
+      IM_URL="${IM_PUBLIC_URL:-https://sync.paimon.beer/im/}"
     fi
     case "$(uname)" in
       Darwin) open "$IM_URL" 2>/dev/null || echo "  $IM_URL";;
@@ -466,6 +467,7 @@ case "$NAME" in
   settings|s)   MODE="settings"; NAME="";;
   note|n)       exec node "$PAIMON_CLI/note.cjs" "$@";;
   org|o)        MODE="org"; NAME="$1"; shift 2>/dev/null;;
+  bg)           MODE="bg"; NAME="$1"; shift 2>/dev/null;;
   web|w)        MODE="web"; NAME="";;
 esac
 
@@ -517,12 +519,12 @@ if [ "$MODE" = "web" ]; then
   # Kill any existing genshin-server (only node server.js, not other processes on the port)
   OLD_PIDS=$(pgrep -f "node.*genshin-server/server.js" 2>/dev/null)
   [ -n "$OLD_PIDS" ] && echo "$OLD_PIDS" | xargs kill 2>/dev/null && sleep 0.5
-  cd "$PAIMON_SERVER_DIR" && PAIMON_PORT="$PAIMON_PORT" node server.js </dev/null > /tmp/genshin-web.log 2>&1 &
+  cd "$PAIMON_SERVER_DIR" && PAIMON_PORT="$PAIMON_PORT" node server.js </dev/null > "$HOME/.teyvat/LogData/genshin-web.log" 2>&1 &
   SERVER_PID=$!
   disown $SERVER_PID
   ACTUAL_PORT=""
   for i in $(seq 1 30); do
-    ACTUAL_PORT=$(grep -o 'http://127.0.0.1:[0-9]*' /tmp/genshin-web.log 2>/dev/null | head -1 | grep -o '[0-9]*$')
+    ACTUAL_PORT=$(grep -o 'http://127.0.0.1:[0-9]*' "$HOME/.teyvat/LogData/genshin-web.log" 2>/dev/null | head -1 | grep -o '[0-9]*$')
     [ -n "$ACTUAL_PORT" ] && break
     sleep 0.5
   done
@@ -551,6 +553,40 @@ if [ "$MODE" = "archive" ] || [ "$MODE" = "unarchive" ]; then
   if [ -z "$NAME" ]; then echo "$(_l "用法: genshin --$MODE <名字|序号|1-5|*> " "Usage: genshin --$MODE <name|index|1-5|*> ")"; exit 1; fi
   PAIMON_ARCHIVE_JS="$PAIMON_CLI/archive.cjs"
   node "$PAIMON_ARCHIVE_JS" "$PLIST" "$MODE" "$NAME" "$@" || exit 1
+  exit 0
+fi
+
+# -- bg: 直接以 [B] 后台 headless 启动（O→B；2026-09-13 用户：此前 [B] 只能"先进前台再 Ctrl+C"，离线 agent 没有直拉路径）--
+# 实现 = /h 守护链复刻：写 detached 标记 + PAIMON_HEADLESS_DAEMON=1 setsid 重启 launcher 快照（传正常启动参数）——
+# 守护实例首轮即走 headless 分支（while 循环 + self-reboot 拉起 + fifo 全套都有），本进程退出释放终端。
+if [ "$MODE" = "bg" ]; then
+  if [ -z "$NAME" ]; then echo "$(_l "用法: genshin bg <名字|ID>  (把离线 [O] 的 agent 直接拉成后台 [B]，不进前台)" "Usage: genshin bg <name|ID>  (start an offline agent directly as background [B])")"; exit 1; fi
+  ID=$(node --input-type=commonjs -e "
+    const list=JSON.parse(require('fs').readFileSync('$PLIST','utf8')).filter(x=>!x.archived);
+    const arg='$NAME';
+    const hit=list.find(x=>x.id===arg || x.name===arg);
+    if(hit) console.log(hit.id);
+  " 2>/dev/null)
+  if [ -z "$ID" ]; then echo "$(_l "未找到agent: $NAME (bg 需要完整名字或 ID)" "Agent not found: $NAME (bg needs full name or ID)")"; exit 1; fi
+  BG_RC="$PAIMON_HOME/RuntimeCache/$ID"
+  BG_PID=$(grep -oE '[0-9]+' "$BG_RC/main.pid" 2>/dev/null | head -1)
+  if [ -n "$BG_PID" ] && ps -p "$BG_PID" >/dev/null 2>&1; then
+    echo "$(_l " $NAME 已在运行（[F] 前台或 [B] 后台）—— bg 只用于拉起离线 [O] 的 agent" " $NAME is already running — bg is only for offline agents")"
+    exit 0
+  fi
+  mkdir -p "$BG_RC" 2>/dev/null
+  echo "{\"ts\":\"$(date -u +%FT%TZ)\",\"reason\":\"bg-launch\"}" > "$BG_RC/detached"
+  rm -rf "$BG_RC/main.lock" 2>/dev/null
+  rm -f "$BG_RC/main.pid" 2>/dev/null
+  echo "$(_l " 正在把 $NAME 直接拉起为后台 headless（[B]，launcher 守护循环看护，不进前台 TUI）…" " Starting $NAME as background headless ([B])…")"
+  PAIMON_HEADLESS_DAEMON=1 perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' -- bash "$_snap" "$NAME" </dev/null >/dev/null 2>&1 &
+  sleep 1.5
+  BG_NEWPID=$(grep -oE '[0-9]+' "$BG_RC/main.pid" 2>/dev/null | head -1)
+  if [ -n "$BG_NEWPID" ] && ps -p "$BG_NEWPID" >/dev/null 2>&1; then
+    echo "$(_l " ✓ $NAME 已后台运行（[B]，pid $BG_NEWPID）— genshin 列表可见，attach 进前台用 genshin $NAME" " ✓ $NAME is running in background ([B], pid $BG_NEWPID) — attach with genshin $NAME")"
+  else
+    echo "$(_l " ⚠ 后台启动信号已发但未确认进程 — 查看 ~/.teyvat/LogData/$ID/console.log" " ⚠ Launch attempted but not confirmed — check console.log")"
+  fi
   exit 0
 fi
 

@@ -156,9 +156,12 @@ export function applyEditsToNormalizedContent(normalizedContent, edits, path) {
         }
     }
     const initialMatches = normalizedEdits.map((edit) => fuzzyFindText(normalizedContent, edit.oldText));
-    const baseContent = initialMatches.some((match) => match.usedFuzzyMatch)
-        ? normalizeForFuzzyMatch(normalizedContent)
-        : normalizedContent;
+    // teyvat 2026-09-13（审计 HIGH）：模糊命中时原来把整份归一化内容当结果写回——oldText 差一个尾随空格就触发，
+    // Makefile/Go 文件的所有 tab 变 2 空格、全文件弯引号/破折号被 ASCII 化，而 diff 两侧都归一化所以看不出来。
+    // 移植上游 0.80.7 的 applyReplacementsPreservingUnchangedLines：只重写命中的行，其余行按原文拷回。
+    const usedFuzzyMatch = initialMatches.some((match) => match.usedFuzzyMatch);
+    const replacementBaseContent = usedFuzzyMatch ? normalizeForFuzzyMatch(normalizedContent) : normalizedContent;
+    const baseContent = replacementBaseContent;
     const matchedEdits = [];
     for (let i = 0; i < normalizedEdits.length; i++) {
         const edit = normalizedEdits[i];
@@ -185,18 +188,79 @@ export function applyEditsToNormalizedContent(normalizedContent, edits, path) {
             throw new Error(`edits[${previous.editIndex}] and edits[${current.editIndex}] overlap in ${path}. Merge them into one edit or target disjoint regions.`);
         }
     }
-    let newContent = baseContent;
-    for (let i = matchedEdits.length - 1; i >= 0; i--) {
-        const edit = matchedEdits[i];
-        newContent =
-            newContent.substring(0, edit.matchIndex) +
-                edit.newText +
-                newContent.substring(edit.matchIndex + edit.matchLength);
-    }
-    if (baseContent === newContent) {
+    const newContent = usedFuzzyMatch
+        ? applyReplacementsPreservingUnchangedLines(normalizedContent, replacementBaseContent, matchedEdits)
+        : applyReplacements(replacementBaseContent, matchedEdits);
+    if (normalizedContent === newContent) {
         throw getNoChangeError(path, normalizedEdits.length);
     }
-    return { baseContent, newContent };
+    return { baseContent: normalizedContent, newContent };
+}
+
+// ── 上游 0.80.7 的行保留替换（teyvat 2026-09-13 移植）──
+function splitLinesWithEndings(content) {
+    return content.match(/[^\n]*\n|[^\n]+$/g) || [];
+}
+function getLineSpans(content) {
+    let offset = 0;
+    return splitLinesWithEndings(content).map((line) => {
+        const span = { start: offset, end: offset + line.length };
+        offset = span.end;
+        return span;
+    });
+}
+function getReplacementLineRange(lines, replacement) {
+    const replacementStart = replacement.matchIndex;
+    const replacementEnd = replacement.matchIndex + replacement.matchLength;
+    let startLine = -1;
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (replacementStart >= line.start && replacementStart < line.end) { startLine = i; break; }
+    }
+    if (startLine === -1) throw new Error("Replacement range is outside the base content.");
+    let endLine = startLine;
+    while (endLine < lines.length && lines[endLine].end < replacementEnd) endLine++;
+    if (endLine >= lines.length) throw new Error("Replacement range is outside the base content.");
+    return { startLine, endLine: endLine + 1 };
+}
+function applyReplacements(content, replacements, offset = 0) {
+    let result = content;
+    for (let i = replacements.length - 1; i >= 0; i--) {
+        const replacement = replacements[i];
+        const matchIndex = replacement.matchIndex - offset;
+        result = result.substring(0, matchIndex) + replacement.newText + result.substring(matchIndex + replacement.matchLength);
+    }
+    return result;
+}
+function applyReplacementsPreservingUnchangedLines(originalContent, baseContent, replacements) {
+    const originalLines = splitLinesWithEndings(originalContent);
+    const baseLines = getLineSpans(baseContent);
+    if (originalLines.length !== baseLines.length) {
+        throw new Error("Cannot preserve unchanged lines because the base content has a different line count.");
+    }
+    const groups = [];
+    const sortedReplacements = [...replacements].sort((a, b) => a.matchIndex - b.matchIndex);
+    for (const replacement of sortedReplacements) {
+        const range = getReplacementLineRange(baseLines, replacement);
+        const current = groups[groups.length - 1];
+        if (current && range.startLine < current.endLine) {
+            current.endLine = Math.max(current.endLine, range.endLine);
+            current.replacements.push(replacement);
+            continue;
+        }
+        groups.push({ ...range, replacements: [replacement] });
+    }
+    let originalLineIndex = 0;
+    let result = "";
+    for (const group of groups) {
+        result += originalLines.slice(originalLineIndex, group.startLine).join("");
+        const groupStartOffset = baseLines[group.startLine].start;
+        const groupEndOffset = baseLines[group.endLine - 1].end;
+        result += applyReplacements(baseContent.slice(groupStartOffset, groupEndOffset), group.replacements, groupStartOffset);
+        originalLineIndex = group.endLine;
+    }
+    result += originalLines.slice(originalLineIndex).join("");
+    return result;
 }
 /** Generate a standard unified patch. */
 export function generateUnifiedPatch(path, oldContent, newContent, contextLines = 4) {

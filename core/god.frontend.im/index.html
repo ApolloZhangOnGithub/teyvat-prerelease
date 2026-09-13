@@ -27,6 +27,10 @@
 
   /* ── ② 列表区 ── */
   .conv { width: 258px; min-width: 258px; background: #f7f7f7; display: flex; flex-direction: column; border-right: 1px solid #e2e2e2; position: relative; }
+  /* 边栏拖动条（2026-09-13 用户需求：会话列表栏可拖动调宽，双击恢复默认） */
+  .conv-drag { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; z-index: 30; }
+  .conv-drag:hover, body.conv-resizing .conv-drag { background: rgba(7,193,96,.35); }
+  body.conv-resizing { cursor: col-resize; user-select: none; }
   .conv-head { padding: 12px 12px 8px; }
   .conv-search { width: 100%; padding: 6px 10px; border: 0; border-radius: 4px; background: #e9e9e9; font: inherit; font-size: 13px; outline: none; }
   .conv-list { flex: 1; overflow-y: auto; }
@@ -41,6 +45,7 @@
   .dot.on { background: #07c160; } .dot.off { background: #b8b8b8; }
   .conv-main { flex: 1; min-width: 0; }
   .conv-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .conv-right { display: flex; align-items: baseline; gap: 4px; flex: 0 0 auto; }   /* 徽标与时间成组，贴紧右侧 */
   .conv-name { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .conv-time { font-size: 11px; color: #a8a8a8; white-space: nowrap; }
   .conv-last { font-size: 12px; color: #9a9a9a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
@@ -75,6 +80,10 @@
   .chat-title { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .model-tag { display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 9px; background: #eef6f0; color: #07a04f; font-size: 11px; font-weight: 500; vertical-align: middle; }
   .model-tag-sm { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 8px; background: #eef6f0; color: #07a04f; font-size: 10px; }
+  /* 状态机徐标（2026-09-13 dev-01 规格：AHW 运行态 + FB 位置态，无心跳 O 离线） */
+  .st { display: inline-block; margin-left: 3px; padding: 0 5px; border-radius: 8px; font-size: 10px; font-weight: 600; color: #fff; vertical-align: middle; }
+  .st-A { background: #2fb344; } .st-W { background: #e8a33d; } .st-H { background: #2bb3c0; } .st-P { background: #d9534f; }
+  .st-F { background: #4a90d9; } .st-B { background: #718EF4; } .st-O { background: #c9a227; }
   .chat-title .sub { font-weight: 400; font-size: 12px; color: #999; margin-left: 8px; }
   .msg-search { width: 170px; padding: 6px 10px; border: 0; border-radius: 4px; background: #eaeaea; font: inherit; font-size: 12px; outline: none; }
   .msg-search:focus { background: #e2e2e2; }
@@ -190,6 +199,7 @@
   </nav>
 
   <aside class="conv">
+    <div class="conv-drag" id="convDrag" title="拖动调整宽度（双击恢复默认）"></div>
     <div class="conv-head" id="listHead"><input id="search" class="conv-search" placeholder="搜索"></div>
     <div class="conv-list" id="convList"></div>
     <div class="index-bar" id="indexBar" style="display:none"></div>
@@ -282,6 +292,37 @@ function fmtTime(ts) {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 function isGroupPeer(sid) { return String(sid || "").startsWith("group:"); }
+// ── 边栏可拖动调宽（2026-09-13 用户需求）──
+(function initConvDrag() {
+  const el = document.querySelector(".conv");
+  const handle = document.getElementById("convDrag");
+  if (!el || !handle) return;
+  const MIN = 180, MAX = 560;
+  const saved = parseInt(localStorage.getItem("paimon-im-sidebar-w") || "", 10);
+  if (saved >= MIN && saved <= MAX) { el.style.width = saved + "px"; el.style.minWidth = saved + "px"; }
+  let dragging = false;
+  handle.addEventListener("mousedown", (e) => { dragging = true; document.body.classList.add("conv-resizing"); e.preventDefault(); });
+  window.addEventListener("mousemove", (e) => {
+    if (!dragging) return;
+    const left = el.getBoundingClientRect().left;
+    const w = Math.min(MAX, Math.max(MIN, e.clientX - left));
+    el.style.width = w + "px"; el.style.minWidth = w + "px";
+  });
+  window.addEventListener("mouseup", () => {
+    if (!dragging) return;
+    dragging = false; document.body.classList.remove("conv-resizing");
+    localStorage.setItem("paimon-im-sidebar-w", String(parseInt(el.style.width, 10) || 0));
+  });
+  handle.addEventListener("dblclick", () => {   // 双击 = 恢复默认宽
+    el.style.width = ""; el.style.minWidth = ""; localStorage.removeItem("paimon-im-sidebar-w");
+  });
+})();
+// 状态机徐标（A 工作绿 / W 等待黄 / H 休眠青 / P 暂停红 · F 前台蓝 / B 后台鲸鱼蓝 / O 离线黄）
+function stateBadges(state) {
+  if (!state) return "";
+  const label = { A: "工作中", W: "等待中", H: "休眠", P: "暂停", F: "前台", B: "后台(detached)", O: "离线" };
+  return String(state).split("").filter(Boolean).map((ch) => `<span class="st st-${esc(ch)}" title="${esc(label[ch] || ch)}">${esc(ch)}</span>`).join("");
+}
 // model 短名（顶栏/列表标签用；过长截断）
 function shortModel(m) {
   const s = String(m || "");
@@ -426,7 +467,7 @@ function convItem(c, showTime, showUnread = true) {
   div.innerHTML =
     avatarHtml(c.name, c.online, c.isGroup) +
     `<div class="conv-main">` +
-      `<div class="conv-top"><span class="conv-name">${esc(c.name)}</span>${right}</div>` +
+      `<div class="conv-top"><span class="conv-name">${esc(c.name)}</span><span class="conv-right">${stateBadges(c.state)}${right}</span></div>` +
       (showTime ? `<div class="conv-last">${esc(preview).slice(0, 40)}</div>` : `<div class="conv-last">${esc(sub)}${modelTag}</div>`) +
     `</div>` + (showTime ? u : "");
   div.onclick = () => selectConv(c);
@@ -518,7 +559,7 @@ async function selectConv(c, focusMsgId, keepScroll = false) {
   const group = isGroupPeer(c.sid);
   const subTxt = group ? `${(c.members || []).length} 人` : `${c.remote ? "远程 " + (c.deviceId || "") : c.sid} · ${c.online ? "在线" : "离线"}`;
   const modelTxt = c.model ? ` <span class="model-tag" title="${esc(c.model)}">${esc(shortModel(c.model))}</span>` : "";
-  $("chatTitle").innerHTML = `${esc(c.name)}<span class="sub">${subTxt}</span>${modelTxt}`;
+  $("chatTitle").innerHTML = `${esc(c.name)}${stateBadges(c.state)}<span class="sub">${subTxt}</span>${modelTxt}`;
   $("input").disabled = false;
   $("send").disabled = false;
   $("msgSearch").style.display = "none"; $("msgSearch").value = ""; msgFilter = "";

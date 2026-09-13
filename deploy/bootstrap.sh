@@ -55,7 +55,8 @@ if [ -f "$RUNTIME/.teyvat-install-manifest" ]; then
   echo -e "  ${D}检测到旧安装，清理 manifest 重新部署...${R}"
   : > "$RUNTIME/.teyvat-install-manifest"
 fi
-PAIMON_VIA_MAKE=1 PAIMON_CHANNEL="minutely" PAIMON_VER="bootstrap" bash "$INSTALL_DIR/C.deploy/install.sh" || die "部署失败"
+# 2026-09-13：install.sh 的防裸跑门要求 PAIMON_VIA_MAKE=1 且 MAKELEVEL 非空——这里不经 make，显式补 MAKELEVEL（同 launcher.sh / install-prerelease.sh），否则新机器安装必死在"部署失败"
+PAIMON_VIA_MAKE=1 MAKELEVEL=1 PAIMON_CHANNEL="minutely" PAIMON_VER="bootstrap" bash "$INSTALL_DIR/C.deploy/install.sh" || die "部署失败"
 
 # ── 4. 登录 ──
 step 4 "登录"

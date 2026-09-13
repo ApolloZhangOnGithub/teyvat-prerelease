@@ -38,7 +38,9 @@ export default function registerHelp(pi: any): void {
       const manifest = getToolManifest();
       const tools = manifest?.tools || {};
       const helpAll = getAllToolHelp();
-      const activeNames = new Set((pi?.getActiveTools?.() ?? []) as string[]);
+      let _active: string[] = [];
+      try { _active = (pi?.getActiveTools?.() ?? []) as string[]; } catch { /* pi 重绑期间 assertActive 抛——按"未知"处理，不让 help 本身炸 */ }
+      const activeNames = new Set(_active);
 
       // ── 详情模式：help <name> ──
       if (name) {

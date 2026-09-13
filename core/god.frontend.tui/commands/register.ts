@@ -38,7 +38,7 @@ export function registerGodCommands(pi: any) {
   pi.registerCommand("s", {
     description: desc("settings", "设置面板（身份/显示/服务/模型/工具/推理/后台/实验）", "Settings panel"),
     getArgumentCompletions: (prefix: string) => {
-      const tabs = ["identity", "display", "services", "model", "effort", "tools", "bg", "experimental"];
+      const tabs = ["identity", "services", "model", "tools", "bg"]; // 2026-09-13：只列有 handler 的子命令（display/effort/experimental 没有对应入口，只会开通用面板）
       return tabs.filter(t => t.startsWith(prefix.toLowerCase())).map(t => ({ label: t, value: t }));
     },
     handler: settingsHandler,

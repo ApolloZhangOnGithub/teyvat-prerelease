@@ -23,7 +23,8 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import * as readline from 'node:readline';
 import { randomBytes, createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, spawn } from 'node:child_process';
+import { syncEndpoint, SYNC_UA } from '../paths.ts';
 
 const H = os.homedir();
 // 与 launcher/doctor/cli 同源：PAIMON_HOME 优先（沙箱/多实例必须正确）——禁止硬编码 ~/.teyvat
@@ -237,7 +238,7 @@ function reportRemote(ok: boolean, detail: string): void {
       host: os.hostname().replace(/\.local$/, ''),
       ts: new Date().toISOString(),
     });
-    spawnSync('curl', ['-s', '-m', '8', '-X', 'POST', 'https://sync.paimon.beer/sync/backup-telemetry',
+    spawnSync('curl', ['-s', '-m', '8', '-X', 'POST', syncEndpoint() + '/sync/backup-telemetry',
       '-H', 'Content-Type: application/json',
       '-H', `Authorization: Bearer ${bind.token}`,
       '-H', `X-Device-Id: ${bind.deviceId || ''}`,
@@ -292,9 +293,10 @@ function cmdInit(): boolean {
     try {
       const bind = JSON.parse(fs.readFileSync(path.join(PAIMON, 'UserAccount', 'binding.json'), 'utf8'));
       if (bind?.token) {
+        // 2026-09-13：带 UA（Cloudflare 1010）、走 syncEndpoint()；server 目前没有 /sync/backup-password 路由——404 时不再假装恢复
         const r = spawnSync('curl', ['-s', '-m', '10', '-H', `Authorization: Bearer ${bind.token}`,
-          '-H', `X-Device-Id: ${bind.deviceId || ''}`,
-          'https://sync.paimon.beer/sync/backup-password'], { encoding: 'utf8' });
+          '-H', `X-Device-Id: ${bind.deviceId || ''}`, '-H', `User-Agent: ${SYNC_UA}`,
+          syncEndpoint() + '/sync/backup-password'], { encoding: 'utf8' });
         if (r.status === 0 && r.stdout) {
           try {
             const resp = JSON.parse(r.stdout);
@@ -313,11 +315,14 @@ function cmdInit(): boolean {
     try {
       const bind = JSON.parse(fs.readFileSync(path.join(PAIMON, 'UserAccount', 'binding.json'), 'utf8'));
       if (bind?.token) {
-        spawnSync('curl', ['-s', '-m', '10', '-X', 'POST', 'https://sync.paimon.beer/sync/backup-password',
+        // 2026-09-13（审计）：原来 stdio:'ignore' 后无条件打印"已同步到云端"——server 根本没有这个路由（404），用户被告知密码可从云端恢复，其实不能，丢 PASS_FILE 就全部备份不可恢复。现在看 HTTP 码如实说。
+        const up = spawnSync('curl', ['-s', '-o', '/dev/null', '-w', '%{http_code}', '-m', '10', '-X', 'POST', syncEndpoint() + '/sync/backup-password',
           '-H', 'Content-Type: application/json', '-H', `Authorization: Bearer ${bind.token}`,
-          '-H', `X-Device-Id: ${bind.deviceId || ''}`, '-H', 'User-Agent: genshin-sync/1.0',
-          '-d', JSON.stringify({ password: pw })], { stdio: 'ignore' });
-        console.log(`  ${G}✓${R} ${T('密码已同步到云端（通过 GitHub 身份绑定，换机器可恢复）', 'password synced to cloud (recoverable via GitHub auth on any machine)')}`);
+          '-H', `X-Device-Id: ${bind.deviceId || ''}`, '-H', `User-Agent: ${SYNC_UA}`,
+          '-d', JSON.stringify({ password: pw })], { encoding: 'utf8' });
+        const code = (up.stdout || '').trim();
+        if (up.status === 0 && /^2\d\d$/.test(code)) console.log(`  ${G}✓${R} ${T('密码已同步到云端（通过 GitHub 身份绑定，换机器可恢复）', 'password synced to cloud (recoverable via GitHub auth on any machine)')}`);
+        else console.log(`  ${Y}!${R} ${T(`密码未上云（server 返回 ${code || 'no response'}）——请自行备份 ${PASS_FILE}，丢失则备份不可恢复`, `password NOT synced to cloud (server returned ${code || 'no response'}) — back up ${PASS_FILE} yourself; without it backups are unrecoverable`)}`);
       }
     } catch { /* 上传失败不阻断 */ }
     console.log(`  ${D}${T('本地备份', 'local copy')}：${PASS_FILE}${R}`);
@@ -448,13 +453,18 @@ export function startAutoBackup(): void {
         if (l.hour === h && Date.now() - (l.ts || 0) < 10 * 60_000) return;
         try { fs.writeFileSync(lockFile, JSON.stringify({ pid: process.pid, ts: Date.now(), hour: h })); } catch { return; }
       }
-      try { fs.writeFileSync(stateFile, JSON.stringify({ lastRun: h, at: new Date().toISOString() })); } catch { /* 静默 */ }
       const conf = getBackupConf();
       if (!conf) return;
       const script = path.join(extDir, 'god.frontend.cli', 'backup.ts');
       if (!fs.existsSync(script)) return;
-      const { spawn } = require('node:child_process');
+      // 2026-09-13（debug-01 系统检查）：原为 `const { spawn } = require('node:child_process')` —— 本文件是 ESM
+      // （顶层 import + import.meta.main），`require` 未定义 → 每次 tick 抛 "require is not defined" 被下方 catch 吞掉，
+      // spawn 从未执行 → 自动备份自 09-12 移入本文件起彻底失效（实测 23×/2 agent，却只表现为一行 error 日志）。
+      // 改用顶层 import（见文件头 node:child_process）。
       const ch = spawn('bun', [script, 'now'], { detached: true, stdio: 'ignore' });
+      // 2026-09-13：lastRun 原写在 spawn 之前 —— 一旦 spawn 前任何一步抛错，该小时已被标记为"已跑"，
+      // 本小时不再重试（放大上面那个 bug 的后果）。改为"确实发起过"再落盘；spawn 出错时由 error 回调清空 lastRun。
+      try { fs.writeFileSync(stateFile, JSON.stringify({ lastRun: h, at: new Date().toISOString() })); } catch { /* 静默 */ }
       ch.on('error', (e: any) => {
         console.error("[backup.ts] auto-backup spawn failed: " + (e?.code || e?.message || e));
         try { fs.writeFileSync(stateFile, JSON.stringify({ lastRun: '', error: String(e?.code || e?.message || e) })); } catch { /* 静默 */ }

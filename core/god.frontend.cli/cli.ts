@@ -796,7 +796,8 @@ function getBinding(): any | null {
 }
 function saveBinding(b: any) {
   fs.mkdirSync(USER_ACCOUNT, { recursive: true });
-  fs.writeFileSync(BINDING_FILE, JSON.stringify(b, null, 2));
+  fs.writeFileSync(BINDING_FILE, JSON.stringify(b, null, 2), { mode: 0o600 }); // 2026-09-13：里面是 GitHub token，不能 0644
+  try { fs.chmodSync(BINDING_FILE, 0o600); } catch { /* 已存在且权限改不了就算了 */ }
 }
 const SYNC_TUNNEL = 'http://localhost:13456';
 function getEndpoint(): string {

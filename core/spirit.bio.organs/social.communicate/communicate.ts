@@ -604,7 +604,7 @@ async function findRemoteAgent(key: string): Promise<{ sid: string; name: string
     let b: any = null;
     try { b = JSON.parse(readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8")); } catch { return null; }
     if (!b?.token || !b?.deviceId) return null;
-    const res = await fetch(syncEndpoint() + "/sync/agent-presence", { headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "User-Agent": SYNC_UA } });
+    const res = await fetch(syncEndpoint() + "/sync/agent-presence", { signal: AbortSignal.timeout(10_000), headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "User-Agent": SYNC_UA } });
     if (!res.ok) return null;
     const j = await res.json().catch(() => ({}));
     const agents = (j.agents || []) as any[];
@@ -642,7 +642,7 @@ async function remoteSendOne(toSid: string, text: string, mode: SocialMode, from
   const ep = syncEndpoint();
   let res: Response;
   try {
-    res = await fetch(ep + "/messages/send", { method: "POST", headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "Content-Type": "application/json", "User-Agent": SYNC_UA }, body: JSON.stringify({ toPerson: toSid, type: "agent-social", payload: msg }) });
+    res = await fetch(ep + "/messages/send", { signal: AbortSignal.timeout(10_000), method: "POST", headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "Content-Type": "application/json", "User-Agent": SYNC_UA }, body: JSON.stringify({ toPerson: toSid, type: "agent-social", payload: msg }) });
   } catch (e: any) {
     throw new Error(`social.send: 跨设备投递网络错误 ${toSid}（${(e?.message || e)} url=${ep}/messages/send）`);
   }
@@ -1045,12 +1045,12 @@ function registerSocialTools(pi: ExtensionAPI): void {
             try {
               const rb = JSON.parse(readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8"));
               if (rb?.token && rb?.deviceId) {
-                const res = await fetch(syncEndpoint() + "/sync/agent-presence", { headers: { "Authorization": `Bearer ${rb.token}`, "X-Device-Id": rb.deviceId, "User-Agent": SYNC_UA } });
+                const res = await fetch(syncEndpoint() + "/sync/agent-presence", { signal: AbortSignal.timeout(10_000), headers: { "Authorization": `Bearer ${rb.token}`, "X-Device-Id": rb.deviceId, "User-Agent": SYNC_UA } });
                 const body: any = await res.json();
                 // 2026-09-07（用户：remote agent 没显示具体设备——垃圾）：presence 只有 device_id 无设备名——补拉 auth/devices 拿 device_id→device_name 映射
                 const devNames: Record<string, string> = {};
                 try {
-                  const dr = await fetch(syncEndpoint() + "/auth/devices", { headers: { "Authorization": `Bearer ${rb.token}`, "X-Device-Id": rb.deviceId, "User-Agent": SYNC_UA } });
+                  const dr = await fetch(syncEndpoint() + "/auth/devices", { signal: AbortSignal.timeout(10_000), headers: { "Authorization": `Bearer ${rb.token}`, "X-Device-Id": rb.deviceId, "User-Agent": SYNC_UA } });
                   const dj: any = await dr.json();
                   for (const dv of (dj?.devices ?? [])) devNames[String(dv.device_id)] = dv.device_name && dv.device_name !== dv.device_id ? dv.device_name : dv.device_id;
                 } catch { /* 设备名拉取失败 → remote 行只显示 device_id */ }
@@ -1087,7 +1087,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
           const H = { Authorization: "Bearer " + b.token, "X-Device-Id": b.deviceId, "X-Device-Name": require("os").hostname(), "User-Agent": SYNC_UA };
           const _url = syncEndpoint() + "/auth/devices";
           let res: Response;
-          try { res = await fetch(_url, { headers: H }); } catch (e: any) {
+          try { res = await fetch(_url, { signal: AbortSignal.timeout(10_000), headers: H }); } catch (e: any) {
             // 2026-09-05 诊断：fetch 网络层异常 → 返回真实信息（含 URL/cause）定位
             return { content: [{ type: "text", text: "(global 网络错误: " + (e?.message || e) + (e?.cause?.message ? " | cause: " + e.cause.message : "") + " | url=" + _url + ")" }], details: { social: true, action: "global", count: 0, lines: [] } };
           }
@@ -1098,7 +1098,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
           // 2026-09-08（用户怒批：一堆版本号没状态）：拉 presence 拿各 agent 实时在线状态（与 socialGlobal() 同逻辑——两入口待统一去重）
           let presMap: Record<string, number> = {};
           try {
-            const pr = await fetch(syncEndpoint() + "/sync/agent-presence", { headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "User-Agent": SYNC_UA } });
+            const pr = await fetch(syncEndpoint() + "/sync/agent-presence", { signal: AbortSignal.timeout(10_000), headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "User-Agent": SYNC_UA } });
             const pj: any = await pr.json();
             for (const pa of (pj?.agents ?? [])) presMap[String(pa.sid)] = Date.parse(String(pa.last_seen || "").replace(" ", "T") + "Z") || 0;
           } catch { /* presence 拉取失败 → 全离线 */ }
@@ -1277,7 +1277,7 @@ async function socialGlobal(p: any, b: any): Promise<any> {
   const H = { Authorization: "Bearer " + b.token, "X-Device-Id": b.deviceId, "X-Device-Name": require("os").hostname(), "User-Agent": SYNC_UA };
   const _url = syncEndpoint() + "/auth/devices";
   let res: Response;
-  try { res = await fetch(_url, { headers: H }); } catch (e: any) {
+  try { res = await fetch(_url, { signal: AbortSignal.timeout(10_000), headers: H }); } catch (e: any) {
     return { content: [{ type: "text", text: "(global 网络错误: " + (e?.message || e) + (e?.cause?.message ? " | cause: " + e.cause.message : "") + " | url=" + _url + ")" }], details: { social: true, action: "global", count: 0, lines: [] } };
   }
   if (!res.ok) return { content: [{ type: "text", text: "(server 查询失败: HTTP " + res.status + ")" }], details: { social: true, action: "global", count: 0, lines: [] } };
@@ -1287,7 +1287,7 @@ async function socialGlobal(p: any, b: any): Promise<any> {
   // 2026-09-08（用户怒批：一堆版本号没状态——"最重要的状态默认要显示，版本号用 version 参数看"）：拉 presence 拿各 agent 实时在线状态
   let presMap: Record<string, number> = {};
   try {
-    const pr = await fetch(syncEndpoint() + "/sync/agent-presence", { headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "User-Agent": SYNC_UA } });
+    const pr = await fetch(syncEndpoint() + "/sync/agent-presence", { signal: AbortSignal.timeout(10_000), headers: { "Authorization": `Bearer ${b.token}`, "X-Device-Id": b.deviceId, "User-Agent": SYNC_UA } });
     const pj: any = await pr.json();
     for (const pa of (pj?.agents ?? [])) presMap[String(pa.sid)] = Date.parse(String(pa.last_seen || "").replace(" ", "T") + "Z") || 0;
   } catch { /* presence 拉取失败 → 全离线显示 */ }
@@ -1344,6 +1344,13 @@ async function socialGlobal(p: any, b: any): Promise<any> {
 }
 
 function registerSocialRenderer(pi: ExtensionAPI): void {
+  // 2026-09-13：budget-trip 补渲染器（backbone 声明 render:true 但从未注册——check-deploy 门禁第 6 段拦）。@UNUSED 类型但历史 session 回放可能命中，渲染成系统通知样式。
+  pi.registerMessageRenderer("budget-trip", (message: any, _opts: any, theme: any) => {
+    const { Text } = require("@earendil-works/pi-tui");
+    const d = message.details || {};
+    const body = d.text || d.message || "";
+    return new Text(theme.fg("warning", "◇ ") + theme.bold("Budget Alert") + (body ? " — " + body : ""), 0, 0);
+  });
   pi.registerMessageRenderer("social-message", (message: any, _opts: any, theme: any) => {
     const { Container, Text } = require("@earendil-works/pi-tui");
     const d = message.details || {};

@@ -82,7 +82,7 @@ export function getPrompt(name: string): string {
 
 /** 取某 func 在某 mode 下的职责列表（含已解析的 prompt）。无则空数组。 */
 export function getDuty(funcName: string, mode: string = _mode): Duty[] {
-  return rna().funcs[funcName]?.duties[mode] ?? [];
+  return rna().funcs[funcName]?.duties?.[mode] ?? []; // 2026-09-13：polymerase 对空 duties 省略字段，原写法 18/19 个 func 抛 TypeError
 }
 
 /** 取某 func 在某 mode 下「第一个」职责的 prompt（最常见用法）。无则 null。 */
@@ -95,7 +95,7 @@ export function getDutyPrompt(funcName: string, mode: string = _mode): string | 
 export function getFuncPrompts(funcName: string): string[] {
   const f = rna().funcs[funcName];
   if (!f) return [];
-  return f.promptRefs.map((r) => f.prompts[r]).filter((x): x is string => !!x);
+  return (f.promptRefs ?? []).map((r) => f.prompts?.[r]).filter((x): x is string => !!x); // 2026-09-13：同上，promptRefs/prompts 可能缺席
 }
 
 // ── 工具 ↔ CHR 联动（工具开关精确控制 coded prompt 加载）──────────────

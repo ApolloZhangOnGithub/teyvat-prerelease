@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { i18n } from "#tui_localizations";
@@ -136,17 +136,23 @@ function syncProviderRegistration(key: string, svc: Record<string, any>): void {
 function ensureServices(): Record<string, any> {
   const sf = existsSync(UA_FILE) ? UA_FILE : existsSync(LEGACY_FILE) ? LEGACY_FILE : UA_FILE;
   let services: Record<string, any> = {};
-  try { services = JSON.parse(readFileSync(sf, "utf8")); } catch (e) { console.error("[config.ts] " + ((e as any)?.message || e)); }
-  if (!Object.keys(services).length) { mkdirSync(UA_DIR, { recursive: true }); services = defaultFields(); writeFileSync(UA_FILE, JSON.stringify(services, null, 2)); }
+  // 2026-09-13（审计）：原来 JSON 解析失败 → services={} → 被当成首次运行 → 用默认值覆盖文件——一次半截写入就把全部 API key 抹掉。解析失败时不写、原样返回空。
+  const sfExists = existsSync(sf);
+  let parseFailed = false;
+  try { services = sfExists ? JSON.parse(readFileSync(sf, "utf8")) : {}; } catch (e) { parseFailed = true; console.error("[config.ts] services.json 解析失败，不覆盖（请手动修复）: " + ((e as any)?.message || e)); }
+  if (parseFailed) return services;
+  if (!sfExists || !Object.keys(services).length) { mkdirSync(UA_DIR, { recursive: true }); services = defaultFields(); _writeServicesAtomic(services); }
   let patched = false;
   for (const k of Object.keys(DEFAULTS)) {
     if (!services[k]) { services[k] = { ...DEFAULTS[k].fields }; patched = true; }
     else { for (const [fk, fv] of Object.entries(DEFAULTS[k].fields)) { if (services[k][fk] === undefined) { services[k][fk] = fv; patched = true; } } }
   }
-  if (patched) { try { mkdirSync(UA_DIR, { recursive: true }); writeFileSync(UA_FILE, JSON.stringify(services, null, 2)); } catch (e) { console.error("[config.ts] " + ((e as any)?.message || e)); } }
+  if (patched) { try { mkdirSync(UA_DIR, { recursive: true }); _writeServicesAtomic(services); } catch (e) { console.error("[config.ts] " + ((e as any)?.message || e)); } }
   return services;
 }
-function saveServices(services: Record<string, any>) { try { mkdirSync(UA_DIR, { recursive: true }); writeFileSync(UA_FILE, JSON.stringify(services, null, 2)); } catch (e) { console.error("[config.ts] " + ((e as any)?.message || e)); } }
+// tmp+rename：崩在写一半时不会留下截断的 services.json
+function _writeServicesAtomic(services: Record<string, any>) { const tmp = UA_FILE + ".tmp-" + process.pid; writeFileSync(tmp, JSON.stringify(services, null, 2)); renameSync(tmp, UA_FILE); }
+function saveServices(services: Record<string, any>) { try { mkdirSync(UA_DIR, { recursive: true }); _writeServicesAtomic(services); } catch (e) { console.error("[config.ts] " + ((e as any)?.message || e)); } }
 function syncAfterChange(key: string, svc: Record<string, any>, services: Record<string, any>) {
   if (key === "bigmodel") { syncModelsJson(services); syncProviderRegistration(key, svc); }
   else if (PROVIDER_ENV_KEYS[key]) { syncProviderEnvKey(key, services); syncProviderRegistration(key, svc); }

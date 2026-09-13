@@ -68,7 +68,8 @@ const APP_DATA = join(PAIMON, "AppData");
 const BLACKBOX_DATA = join(PAIMON, "BlackboxData");
 const SOCIAL_DATA = join(PAIMON, "SocialData");
 const CONFIG_DIR = join(PAIMON, "config");
-const ID_RE = /(?:\.teyvat\/SessionData\/|\.teyvat\/sessions\/|\.pi\/memory\/)([a-f0-9]+)\//;
+// 2026-09-13（审计）：去掉 ".teyvat" 前缀——PAIMON_HOME 指向别处时 session 路径不含 .teyvat，personId() 变 null、outbox 目录变 unknown-pid-N（split-brain）
+const ID_RE = /\/(?:SessionData|sessions|memory)\/([a-f0-9]+)\//;
 
 export function configDir(): string { return CONFIG_DIR; }
 export function memoryDataDir(): string { return MEMORY_DATA; }
@@ -272,7 +273,8 @@ export async function apiFetch(
   try {
     // 2026-09-11（prime-agent）：统一兜底 User-Agent —— 目标是 Cloudflare 后面的 sync.paimon.beer 时，
     // 无 UA 会被 Bot Management 拒（实测 403 error 1010）。调用方显式设了 UA 就用它的，否则补默认值。
-    const _init: RequestInit = { ...init, headers: { "User-Agent": SYNC_UA, ...(init?.headers ? Object.fromEntries(new Headers(init.headers as any).entries()) : {}) } };
+    // 2026-09-13：Headers.entries() 返回小写键——默认键也用小写，否则调用方的 user-agent 与默认 User-Agent 并存被合并成 "genshin-sync/1.0, X"
+    const _init: RequestInit = { ...init, headers: { "user-agent": SYNC_UA, ...(init?.headers ? Object.fromEntries(new Headers(init.headers as any).entries()) : {}) } };
     const res = await fetch(url, _init);
     status = res.status;
     return res;

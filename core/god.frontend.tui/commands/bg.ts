@@ -48,14 +48,8 @@ export async function bgHandler(args: string, ctx: any) {
   const showSettingsList = (globalThis as any).__genshinShowSettingsList;
   if (showSettingsList) {
     // 新管线：SettingsList（只读展示，Enter 进子操作）
-    const getItems = () => tasks.map((t) => {
-      const elapsed = fmtDuration((Date.now() - t.startTime) / 1000);
-      const tag = t.type === "tty" ? "tty" : "bg";
-      const cmd = t.title || (t.command.length > 50 ? t.command.slice(0, 47) + "..." : t.command);
-      return { id: String(t.id), label: `@${t.id} ${tag} ${cmd}`, currentValue: elapsed, values: [] };
-    });
-    // SettingsList 的 onChange 在无 values 时不触发，这里用它展示列表，用户按 Enter 后走子操作
-    await showSettingsList(T(`后台任务 (${tasks.length})`, `Background (${tasks.length})`), getItems, async (id: string) => {
+    // 2026-09-13（审计 HIGH）：SettingsList 的 activateItem 只在 values.length>0 时才调 onChange——原来 values:[] 且无 onActivate，Enter/方向键全无反应，杀/详情根本进不去。改用 onActivate。
+    const onPick = async (id: string) => {
       const tid = parseInt(id);
       const t = tasks.find((x) => x.id === tid);
       if (!t) return;
@@ -73,7 +67,14 @@ export async function bgHandler(args: string, ctx: any) {
         const started = new Date(t.startTime).toLocaleString();
         ctx.ui.notify([`@${tid} ${t.type === "tty" ? "tty" : "bg"}`, t.title || "", t.command, `${started} (${fmtDuration((Date.now() - t.startTime) / 1000)})`].filter(Boolean).join("\n"), "info");
       }
+    };
+    const getItems = () => tasks.map((t) => {
+      const elapsed = fmtDuration((Date.now() - t.startTime) / 1000);
+      const tag = t.type === "tty" ? "tty" : "bg";
+      const cmd = t.title || (t.command.length > 50 ? t.command.slice(0, 47) + "..." : t.command);
+      return { id: String(t.id), label: `@${t.id} ${tag} ${cmd}`, currentValue: elapsed, values: [], onActivate: () => { void onPick(String(t.id)); } };
     });
+    await showSettingsList(T(`后台任务 (${tasks.length})`, `Background (${tasks.length})`), getItems, onPick);
     return;
   }
 

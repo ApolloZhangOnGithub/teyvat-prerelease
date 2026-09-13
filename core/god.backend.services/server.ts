@@ -1,5 +1,7 @@
 // 文档: B.docs/Dev.Common/Wiki/Services(God Level Support).WIKI
 import { Hono } from "hono";
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
 import { cors } from "hono/cors";
 import { bodyLimit } from "hono/body-limit";
 import { serve } from "@hono/node-server";
@@ -36,6 +38,28 @@ app.get("/auth/wiki-verify", async (c) => {
 // 临时文件分享（2026-09-08 ISSUE 142）：上传挂 authRouter（自行鉴权——必须在 app.route("/auth") 前注册才生效）；下载公开（authMiddleware 前）
 authRouter.post("/files", uploadFile);
 app.get("/files/:id", downloadFile);
+
+// 2026-09-13（IM 公网版）：IM 前端静态托管（公开，放在 authMiddleware 之前）。
+// 背景：CF 边缘直连本机源站的 TLS 握手不通（paimon.beer / wiki 均为 525），但本域经 Cloudflare Tunnel 可达，
+// 所以公网 IM 页面由本服务直接吐出（https://sync.paimon.beer/im/）；paimon.beer/im/ 由 Worker 反代到本域。
+const IM_STATIC_DIR = process.env.IM_STATIC_DIR || "/opt/paimon-im";
+const IM_MIME: Record<string, string> = {
+  html: "text/html; charset=utf-8", js: "text/javascript; charset=utf-8", css: "text/css; charset=utf-8",
+  json: "application/json", png: "image/png", svg: "image/svg+xml", ico: "image/x-icon",
+};
+app.get("/im", (c) => c.redirect("/im/"));
+app.get("/im/", (c) => {
+  const f = join(IM_STATIC_DIR, "index.html");
+  if (!existsSync(f)) return c.text("IM frontend not deployed", 404);
+  return c.html(readFileSync(f, "utf8"));
+});
+app.get("/im/:file", (c) => {
+  const name = (c.req.param("file") || "").replace(/[^A-Za-z0-9._-]/g, "");   // 防目录穿越
+  const f = join(IM_STATIC_DIR, name);
+  if (!name || !existsSync(f)) return c.text("not found", 404);
+  const ext = (name.split(".").pop() || "").toLowerCase();
+  return c.body(readFileSync(f), 200, { "Content-Type": IM_MIME[ext] || "application/octet-stream" });
+});
 
 app.route("/auth", authRouter);
 

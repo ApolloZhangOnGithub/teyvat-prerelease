@@ -4,7 +4,7 @@
  */
 // 本地 i18n helper —— 与 god.frontend.tui/localizations/i18n.ts 逻辑一致；
 // interactive-mode.js 部署到 pi dist（install.sh cp），无法用 #tui_localizations 别名，故内联同款判断。
-const _uiLang = (process.env.PI_LANG || "zh").slice(0, 2).toLowerCase();
+const _uiLang = (process.env.PAIMON_LANG || process.env.PI_LANG || "zh").slice(0, 2).toLowerCase(); // 2026-09-13：launcher 只导出 PAIMON_LANG，PI_LANG 全仓没人设——英文安装这些内联文案永远中文
 const _i18n = (zh, en) => _uiLang === "en" ? en : zh;
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
@@ -491,6 +491,12 @@ export class InteractiveMode {
         if (this.settingsManager?.globalSettings?.writeExpanded !== undefined) globalThis.__genshinWriteExpanded = this.settingsManager.globalSettings.writeExpanded;
         if (this.settingsManager?.globalSettings?.editExpanded !== undefined) globalThis.__genshinEditExpanded = this.settingsManager.globalSettings.editExpanded;
         globalThis.__genshinThinkingFirstLine = this.settingsManager?.globalSettings?.thinkingFirstLine ?? true;
+        // 2026-09-13：/s「实验」组（xattr / RESEARCH）持久化在 UserAccount/settings.json，启动时没人加载 → 重启后面板永远显示默认值
+        try {
+            const _us = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".teyvat", "UserAccount", "settings.json"), "utf8"));
+            if (typeof _us.experimental === "number") globalThis.__genshinExperimental = _us.experimental;
+            if (typeof _us.research === "boolean") globalThis.__genshinResearch = _us.research;
+        } catch { /* 无文件 = 默认 */ }
         if (this.settingsManager?.globalSettings?.greetOnAttach !== undefined) globalThis.__genshinGreetOnAttach = this.settingsManager.globalSettings.greetOnAttach;
         if (this.settingsManager?.globalSettings?.unloadMode) globalThis.__genshinUnloadMode = this.settingsManager.globalSettings.unloadMode;
         // Expose session for /m /e commands
@@ -897,7 +903,7 @@ export class InteractiveMode {
                 }
                 catch (error) {
                     const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-                    this.statusBar?.setMessage?.(errorMessage) ?? this.showStatus(errorMessage);
+                    if (this.statusBar?.setMessage) this.statusBar.setMessage(errorMessage); else this.showStatus(errorMessage); // 2026-09-13：setMessage 返回 undefined，?? 让两条都跑、报两遍
                 }
             }
         }
@@ -906,20 +912,7 @@ export class InteractiveMode {
             const userInput = await this.getUserInput();
             try {
                 await this.session.prompt(userInput);
-                void 0;
-                // ── 026-user-message-archive: 实时归档用户消息 ──
-                try {
-                    const dir = os.homedir() + '/.teyvat/AccountData';
-                    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-                    const agent = process.env.PAIMON_AGENT_NAME || process.env.PAIMON_AGENT_ID || 'unknown';
-                    const agentId = process.env.PAIMON_AGENT_ID || '';
-                    const session = this.sessionManager?.getSessionId?.() || '';
-                    const ts = new Date().toISOString().slice(0, 19).replace('T', ' ') + '+08:00';
-                    const text = typeof userInput === 'string' ? userInput.trim() : JSON.stringify(userInput);
-                    if (text) {
-                        fs.appendFileSync(dir + '/user-messages.jsonl', JSON.stringify({ agent, agentId, session, ts, text }) + '\n');
-                    }
-                } catch (e) { console.error("[god.frontend.tui/overrides/modes/interactive/interactive-mode.js] " + (e?.message || e)); }
+                // （2026-09-13 审计：这里原来还有一份 026-user-message-archive 归档——message_start(user) 处已经归档过，每条普通输入写两遍且 ts 不同；删。）
             }
             catch (error) {
                 const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
@@ -1964,6 +1957,7 @@ export class InteractiveMode {
      */
     hideExtensionSelector() {
         this.extensionSelector?.dispose();
+        globalThis.__genshinCurrentSettingsModal = null; globalThis.__genshinSettingsModalStack = []; // 2026-09-13：功能项（模型/身份/服务）经此关闭，不清栈 → 下次 /s 第一下 ESC 复活旧面板
         this.editorContainer.clear();
         this.editorContainer.addChild(this.editor);
         this.extensionSelector = undefined;
@@ -2333,8 +2327,15 @@ export class InteractiveMode {
                 }, (id, value) => {
                     onChange(id, value);
                     if (typeof getItems === "function") {
+                        // 2026-09-13：条件行（工具输出=完整后才出现的 Read/Write/Edit/Execute 行、&& 换行）原来只 updateValue 已有 id，新行要重开面板才出现——整表重建
                         const fresh = getItems();
-                        for (const fi of fresh) list.updateValue(fi.id, fi.currentValue);
+                        if (Array.isArray(list.items)) {
+                            list.items = fresh;
+                            list.filteredItems = fresh;
+                            if (typeof list.selectedIndex === "number") list.selectedIndex = Math.max(0, Math.min(list.selectedIndex, fresh.length - 1));
+                        } else {
+                            for (const fi of fresh) list.updateValue(fi.id, fi.currentValue);
+                        }
                     }
                     this.ui.requestRender();
                 }, () => {
@@ -2573,7 +2574,7 @@ export class InteractiveMode {
                         const agent = process.env.PAIMON_AGENT_NAME || process.env.PAIMON_AGENT_ID || 'unknown';
                         const agentId = process.env.PAIMON_AGENT_ID || '';
                         const session = this.sessionManager?.getSessionId?.() || '';
-                        const ts = new Date().toISOString().slice(0, 19).replace('T', ' ') + '+08:00';
+                        const ts = new Date().toISOString(); // 2026-09-13：原 toISOString 是 UTC 却标 +08:00，每条差 8 小时；机器日志直接存 ISO/Z
                         const text = Array.isArray(event.message.content)
                             ? event.message.content.filter(c => c.type === 'text').map(c => c.text).join('').trim()
                             : (typeof event.message.content === 'string' ? event.message.content.trim() : '');
@@ -2829,7 +2830,7 @@ export class InteractiveMode {
                     this.session.abortCompaction();
                 };
                 const compactMsg = event.reason === "manual" ? "Compacting context..." : "Auto-compacting...";
-                this.footer.setSpinner(compactMsg, "accent");
+                if (this.statusBar?.setMessage) this.statusBar.setMessage(compactMsg); else this.footer.setSpinner(compactMsg, "accent"); // 2026-09-13：默认"消息底部"模式下 footer spinner 不显示，压缩/重试提示从未出现
                 this.ui.requestRender();
                 break;
             }
@@ -2852,8 +2853,7 @@ export class InteractiveMode {
                 }
                 else if (event.result) {
                     this.chatContainer.clear();
-                    this.rebuildChatFromMessages();
-                    this.addMessageToChat(createCompactionSummaryMessage(event.result.summary, event.result.tokensBefore, new Date().toISOString()));
+                    this.rebuildChatFromMessages(); // 2026-09-13：compaction 条目此时已在 session 里，rebuild 会把摘要渲染出来——原来再 addMessageToChat 一次，每次压缩后摘要显示两遍
                     this.footer.invalidate();
                 }
                 else if (event.errorMessage) {
@@ -2877,7 +2877,7 @@ export class InteractiveMode {
                     this.session.abortRetry();
                 };
                 const retryMsg = `Retrying (${event.attempt}/${event.maxAttempts})...`;
-                this.footer.setSpinner(retryMsg, "warning");
+                if (this.statusBar?.setMessage) this.statusBar.setMessage(retryMsg); else this.footer.setSpinner(retryMsg, "warning");
                 this.ui.requestRender();
                 break;
             }
@@ -4063,6 +4063,7 @@ export class InteractiveMode {
      */
     showSelector(create) {
         const done = () => {
+            globalThis.__genshinCurrentSettingsModal = null; globalThis.__genshinSettingsModalStack = []; // 2026-09-13：同 hideExtensionSelector
             this.editorContainer.clear();
             this.editorContainer.addChild(this.editor);
             this.ui.setFocus(this.editor);
@@ -4584,7 +4585,7 @@ export class InteractiveMode {
                         this.session.abortBranchSummary();
                     };
                     this.chatContainer.addChild(new Spacer(1));
-                    this.footer.setSpinner("Summarizing branch...", "accent");
+                    if (this.statusBar?.setMessage) this.statusBar.setMessage("Summarizing branch..."); else this.footer.setSpinner("Summarizing branch...", "accent");
                     showingSummaryIndicator = true;
                     this.ui.requestRender();
                 }

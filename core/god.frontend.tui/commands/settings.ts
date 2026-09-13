@@ -23,8 +23,9 @@ function featureEntries(): any[] {
   const g = globalThis as any;
   let curModel = "";
   try { curModel = g.__genshinGetModel?.()?.id || ""; } catch { /* 模型未就绪（首个 turn 前） */ }
-  const guard = (fn: () => any) => () => {
-    try { fn(); } catch (e) { console.error("[god.frontend.tui/commands/settings.ts] feature entry: " + ((e as any)?.message || e)); }
+  // 2026-09-13：原同步 try 包不住 async handler 的 rejection → unhandledRejection → core.ts 记成 crash
+  const guard = (fn: () => any) => async () => {
+    try { await fn(); } catch (e) { console.error("[god.frontend.tui/commands/settings.ts] feature entry: " + ((e as any)?.message || e)); }
   };
   return [
     { id: "_hdr_features", label: T("── 功能 ──", "── Features ──"), currentValue: "", values: [] },
@@ -336,19 +337,21 @@ function handleChange(id: string, value: string) {
 }
 
 // 保留子命令快捷方式
+const _modelSub = async (_a: any, ctx: any) => {
+  const handle = (globalThis as any).__genshinHandleModelCommand;
+  if (typeof handle === "function") { await handle(); return; }
+  ctx.ui.notify(T("模型选择器未就绪", "Model selector not ready"), "error");
+};
+const _toolsSub = async (a: any, ctx: any) => {
+  if (_toolsHandler) { await _toolsHandler(a, ctx); return; }
+  ctx.ui.notify(T("工具管理未就绪", "Tools manager not ready"), "error");
+};
 const SUB_HANDLERS: Record<string, (args: any, ctx: any) => Promise<void>> = {
   i: identityHandler, identity: identityHandler,
   c: configHandler, services: configHandler, config: configHandler,
   b: bgHandler, bg: bgHandler, background: bgHandler,
-  m: async (_a: any, ctx: any) => {
-    const handle = (globalThis as any).__genshinHandleModelCommand;
-    if (typeof handle === "function") { await handle(); return; }
-    ctx.ui.notify(T("模型选择器未就绪", "Model selector not ready"), "error");
-  },
-  t: async (a: any, ctx: any) => {
-    if (_toolsHandler) { await _toolsHandler(a, ctx); return; }
-    ctx.ui.notify(T("工具管理未就绪", "Tools manager not ready"), "error");
-  },
+  m: _modelSub, model: _modelSub,   // 2026-09-13：补全里有 model/tools 但没有 handler → 开成通用面板
+  t: _toolsSub, tools: _toolsSub,
 };
 
 export async function settingsHandler(args: any, ctx: any) {

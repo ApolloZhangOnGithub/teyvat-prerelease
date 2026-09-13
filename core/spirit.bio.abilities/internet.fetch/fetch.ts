@@ -91,14 +91,45 @@ export class NodeFetchBackend implements FetchBackend {
     const maxChars = options?.maxChars ?? 20000;
     const mode = options?.mode ?? "auto";
     try {
-      const res = await fetch(url, {
-        headers: options?.headers ?? { "User-Agent": "genshin-agent/0.3" },
-        signal: AbortSignal.timeout(timeoutMs),
-        redirect: "follow",
-      });
-      const buf = Buffer.from(await res.arrayBuffer());
-      const raw = buf.toString("utf-8");
+      // 2026-09-13（审计）：① redirect 手动跟随，每一跳都过 isValidHttpUrl——原 redirect:"follow" 只校验首个 URL，
+      //   http://attacker/ → 302 → http://169.254.169.254/ 直接把内网正文喂给模型（SSRF 绕过）；
+      // ② 响应体封顶 8MB（原 arrayBuffer 整包读入，只有 8s 超时兜底，局域网能吃 ~1GB 内存）；
+      // ③ 按 Content-Type / <meta charset> 解码（原一律 utf-8，GBK 站点全是锟斤拷）。
+      let cur = url;
+      let res!: Response;
+      for (let hop = 0; hop < 5; hop++) {
+        res = await fetch(cur, {
+          headers: options?.headers ?? { "User-Agent": "genshin-agent/0.3" },
+          signal: AbortSignal.timeout(timeoutMs),
+          redirect: "manual",
+        });
+        const loc = res.headers.get("location");
+        if (res.status < 300 || res.status >= 400 || !loc) break;
+        try { cur = new URL(loc, cur).href; } catch { return { error: `重定向地址无效: ${loc}` }; }
+        if (!isValidHttpUrl(cur)) return { error: `重定向到禁止地址: ${cur}（只允许 http/https，禁止 localhost/内网）` };
+        try { await res.body?.cancel(); } catch { /* 丢弃中间响应体 */ }
+      }
+      const MAX_BYTES = 8 * 1024 * 1024;
+      const clen = Number(res.headers.get("content-length") || 0);
+      if (clen > MAX_BYTES) return { error: `响应过大 (${clen} B > ${MAX_BYTES} B): ${cur}` };
+      const parts: Uint8Array[] = []; let got = 0;
+      if (res.body) {
+        const rd = res.body.getReader();
+        for (;;) {
+          const { done, value } = await rd.read();
+          if (done) break;
+          got += value.length;
+          if (got > MAX_BYTES) { try { await rd.cancel(); } catch { /* 已截断 */ } break; }
+          parts.push(value);
+        }
+      }
+      const buf = Buffer.concat(parts);
       const contentType = res.headers.get("content-type") ?? undefined;
+      const cs = /charset=["']?([\w-]+)/i.exec(contentType ?? "")?.[1]
+        ?? /<meta[^>]+charset=["']?([\w-]+)/i.exec(buf.toString("latin1", 0, 4096))?.[1]
+        ?? "utf-8";
+      let raw: string;
+      try { raw = new TextDecoder(cs).decode(buf); } catch { raw = buf.toString("utf-8"); }
 
       // 非 2xx/3xx：不返回正文——错误页（404 等）的 CSS/JS 全是噪声，对 agent 无用。
       // 只回状态码 + 简短说明，避免上下文被污染（实测：404 页 text 模式吐出整段样式表）。

@@ -39,6 +39,7 @@ VERSION_INDEX="$RELEASE_DIR/VERSION.INDEX"
 
 # ── 共用排除 ──
 CLEAN_EXCLUDES=(
+  --exclude='.backups-*'   # 2026-09-13：3.2MB 备份目录曾被 rsync 进 prerelease
   --exclude='.DS_Store'
   --exclude='__pycache__'
   --exclude='*.pyc'
@@ -166,7 +167,7 @@ build_minutely() {
     "@earendil-works/pi-coding-agent": "0.80.7"
   },
   "scripts": {
-    "postinstall": "PAIMON_CHANNEL=prerelease PAIMON_VER=$VER PAIMON_PINNED_DEV=$PINNED_DEV bash deploy/install.sh"
+    "postinstall": "PAIMON_VIA_MAKE=1 MAKELEVEL=1 PAIMON_CHANNEL=prerelease PAIMON_VER=$VER PAIMON_PINNED_DEV=$PINNED_DEV bash deploy/install.sh"
   },
   "files": ["core/", "deploy/", "README.md"]
 }
@@ -197,6 +198,7 @@ GITEOF
 
   echo "  OK 打包完成"
   security_check "$PRERELEASE_DIR/core/" "minutely" || return 1
+  security_check "$PRERELEASE_DIR/deploy/" "minutely" || return 1  # 2026-09-13：deploy/ 也进公开仓，之前不扫（fix-tmp-logs.cjs 的 $HOME 路径就是这样漏出去的）
 
   # git init + push
   if [ ! -d "$PRERELEASE_DIR/.git" ]; then
@@ -238,8 +240,9 @@ build_stable() {
   cp "$HOME/.local/bin/genshin" "$STABLE_DIR/bin/genshin" 2>/dev/null || true
 
   # install.sh from live extensions
-  if [ -f "$HOME/.local/lib/teyvat/extensions/teyvat/deploy/install.sh" ]; then
-    cp "$HOME/.local/lib/teyvat/extensions/teyvat/deploy/install.sh" "$STABLE_DIR/install.sh"
+  # 2026-09-13：部署出去的扩展目录是 A.core 内容、从来没有 deploy/——原路径永不存在，stable 包一直没有 install.sh；改从本脚本目录取
+  if [ -f "$SCRIPT_DIR/install.sh" ]; then
+    cp "$SCRIPT_DIR/install.sh" "$STABLE_DIR/install.sh"
   fi
 
   cat > "$STABLE_DIR/package.json" << PKGEOF
@@ -323,7 +326,7 @@ EOFREADME
   "os": ["darwin", "linux"],
   "engines": { "node": ">=18" },
   "dependencies": { "@earendil-works/pi-coding-agent": "0.80.7" },
-  "scripts": { "postinstall": "PAIMON_CHANNEL=release PAIMON_VER=$VER bash deploy/install.sh" },
+  "scripts": { "postinstall": "PAIMON_VIA_MAKE=1 MAKELEVEL=1 PAIMON_CHANNEL=release PAIMON_VER=$VER bash deploy/install.sh" },
   "files": ["core/", "deploy/", "README.md"]
 }
 PKGEOF

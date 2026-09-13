@@ -33,7 +33,7 @@ try {
       }
       continue;
     }
-    const m = line.match(/^- \[(\d{3})\]\(([^)]+)\.ISSUE\)(.*)$/);
+    const m = line.match(/^- \[(\d{3})\]\((.+?)\.ISSUE\)(.*)$/); // 2026-09-13：文件名含 ")"（如 023-…(see-attached-image)-…）时 [^)]+ 匹配失败，旧段落/摘要丢失
     if (m) oldMap.set(parseInt(m[1]), { section: cur, summary: m[3].replace(/^ — /, "") });
   }
 } catch {}

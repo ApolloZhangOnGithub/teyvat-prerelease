@@ -22,7 +22,7 @@ export function getBinding(): Binding | null {
 
 export function saveBinding(b: Binding) {
   mkdirSync(USER_ACCOUNT, { recursive: true });
-  writeFileSync(BINDING_FILE, JSON.stringify(b, null, 2));
+  writeFileSync(BINDING_FILE, JSON.stringify(b, null, 2), { mode: 0o600 }); // 2026-09-13：token 文件 0600
 }
 
 export function clearBinding() {

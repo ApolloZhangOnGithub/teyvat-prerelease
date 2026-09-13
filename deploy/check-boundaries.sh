@@ -53,6 +53,11 @@ if [ -n "$GENE_WRITES" ]; then
   WARN=$((WARN + $(echo "$GENE_WRITES" | wc -l)))
 fi
 
+# 2026-09-13：零匹配保护——四段扫描的输入都来自 grep -rn "$CORE"，若目录结构变了/参数错了会全部零匹配"假绿"；至少要能扫到 renderCall 与 writeFileSync 各一处
+if ! grep -rq "renderCall" "$CORE" --include="*.ts" 2>/dev/null || ! grep -rq "writeFileSync" "$CORE" --include="*.ts" 2>/dev/null; then
+  echo "  boundary check: 零匹配（CORE=$CORE 不像 A.core），检查失效"; FAIL=$((FAIL + 1))
+fi
+
 # ── 结果 ──
 if [ "$FAIL" -gt 0 ]; then
   echo "  boundary check: $FAIL FAIL, $WARN WARN"

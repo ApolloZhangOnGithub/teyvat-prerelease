@@ -49,15 +49,19 @@ fi
 # ── alpha 版本号：REL_VER 的 -dev 段 → -alpha ──
 ALPHA_BASE=$(node -e "const v=process.argv[1].replace(/-dev$/,'');console.log(v+'-alpha')" "$REL_VER")
 ALPHA_VER="$ALPHA_BASE.$TODAY.$M"
-echo "$TODAY $M $REL_VER" > "$ALPHA_COUNTER"
-echo "$CUR_COMMIT" > "$LAST_COMMIT_FILE"
 echo -e "  teyvat $ALPHA_VER (prerelease, pin $PINNED_DEV)"
+# （2026-09-13：计数与 last-commit 标记改到 build-release 成功之后再写——原来先写后构建，构建失败就再也发不了这个 commit）
 
 # ── 调 build-release.sh（双号经环境变量传入）──
 if [ -n "$BUILD_RELEASE" ] && [ -f "$BUILD_RELEASE" ]; then
   export PINNED_DEV="$PINNED_DEV"
   export ALPHA_VER="$ALPHA_VER"
-  bash "$BUILD_RELEASE" "$ALPHA_VER" minutely
+  if bash "$BUILD_RELEASE" "$ALPHA_VER" minutely; then
+    echo "$TODAY $M $REL_VER" > "$ALPHA_COUNTER"
+    echo "$CUR_COMMIT" > "$LAST_COMMIT_FILE"
+  else
+    echo "  ERROR: build-release 失败——计数未消耗，可直接重试"; exit 1
+  fi
 else
   echo "  [dry-run] ALPHA_VER=$ALPHA_VER PINNED_DEV=$PINNED_DEV (BUILD_RELEASE 未给，仅生成版本号)"
 fi

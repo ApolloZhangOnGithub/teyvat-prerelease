@@ -6,7 +6,7 @@
 import { formatTokens } from "./footer.js";
 import { fmtElapsedCoarse } from "./blocks_nongod.js";
 import { theme } from "../theme/theme.js";
-import { Spacer, Text } from "@earendil-works/pi-tui";
+import { Container, Spacer, Text } from "@earendil-works/pi-tui"; // 2026-09-13：.46 引入 new Container() 却没 import——默认"消息底部"模式下每次状态切换 ReferenceError，状态栏从不渲染
 import { debug } from '#gene_riboswitch';
 
 const SPARKLE_CHARS = ['·', '✢', '✳', '✶', '✻', '✽'];
@@ -148,6 +148,7 @@ export class StatusBar {
         const kids = this._chatContainer.children;
         const i = Array.isArray(kids) ? kids.indexOf(this._msgStatusWrap) : -1;
         if (i >= 0) kids.splice(i, 1);
+        this._msgStatusWrap = null; this._msgStatusText = null; // 2026-09-13：切回 Messages 时 wrap 已不在容器里，不清引用就永远不再挂回
       }
       this._footer.updateSpinnerText(text);
       return;

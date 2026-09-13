@@ -7,7 +7,7 @@ const require = createRequire(import.meta.url);
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getSessionRole } from "#kernel_ribosome";
-import { runtimeCacheDir } from "#paths";
+import { runtimeCacheDir, writeFileAtomic } from "#paths";
 import { registerPaimonTool, sendCustomMessage } from "#kernel_backbone";
 import { backgroundTasksSummary } from "#hands_execute";
 import { renderToolCall, renderMessage } from "#tui_blockrender";
@@ -27,6 +27,7 @@ function parseUntil(raw: string): number | null {
   // tomorrow HH:MM
   const tomorrowMatch = raw.match(/^tomorrow\s+(\d{1,2}):(\d{2})$/i);
   if (tomorrowMatch) {
+    if (parseInt(tomorrowMatch[1]) > 23 || parseInt(tomorrowMatch[2]) > 59) return null; // 2026-09-13：setHours(25,99) 会静默滚到后一天
     const d = new Date();
     d.setDate(d.getDate() + 1);
     d.setHours(parseInt(tomorrowMatch[1]), parseInt(tomorrowMatch[2]), 0, 0);
@@ -35,6 +36,7 @@ function parseUntil(raw: string): number | null {
   // HH:MM
   const hhmmMatch = raw.match(/^(\d{1,2}):(\d{2})$/);
   if (hhmmMatch) {
+    if (parseInt(hhmmMatch[1]) > 23 || parseInt(hhmmMatch[2]) > 59) return null; // 2026-09-13：越界时间不接受
     const d = new Date();
     d.setHours(parseInt(hhmmMatch[1]), parseInt(hhmmMatch[2]), 0, 0);
     if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
@@ -166,7 +168,7 @@ export function registerHibernateTool(_pi: ExtensionAPI) {
         try { require("fs").unlinkSync(join(runtimeCacheDir(pid), "wake-until")); } catch (e) { if ((e as any)?.code !== "ENOENT") console.error("[spirit.bio.organs/kernel.heart/heart-hibernate.ts] " + ((e as any)?.message || e)); }
         if (untilTs) {
           const wakeFile = join(runtimeCacheDir(pid), "wake-at");
-          writeFileSync(wakeFile, JSON.stringify({ until: untilTs, summary: params.summary, ts: Date.now() }), "utf8");
+          writeFileAtomic(wakeFile, JSON.stringify({ until: untilTs, summary: params.summary, ts: Date.now() })); // 2026-09-13：心跳每 30s JSON.parse 同一文件，非原子写会读到半截
           // 可读时间+时间戳挂到 globalThis，供 statebar 状态栏显示倒计时（issue 071 附带）
           (globalThis as any).__genshinHibernateUntil = fmtUntilLabel(untilTs);
           (globalThis as any).__genshinHibernateUntilTs = untilTs;

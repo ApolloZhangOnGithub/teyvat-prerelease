@@ -30,7 +30,8 @@ const TARGETS = {
   lessons: { dir: path.join(ROOT, "Lessons"), ext: ".LESSON", indexGen: false },
 };
 
-const isCompanion = (name) => /\.(SPEC|REMOVED)$/.test(name) || /NAMETRACE\.REMOVED$/.test(name);
+// 2026-09-13：.ISSUE.CHANGELOG 也是配套文件——不认它会把 228-….ISSUE.CHANGELOG 当成第二个 228 号提议改号
+const isCompanion = (name) => /\.(SPEC|REMOVED|CHANGELOG)$/.test(name) || /NAMETRACE\.REMOVED$/.test(name);
 const numOf = (name) => {
   const m = name.match(/^(\d+)-/);
   return m && !isCompanion(name) ? parseInt(m[1], 10) : null;
@@ -77,12 +78,17 @@ for (const kind of KINDS_ARG.split(",")) {
 
   for (const p of plan) {
     const src = path.join(t.dir, p.from);
-    const newBase = p.from.replace(new RegExp(`^${p.oldNum}-`), `${p.newNum}-`);
+    // 2026-09-13（审计 HIGH）：文件名是零填充（088-…）而 oldNum 是数字 88，`^88-` 匹配不到 → newBase===from → 写到同一路径再 unlink → 文件消失。
+    // 按原始数字串匹配、新号按同宽度补零；目标与源相同直接拒绝。
+    const numStr = (p.from.match(/^(\d+)-/) || [])[1] || String(p.oldNum);
+    const newNumStr = String(p.newNum).padStart(numStr.length, "0");
+    const newBase = p.from.replace(new RegExp(`^${numStr}-`), `${newNumStr}-`);
     const dst = path.join(t.dir, newBase);
+    if (dst === src) throw new Error(`改号目标与源相同，拒绝写入: ${p.from}`);
     // 1) 文件头编号
     let txt = fs.readFileSync(src, "utf8");
-    txt = txt.replace(new RegExp(`^#\\s*${p.oldNum}\\s*[—:-]`), `# ${p.newNum} —`)
-             .replace(new RegExp(`^#\\s*ISSUE\\s*[:：]?\\s*${p.oldNum}\\b`), `# ISSUE ${p.newNum}`);
+    txt = txt.replace(new RegExp(`^#\\s*0*${p.oldNum}\\s*[—:-]`), `# ${newNumStr} —`)
+             .replace(new RegExp(`^#\\s*ISSUE\\s*[:：]?\\s*0*${p.oldNum}\\b`), `# ISSUE ${newNumStr}`);
     // 2) 插入改号说明（紧跟标题行后的第一个空行前）
     const note = `> 改号：原 ${p.oldNum} 撞号（同号多个文件），按"撞号后到者改号"改为 ${p.newNum}（${new Date().toISOString().slice(0, 10)} fix-issue-collisions）`;
     if (!txt.includes("改号：原")) {
@@ -92,8 +98,8 @@ for (const kind of KINDS_ARG.split(",")) {
     fs.writeFileSync(dst, txt);
     fs.unlinkSync(src);
     // 3) 配套文件跟着改号
-    for (const c of all.filter((x) => x.startsWith(`${p.oldNum}-`) && isCompanion(x) && x !== p.from)) {
-      const newC = c.replace(new RegExp(`^${p.oldNum}-`), `${p.newNum}-`);
+    for (const c of all.filter((x) => x.startsWith(`${numStr}-`) && isCompanion(x) && x !== p.from)) {
+      const newC = c.replace(new RegExp(`^${numStr}-`), `${newNumStr}-`);
       fs.renameSync(path.join(t.dir, c), path.join(t.dir, newC));
       console.log(`   配套文件同步: ${c} → ${newC}`);
     }

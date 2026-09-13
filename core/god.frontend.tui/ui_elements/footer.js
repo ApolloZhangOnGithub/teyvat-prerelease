@@ -462,7 +462,7 @@ export class FooterComponent {
                 line1 = modelLeft + " ".repeat(middleSpace) + rightLine1;
             }
         } else {
-            line1 = truncateToWidth(modelDisplay, Math.floor(width / 2), "...") + "  " + truncateToWidth(rightLine1, width - Math.floor(width / 2) - 2, "...");
+            line1 = (showModel ? truncateToWidth(modelLeft, Math.floor(width / 2), "...") : "") + "  " + truncateToWidth(rightLine1, width - Math.floor(width / 2) - 2, "..."); // 2026-09-13：窄屏回退也要尊重"隐藏模型名"
         }
 
         // line2: spinner / extension statuses

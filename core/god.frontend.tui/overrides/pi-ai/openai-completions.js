@@ -35,7 +35,7 @@ const researchLogits = {
     if (this._enabledCache !== undefined && now - this._enabledCacheTs < 60_000) return this._enabledCache;
     let val = true;
     try {
-      const s = JSON.parse(readFileSync(join(homedir(), ".teyvat", "settings.json"), "utf8"));
+      const s = JSON.parse(readFileSync(join(homedir(), ".teyvat", "UserAccount", "settings.json"), "utf8")); // 2026-09-13：/s 面板写的是 UserAccount/settings.json，原读 ~/.teyvat/settings.json → 开关永远"关"不掉
       if (typeof s.research === "boolean") val = s.research;
     } catch { /* settings 缺失 → 默认开启 */ }
     this._enabledCache = val;

@@ -529,7 +529,7 @@ export default function kernelMain(pi: ExtensionAPI) {
     // 不设角色的 env 覆盖（避免被人/模型用环境变量假冒角色）。
     // 结果：ps / pgrep 里直接显示 teyvat:<role>:<id>，杀进程可精确定位、绝不误伤工作进程。
     //   例：pgrep -fl "teyvat:hippocampus"   只列海马体小号
-    const id = sf?.match(/(?:\.teyvat\/SessionData|\.teyvat\/sessions|\.pi\/memory)\/([a-f0-9]+)\//)?.[1] ?? "unknown";
+    const id = sf?.match(/\/(?:SessionData|sessions|memory)\/([a-f0-9]+)\//)?.[1] ?? "unknown"; // 2026-09-13：与 paths.ts ID_RE 同步，不再要求 .teyvat 前缀（PAIMON_HOME 自定义）
     const sid = sf?.split("/").pop()?.replace(".jsonl","").slice(-12) || "?";
     try { process.title = `genshin:${process.env.PAIMON_AGENT_NAME || id}(${role},${id},${sid})`; } catch (e) { logerr("K010", e); }
     // 启动版本记录

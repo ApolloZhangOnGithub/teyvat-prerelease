@@ -44,8 +44,8 @@ function appendFileSync(p: string, text: string): void {
   try { fs.appendFileSync(p, text, "utf-8"); } catch (e) { try { const d = path.dirname(_errLogPath(p)); if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); fs.appendFileSync(_errLogPath(p), `[${new Date().toISOString()}] [memory] appendFile ${p}: ${e}\n`); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); } }
 }
 
-function appendFile(p: string, text: string): void {
-  appendAsync(p, text);
+function appendFile(p: string, text: string, maxBytes?: number): void {
+  appendAsync(p, text, maxBytes);
 }
 
 // 2026-09-09（用户报 bug：homedir 下被拉出 MonitorData/undefined + undefined 空目录）：
@@ -323,7 +323,7 @@ export default function registerMemory(pi: ExtensionAPI) {
           entries.push({ role: "assistant", type: "think", think: c.thinking, ts_start: c.ts_start ?? now, ts_end: c.ts_end ?? now });
           if (personDir) {
             const thinkStream = path.join(personDir, "thinking.stream");
-            const ts = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false });
+            const ts = new Date().toLocaleString("zh-CN", { hour12: false }); // 2026-09-13：本地时区（原硬编码 Asia/Shanghai，与 paths.localTime 的"本地时间唯一真相"冲突）
             appendFile(thinkStream, `\n[${ts}]\n${c.thinking}\n`);
           }
         } else if (c.type === "toolCall") {
@@ -421,7 +421,8 @@ export default function registerMemory(pi: ExtensionAPI) {
       if (sig === lastSig) continue;
       lastSig = sig;
       // 原始归档（完整历史，不清洗，模型不读）
-        appendFile(path.join(personDir, "context.archive.jsonl"), jsonl);
+        // 2026-09-13（审计 HIGH）：完整历史不能走 8MB 轮转——nerves 轮转会覆盖上一代，磁盘上已有 5 个 agent 的 .1 等着被下一次轮转销毁；这里传"永不轮转"
+        appendFile(path.join(personDir, "context.archive.jsonl"), jsonl, Number.MAX_SAFE_INTEGER);
         // 2026-09-09（用户在意 bug：归档 rewrite context.md 后 nerves stream 池指向旧 inode → 后续 append 落孤儿文件 + 强杀不冲刷——11 分钟对话丢失实证）：context.md 必须同步写当前路径（appendFileSync 每次 open）——归档 rename 后不丢、被 SIGKILL 最多丢正在写的一行
         appendFileSync(path.join(personDir, "context.md"), scrubSecrets(jsonl));
 
@@ -2257,7 +2258,7 @@ echo "[nav] done"
     parameters: Type.Object({}),
     async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
       return {
-        content: [{ type: "text", text: i18n("Sleep 不可用。请使用 nap 代替。", "Sleep unavailable. Use nap instead.") }],
+        content: [{ type: "text", text: i18n("Sleep 不可用（已废弃）。记忆整理请用 amem archive。", "Sleep unavailable. Use nap instead.") }],
         details: {},
         isError: true,
       };

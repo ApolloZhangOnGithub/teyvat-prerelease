@@ -79,7 +79,7 @@ function parseAssembler(text: string) {
       } else if ((m = t.match(/^((?:@[A-Za-z]+\s+)*)(?:future\s+)?func\s+(\S+)/))) {
         const name = m[2];
         const tags = (m[1] || "").trim().split(/\s+/).filter(Boolean);
-        const isFuture = tags.includes("@FUTURE") || tags.includes("@ABANDONED") || !!m[1]?.includes("future");
+        const isFuture = tags.includes("@FUTURE") || tags.includes("@ABANDONED") || /(?:^|\s)future\s+func\s/.test(t); // 2026-09-13：`(?:future\s+)?` 是非捕获组，m[1] 里永远没有 future——裸 `future func x` 此前不会被标记
         funcs[name] = {
           name,
           future: isFuture,

@@ -130,7 +130,11 @@ db.exec(`
 `);
 
 // 迁移（2026-09-05）：devices 表补 created_at（首次绑定时间——存量设备此前未记录，置 NULL 用 last_seen 近似）
-try { db.exec("ALTER TABLE devices ADD COLUMN created_at TEXT"); } catch (e) { console.error("[god.backend.services/db.ts] " + ((e as any)?.message || e)); /* 列已存在 = 迁移已做过 */ }
+// 2026-09-13：先查列再 ALTER——原来靠 catch，每次启动都往 journal 打一条 "duplicate column name: created_at"
+try {
+  const cols = (db.prepare("PRAGMA table_info(devices)").all() as Array<{ name: string }>).map((c) => c.name);
+  if (!cols.includes("created_at")) db.exec("ALTER TABLE devices ADD COLUMN created_at TEXT");
+} catch (e) { console.error("[god.backend.services/db.ts] " + ((e as any)?.message || e)); }
 
 export default db;
 

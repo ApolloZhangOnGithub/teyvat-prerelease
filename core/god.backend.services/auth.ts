@@ -139,6 +139,8 @@ authRouter.post("/device-state", async (c) => {
   return c.json({ ok: true });
 });
 
+authRouter.get("/client-id", (c) => c.json({ client_id: GITHUB_CLIENT_ID }));
+
 authRouter.get("/devices", async (c) => {
   const auth = c.req.header("Authorization");
   const deviceId = c.req.header("X-Device-Id");
@@ -181,7 +183,7 @@ authRouter.put("/devices/:deviceId", async (c) => {
 });
 
 authRouter.post("/github", async (c) => {
-  const { code } = await c.req.json<{ code: string }>();
+  const { code, redirect_uri } = await c.req.json<{ code: string; redirect_uri?: string }>();
   if (!code) return c.json({ error: "code required" }, 400);
   const tokenRes = await fetchWithRetry("https://github.com/login/oauth/access_token", {
     method: "POST",
@@ -190,6 +192,7 @@ authRouter.post("/github", async (c) => {
       client_id: GITHUB_CLIENT_ID,
       client_secret: GITHUB_CLIENT_SECRET,
       code,
+      ...(redirect_uri ? { redirect_uri } : {}),
     }),
   });
 
@@ -212,38 +215,5 @@ authRouter.post("/github", async (c) => {
   });
 });
 
-authRouter.post("/device-flow/start", async (c) => {
-  const res = await fetchWithRetry("https://github.com/login/device/code", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ client_id: GITHUB_CLIENT_ID, scope: "read:user" }),
-  });
-  return c.json(await res.json());
-});
-
-authRouter.post("/device-flow/poll", async (c) => {
-  const { device_code } = await c.req.json<{ device_code: string }>();
-  const res = await fetchWithRetry("https://github.com/login/oauth/access_token", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({
-      client_id: GITHUB_CLIENT_ID,
-      device_code,
-      grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-    }),
-  });
-
-  const data = (await res.json()) as { access_token?: string; error?: string; interval?: number };
-  if (data.access_token) {
-    const userRes = await fetch("https://api.github.com/user", {
-      headers: { Authorization: `Bearer ${data.access_token}`, "User-Agent": "genshin-sync" },
-    });
-    const gh = (await userRes.json()) as { id: number; login: string; avatar_url: string };
-    stmt.upsertUser.run(gh.id, gh.login, gh.avatar_url);
-    return c.json({
-      token: data.access_token,
-      user: { githubId: gh.id, login: gh.login, avatarUrl: gh.avatar_url },
-    });
-  }
-  return c.json(data);
-});
+authRouter.post("/device-flow/start", async (_c) => _c.json({ error: "device_flow_disabled", error_description: "设备码登录已移除，请使用网页授权（OAuth code）" }, 400));
+authRouter.post("/device-flow/poll", async (_c) => _c.json({ error: "device_flow_disabled" }, 400));

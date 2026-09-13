@@ -1,9 +1,10 @@
 // 文档: B.docs/Dev.Common/Wiki/Bioclock(Bio Mechanism).WIKI
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { sendCustomMessage } from "#kernel_backbone";
-import { appendFileSync as _traceAppend, mkdirSync as _traceMkdir } from "node:fs";
+import { mkdirSync as _traceMkdir } from "node:fs";
 import { join as _traceJoin } from "node:path";
-import { homedir as _traceHome } from "node:os";
+import { appendAsync } from "#kernel_nerves";
+import { PAIMON } from "#paths";
 
 export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (event, ctx) => {
@@ -112,13 +113,14 @@ export default function (pi: ExtensionAPI) {
   const _traceId = (globalThis as any).__genshinPersonId || process.env.PAIMON_AGENT_ID || "";
   let _traceFile = "";
   if (_traceId) {
-    const dir = _traceJoin(_traceHome(), ".teyvat", "TraceData", _traceId);
+    const dir = _traceJoin(PAIMON, "TraceData", _traceId); // 2026-09-13：走 PAIMON_HOME，不硬编码 ~/.teyvat
     try { _traceMkdir(dir, { recursive: true }); } catch (e) { console.error("[spirit.bio.organs/brain.bioclock/bioclock.ts] " + ((e as any)?.message || e)); }
     _traceFile = _traceJoin(dir, "trace.jsonl");
   }
   function _trace(event: string, data?: any) {
     if (!_traceFile) return;
-    try { _traceAppend(_traceFile, JSON.stringify({ ts: Date.now(), iso: new Date().toISOString(), event, ...data }) + "\n"); } catch (e) { console.error("[spirit.bio.organs/brain.bioclock/bioclock.ts] " + ((e as any)?.message || e)); }
+    // 2026-09-13（审计）：原每个事件同步 appendFileSync 且无上限（单 agent 7.6MB / 全机 30 万行）→ 改 nerves 异步写 + 4MB 轮转
+    try { appendAsync(_traceFile, JSON.stringify({ ts: Date.now(), iso: new Date().toISOString(), event, ...data }) + "\n", 4 * 1024 * 1024); } catch (e) { console.error("[spirit.bio.organs/brain.bioclock/bioclock.ts] " + ((e as any)?.message || e)); }
   }
 
   _trace("session_start");

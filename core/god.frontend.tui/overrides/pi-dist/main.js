@@ -46,6 +46,7 @@ import { cleanupWindowsSelfUpdateQuarantine } from "./utils/windows-self-update.
 for (const _s of [process.stdout, process.stderr]) {
   _s.on("error", (err) => {
     if (err && err.code === "EPIPE") return; // 静默：对端已关，渲染不可达，内核继续跑
+    throw err; // 2026-09-13：挂了监听就没有默认抛错——非 EPIPE 的流错误不能悄悄吞
   });
 }
 const EXTENSION_LOAD_FAILURE_HINT = 'Hint: Start without extensions using "pi -ne".';

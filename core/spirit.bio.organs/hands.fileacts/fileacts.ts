@@ -726,7 +726,11 @@ export default function (pi: ExtensionAPI) {
     // ── 语法检查（edit/write 共用）──
     async function syntaxCheck(filePath: string, result: any) {
       const ext = filePath.split(".").pop()?.toLowerCase();
-      const checker = ext === "ts" || ext === "tsx" ? "npx tsc --noEmit"
+      // 2026-09-13（debug-01 系统检查）：.ts/.tsx 原用 `npx tsc --noEmit "<file>"`。tsc 在「命令行给了文件」时
+      // **不加载 tsconfig**；而 A.core/tsconfig.json 于 09-13 22:12 出现后 → 每次都 TS5112 且 exit=1
+      // → 本守卫对**每个** .ts/.tsx 编辑都误报「语法错误」（实测本机复现，跨 agent 均受影响）。
+      // 改用 bun build --no-bundle 做纯语法检查：cwd 无关、.ts/.tsx 通吃、能精确报行列（bun 为 teyvat 既有依赖）。
+      const checker = ext === "ts" || ext === "tsx" ? "bun build --no-bundle"
         : ext === "js" || ext === "mjs" || ext === "cjs" ? "node --check"
         : ext === "py" ? "python3 -m py_compile"
         : ext === "go" ? "go build"
@@ -738,6 +742,9 @@ export default function (pi: ExtensionAPI) {
           execSync(`${checker} "${filePath}"`, { encoding: "utf8", timeout: 10000 });
         } catch (e: any) {
           const err = (e.stderr || e.stdout || e.message || "").toString().slice(0, 500);
+          // 检查器本身不可用（未装 bun/python3 等，shell 返回 127）不算「语法错误」，静默跳过——
+          // 避免环境差异把每次编辑都刷成误报（原 TS5112 即此类误报）。
+          if ((e as any)?.status === 127 || /command not found/.test(err)) return;
           result.content.push({ type: "text", text: i18n(`WARN: 语法错误:\n${err}\n请立即修复。`, `WARN: Syntax error:\n${err}\nPlease fix immediately.`) });
           try { sendCustomMessage(pi, "syntax-error", i18n(`WARN: 语法错误 ${basename(filePath)}:\n${err}`, `WARN: Syntax error in ${basename(filePath)}:\n${err}`)); } catch (e) { console.error("[spirit.bio.organs/hands.fileacts/fileacts.ts] " + ((e as any)?.message || e)); }
         }
@@ -906,6 +913,7 @@ export default function (pi: ExtensionAPI) {
   // ── xattr 元数据：write/edit 后写入 (tool_result 事件，不是 input!) ──
   pi.on("tool_result", async (event, _ctx) => {
     if (event.isError || (event.toolName !== "write" && event.toolName !== "edit")) return;
+    if (!(((globalThis as any).__genshinExperimental ?? 1) & 1)) return; // 2026-09-13：/s「xattr 文件元数据」开关此前没有任何消费方
     const p = (event.input as any)?.path ?? (event.input as any)?.file_path;
     if (!p || isExempt(p)) return;
     try {

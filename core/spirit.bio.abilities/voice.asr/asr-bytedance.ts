@@ -182,6 +182,7 @@ export class BytedanceAsrBackend implements AsrBackend {
       const sessionId = randomUUID();
       let ws: any = null;
       let sessionDead = false;
+      let idleClosed = false; // 2026-09-13：静音超时主动 FinishSession 是正常关闭，不能算掉线（原来退避 2→4s + finally 无条件 sleep，用户停顿 >3s 再说话要等 2–4s 才开始识别）
       try {
         const msgs: Uint8Array[] = [];
         let closed = false, wsError: any = null;
@@ -237,6 +238,7 @@ export class BytedanceAsrBackend implements AsrBackend {
 
           const now = performance.now() / 1000;
           if (now - lastRealT > this.idleCloseS) {
+            idleClosed = true;
             ws.send(encodeTranslateRequest({ sessionId, event: EV.FinishSession, srcLang: this.srcLang, tgtLang: this.tgtLang }));
             const drainUntil = Date.now() + 3000;
             while (Date.now() < drainUntil && !closed) {
@@ -257,7 +259,7 @@ export class BytedanceAsrBackend implements AsrBackend {
           }
           await sleep(20);
         }
-        if (closed && !sessionDead) reconnectDelay = Math.min(reconnectDelay * 2, MAX_DELAY);
+        if (closed && !sessionDead && !idleClosed) reconnectDelay = Math.min(reconnectDelay * 2, MAX_DELAY);
       } catch (e: any) {
         const msg = String((e as any)?.message || e).slice(0, 120);
         if (!msg.includes("Connection") && !msg.toLowerCase().includes("timeout")) {
@@ -270,7 +272,7 @@ export class BytedanceAsrBackend implements AsrBackend {
           try { if (!sessionDead) ws.send(encodeTranslateRequest({ sessionId, event: EV.FinishSession, srcLang: this.srcLang, tgtLang: this.tgtLang })); } catch (e) { console.error("[spirit.bio.abilities/voice.asr/asr-bytedance.ts] " + ((e as any)?.message || e)); }
           try { ws.close(); } catch (e) { console.error("[spirit.bio.abilities/voice.asr/asr-bytedance.ts] " + ((e as any)?.message || e)); }
         }
-        if (this.running) await sleep(reconnectDelay * 1000);
+        if (this.running && !idleClosed) await sleep(reconnectDelay * 1000);
       }
     }
   }

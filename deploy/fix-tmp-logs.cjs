@@ -12,7 +12,7 @@ const files = [
   "A.core/universe.infotech/cloud.servers/playleft.cjs",
   "A.core/universe.infotech/cloud.servers/browser_service.cjs",
 ];
-const base = "/Users/zhangkezhen/Agent Intelligence/MODERN/TEYVAT/teyvat-main";
+const base = require("path").resolve(__dirname, ".."); // 2026-09-13：原硬编码个人绝对路径（已随 prerelease 公开且早已失效）
 const OLD = '"/tmp/genshin-catch-errors.log"';
 const NEW = '(process.env.HOME||"")+"/.teyvat/LogData/genshin-catch-errors.log"';
 

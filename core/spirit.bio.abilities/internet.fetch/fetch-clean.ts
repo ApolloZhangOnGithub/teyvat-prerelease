@@ -106,7 +106,8 @@ function extractWithTrafilatura(html: string, timeoutMs = 8000): Promise<string 
       try { py.kill(); } catch (e) { console.error("[spirit.bio.abilities/internet.fetch/fetch-clean.ts] " + ((e as any)?.message || e)); /* ignore */ }
       finish(null);
     }, timeoutMs);
-    py.stdout!.on("data", (d: Buffer) => (out += d.toString()));
+    py.stdout!.setEncoding("utf8"); // 2026-09-13：分块各自 toString 会把跨块的多字节 CJK 字符切成两个 U+FFFD
+    py.stdout!.on("data", (d: string) => (out += d));
     py.on("error", () => finish(null));
     py.on("close", () => {
       const text = out.trim();

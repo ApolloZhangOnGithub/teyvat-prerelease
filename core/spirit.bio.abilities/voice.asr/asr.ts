@@ -98,6 +98,7 @@ export function readWav(path: string): WavData {
     const id = buf.toString("ascii", pos, pos + 4);
     const size = buf.readUInt32LE(pos + 4);
     if (id === "fmt ") {
+      if (pos + 24 > buf.length) throw new Error(`WAV fmt 块截断: ${path}`); // 2026-09-13：循环只保证 pos+8，fmt 要读到 pos+24
       channels = buf.readUInt16LE(pos + 10);
       sampleRate = buf.readUInt32LE(pos + 12);
       bits = buf.readUInt16LE(pos + 22);
@@ -107,5 +108,6 @@ export function readWav(path: string): WavData {
     pos += 8 + size + (size % 2); // chunk 按 2 字节对齐
   }
   if (!pcm) throw new Error(`WAV 缺少 data 块: ${path}`);
+  if (!sampleRate || !channels || !bits) throw new Error(`WAV fmt 块缺失/无效: ${path}`); // 2026-09-13：原样返回 0 → ears-recorder 的 totalFrames=Infinity 永不退出
   return { sampleRate, channels, bits, pcm };
 }

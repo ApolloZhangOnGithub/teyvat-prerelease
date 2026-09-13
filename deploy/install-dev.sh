@@ -23,5 +23,5 @@ fi
 cd "$DIR/A.core"
 [ -d node_modules ] || npm install
 
-export PAIMON_VIA_MAKE=1
+export PAIMON_VIA_MAKE=1 MAKELEVEL=1  # 2026-09-13：install.sh 的门同时要求 MAKELEVEL 非空
 PAIMON_CHANNEL="minutely" bash ../C.deploy/install.sh

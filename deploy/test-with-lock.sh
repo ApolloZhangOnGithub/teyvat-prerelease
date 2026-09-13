@@ -4,7 +4,7 @@
 # 来历: 2026-09-11 孤儿锁事故后写的（见 B.docs/Dev.Common/Experiences/011-*.EXPERIENCE）
 # 覆盖: 串行化 / 持有者被 kill -9 立刻接管 / 等待者首轮接管 / 旧格式锁按阈值兜底 /
 #       空锁目录不永久死等 / pid 复用 / 活 owner 超阈值不被抢
-T=/tmp/teyvat-lock-test
+T="${PAIMON_HOME:-$HOME/.teyvat}/RuntimeCache/teyvat-lock-test"  # 2026-09-13：不用 /tmp
 NEW="$(cd "$(dirname "$0")" && pwd)/with-lock.sh"
 rm -rf "$T"; mkdir -p "$T"
 cat > "$T/fakebuild.sh" <<'EOF'

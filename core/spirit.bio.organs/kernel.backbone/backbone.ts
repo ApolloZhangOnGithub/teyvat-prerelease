@@ -7,7 +7,7 @@ import { createRequire } from "node:module";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { logerr, runtimeCacheDir, sessionDirFor, estimateTokens } from "#paths";
+import { logerr, runtimeCacheDir, sessionDirFor, estimateTokens, PAIMON } from "#paths";
 import { debug } from "#gene_riboswitch";
 const require = createRequire(import.meta.url);
 
@@ -132,7 +132,7 @@ export const MESSAGE_TYPES: Record<string, MessageTypeDef> = {
   "memory-capacity": {
     messageType: "memory-capacity",
     category: "notice",
-    source: "hippocampus",
+    source: "memory",  // 2026-09-13 审计：按真实发送方纠正（原声明对不上，boundary-warn 全是误报）
     label: "Alert From System: memory",
     feed: false, feedAs: "nextTurn", triggerNewTurn: false,
     render: true,
@@ -160,7 +160,7 @@ export const MESSAGE_TYPES: Record<string, MessageTypeDef> = {
   "system-error": {
     messageType: "system-error",
     category: "notice",
-    source: "system",
+    source: "core",  // 2026-09-13 审计：按真实发送方纠正（原声明对不上，boundary-warn 全是误报）
     label: "Alert From System: error",
     feed: true, feedAs: "nextTurn", triggerNewTurn: false,
     render: true,
@@ -169,7 +169,7 @@ export const MESSAGE_TYPES: Record<string, MessageTypeDef> = {
   "syntax-error": {
     messageType: "syntax-error",
     category: "notice",
-    source: "fileactions",
+    source: "fileacts",  // 2026-09-13 审计：按真实发送方纠正（原声明对不上，boundary-warn 全是误报）
     label: "Alert From System: syntax error",
     feed: true, feedAs: "followUp", triggerNewTurn: true,
     render: true,
@@ -188,7 +188,7 @@ export const MESSAGE_TYPES: Record<string, MessageTypeDef> = {
   "memory-reminder": {
     messageType: "memory-reminder",
     category: "notice",
-    source: "hippocampus",
+    source: "memory",  // 2026-09-13 审计：按真实发送方纠正（原声明对不上，boundary-warn 全是误报）
     label: "Reminder",
     feed: true, feedAs: "nextTurn", triggerNewTurn: false,
     render: true,
@@ -217,7 +217,7 @@ export const MESSAGE_TYPES: Record<string, MessageTypeDef> = {
   "social-message": {
     messageType: "social-message",
     category: "external",
-    source: "heart",  // 2026-08-20：实际注入在 heart 器官（heart.ts:724 / heart-hibernate.ts:132），原"social"对不上
+    source: "communicate",  // 2026-09-13 审计：按真实发送方纠正（原声明对不上，boundary-warn 全是误报）
     label: "Message From Agent",
     feed: true, feedAs: "followUp", triggerNewTurn: true,
     render: true,
@@ -230,7 +230,7 @@ export const MESSAGE_TYPES: Record<string, MessageTypeDef> = {
     label: "Reminder",
     feed: true, feedAs: "followUp", triggerNewTurn: false,
     render: true,
-    description: "闹钟/提醒检查",
+    description: "@UNUSED（2026-09-13 审计：全仓无发送方）闹钟/提醒检查",
   },
 
   // ── async-result: 工具的延迟返回 ─────────────────────────────────────────
@@ -270,7 +270,7 @@ export const MESSAGE_TYPES: Record<string, MessageTypeDef> = {
     label: "Context: sleep done",
     feed: true, feedAs: "followUp", triggerNewTurn: false,
     render: false,
-    description: "睡眠完成信号",
+    description: "@UNUSED（2026-09-13 审计：全仓无发送方）睡眠完成信号",
   },
   "continuous-date": {
     messageType: "continuous-date",
@@ -284,7 +284,7 @@ export const MESSAGE_TYPES: Record<string, MessageTypeDef> = {
   "display-hidden": {
     messageType: "display-hidden",
     category: "notice",
-    source: "heart",
+    source: "core",  // 2026-09-13 审计：按真实发送方纠正（原声明对不上，boundary-warn 全是误报）
     label: "Hidden",
     feed: true, feedAs: "nextTurn", triggerNewTurn: false,
     render: true,
@@ -293,7 +293,7 @@ export const MESSAGE_TYPES: Record<string, MessageTypeDef> = {
   "display-shown": {
     messageType: "display-shown",
     category: "notice",
-    source: "heart",
+    source: "core",  // 2026-09-13 审计：按真实发送方纠正（原声明对不上，boundary-warn 全是误报）
     label: "Shown",
     feed: true, feedAs: "nextTurn", triggerNewTurn: false,
     render: true,
@@ -306,7 +306,7 @@ export const MESSAGE_TYPES: Record<string, MessageTypeDef> = {
     label: "Context: heartbeat",
     feed: true, feedAs: "followUp", triggerNewTurn: true,
     render: false,
-    description: "元意识心跳",
+    description: "@UNUSED（2026-09-13 审计：全仓无发送方）元意识心跳",
   },
   "tool-result-debug": {
     messageType: "tool-result-debug",
@@ -315,7 +315,7 @@ export const MESSAGE_TYPES: Record<string, MessageTypeDef> = {
     label: "Context: debug",
     feed: true, feedAs: "followUp", triggerNewTurn: true,
     render: false,
-    description: "工具结果调试",
+    description: "@UNUSED（2026-09-13 审计：全仓无发送方）工具结果调试",
   },
 };
 
@@ -354,7 +354,7 @@ export function registerPaimonTool(toolDef: any): void {
   if (!toolDef.renderCall || !toolDef.renderResult) {
     const missing = [!toolDef.renderCall && "renderCall", !toolDef.renderResult && "renderResult"].filter(Boolean).join(", ");
     const msg = `registerPaimonTool(${toolDef.name}): 缺少 ${missing} — 跳过注册`;
-    const logDir = join(homedir(), ".teyvat/LogData", process.env.PAIMON_AGENT_ID || "unknown");
+    const logDir = join(PAIMON, "LogData", process.env.PAIMON_AGENT_ID || "unknown");
     try { mkdirSync(logDir, { recursive: true }); appendFileSync(join(logDir, "tool-error.log"), `[${new Date().toISOString()}] ERROR: ${msg}\n`); } catch (e) { console.error("[spirit.bio.organs/kernel.backbone/backbone.ts] " + ((e as any)?.message || e)); }
     console.error(`[ERROR] ${msg}`);
     return;
@@ -367,6 +367,22 @@ export function registerPaimonTool(toolDef: any): void {
     const desc = (toolDef.promptSnippet || detail.split("\n")[0] || toolDef.name).trim();
     TOOL_HELP[toolDef.name] = { desc: desc.slice(0, 120), detail };
   } catch (e) { console.error("[spirit.bio.organs/kernel.backbone/backbone.ts] " + ((e as any)?.message || e)); }
+
+  // 2026-09-13（审计）：feedResult:false 的拦截此前只写在注释里，没有任何代码实现——mouth/aware/nap 的结果一直原样喂给模型。
+  // 现在按文档契约：原始 content 存 details._content（渲染层读），发给模型的 content 只留一个 "ok"（空数组部分 provider 拒收）；isError 不拦。
+  if (toolDef.execute && toolDef.feedResult === false) {
+    const _origExecNoFeed = toolDef.execute;
+    toolDef.execute = async function (...args: any[]) {
+      const result = await _origExecNoFeed.apply(this, args);
+      try {
+        if (result && !result.isError && Array.isArray(result.content) && result.content.length) {
+          result.details = { ...(result.details || {}), _content: result.content };
+          result.content = [{ type: "text", text: "ok" }];
+        }
+      } catch (e) { console.error("[spirit.bio.organs/kernel.backbone/backbone.ts] " + ((e as any)?.message || e)); }
+      return result;
+    };
+  }
 
   // wrap execute: 给每个工具结果 append context capacity stats
   // 统一管线（2026-08-18 用户定稿）：结果尾部附 [result N tokens, ctx X.Xk]——
@@ -468,9 +484,11 @@ export function sendCustomMessage(
       const stack = new Error().stack || "";
       const callerLine = stack.split("\n").slice(2).find(l => !l.includes("backbone.ts") && !l.includes("backbone.js"));
       if (callerLine && !callerLine.includes(def.source)) {
-        const logDir = join(homedir(), ".teyvat/LogData", process.env.PAIMON_AGENT_ID || "unknown");
+        const logDir = join(PAIMON, "LogData", process.env.PAIMON_AGENT_ID || "unknown");
         try { mkdirSync(logDir, { recursive: true }); } catch (e) { console.error("[spirit.bio.organs/kernel.backbone/backbone.ts] " + ((e as any)?.message || e)); }
-        appendFileSync(join(logDir, "boundary-warn.log"),
+        const _bw = join(logDir, "boundary-warn.log");
+        try { if (statSync(_bw).size > 4 * 1024 * 1024) renameSync(_bw, _bw + ".1"); } catch { /* 不存在或改名失败都不影响记录 */ } // 2026-09-13：封顶（原无上限）
+        appendFileSync(_bw,
           `[${new Date().toISOString()}] BOUNDARY: "${messageType}" 声明 source="${def.source}"，但调用方不匹配: ${callerLine.trim()}\n`);
       }
     } catch (e) { console.error("[spirit.bio.organs/kernel.backbone/backbone.ts] " + ((e as any)?.message || e)); }
@@ -501,7 +519,7 @@ export function sendCustomMessage(
     logerr("K029", e, `sendCustomMessage ${messageType}`);
     // 关键消息（continuous-cmd-done 等）写入 boundary-warn 以便排查
     try {
-      const logDir = join(homedir(), ".teyvat/LogData", process.env.PAIMON_AGENT_ID || "unknown");
+      const logDir = join(PAIMON, "LogData", process.env.PAIMON_AGENT_ID || "unknown");
       try { mkdirSync(logDir, { recursive: true }); } catch (e) { console.error("[spirit.bio.organs/kernel.backbone/backbone.ts] " + ((e as any)?.message || e)); }
       appendFileSync(join(logDir, "boundary-warn.log"),
         `[${new Date().toISOString()}] SEND-FAIL "${messageType}": ${(e as any)?.message ?? e}\n`);
@@ -544,6 +562,7 @@ interface OutboxEntry {
   details?: unknown;
   overrides?: OutboxOverrides;
   sentAt: number;
+  lastSentAt?: number; // 2026-09-13：最近一次（重）发送时刻，保护期按它算
   attempts: number;
 }
 
@@ -584,7 +603,7 @@ function readPending(): OutboxEntry[] {
 }
 
 function writePending(entries: OutboxEntry[]): void {
-  const tmp = outboxPendingFile() + ".tmp";
+  const tmp = outboxPendingFile() + ".tmp-" + process.pid; // 2026-09-13：固定 .tmp 名在双实例（ISSUE 182）时互相截断，pending 静默丢
   writeFileSync(tmp, JSON.stringify(entries), "utf8");
   renameSync(tmp, outboxPendingFile());
 }
@@ -611,7 +630,10 @@ function markAcked(e: OutboxEntry): void {
 
 function matchKey(content: string): string {
   // session jsonl 里的 content 是 JSON 转义字符串——匹配键必须用转义形态
-  return JSON.stringify(content.slice(0, OUTBOX_ACK_KEY_LEN)).slice(1, -1);
+  // 2026-09-13：slice 切在代理对中间会留下孤立高位代理，JSON.stringify 输出 \\ud83d… 永远匹配不上 jsonl 里的完整字符 → 永不 ack、重发 5 次
+  let k = content.slice(0, OUTBOX_ACK_KEY_LEN);
+  if (/[\uD800-\uDBFF]$/.test(k)) k = k.slice(0, -1);
+  return JSON.stringify(k).slice(1, -1);
 }
 
 function recentSessionBlobs(): string[] {
@@ -692,7 +714,7 @@ export function outboxFlush(pi: ExtensionAPI): void {
       ackedNow++;
       continue;
     }
-    const age = Date.now() - e.sentAt;
+    const age = Date.now() - (e.lastSentAt ?? e.sentAt); // 2026-09-13：按最近一次发送算保护期（原只看首发 sentAt，两次 working 切换在同一秒内会连发两遍）
     if (age < OUTBOX_GRACE_MS) { remaining.push(e); continue; } // ISSUE 121：保护期，刚发送的保留不重发（避开 batch 缓冲未落盘窗口）
     if (age > OUTBOX_MAX_AGE_MS || e.attempts >= OUTBOX_MAX_ATTEMPTS) {
       try {
@@ -708,6 +730,7 @@ export function outboxFlush(pi: ExtensionAPI): void {
     try {
       sendCustomMessage(pi, e.type, e.content, e.details, e.overrides);
       e.attempts++;
+      e.lastSentAt = Date.now();
       resent++;
     } catch (err: any) {
       outboxDlog(`outbox resend threw: ${err?.message ?? err}`);

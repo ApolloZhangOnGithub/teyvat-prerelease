@@ -89,7 +89,23 @@ setup: _paths
 
 # ── integrity (minutely/stable/release 前自动执行) ──
 
-_integrity: _paths
+# 2026-09-13（debug-01 发现 + dev-01 实施）：A.core/node_modules 的 @earendil-works/* 与 @mariozechner/* 是手工链接的
+# （pi 包只存在于 runtime，不在 A.core package.json 声明）——任何一次在 A.core 跑的 npm install 都会把它们 prune 掉
+# （23:05 实证：全项目 TS2307 × 30，全团队部署被卡死 3 分钟）。每次 _integrity 前自愈链接。
+ensure-dev-links: _paths
+	@R="$$HOME/.local/lib/teyvat/runtime/node_modules"; \
+	mkdir -p "$(CORE)/node_modules/@earendil-works" "$(CORE)/node_modules/@mariozechner"; \
+	for p in pi-agent-core pi-ai pi-coding-agent pi-tui; do \
+		ln -sfn "$$R/@earendil-works/$$p" "$(CORE)/node_modules/@earendil-works/$$p" && echo "  ✓ dev link: @earendil-works/$$p"; \
+	done; \
+	ln -sfn "$$R/@mariozechner/pi-coding-agent" "$(CORE)/node_modules/@mariozechner/pi-coding-agent"
+# 2026-09-13（debug-01 补齐本目标自身的两个 bug——它本意就是修 prune 导致的卡死，但当时它自己也修不动）：
+#   ① 原写 `@R="$HOME/..."`（单 $）—— Makefile 里单 $ 是 make 语法，`$H` 被当成未定义的 make 变量（空）+ 剩下 "OME"，
+#      于是自愈出来的链接目标成了相对路径 "OME/.local/..." → 链还是坏的（实测）。必须 `$$HOME`。
+#   ② 原用 `[ -e X ] || ln -s ...`：坏链时 `-e` 为假，但 `ln -s` 碰到已存在的链名会报 "File exists" → 自愈反而失败。
+#      改为无条件 `ln -sfn`（幂等，且能直接覆盖修复坏链）。
+
+_integrity: _paths ensure-dev-links
 	@if [ -z "$${committer:-}" ]; then echo "  ERROR: committer required. Usage: make dev-minutely committer='提交者名' msg='标题(≥10字)' detail='详细内容(≥50字)'"; exit 1; fi
 	@if [ -z "$${msg:-}" ]; then echo "  ERROR: msg required. Usage: make dev-minutely committer='提交者名' msg='标题(≥10字)' detail='详细内容(≥50字)'"; exit 1; fi
 	@if [ $${#msg} -lt 10 ]; then echo "  ERROR: msg 标题不得少于10个字（当前$${#msg}字）"; exit 1; fi
@@ -145,7 +161,7 @@ _integrity: _paths
 	@echo "[$$(date +%H:%M:%S)] theme-usage check..." && node "$(DEPLOY)/check-theme-usage.cjs" "$(CORE)" || { echo "  theme-usage check FAILED — 代码里用了 colors 里没有的颜色名，运行时 Theme.fg()/bg() 会抛 Unknown theme color（历史：white 15034 次、default 5 次），改名字或在该行加 theme-allow 注释后再 make"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] empty-catch check..." && node "$(DEPLOY)/check-empty-catch.cjs" || { echo "  empty-catch check FAILED — 空 catch{} 静默吞错（LESSON 024 反模式，用户：任何地方空 catch 都无法运行通过）— 修复: node C.deploy/fix-empty-catch.cjs --apply"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] func-load check..." && node "$(DEPLOY)/check-func-load.mjs" "$(CORE)" || { echo "  func-load check FAILED — func 加载失败必须 fail-fast（ISSUE 112，用户多次强调），门禁缺失或 func 结构异常都禁止部署；修复后再 make"; exit 1; }
-	@echo "[$$(date +%H:%M:%S)] extension load check..." && cd "$(CORE)" && (set -o pipefail; (command -v timeout >/dev/null 2>&1 && timeout 30 node -e "import('./index.ts').then(() => { console.log('  extension: OK'); process.exit(0); }).catch(e => { console.error('  extension LOAD FAIL: ' + e.message); process.exit(1); })" 2>&1 || node -e "import('./index.ts').then(() => { console.log('  extension: OK'); process.exit(0); }).catch(e => { console.error('  extension LOAD FAIL: ' + e.message); process.exit(1); })" 2>&1) | grep -v ExperimentalWarning) || { echo "  extension load check FAILED"; exit 1; }
+	@echo "[$$(date +%H:%M:%S)] extension load check..." && cd "$(CORE)" && (set -o pipefail; (if command -v timeout >/dev/null 2>&1; then timeout 30 node -e "import('./index.ts').then(() => { console.log('  extension: OK'); process.exit(0); }).catch(e => { console.error('  extension LOAD FAIL: ' + e.message); process.exit(1); })" 2>&1; else node -e "import('./index.ts').then(() => { console.log('  extension: OK'); process.exit(0); }).catch(e => { console.error('  extension LOAD FAIL: ' + e.message); process.exit(1); })" 2>&1; fi) | grep -v ExperimentalWarning) || { echo "  extension load check FAILED"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] dep check..." && ( for pkg in "$(CORE)/node_modules/@earendil-works/pi-tui" "$$HOME/.local/lib/teyvat/runtime/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui"; do \
 		[ -d "$$pkg" ] || continue; \
 		[ -d "$$pkg/node_modules/marked" ] || ( echo "  fixing pi-tui deps..." && cd "$$pkg" && npm install --silent 2>&1 ); \
@@ -194,8 +210,8 @@ _dev-minutely: _integrity
 	echo "[$$(date '+%Y-%m-%d %H:%M:%S')] $$PAIMON_VER  [$$committer]  $$msg" >> "$(ROOT)/../Makelogs_Minutely.KEYLOGS"; \
 	echo "  $$detail" >> "$(ROOT)/../Makelogs_Minutely.KEYLOGS"; \
 	echo "" >> "$(ROOT)/../Makelogs_Minutely.KEYLOGS"; \
-	cd "$(DEV)" && git add -A && (git diff --cached --quiet || git commit -m "$$PAIMON_VER" -m "[$$committer] $$msg" -m "$$detail") && \
-	echo "$$TODAY $$COUNT $$REL_VER" > "$$COUNTER_FILE" && \
+	echo "$$TODAY $$COUNT $$REL_VER" > "$$COUNTER_FILE"; \
+	cd "$(DEV)" && git add -A && (git diff --cached --quiet || git commit -m "$$PAIMON_VER" -m "[$$committer] $$msg" -m "$$detail") || { echo -e "  ${RED}git add/commit FAILED —— 停止部署（index.lock / hook / gpg？）${R}"; exit 1; }; \
 	(cd "$(DEV)" && git fetch origin main 2>/dev/null; cd "$(DEV)" && git diff --quiet origin/main..HEAD 2>/dev/null || { echo -e "  pushing $$PAIMON_VER..."; cd "$(DEV)" && if git push origin main 2>&1 | sed 's/^/  /'; then echo -e "  ${GRN}pushed${R}"; else echo -e "  ${RED}push FAILED —— 本地有 $$PAIMON_VER 但远端没有！先查网络/权限，再手动 git push origin main（不然后续版本会和远端分叉）${R}"; fi; }); \
 	echo "[$$(date +%H:%M:%S)] git done"; \
 	trash "$$DST_README" 2>/dev/null || true; \
