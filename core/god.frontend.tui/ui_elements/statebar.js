@@ -123,7 +123,7 @@ export class StatusBar {
 
   // 把消息底部的状态栏 Text 移到 chatContainer 末尾（跟随最新消息；clear 后重新挂回）
   _followBottom() {
-    const pos = globalThis.__genshinStatebarPosition ?? "messages";
+    const pos = globalThis.__genshinStatebarPosition ?? "footer"; // 2026-09-13（用户）：默认回底部
     if (pos !== "messages" || !this._msgStatusText || !this._chatContainer) return;
     const kids = this._chatContainer.children;
     if (!Array.isArray(kids)) return;
@@ -141,7 +141,7 @@ export class StatusBar {
   // 2026-09-13（用户）：状态栏渲染出口——位置 footer（旧行为）或消息底部（默认）。
   // 集中所有 setSpinner/updateSpinnerText 走这里，按位置分派，避免散落。
   _spinner(text) {
-    const pos = globalThis.__genshinStatebarPosition ?? "messages";
+    const pos = globalThis.__genshinStatebarPosition ?? "footer"; // 2026-09-13（用户）：默认回底部
     if (pos === "footer" || !this._chatContainer) {
       // 从消息底部切回 footer：移除残留的状态栏 Text（避免位置切换后旧栏留在消息区中间）
       if (this._msgStatusText && this._chatContainer) {
@@ -162,7 +162,7 @@ export class StatusBar {
     this._requestRender?.();
   }
   _invalidate() {
-    const pos = globalThis.__genshinStatebarPosition ?? "messages";
+    const pos = globalThis.__genshinStatebarPosition ?? "footer"; // 2026-09-13（用户）：默认回底部
     if (pos === "footer" || !this._chatContainer) {
       this._footer.invalidate?.();
       return;

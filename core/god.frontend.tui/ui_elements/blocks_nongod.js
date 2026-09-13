@@ -307,8 +307,8 @@ export const renderToolCall = {
   // ◦ Label  detail  — 续行裸缩进（⎿ 只用于结果行）
   // opts.error → 红色 • 点
   label(theme, name, detail, opts) {
-    // 2026-09-13（用户）：opts.noDot → 不画状态点（点位置空出，对齐不变）——Execute 调用行默认隐藏原点用，其他 tool 不受影响
-    const d = opts?.noDot ? "" : dot(theme, opts || { partial: true });
+    // 2026-09-13（用户）：opts.noDot → 不画状态点，但用空格占住点的宽度（否则文字左移 1 格对不齐）——Execute 调用行默认隐藏原点用，其他 tool 不受影响
+    const d = opts?.noDot ? " " : dot(theme, opts || { partial: true });
     const text = detail ? theme.bold(name) + " " + String(detail) : theme.bold(name);
     return bulletText(d, text);
   },
@@ -329,8 +329,8 @@ export const renderToolCall = {
   // 实现：Container + 每行独立 Text（避开 bulletText 多行前缀叠加，见 2026-08-13.39 行号对齐修复）。
   detail(theme, name, title, body, opts) {
     const c = new C();
-    // 2026-09-13（用户）：同 label——opts.noDot 不画状态点（对齐保持）
-    const d = opts?.noDot ? "" : dot(theme, opts || { partial: true });
+    // 2026-09-13（用户）：同 label——opts.noDot 不画点但空格占位（对齐保持）
+    const d = opts?.noDot ? " " : dot(theme, opts || { partial: true });
     // opts.suffix：灰字后缀（如 hibernate 的唤醒时间 "Until 08:00"，2026-08-20 用户定稿）
     // 注意：theme 没有 dim 方法，灰字必须用 theme.fg("dim", ...)——2026-08-20 实测 theme.dim 是
     // undefined → TypeError → tool-execution catch → fallback（只显示工具名），排查 3 轮才发现。
