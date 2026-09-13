@@ -610,7 +610,7 @@ export default function (pi: ExtensionAPI) {
                   changeLine = i18n("\n\n[系统] ", "\n\n[System] ") + changes.join("\n");
                 }
               } catch (e: any) { dlog(`recap: change detection error: ${e?.message}`); }
-              sendCustomMessage(pi, "continuous-resume", userBackMsg + brewLine + changeLine, { resumeType: "restart" }, { isTriggerNewTurn: true, deliverAs: "followup", isDisplayedInTUI: true });
+              sendCustomMessage(pi, "continuous-resume", userBackMsg + brewLine + changeLine, { resumeType: "restart", noTopSpacer: true }, { isTriggerNewTurn: true, deliverAs: "followup", isDisplayedInTUI: true });
               dlog("recap: message sent");
             } catch (e: any) { dlog(`recap: sendMessage error: ${e?.message}`); }
           }, 1000);
@@ -656,7 +656,7 @@ export default function (pi: ExtensionAPI) {
             const now = new Date().toLocaleString(isEnglish() ? "en-US" : "zh-CN", { timeZone: "Asia/Shanghai", hour12: false });
             sendCustomMessage(pi, "continuous-resume",
               i18n(`[系统] 你自己触发了重启（self-reboot）。当前时间：${now}，原因：${selfRebootMsg}。重启后记忆快照已重新冻结，代码变更已生效。继续你的工作。`, `[System] You triggered a self-reboot. Current time: ${now}, reason: ${selfRebootMsg}. After restart the memory snapshot is re-frozen and code changes have taken effect. Continue your work.`),
-              { resumeType: "restart" }, { isTriggerNewTurn: true, deliverAs: "followup", isDisplayedInTUI: true });
+              { resumeType: "restart", noTopSpacer: true }, { isTriggerNewTurn: true, deliverAs: "followup", isDisplayedInTUI: true });
           } else {
             // 2026-08-20：sleep-wake-resume 已废弃（sleep/cortex 机制禁用）——非 self-reboot 的唤醒重启（含
             // Ctrl+C 转后台触发的重启）不再发"睡醒了"（残留误报，用户暴怒）。静默：等用户消息即可。
