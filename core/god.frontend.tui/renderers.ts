@@ -180,7 +180,13 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
     const st: any = d.status
       ? { kind: "done", status: d.status, title: d.title, recId: d.recId || "", exitCode: d.exitCode, elapsedMs: (d.elapsedSec ?? 0) * 1000, endTs: d.endTs ?? msgTs, output: d.output ?? "", remaining: d.remaining ?? 0 }
       : { kind: "done", status: legacy!.status, title: d.title, recId: legacy!.recId, exitCode: legacy!.exitCode, elapsedMs: legacy!.elapsedSec * 1000, endTs: msgTs, output: legacy!.output, remaining: legacy!.remaining };
-    st.merged = _cmdDoneMergesWithCreated(st.recId);
+    // merged 只在首次渲染时判定并缓存到 message.details——CustomMessageComponent 每次 invalidate 都重跑渲染器，
+    // 那时聊天容器末尾已经追加了别的组件，再算一次就从 ⎿ 翻成 ▸（历史行随心跳重渲染来回跳，ISSUE 226 遗留项）
+    if (typeof d._merged === "boolean") st.merged = d._merged;
+    else {
+      st.merged = _cmdDoneMergesWithCreated(st.recId);
+      try { if (message.details && typeof message.details === "object") (message.details as any)._merged = st.merged; } catch { /* details 只读时放弃缓存 */ }
+    }
     return renderExecuteResult(theme, st);
   });
   // 全部渲染器注册完成 → 只把实际注册过的 type 标记就位（R002 校验用），并恢复原方法

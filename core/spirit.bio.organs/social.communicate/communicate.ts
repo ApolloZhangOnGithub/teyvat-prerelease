@@ -20,10 +20,10 @@ import { renderToolCall, renderMessage, GUTTER, lineNumbered, SYM } from "#tui_b
 import { i18n } from "#tui_localizations";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync, statSync, rmdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
-import { socialDataDir, logerr, runtimeCacheDir, syncEndpoint, SYNC_UA } from "#paths";   // SYNC_UA 统一在 paths.ts（唯一真相源）
+import { socialDataDir, logerr, runtimeCacheDir, syncEndpoint, SYNC_UA, writeFileAtomic } from "#paths";   // SYNC_UA 统一在 paths.ts（唯一真相源）
 // heart-state：interrupt 唤醒 hibernated 用（communicate → heart-state 无环；heart.ts 反向 import communicate）
 import { transition, heartState } from "../kernel.heart/heart-state.ts";
 
@@ -386,10 +386,29 @@ function resolveMode(opts: {
 // ── 消息 ──────────────────────────────────────────────────────────────
 function inboxFile(sid: string): string { return join(INBOX_DIR, `${sid}.jsonl`); }
 
+// 2026-09-13：收件箱文件的跨进程锁（mkdir 独占）。appendInbox 由**别的 agent 进程**直接写进我的 inbox，
+// markInjected 是整文件读-改-写：不加锁时"读 → 对方 append → 我 writeFileSync 覆盖"会把对方刚发的消息整条丢掉（ISSUE 152 同类窗口）。
+// 锁只保护这两个写入口；读者（readInbox / doctor）不加锁——原子 rename 保证读到的永远是完整文件。
+function withInboxLock<T>(file: string, fn: () => T): T {
+  const lock = file + ".lock";
+  const sab = new Int32Array(new SharedArrayBuffer(4));
+  const t0 = Date.now();
+  for (;;) {
+    try { mkdirSync(lock); break; } catch (e: any) {
+      if (e?.code !== "EEXIST") throw e;
+      // 持锁进程崩溃留下的陈锁：超过 5s 直接接管
+      try { if (Date.now() - statSync(lock).mtimeMs > 5000) { rmdirSync(lock); continue; } } catch { /* 锁已被别人释放 → 重试 */ }
+      if (Date.now() - t0 > 2000) throw new Error("inbox lock timeout: " + lock);
+      Atomics.wait(sab, 0, 0, 15);
+    }
+  }
+  try { return fn(); } finally { try { rmdirSync(lock); } catch { /* 已被陈锁接管逻辑清掉 */ } }
+}
+
 function appendInbox(sid: string, msg: SocialMsg): void {
   try {
     mkdirSync(INBOX_DIR, { recursive: true });
-    appendFileSync(inboxFile(sid), JSON.stringify(msg) + "\n", "utf8");
+    withInboxLock(inboxFile(sid), () => appendFileSync(inboxFile(sid), JSON.stringify(msg) + "\n", "utf8"));
   } catch (e: any) { logerr("SOC002", e); }
 }
 
@@ -407,17 +426,20 @@ function markInjected(sid: string, ids: string[]): void {
   try {
     const file = inboxFile(sid);
     if (!existsSync(file)) return;
-    const lines = readFileSync(file, "utf8").split("\n");
     const idSet = new Set(ids);
-    const out = lines.map(l => {
-      if (!l.trim()) return l;
-      try {
-        const m = JSON.parse(l) as SocialMsg;
-        if (idSet.has(m.id)) m.injected = true;
-        return JSON.stringify(m);
-      } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return l; }
+    // 锁内读-改-写 + tmp+rename 原子落盘（原 writeFileSync 先截断：并发读者会读到半截、并发 append 会被覆盖丢失）
+    withInboxLock(file, () => {
+      const lines = readFileSync(file, "utf8").split("\n");
+      const out = lines.map(l => {
+        if (!l.trim()) return l;
+        try {
+          const m = JSON.parse(l) as SocialMsg;
+          if (idSet.has(m.id)) m.injected = true;
+          return JSON.stringify(m);
+        } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return l; }
+      });
+      writeFileAtomic(file, out.join("\n"));
     });
-    writeFileSync(file, out.join("\n"), "utf8");
   } catch (e: any) { logerr("SOC003", e); }
   // 2026-08-14 修复：标记 injected 后立即刷新未读计数——否则 statebar 的
   // __genshinSocialPending 停留在旧值，显示过期的 "N msgs pending"。
@@ -1254,7 +1276,7 @@ function registerSocialRenderer(pi: ExtensionAPI): void {
     // 2026-08-18 符号：◆ → ▸ → ➤（用户定稿：消息 ➤ / Result • / 事件 ✤；2026-08-27 Result 符号 » 改蓝点 •）
     const tsTag = d.ts ? ` · ${fmtTime(d.ts)}` : "";
     const label = `${from}${atTag} [${mode}]${tsTag}`;
-    const content = (message.content ?? "").toString();
+    const content = emojifyTerminalSafe((message.content ?? "").toString());
     const c = new Container();
     c.addChild(new Text(theme.fg("socialMessage", "➤") + " " + theme.fg("socialMessage", theme.bold(label)), 0, 0));
     if (content) {
@@ -1265,6 +1287,23 @@ function registerSocialRenderer(pi: ExtensionAPI): void {
     }
     return c;
   });
+}
+
+// 2026-09-13（用户：emoji 在终端缺字形渲染成菱形——support 汇报的 ✅ 即此）：常见 emoji 规范化成终端安全符号。
+// 只映射已知问题字符（✓/✗ 大多数字体有），不做 Unicode 范围剥除（避免误伤 ➤◆ 等终端安全符号）。发送侧不用 emoji 靠约定（support 已承诺），这里是渲染层兑底。
+function emojifyTerminalSafe(s: string): string {
+  return s
+    .replace(/✅/g, "✓")
+    .replace(/✔️?/g, "✓")
+    .replace(/❌/g, "✗")
+    .replace(/✖️?/g, "✗")
+    .replace(/⚠️/g, "!")
+    .replace(/🎉/g, "»")
+    .replace(/🚀/g, "»")
+    .replace(/🔥/g, "»")
+    .replace(/🐛/g, "*")
+    .replace(/💡/g, "*")
+    .replace(/👍/g, "+");
 }
 
 function fmtTime(ts: number): string {

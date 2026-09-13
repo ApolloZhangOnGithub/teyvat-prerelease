@@ -13,37 +13,27 @@
     background: #f5f5f5; color: #1a1a1a; -webkit-font-smoothing: antialiased;
   }
   .app { display: flex; height: 100vh; }
+  mark { background: #ffe08a; color: inherit; padding: 0 1px; }
 
-  /* ── ① 最左功能栏（微信 PC）── */
-  .rail {
-    width: 54px; min-width: 54px; background: #e3e3e3; display: flex; flex-direction: column;
-    align-items: center; padding: 14px 0 10px; gap: 4px;
-  }
-  .rail-btn {
-    width: 36px; height: 36px; border: 0; background: transparent; border-radius: 6px;
-    color: #5f5f5f; cursor: pointer; display: flex; align-items: center; justify-content: center;
-  }
+  /* ── ① 功能栏 ── */
+  .rail { width: 54px; min-width: 54px; background: #e3e3e3; display: flex; flex-direction: column; align-items: center; padding: 14px 0 10px; gap: 4px; }
+  .rail-btn { width: 36px; height: 36px; border: 0; background: transparent; border-radius: 6px; color: #5f5f5f; cursor: pointer; display: flex; align-items: center; justify-content: center; position: relative; }
   .rail-btn svg { width: 22px; height: 22px; }
   .rail-btn:hover { background: #d6d6d6; }
   .rail-btn.active { color: #07c160; }
+  .rail-btn .rail-unread { position: absolute; top: 2px; right: 2px; background: #fa5151; color: #fff; border-radius: 8px; font-size: 9px; line-height: 1; padding: 1px 4px; }
   .rail-spacer { flex: 1; }
-  .rail-me {
-    width: 34px; height: 34px; border-radius: 5px; background: #07c160; color: #fff;
-    display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; cursor: pointer;
-  }
+  .rail-me { width: 34px; height: 34px; border-radius: 5px; background: #07c160; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; cursor: pointer; }
 
-  /* ── ② 会话列表 ── */
-  .conv { width: 250px; min-width: 250px; background: #f7f7f7; display: flex; flex-direction: column; border-right: 1px solid #e2e2e2; }
+  /* ── ② 列表区 ── */
+  .conv { width: 258px; min-width: 258px; background: #f7f7f7; display: flex; flex-direction: column; border-right: 1px solid #e2e2e2; position: relative; }
   .conv-head { padding: 12px 12px 8px; }
   .conv-search { width: 100%; padding: 6px 10px; border: 0; border-radius: 4px; background: #e9e9e9; font: inherit; font-size: 13px; outline: none; }
   .conv-list { flex: 1; overflow-y: auto; }
   .conv-item { display: flex; gap: 10px; padding: 10px 12px; cursor: pointer; align-items: center; }
   .conv-item:hover { background: #ededed; }
   .conv-item.active { background: #d9d9d9; }
-  .avatar {
-    width: 38px; height: 38px; min-width: 38px; border-radius: 5px; color: #fff;
-    display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 15px;
-  }
+  .avatar { width: 38px; height: 38px; min-width: 38px; border-radius: 5px; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 15px; }
   .avatar-wrap { position: relative; }
   .avatar-wrap .dot { position: absolute; right: -3px; bottom: -3px; width: 11px; height: 11px; border-radius: 50%; border: 2px solid #f7f7f7; }
   .dot.on { background: #07c160; } .dot.off { background: #b8b8b8; }
@@ -53,34 +43,82 @@
   .conv-time { font-size: 11px; color: #a8a8a8; white-space: nowrap; }
   .conv-last { font-size: 12px; color: #9a9a9a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
   .unread { background: #fa5151; color: #fff; border-radius: 9px; font-size: 10px; line-height: 1; padding: 2px 5px; min-width: 16px; text-align: center; }
+  .group-head { padding: 5px 12px; font-size: 11px; color: #909090; background: #efefef; font-weight: 600; position: sticky; top: 0; }
+  .contact-entry { display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer; }
+  .contact-entry:hover { background: #ededed; }
+  .contact-entry .ico { width: 38px; height: 38px; border-radius: 5px; display: flex; align-items: center; justify-content: center; color: #fff; }
+  .contact-entry .ico svg { width: 22px; height: 22px; }
+  .entry-sub { font-size: 11px; color: #a8a8a8; }
+  .index-bar { position: absolute; right: 3px; top: 120px; bottom: 20px; display: flex; flex-direction: column; justify-content: center; gap: 1px; font-size: 10px; color: #7a7a7a; z-index: 5; user-select: none; }
+  .index-bar span { cursor: pointer; padding: 0 3px; line-height: 1.15; }
+  .index-bar span:hover { color: #07c160; font-weight: 700; }
+
+  /* 建群表单 */
+  .form { padding: 14px 12px; }
+  .form label { display: block; font-size: 12px; color: #666; margin: 10px 0 4px; }
+  .form input[type=text] { width: 100%; padding: 7px 10px; border: 1px solid #ddd; border-radius: 4px; font: inherit; font-size: 13px; outline: none; }
+  .pick { max-height: 260px; overflow-y: auto; border: 1px solid #eee; border-radius: 4px; background: #fff; margin-top: 4px; }
+  .pick-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; font-size: 13px; border-bottom: 1px solid #f2f2f2; cursor: pointer; }
+  .pick-item:hover { background: #f7f7f7; }
+  .pick-item input { accent-color: #07c160; }
+  .btn-row { display: flex; gap: 8px; margin-top: 12px; }
+  .btn { flex: 1; padding: 8px; border: 0; border-radius: 4px; font: inherit; font-size: 13px; cursor: pointer; }
+  .btn-primary { background: #07c160; color: #fff; }
+  .btn-ghost { background: #eee; color: #333; }
+  .btn:disabled { opacity: .5; cursor: default; }
 
   /* ── ③ 聊天区 ── */
   .chat { flex: 1; display: flex; flex-direction: column; min-width: 0; background: #f5f5f5; }
-  .chat-head { height: 52px; min-height: 52px; display: flex; align-items: center; padding: 0 18px; border-bottom: 1px solid #e6e6e6; font-size: 15px; font-weight: 600; }
-  .chat-head .sub { font-weight: 400; font-size: 12px; color: #999; margin-left: 8px; }
+  .chat-head { height: 52px; min-height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; border-bottom: 1px solid #e6e6e6; }
+  .chat-title { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chat-title .sub { font-weight: 400; font-size: 12px; color: #999; margin-left: 8px; }
+  .msg-search { width: 170px; padding: 6px 10px; border: 0; border-radius: 4px; background: #eaeaea; font: inherit; font-size: 12px; outline: none; }
+  .msg-search:focus { background: #e2e2e2; }
+  .chat-actions { display: flex; align-items: center; gap: 8px; position: relative; }
+  .more-btn { width: 30px; height: 30px; border: 0; background: transparent; border-radius: 4px; cursor: pointer; color: #666; display: flex; align-items: center; justify-content: center; }
+  .more-btn:hover { background: #e8e8e8; }
+  .more-btn svg { width: 20px; height: 20px; }
+  .more-menu { position: absolute; top: 36px; right: 0; background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,.12); min-width: 158px; z-index: 20; padding: 4px 0; }
+  .more-menu .mi { padding: 8px 14px; font-size: 13px; cursor: pointer; display: flex; justify-content: space-between; gap: 12px; white-space: nowrap; }
+  .more-menu .mi:hover { background: #f0f0f0; }
+  .more-menu .mi .st { color: #07c160; font-size: 12px; }
   .chat-body { flex: 1; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
   .empty { color: #b0b0b0; text-align: center; margin: auto; font-size: 13px; }
+  .offline-tip { background: #fdf6e3; color: #a08030; font-size: 12px; text-align: center; padding: 6px 10px; border-radius: 4px; margin-bottom: 4px; }
   .msg-row { display: flex; gap: 10px; align-items: flex-start; }
   .msg-row.out { flex-direction: row-reverse; }
-  .bubble { max-width: 62%; padding: 9px 13px; border-radius: 6px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; position: relative; }
+  .msg-col { display: flex; flex-direction: column; max-width: 62%; }
+  .msg-row.out .msg-col { align-items: flex-end; }
+  .sender { font-size: 11px; color: #999; margin-bottom: 3px; padding-left: 2px; }
+  .bubble { padding: 9px 13px; border-radius: 6px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; position: relative; }
   .msg-row.in .bubble { background: #fff; }
   .msg-row.out .bubble { background: #95ec69; }
   .bubble::before { content: ""; position: absolute; top: 11px; width: 0; height: 0; border: 6px solid transparent; }
   .msg-row.in .bubble::before { left: -11px; border-right-color: #fff; }
   .msg-row.out .bubble::before { right: -11px; border-left-color: #95ec69; }
   .bubble .meta { display: block; font-size: 10px; color: rgba(0,0,0,.35); margin-top: 3px; }
-
   .chat-foot { background: #fff; border-top: 1px solid #e6e6e6; padding: 10px 14px; display: flex; gap: 10px; align-items: flex-end; }
   #input { flex: 1; padding: 9px 12px; border: 0; outline: none; resize: none; font: inherit; height: 40px; max-height: 120px; background: transparent; }
   #send { padding: 0 20px; height: 34px; background: #07c160; color: #fff; border: 0; border-radius: 4px; cursor: pointer; font: inherit; font-size: 13px; }
   #send:disabled { opacity: .4; cursor: default; }
+
+  /* 设置 */
+  .me-card { display: flex; gap: 12px; align-items: center; padding: 20px 16px; }
+  .me-card .name { font-weight: 600; font-size: 15px; }
+  .me-card .sid { font-size: 12px; color: #999; margin-top: 2px; }
+  .set-title { padding: 10px 16px 4px; font-size: 11px; color: #999; }
+  .set-row { display: flex; justify-content: space-between; align-items: center; padding: 11px 16px; border-bottom: 1px solid #eee; font-size: 13px; background: #fff; }
+  .set-row select { font: inherit; font-size: 12px; border: 1px solid #ddd; border-radius: 4px; padding: 3px 6px; background: #fff; }
+  .set-note { padding: 10px 16px; font-size: 11px; color: #aaa; line-height: 1.8; }
+  /* 新消息顶部横幅（微信横幅通知）*/
+  .banner { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); background: rgba(38,38,42,.95); color: #fff; padding: 10px 18px; border-radius: 8px; font-size: 13px; z-index: 100; cursor: pointer; box-shadow: 0 6px 24px rgba(0,0,0,.28); max-width: 62%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .banner .bn { font-weight: 600; margin-right: 8px; color: #7fd4a0; }
 </style>
 </head>
 <body>
 <div class="app">
-  <!-- ① 功能栏（微信 PC：四图标 + 底部头像）-->
   <nav class="rail">
-    <button class="rail-btn active" id="railChats" title="聊天">
+    <button class="rail-btn active" id="railChats" title="消息">
       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3C6.5 3 2 6.6 2 11c0 2.5 1.5 4.7 3.8 6.1L5 21l4.3-2.2c.9.2 1.9.3 2.7.3 5.5 0 10-3.6 10-8S17.5 3 12 3z"/></svg>
     </button>
     <button class="rail-btn" id="railContacts" title="通讯录">
@@ -96,15 +134,23 @@
     <div class="rail-me" id="railMeAvatar" title="我">我</div>
   </nav>
 
-  <!-- ② 会话列表 -->
   <aside class="conv">
-    <div class="conv-head"><input id="search" class="conv-search" placeholder="搜索"></div>
+    <div class="conv-head" id="listHead"><input id="search" class="conv-search" placeholder="搜索"></div>
     <div class="conv-list" id="convList"></div>
+    <div class="index-bar" id="indexBar" style="display:none"></div>
   </aside>
 
-  <!-- ③ 聊天区 -->
   <main class="chat">
-    <header class="chat-head" id="chatHead">选择一个会话</header>
+    <header class="chat-head">
+      <div class="chat-title" id="chatTitle">选择一个会话</div>
+      <div class="chat-actions">
+        <input id="msgSearch" class="msg-search" placeholder="查找聊天记录" style="display:none">
+        <button id="chatMore" class="more-btn" title="更多" style="display:none">
+          <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
+        </button>
+        <div id="moreMenu" class="more-menu" style="display:none"></div>
+      </div>
+    </header>
     <div class="chat-body" id="chatBody"><div class="empty">← 选择左侧会话开始聊天</div></div>
     <div class="chat-foot">
       <textarea id="input" placeholder="Enter 换行 · Shift+Enter 发送" disabled></textarea>
@@ -112,110 +158,279 @@
     </div>
   </main>
 </div>
+<div id="banner" class="banner" style="display:none"></div>
 
 <script>
 "use strict";
-let self = null, current = null, convs = [], unread = {}, filter = "", view = "chats";
+let self = null, current = null, convs = [], unread = {}, filter = "", view = "chats", msgFilter = "", cachedMsgs = [];
 const seen = new Set();
 const $ = (id) => document.getElementById(id);
 const AVATAR_COLORS = ["#4a90d9","#57b487","#d98b4a","#9b6bd9","#d95a7a","#4ab0d9","#8fae3a","#c96a6a"];
+const GROUP_SVG = '<svg viewBox="0 0 24 24" fill="#fff"><circle cx="8" cy="9" r="2.6"/><circle cx="16" cy="9" r="2.6"/><path d="M2 19c0-3 2.7-5 6-5s6 2 6 5v1H2v-1z"/><path d="M14 19c0-2.3 1.5-4 4-4s4 1.7 4 4v1h-8v-1z"/></svg>';
+
+// ── 设置（localStorage）──
+const CFG_KEY = "teyvat-im-cfg";
+const cfg = Object.assign({ sendKey: "shift", mode: "interrupt" }, JSON.parse(localStorage.getItem(CFG_KEY) || "{}"));
+function saveCfg() { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); updateHint(); }
+function updateHint() {
+  $("input").placeholder =
+    cfg.sendKey === "enter" ? "Enter 发送 · Shift+Enter 换行" :
+    cfg.sendKey === "ctrl" ? "Ctrl+Enter 发送 · Enter 换行" :
+    "Enter 换行 · Shift+Enter 发送";
+}
 
 function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+function hl(text, kw) { // 关键词高亮
+  const t = String(text);
+  if (!kw) return esc(t);
+  const i = t.toLowerCase().indexOf(kw.toLowerCase());
+  if (i < 0) return esc(t);
+  return esc(t.slice(0, i)) + "<mark>" + esc(t.slice(i, i + kw.length)) + "</mark>" + esc(t.slice(i + kw.length));
+}
 function colorOf(name) { let h = 0; for (const ch of String(name || "?")) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return AVATAR_COLORS[h % AVATAR_COLORS.length]; }
 function initial(name) {
   const s = String(name || "?").replace(/^genshin-v?[\d.]*-?/i, "").replace(/^[-_.]+/, "");
   return (s.slice(0, 1) || "?").toUpperCase();
 }
-function avatarHtml(name) { return `<div class="avatar" style="background:${colorOf(name)}">${esc(initial(name))}</div>`; }
+function letterOf(name) { const c = String(name || "").trim().slice(0, 1).toUpperCase(); return /[A-Z]/.test(c) ? c : "#"; }
+function avatarHtml(name, online, isGroup) {
+  const inner = isGroup
+    ? `<div class="avatar" style="background:#5a7fd9">${GROUP_SVG}</div>`
+    : `<div class="avatar" style="background:${colorOf(name)}">${esc(initial(name))}</div>`;
+  return `<div class="avatar-wrap">${inner}` + (online === undefined ? "" : `<span class="dot ${online ? "on" : "off"}"></span>`) + `</div>`;
+}
 function fmtTime(ts) {
   if (!ts) return "";
   const d = new Date(ts), now = new Date();
   if (d.toDateString() === now.toDateString()) return d.toTimeString().slice(0, 5);
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
+function isGroupPeer(sid) { return String(sid || "").startsWith("group:"); }
 
-// ── 会话列表 ──
+// ── 数据 ──
 async function loadConvs() {
   try {
     const d = await (await fetch("/conversations")).json();
     self = d.self;
     convs = d.conversations || [];
     $("railMeAvatar").textContent = initial(d.self.name);
-    renderConvs();
+    renderList();
   } catch (e) { console.error("loadConvs", e); }
 }
 
-function renderConvs() {
-  const el = $("convList");
-  // 发现 / 我：非会话类视图（占位）
-  if (view === "discover") {
-    el.innerHTML = '<div class="empty" style="padding:26px 16px;line-height:1.9">发现<br><span style="font-size:12px">demo 暂未实现</span></div>';
-    return;
-  }
-  if (view === "me") {
-    el.innerHTML =
-      '<div style="padding:20px 16px">' +
-        '<div style="display:flex;gap:12px;align-items:center;margin-bottom:16px">' +
-          avatarHtml((self && self.name) || "我") +
-          '<div><div style="font-weight:600">' + esc((self && self.name) || "") + '</div>' +
-          '<div style="font-size:12px;color:#999">' + esc((self && self.sid) || "") + '</div></div>' +
-        '</div>' +
-        '<div style="font-size:12px;color:#999;line-height:2">身份：外部 bridge agent<br>通道：SocialData（registry + heartbeat）<br>服务：localhost:8790</div>' +
-      '</div>';
-    return;
-  }
+// ── 列表分派 ──
+function renderList() {
+  updateRailBadge();
+  const el = $("convList"), idx = $("indexBar");
+  idx.style.display = "none";
+  $("listHead").style.display = (view === "me" || view === "createGroup") ? "none" : "";
   el.innerHTML = "";
+  if (view === "discover") { el.innerHTML = '<div class="empty" style="padding:26px 16px;line-height:1.9">发现<br><span style="font-size:12px">demo 暂未实现</span></div>'; return; }
+  if (view === "me") return renderMe(el);
+  if (view === "createGroup") return renderCreateGroup(el);
+  if (view === "groups") return renderGroups(el);
+  if (view === "archived") return renderArchived(el);
+  if (view === "newfriends") return renderFriends(el);
   const kw = filter.trim().toLowerCase();
   const match = (c) => (c.name || "").toLowerCase().includes(kw) || c.sid.includes(kw);
-  // 消息 = 只有聊过的会话（微信“消息” tab）；通讯录 = 全部 agent（在线优先 + 名字序）
-  let list = view === "chats"
-    ? convs.filter((c) => c.lastMsg)
-    : [...convs].sort((a, b) => (b.online - a.online) || (a.name || "").localeCompare(b.name || ""));
-  if (kw) list = list.filter(match);
-  if (!list.length) {
-    el.innerHTML = view === "chats"
-      ? '<div class="empty" style="padding:26px 16px;line-height:1.9">暂无会话<br><span style="font-size:12px">去「通讯录」找人聊</span></div>'
-      : '<div class="empty" style="padding:20px">无匹配联系人</div>';
+  if (view === "chats") {
+    const hidden = getSet("hidden"), pinned = getSet("pinned");
+    const list = convs.filter((c) => c.lastMsg && !hidden.has(c.sid)).filter(match)
+      .sort((a, b) => (pinned.has(b.sid) ? 1 : 0) - (pinned.has(a.sid) ? 1 : 0));
+    if (!list.length) { el.innerHTML = '<div class="empty" style="padding:26px 16px;line-height:1.9">暂无会话<br><span style="font-size:12px">去「通讯录」找人聊</span></div>'; return; }
+    for (const c of list) el.appendChild(convItem(c, true));
     return;
   }
-  for (const c of list) {
-    const div = document.createElement("div");
-    div.className = "conv-item" + (current === c.sid ? " active" : "");
-    const u = unread[c.sid] ? `<span class="unread">${unread[c.sid]}</span>` : "";
-    const preview = c.lastMsg ? (c.lastMsg.out ? "我: " : "") + c.lastMsg.text : "点这里开始聊天";
-    div.innerHTML =
-      `<div class="avatar-wrap">${avatarHtml(c.name)}<span class="dot ${c.online ? "on" : "off"}"></span></div>` +
-      `<div class="conv-main">` +
-        `<div class="conv-top"><span class="conv-name">${esc(c.name)}</span><span class="conv-time">${fmtTime(c.lastMsg && c.lastMsg.ts)}</span></div>` +
-        `<div class="conv-last">${esc(preview).slice(0, 40)}</div>` +
-      `</div>` + u;
-    div.onclick = () => selectConv(c);
-    el.appendChild(div);
+  // 通讯录：微信逻辑（A-Z 分组 + 顶部入口）——归档联系人不在通讯录，单独收纳
+  const list = convs.filter((c) => !c.isGroup && !c.archived).filter(match);
+  el.appendChild(entryRow("群聊", "#4ab0d9",
+    '<svg viewBox="0 0 24 24" fill="#fff"><circle cx="8" cy="9" r="2.6"/><circle cx="16" cy="9" r="2.6"/><path d="M2 19c0-3 2.7-5 6-5s6 2 6 5v1H2v-1z"/><path d="M14 19c0-2.3 1.5-4 4-4s4 1.7 4 4v1h-8v-1z"/></svg>',
+    () => { view = "groups"; syncRail(); renderList(); }));
+  const archCount = convs.filter((c) => c.archived).length;
+  el.appendChild(entryRow(`已归档（${archCount}）`, "#9a9a9a",
+    '<svg viewBox="0 0 24 24" fill="#fff"><path d="M4 5h16v3H4zM5 9h14v10H5zM9 12h6v2H9z"/></svg>',
+    () => { view = "archived"; syncRail(); renderList(); }));
+  const newFriends = convs.filter((c) => !c.isGroup && !c.archived && c.online && !c.lastMsg);
+  el.appendChild(entryRow(`新的朋友（${newFriends.length}）`, "#f0a020",
+    '<svg viewBox="0 0 24 24" fill="#fff"><circle cx="10" cy="8" r="3.6"/><path d="M3 20c0-3.9 2.8-6.6 7-6.6s7 2.7 7 6.6v1H3v-1z"/><path d="M18 8h2v2h2v2h-2v2h-2v-2h-2v-2h2V8z"/></svg>',
+    () => { view = "newfriends"; syncRail(); renderList(); }));
+  if (!list.length) { el.insertAdjacentHTML("beforeend", '<div class="empty" style="padding:20px">无匹配联系人</div>'); return; }
+  const groups = {};
+  for (const c of list) (groups[letterOf(c.name)] = groups[letterOf(c.name)] || []).push(c);
+  const letters = Object.keys(groups).sort((a, b) => (a === "#" ? 1 : b === "#" ? -1 : a.localeCompare(b)));
+  for (const L of letters) {
+    const h = document.createElement("div");
+    h.className = "group-head"; h.id = "grp-" + L; h.textContent = L;
+    el.appendChild(h);
+    groups[L].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    for (const c of groups[L]) el.appendChild(convItem(c, false, false));
+  }
+  idx.innerHTML = letters.map((L) => `<span data-l="${L}">${L}</span>`).join("");
+  idx.style.display = "";
+  idx.querySelectorAll("span").forEach((s) => { s.onclick = () => { const g = $("grp-" + s.dataset.l); if (g) g.scrollIntoView({ block: "start" }); }; });
+}
+
+// 归档联系人收纳（A-Z 分组）
+function renderArchived(el) {
+  el.appendChild(entryRow("← 返回通讯录", "#c8c8c8", BACK_SVG, goContacts));
+  const list = convs.filter((c) => c.archived);
+  if (!list.length) { el.insertAdjacentHTML("beforeend", '<div class="empty" style="padding:20px">暂无归档联系人</div>'); return; }
+  const groups = {};
+  for (const c of list) (groups[letterOf(c.name)] = groups[letterOf(c.name)] || []).push(c);
+  const letters = Object.keys(groups).sort((a, b) => (a === "#" ? 1 : b === "#" ? -1 : a.localeCompare(b)));
+  for (const L of letters) {
+    const h = document.createElement("div"); h.className = "group-head"; h.textContent = L;
+    el.appendChild(h);
+    groups[L].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    for (const c of groups[L]) el.appendChild(convItem(c, false, false));
   }
 }
 
-// ── 选中会话 → 聊天区 ──
+// 新的朋友：在线但还没聊过的 agent
+function renderFriends(el) {
+  el.appendChild(entryRow("← 返回通讯录", "#c8c8c8", BACK_SVG, goContacts));
+  const list = convs.filter((c) => !c.isGroup && !c.archived && c.online && !c.lastMsg);
+  if (!list.length) { el.insertAdjacentHTML("beforeend", '<div class="empty" style="padding:20px">暂无新的朋友</div>'); return; }
+  for (const c of list) el.appendChild(convItem(c, false, false));
+}
+
+const BACK_SVG = '<svg viewBox="0 0 24 24" fill="#fff"><path d="M15 5l-7 7 7 7z"/></svg>';
+function goContacts() { view = "contacts"; syncRail(); renderList(); }
+
+function entryRow(label, color, svg, onclick) {
+  const d = document.createElement("div");
+  d.className = "contact-entry";
+  d.innerHTML = `<div class="ico" style="background:${color}">${svg}</div><div class="conv-main"><div class="conv-name">${esc(label)}</div></div>`;
+  d.onclick = onclick;
+  return d;
+}
+
+function convItem(c, showTime, showUnread = true) {
+  const div = document.createElement("div");
+  div.className = "conv-item" + (current === c.sid ? " active" : "");
+  const u = (showUnread && unread[c.sid]) ? `<span class="unread">${unread[c.sid]}</span>` : "";
+  const preview = c.lastMsg ? (c.lastMsg.out ? "我: " : "") + c.lastMsg.text : "点这里开始聊天";
+  const right = showTime ? `<span class="conv-time">${fmtTime(c.lastMsg && c.lastMsg.ts)}</span>` : (u || "");
+  const sub = c.isGroup ? `${(c.members || []).length} 人` : c.sid;
+  div.innerHTML =
+    avatarHtml(c.name, c.online, c.isGroup) +
+    `<div class="conv-main">` +
+      `<div class="conv-top"><span class="conv-name">${esc(c.name)}</span>${right}</div>` +
+      (showTime ? `<div class="conv-last">${esc(preview).slice(0, 40)}</div>` : `<div class="conv-last">${esc(sub)}</div>`) +
+    `</div>` + (showTime ? u : "");
+  div.onclick = () => selectConv(c);
+  return div;
+}
+
+// ── 群聊列表 + 建群 ──
+function renderGroups(el) {
+  el.appendChild(entryRow("← 返回通讯录", "#c8c8c8", BACK_SVG, goContacts));
+  el.appendChild(entryRow("创建群聊", "#07c160",
+    '<svg viewBox="0 0 24 24" fill="#fff"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>',
+    () => { view = "createGroup"; renderList(); }));
+  const groups = convs.filter((c) => c.isGroup);
+  if (!groups.length) { el.insertAdjacentHTML("beforeend", '<div class="empty" style="padding:20px">暂无群聊</div>'); return; }
+  for (const g of groups) el.appendChild(convItem(g, true));
+}
+
+function renderCreateGroup(el) {
+  const agents = convs.filter((c) => !c.isGroup);
+  el.innerHTML =
+    `<div class="form"><label>群名称</label><input type="text" id="gName" placeholder="群聊名称">` +
+    `<label>选择成员（已选 <span id="gCount">0</span>）</label>` +
+    `<div class="pick" id="gPick">` +
+      (agents.length ? agents.map((a) =>
+        `<label class="pick-item"><input type="checkbox" value="${esc(a.sid)}"> ${esc(a.name)}${a.online ? ' <span style="color:#07c160;font-size:11px">在线</span>' : ""}</label>`
+      ).join("") : '<div class="empty" style="padding:14px">无可选 agent</div>') +
+    `</div>` +
+    `<div class="btn-row"><button class="btn btn-ghost" id="gCancel">取消</button><button class="btn btn-primary" id="gCreate">创建</button></div></div>`;
+  const cnt = () => $("gCount").textContent = el.querySelectorAll("#gPick input:checked").length;
+  el.querySelectorAll("#gPick input").forEach((i) => { i.onchange = cnt; });
+  $("gCancel").onclick = () => { view = "groups"; renderList(); };
+  $("gCreate").onclick = async () => {
+    const name = $("gName").value.trim() || "群聊";
+    const members = [...el.querySelectorAll("#gPick input:checked")].map((i) => i.value);
+    if (!members.length) { alert("请至少选一个成员"); return; }
+    try {
+      const d = await (await fetch("/groups", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, members }) })).json();
+      if (d.group) {
+        await loadConvs();
+        view = "chats";
+        syncRail();
+        const c = convs.find((x) => x.sid === "group:" + d.group.id);
+        if (c) selectConv(c); else renderList();
+      }
+    } catch (e) { console.error("createGroup", e); }
+  };
+}
+
+// ── “我”页 ──
+function renderMe(el) {
+  el.innerHTML =
+    `<div class="me-card">${avatarHtml((self && self.name) || "我")}` +
+      `<div><div class="name">${esc((self && self.name) || "")}</div><div class="sid">${esc((self && self.sid) || "")}</div></div></div>` +
+    `<div class="set-title">设置</div>` +
+    `<div class="set-row"><span>发送键</span><select id="setKey">` +
+      `<option value="shift" ${cfg.sendKey === "shift" ? "selected" : ""}>Shift+Enter</option>` +
+      `<option value="enter" ${cfg.sendKey === "enter" ? "selected" : ""}>Enter</option>` +
+      `<option value="ctrl" ${cfg.sendKey === "ctrl" ? "selected" : ""}>Ctrl+Enter</option>` +
+    `</select></div>` +
+    `<div class="set-row"><span>发送模式</span><select id="setMode">` +
+      `<option value="interrupt" ${cfg.mode === "interrupt" ? "selected" : ""}>打断（立即送达）</option>` +
+      `<option value="queue" ${cfg.mode === "queue" ? "selected" : ""}>排队（对方空闲时）</option>` +
+    `</select></div>` +
+    `<div class="set-note">发送键：Enter / Shift+Enter / Ctrl+Enter 三选一（发送），另外两个键换行。<br>` +
+    `发送模式：打断 = 立即中断对方当前工作送达；排队 = 对方空闲时送达。<br><br>` +
+    `身份：外部 bridge agent · 通道：SocialData（registry + heartbeat）· 服务：localhost:8790</div>`;
+  $("setKey").onchange = (e) => { cfg.sendKey = e.target.value; saveCfg(); };
+  $("setMode").onchange = (e) => { cfg.mode = e.target.value; saveCfg(); };
+}
+
+// ── 选中会话 ──
 async function selectConv(c) {
   current = c.sid;
   delete unread[c.sid];
-  $("chatHead").innerHTML = `${esc(c.name)}<span class="sub">${c.sid} · ${c.online ? "在线" : "离线"}</span>`;
+  const group = isGroupPeer(c.sid);
+  $("chatTitle").innerHTML = `${esc(c.name)}<span class="sub">${group ? (c.members || []).length + " 人" : c.sid + " · " + (c.online ? "在线" : "离线")}</span>`;
   $("input").disabled = false;
   $("send").disabled = false;
+  $("msgSearch").style.display = "none"; $("msgSearch").value = ""; msgFilter = "";
+  $("chatMore").style.display = "";
+  toggleMore(false);
   $("input").focus();
-  renderConvs();
+  renderList();
+  await reloadChat();
+}
+async function reloadChat() {
+  if (!current) return;
   try {
-    const d = await (await fetch("/messages?peer=" + encodeURIComponent(c.sid))).json();
-    renderChat(d.messages || []);
+    const d = await (await fetch("/messages?peer=" + encodeURIComponent(current))).json();
+    cachedMsgs = d.messages || [];
+    renderChat();
   } catch (e) { console.error("messages", e); }
 }
 
-function renderChat(msgs) {
+// ── 聊天渲染（含消息搜索）──
+function renderChat() {
   const el = $("chatBody");
   el.innerHTML = "";
   seen.clear();
-  if (!msgs.length) { el.innerHTML = '<div class="empty">还没有消息——发一条试试</div>'; return; }
-  for (const m of msgs) appendMsg(m);
-  el.scrollTop = el.scrollHeight;
+  // 离线/归档提示（消息能送达收件箱，但不保证回复）
+  const cur = convs.find((x) => x.sid === current);
+  if (cur && !cur.isGroup && !cur.online) {
+    el.insertAdjacentHTML("beforeend",
+      `<div class="offline-tip">${cur.archived ? "该联系人已归档" : "该联系人当前离线"}——消息会写入其收件箱，但不保证回复</div>`);
+  }
+  const kw = msgFilter.trim();
+  const list = kw ? cachedMsgs.filter((m) => String(m.text).toLowerCase().includes(kw.toLowerCase())) : cachedMsgs;
+  if (!list.length) {
+    el.innerHTML = kw
+      ? `<div class="empty">没有匹配「${esc(kw)}」的消息</div>`
+      : '<div class="empty">还没有消息——发一条试试</div>';
+    return;
+  }
+  for (const m of list) appendMsg(m);
+  el.scrollTop = kw ? 0 : el.scrollHeight;
 }
 
 function appendMsg(m) {
@@ -226,11 +441,14 @@ function appendMsg(m) {
   if (empty) empty.remove();
   const row = document.createElement("div");
   row.className = "msg-row " + (m.out ? "out" : "in");
+  const group = isGroupPeer(m.to);
   const who = m.out ? (self && self.name) : (m.from_name || m.from || "");
-  const meta = m.out ? fmtTime(m.ts) : `${esc(String(who).slice(0, 22))} · ${fmtTime(m.ts)}`;
-  row.innerHTML = avatarHtml(who || "?") + `<div class="bubble">${esc(m.text)}<span class="meta">${meta}</span></div>`;
+  // 群聊消息：发送者名字在「头像右边、气泡上方」；单聊：时间/名字在气泡内下方
+  const html = group && !m.out
+    ? avatarHtml(who || "?") + `<div class="msg-col"><span class="sender">${hl(who || "", msgFilter)}</span><div class="bubble">${hl(m.text, msgFilter)}</div></div>`
+    : avatarHtml(who || "?") + `<div class="bubble">${hl(m.text, msgFilter)}<span class="meta">${m.out ? fmtTime(m.ts) : esc(String(who).slice(0, 22)) + " · " + fmtTime(m.ts)}</span></div>`;
+  row.innerHTML = html;
   el.appendChild(row);
-  el.scrollTop = el.scrollHeight;
 }
 
 // ── 发送 ──
@@ -244,9 +462,9 @@ async function send() {
     const d = await (await fetch("/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to: current, text }),
+      body: JSON.stringify({ to: current, text, mode: cfg.mode }),
     })).json();
-    if (d.msg) appendMsg(d.msg);
+    if (d.msg) { cachedMsgs.push(d.msg); appendMsg(d.msg); const b = $("chatBody"); b.scrollTop = b.scrollHeight; }
     loadConvs();
   } catch (e) { console.error("send", e); }
 }
@@ -256,33 +474,102 @@ function connectSSE() {
   const es = new EventSource("/events");
   es.onmessage = (ev) => {
     let m; try { m = JSON.parse(ev.data); } catch { return; }
-    if (m.out) { if (m.to === current) appendMsg(m); return; }
-    if (m.from === current) appendMsg(m);
-    else unread[m.from] = (unread[m.from] || 0) + 1;
+    const grp = isGroupPeer(m.to);
+    // 是否属于当前会话
+    const belongs = current && (grp ? m.to === current : (m.out ? m.to === current : m.from === current));
+    if (belongs) {
+      cachedMsgs.push(m);
+      if (!msgFilter.trim()) appendMsg(m);
+      const b = $("chatBody"); b.scrollTop = b.scrollHeight;
+    } else if (!m.out) {
+      const peer = grp ? m.to : m.from;
+      unread[peer] = (unread[peer] || 0) + 1;
+      const cc = convs.find((x) => x.sid === peer);
+      showBanner(cc ? cc.name : peer, m.text, peer);
+    }
     loadConvs();
   };
 }
 
 // ── 事件 ──
 $("send").onclick = send;
-$("search").addEventListener("input", (e) => { filter = e.target.value; renderConvs(); });
-// 功能栏四视图切换（微信：消息 / 通讯录 / 发现 / 我）
-const RAIL_TABS = [["railChats", "chats"], ["railContacts", "contacts"], ["railDiscover", "discover"], ["railMeTab", "me"]];
-function syncRail() {
-  for (const [id, v] of RAIL_TABS) { const b = $(id); if (b) b.classList.toggle("active", view === v); }
-}
-for (const [id, v] of RAIL_TABS) {
-  const b = $(id);
-  if (b) b.onclick = () => { view = v; syncRail(); renderConvs(); };
-}
+$("search").addEventListener("input", (e) => { filter = e.target.value; renderList(); });
+$("msgSearch").addEventListener("input", (e) => { msgFilter = e.target.value; renderChat(); });
 $("input").addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && e.shiftKey) { e.preventDefault(); send(); } // Enter 换行 · Shift+Enter 发送（用户定稿）
+  if (e.key !== "Enter") return;
+  const ctrl = e.ctrlKey || e.metaKey, shift = e.shiftKey, plain = !ctrl && !shift;
+  const shouldSend = cfg.sendKey === "enter" ? plain : cfg.sendKey === "ctrl" ? ctrl : shift;
+  if (shouldSend) { e.preventDefault(); send(); }
 });
 $("input").addEventListener("input", (e) => {
   e.target.style.height = "40px";
   e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
 });
 
+const RAIL_TABS = [["railChats", "chats"], ["railContacts", "contacts"], ["railDiscover", "discover"], ["railMeTab", "me"]];
+// 子视图归属父 tab（groups/archived/newfriends/createGroup → 通讯录）：高亮不丢
+const VIEW_TAB = { chats: "railChats", contacts: "railContacts", groups: "railContacts", archived: "railContacts", newfriends: "railContacts", createGroup: "railContacts", discover: "railDiscover", me: "railMeTab" };
+function syncRail() { const active = VIEW_TAB[view] || "railChats"; for (const [id] of RAIL_TABS) { const b = $(id); if (b) b.classList.toggle("active", id === active); } }
+for (const [id, v] of RAIL_TABS) { const b = $(id); if (b) b.onclick = () => { view = v; syncRail(); renderList(); }; }
+
+// 未读红点：只在 rail 的「消息」tab 上（通讯录/归档不显示——用户定稿）
+function updateRailBadge() {
+  const total = Object.values(unread).reduce((a, b) => a + b, 0);
+  const b = $("railChats");
+  if (!b) return;
+  let dot = b.querySelector(".rail-unread");
+  if (total > 0) {
+    if (!dot) { dot = document.createElement("span"); dot.className = "rail-unread"; b.appendChild(dot); }
+    dot.textContent = total > 99 ? "99+" : total;
+  } else if (dot) dot.remove();
+}
+
+// 新消息横幅（微信横幅通知）：顶部弹出，点击跳会话，4s 自动消失
+let bannerTimer = null;
+function showBanner(name, text, peer) {
+  const b = $("banner");
+  b.innerHTML = `<span class="bn">${esc(name)}</span>${esc(String(text).slice(0, 60))}`;
+  b.style.display = "";
+  b.onclick = () => { const c = convs.find((x) => x.sid === peer); if (c) selectConv(c); hideBanner(); };
+  clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(hideBanner, 4000);
+}
+function hideBanner() { $("banner").style.display = "none"; }
+
+// ── 聊天窗口 ⋯ 菜单（微信：查找聊天记录/免打扰/置顶/清空/删除）──
+const LSK = { muted: "teyvat-im-muted", pinned: "teyvat-im-pinned", hidden: "teyvat-im-hidden" };
+const getSet = (k) => new Set(JSON.parse(localStorage.getItem(LSK[k]) || "[]"));
+const saveSet = (k, s) => localStorage.setItem(LSK[k], JSON.stringify([...s]));
+let moreOpen = false;
+function toggleMore(force) {
+  moreOpen = force === undefined ? !moreOpen : force;
+  $("moreMenu").style.display = moreOpen ? "" : "none";
+  if (moreOpen) renderMoreMenu();
+}
+function renderMoreMenu() {
+  if (!current) return;
+  const muted = getSet("muted").has(current), pinned = getSet("pinned").has(current);
+  $("moreMenu").innerHTML =
+    `<div class="mi" data-act="search">查找聊天记录</div>` +
+    `<div class="mi" data-act="mute">消息免打扰${muted ? '<span class="st">已开启</span>' : ""}</div>` +
+    `<div class="mi" data-act="pin">置顶聊天${pinned ? '<span class="st">已置顶</span>' : ""}</div>` +
+    `<div class="mi" data-act="clear">清空聊天记录</div>` +
+    `<div class="mi" data-act="del">删除聊天</div>`;
+  $("moreMenu").querySelectorAll(".mi").forEach((el2) => { el2.onclick = () => handleMore(el2.dataset.act); });
+}
+function handleMore(act) {
+  toggleMore(false);
+  if (!current) return;
+  if (act === "search") { $("msgSearch").style.display = ""; $("msgSearch").focus(); return; }
+  if (act === "mute") { const s = getSet("muted"); s.has(current) ? s.delete(current) : s.add(current); saveSet("muted", s); return; }
+  if (act === "pin") { const s = getSet("pinned"); s.has(current) ? s.delete(current) : s.add(current); saveSet("pinned", s); renderList(); return; }
+  if (act === "clear") { if (confirm("清空当前聊天记录（仅界面显示，demo 不实际删除数据）？")) { cachedMsgs = []; renderChat(); } return; }
+  if (act === "del") { if (confirm("删除该聊天？（demo：仅从列表隐藏）")) { const s = getSet("hidden"); s.add(current); saveSet("hidden", s); current = null; $("chatTitle").textContent = "选择一个会话"; $("input").disabled = true; $("send").disabled = true; $("chatMore").style.display = "none"; $("msgSearch").style.display = "none"; $("chatBody").innerHTML = '<div class="empty">← 选择左侧会话开始聊天</div>'; renderList(); } return; }
+}
+$("chatMore").onclick = (e) => { e.stopPropagation(); toggleMore(); };
+document.addEventListener("click", (e) => { if (moreOpen && !e.target.closest(".chat-actions")) toggleMore(false); });
+
+updateHint();
 loadConvs();
 connectSSE();
 setInterval(loadConvs, 10000);

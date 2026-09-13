@@ -4,7 +4,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType, isBashToolResult } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { access, readFile, appendFile, rename as fsRename, mkdir, readdir, stat as fsStat } from "node:fs/promises";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { dirname, basename, resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile as fsReadFile, writeFile as fsWriteFile } from "node:fs/promises";
@@ -261,13 +261,45 @@ function parseMv(cmd: string): { src: string; dst: string; isRename: boolean } |
 
 // 他人私有数据目录判定（read/ls/grep/glob/write 等所有带 path 的工具共用；execute 走 validateExecute 里的同口径正则）
 // 2026-09-13：之前"他人数据目录边界"只存在于 execute——`read ~/.teyvat/MemoryData/<other>/context.md` 直接通过，而 execute 里 cat 同一文件被拦。
+// 软链解析：路径不存在时逐级向上找最近存在的祖先做 realpath，再把剩余段拼回去（2026-09-13：workdir 里
+// `ln -s ~/.teyvat/MemoryData/<other> ./x` 后 `read ./x/context.md` 路径字符串完全不含他人目录，守卫只看字符串就放行了）
+function _resolveSymlinks(abs: string): string {
+  let cur = abs; const rest: string[] = [];
+  for (let i = 0; i < 64; i++) {
+    try { return join(realpathSync(cur), ...[...rest].reverse()); } catch { /* 不存在 → 上退一级 */ }
+    const parent = dirname(cur);
+    if (parent === cur) return abs;
+    rest.push(basename(cur)); cur = parent;
+  }
+  return abs;
+}
+const PRIVATE_DIRS = "(?:MemoryData|SessionData|RuntimeCache|BlackboxData|IdentityData|AgentFileData|AppData|ExecuteData|LogData|ErrorData)";
+const PRIVATE_DIR_RE = new RegExp("\\/\\.teyvat\\/" + PRIVATE_DIRS + "\\/([0-9a-f]{8})(?=\\/|$)", "i");
+// ~/.teyvat（或 PAIMON_HOME）本身常是软链：软链解析后的真实路径里没有 ".teyvat" 这一段，再用真实根目录匹配一次
+const PRIVATE_ROOT_RES: RegExp[] = (() => {
+  const roots = new Set<string>();
+  for (const r of [process.env.PAIMON_HOME, join(homedir(), ".teyvat")]) {
+    if (!r) continue;
+    try { roots.add(realpathSync(r)); } catch { /* 不存在就不加 */ }
+  }
+  const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return [...roots].map((r) => new RegExp("^" + esc(r) + "\\/" + PRIVATE_DIRS + "\\/([0-9a-f]{8})(?=\\/|$)", "i"));
+})();
+function _privateIdOf(p: string): string | null {
+  const m = p.match(PRIVATE_DIR_RE);
+  if (m) return m[1].toLowerCase();
+  for (const re of PRIVATE_ROOT_RES) { const m2 = p.match(re); if (m2) return m2[1].toLowerCase(); }
+  return null;
+}
 export function checkPrivateDataPath(p: string, selfId: string): string | null {
   if (!p) return null;
   const abs = resolve(p.replace(/^~(?=\/|$)/, homedir()));
-  const m = abs.match(/\/\.teyvat\/(?:MemoryData|SessionData|RuntimeCache|BlackboxData|IdentityData|AgentFileData|AppData|ExecuteData|LogData|ErrorData)\/([0-9a-f]{8})(?=\/|$)/i);
-  if (!m) return null;
-  const id = m[1].toLowerCase();
-  if (selfId && id === selfId.toLowerCase()) return null;
+  // 字符串路径与软链解析后的真实路径**各自**判定：任一命中他人目录即拦。
+  //（不能"字符串命中自己就放行"——自己 workdir 里一条指向他人 MemoryData 的软链，字符串看着全是自己的目录）
+  const ids = [abs, _resolveSymlinks(abs)].map(_privateIdOf).filter((x): x is string => !!x);
+  const foreign = ids.find((x) => !selfId || x !== selfId.toLowerCase());
+  if (!foreign) return null;
+  const id = foreign;
   try { const auth = JSON.parse(readFileSync(AUTH_FILE, "utf8")); if (selfId && auth.agents?.[selfId]?.root) return null; } catch { /* 无 authorize.json → 不放行 */ }
   return i18n(`禁止访问其他 agent（${id}）的私有数据目录。`, `Access to another agent's (${id}) private data directory is forbidden.`);
 }

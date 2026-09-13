@@ -595,7 +595,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
                 updateBgCount();
                 break;
               }
-              const pane = await asyncShSafe(`tmux capture-pane -pt ${n} 2>/dev/null`);
+              const pane = await asyncShSafe(`tmux capture-pane -pt ${n} -S -200 2>/dev/null`);
               const idx = pane.lastIndexOf(doneMarker);
               if (idx >= 0) {
                 const rest = pane.slice(idx + doneMarker.length);
@@ -846,7 +846,7 @@ function registerTmuxRestore(pi: ExtensionAPI): void {
               if (!running.has(id)) break;
               if (!(await tmuxHas(n))) {
                 // 会话关闭(完成或被杀--doneMarker 没抓到说明被杀)
-                const pane = await asyncShSafe(`tmux capture-pane -pt ${n} 2>/dev/null`);
+                const pane = await asyncShSafe(`tmux capture-pane -pt ${n} -S -200 2>/dev/null`);
                 running.delete(id); updateBgCount();
                 try {
                   const doneIdx = pane.lastIndexOf(doneMarker);

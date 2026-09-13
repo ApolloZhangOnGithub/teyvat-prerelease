@@ -122,12 +122,17 @@ export function registerStatusTool(_pi: ExtensionAPI) {
               }
             }
           } catch (e) { console.error("[spirit.abio.status/status.ts] " + ((e as any)?.message || e)); }
+          // 2026-09-13：start/end 原按下标配对（starts[i] ↔ ends[i]）——只要中间有一次没写 end（kill -9 / 断电 / 崩在 exit 钩子前），
+          // 后面每个 session 都配到上一个的 end，时长与结束原因整体错一位。改为按时间窗配对：某次 start 的 end 必须落在 [该 start, 下一次 start) 里；
+          // 找不到 → 非最后一个记 unknown（结束时刻近似为下一次 start），最后一个记 running。
           const sess = starts.map((s: any, i: number) => {
-            const end = ends[i];
             const startTs = new Date(s.ts).getTime();
-            const endTs = end ? new Date(end.ts).getTime() : now;
+            const nextStartTs = i + 1 < starts.length ? new Date(starts[i + 1].ts).getTime() : Infinity;
+            const end = ends.find((e: any) => { const t = new Date(e.ts).getTime(); return t >= startTs && t < nextStartTs; });
+            const endTs = end ? new Date(end.ts).getTime() : (nextStartTs === Infinity ? now : nextStartTs);
+            const endReason = end ? (end.reason || "unknown") : (nextStartTs === Infinity ? "running" : "unknown");
             const ver = (s.genshin || "").match(/20260815\.(\d+)/)?.[1] || s.genshin || "?";
-            return { startTs, endTs, endReason: end?.reason || "running", ver };
+            return { startTs, endTs, endReason, ver };
           });
           const all = [...hist, ...sess]; // 历史在前（旧），精确在后（新）
           if (!all.length) return { content: [{ type: "text", text: T("无会话记录", "No session records") }] };
