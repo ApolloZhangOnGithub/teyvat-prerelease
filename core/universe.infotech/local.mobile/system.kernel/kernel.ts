@@ -564,7 +564,7 @@ export default function (pi: ExtensionAPI) {
     try {
       const existing = readFileSync(MSG_FILE, "utf8");
       _lastMsgLine = existing.trim().split("\n").filter(Boolean).length;
-    } catch (e) { console.error("[universe.infotech/local.mobile/system.kernel/kernel.ts] " + ((e as any)?.message || e)); }
+    } catch (e: any) { if ((e as any)?.code !== "ENOENT") console.error("[universe.infotech/local.mobile/system.kernel/kernel.ts] " + ((e as any)?.message || e)); } // 2026-09-14（alice 实测 ISSUE 258）：文件从未创建（写入端只在有消息时写）是预期态——ENOENT=无消息，静默（此前每 5s 刷 1 条，7 天 11 万条刷屏）；非 ENOENT 真错误仍报
     const pollMsgs = () => {
       try {
         const raw = readFileSync(MSG_FILE, "utf8");
@@ -602,7 +602,7 @@ export default function (pi: ExtensionAPI) {
           } catch (e) { console.error("[universe.infotech/local.mobile/system.kernel/kernel.ts] " + ((e as any)?.message || e)); }
         }
         _lastMsgLine = lines.length;
-      } catch (e) { console.error("[universe.infotech/local.mobile/system.kernel/kernel.ts] " + ((e as any)?.message || e)); }
+      } catch (e: any) { if ((e as any)?.code !== "ENOENT") console.error("[universe.infotech/local.mobile/system.kernel/kernel.ts] " + ((e as any)?.message || e)); } // 2026-09-14（alice 实测）：文件未创建是预期态（写入端只在有消息时写）——ENOENT=无消息静默（NORM 018），非 ENOENT 真错误仍报
     };
     // 2026-09-13：session_start 可能重入（/new、resume）——之前每次都新建轮询且不清理，两个轮询各推一遍同一条 WeChat 通知
     try { const _prev = (globalThis as any).__genshinMobilePollTimer; if (_prev) clearInterval(_prev); } catch (e) { /* 首次无句柄 */ }
