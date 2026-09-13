@@ -456,6 +456,7 @@ export class InteractiveMode {
         // 2026-09-13（用户）：Execute 摘要/结果 与 Wait 输出 的显示开关（默认：摘要隐藏、结果全部、Wait 隐藏）
         const s0 = this.settingsManager.settings;
         if (s0?.executeSummary !== undefined) globalThis.__genshinExecuteSummary = s0.executeSummary;
+        if (s0?.executeDot !== undefined) globalThis.__genshinExecuteDot = s0.executeDot;
         if (s0?.executeResult !== undefined) globalThis.__genshinExecuteResult = s0.executeResult;
         if (s0?.waitShow !== undefined) globalThis.__genshinWaitShow = s0.waitShow;
         // 2026-09-13（用户）：工具结果耗时戳 [0.009s] 默认隐藏

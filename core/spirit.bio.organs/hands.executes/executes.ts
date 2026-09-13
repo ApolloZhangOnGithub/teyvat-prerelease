@@ -269,12 +269,15 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
       // 2026-09-13（用户定稿）：调用行 = 标题 + 「摘要」显示/隐藏。
       // 摘要隐藏（默认）= 只有标题；摘要显示 = 标题 + 命令前 3 行（+N more）。
       const showSummary = (globalThis as any).__genshinExecuteSummary === true;
+      // 2026-09-13（用户）：Execute 调用行的原点默认隐藏（/s「Execute 原点」开关），其他 tool 不影响
+      const showDot = (globalThis as any).__genshinExecuteDot === true;
+      const dotOpts = showDot ? undefined : { noDot: true };
       const label = args?.terminal === true ? "Execute(T)" : "Execute";
       if (!showSummary) {
-        if (title) return renderToolCall.label(theme, label, title);
+        if (title) return renderToolCall.label(theme, label, title, dotOpts);
         // 模型没传 title（虽然 schema required）——fallback 到命令首行截短，灰色表示不是标题
         const cmdShort = cmd.split("\n")[0].slice(0, 60) + (cmd.length > 60 ? "…" : "");
-        return renderToolCall.label(theme, label, theme.fg("dim", cmdShort));
+        return renderToolCall.label(theme, label, theme.fg("dim", cmdShort), dotOpts);
       }
       // 命令处理（breakAnd）在模式分支前统一执行
       if ((globalThis as any).__genshinExecuteBreakAnd && cmd.includes(" && ")) {
@@ -282,7 +285,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
       }
       const _lines = cmd.split("\n").filter((l: string) => l.trim());
       const brief = _lines.length > 3 ? _lines.slice(0, 3).join("\n") + "\n... +" + (_lines.length - 3) + " more" : cmd;
-      return renderToolCall.detail(theme, label, title, brief);
+      return renderToolCall.detail(theme, label, title, brief, dotOpts);
     },
     renderResult(result: any, _options: any, theme: any, ctx: any) {
       // 2026-09-13（ISSUE 226）：三种结果样式（快命令 / Created / cmd-done）统一由 blocks_nongod.renderExecuteResult 画，这里只把 details 映射成 state。

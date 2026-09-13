@@ -60,6 +60,7 @@ function getAllItems() {
   const readExpanded = g.__genshinReadExpanded ?? false;
   const codeHighlight = g.__genshinCodeHighlight ?? false;
   const executeSummary = g.__genshinExecuteSummary === true;
+  const executeDot = g.__genshinExecuteDot === true;
   const executeResult = g.__genshinExecuteResult ?? "full";
   const waitShow = g.__genshinWaitShow === true;
   const toolElapsed = g.__genshinToolElapsed === true;
@@ -96,6 +97,7 @@ function getAllItems() {
       { id: "writeExpanded", label: T("  Write", "  Write"), currentValue: writeExpanded ? T("完整", "Full") : T("摘要", "Summary"), values: [T("摘要", "Summary"), T("完整", "Full")] },
       { id: "editExpanded", label: T("  Edit", "  Edit"), currentValue: editExpanded ? T("完整", "Full") : T("摘要", "Summary"), values: [T("摘要", "Summary"), T("完整", "Full")] },
       { id: "executeSummary", label: T("  Execute 摘要", "  Execute Summary"), currentValue: exeSummaryMode, values: [T("隐藏", "Hide"), T("显示", "Show")] },
+      { id: "executeDot", label: T("  Execute 原点", "  Execute Dot"), currentValue: executeDot ? T("显示", "Show") : T("隐藏", "Hide"), values: [T("隐藏", "Hide"), T("显示", "Show")] },
       { id: "executeResult", label: T("  Execute 结果", "  Execute Result"), currentValue: exeResultMode, values: [T("隐藏", "Hide"), T("摘要", "Summary"), T("全部", "Full")] },
       { id: "waitShow", label: T("  Wait 输出", "  Wait Output"), currentValue: waitShowMode, values: [T("隐藏", "Hide"), T("显示", "Show")] },
     );
@@ -210,6 +212,13 @@ function handleChange(id: string, value: string) {
       const on = value === T("显示", "Show");
       g.__genshinExecuteSummary = on;
       save("executeSummary", on);
+      break;
+    }
+    case "executeDot": {
+      // 2026-09-13（用户）：Execute 调用行原点 显示/隐藏（默认隐藏——美观），其他 tool 不影响
+      const on = value === T("显示", "Show");
+      g.__genshinExecuteDot = on;
+      save("executeDot", on);
       break;
     }
     case "executeResult": {
