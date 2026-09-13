@@ -628,6 +628,11 @@ fi
 # ②活跃判定用 ps aux 且排序漏 F前B后，与 list.cjs/ENTRY（main.pid + F前B后）不同源 → B 组序号错位。
 # 本函数与 ENTRY 同口径：main.pid 90s 活跃窗口 + _b(active&&detached) + 排序(F前B后+ago) + 分组路由。
 _resolve_active_arg() {
+  # 2026-09-13（用户实测 genshin 1b 进错 agent）：group-map 只在 list.cjs 的 `filter==='list'` 分支写，
+  # 而 launcher 所有调用传的是 help/archived → 正常使用中 group-map 从不刷新，编号解析读到陈旧映射
+  # （现场：group-map 里 4 个 active 全记成 b 组，dev-01 占 b1 → 1b 命中 dev-01）。
+  # 修：解析前先用同一真相源刷新一次 group-map，保证与当前列表一致。
+  node "$PAIMON_LIST_JS" "$PLIST" "$MEMORY_DIR" "$PAIMON_LANG" list >/dev/null 2>&1
   # 2026-09-12（ISSUE 186 单一真相源）：优先读 list.cjs 写的 genshin-group-map.json
   # fallback 到旧逻辑（group-map 不存在时，如首次使用）
   node --input-type=commonjs -e "
@@ -788,6 +793,8 @@ if [ -z "$NAME" ] && [ -z "$MODE" ]; then
       echo -e "  \033[33m*\033[0m 新版本可用: \033[1m$_NEW\033[0m (当前 $_CUR)  运行 \033[1mgenshin update\033[0m 更新"
     fi
   fi
+  # 2026-09-13（房东：这行是垃圾）——备份状态行**先禁用**；代码原文全部保留（恢复时删掉下面这行 `if false; then` 及其尾部 `fi` 即可）。
+  if false; then
   # 2026-09-12：云备份状态行（用户定稿：genshin 裸命令看板常驻状态行；文案逐字照打）
   # 未配置态实时判 services.json（不读状态文件——否则新机永远不显示提示）；已配置读 backup-status.json
   _BS=$(node -e '
@@ -808,6 +815,7 @@ if [ -z "$NAME" ] && [ -z "$MODE" ]; then
     console.log(T("已配置，尚无快照 · 运行 genshin b now","configured, no snapshot yet · run genshin b now"));
   ' 2>/dev/null)
   if [ -n "$_BS" ]; then echo ""; echo -e "  \033[33m*\033[0m $_BS"; fi
+  fi  # ← if false 结束（备份状态行已禁用，2026-09-13）
   exit 0
 fi
 
@@ -838,6 +846,11 @@ fi
 
 # Resolve by index or name
 mkdir -p "$PAIMON_HOME/RuntimeCache"
+# 2026-09-13：进入 agent 的编号解析前也先刷新 group-map（同 _resolve_active_arg——避免读到陈旧映射：
+# 用户实测 `genshin 1b` 进了 F 组第 1 个（dev-01）而不是 B 组第 1 个，因 group-map 陈旧且全被记为 b 组）。
+if [[ "$NAME" =~ ^[0-9]+$ || "$NAME" =~ ^[0-9]+[ofba]$ || "$NAME" =~ ^[ofba][0-9]+$ ]]; then
+  node "$PAIMON_LIST_JS" "$PLIST" "$MEMORY_DIR" "$PAIMON_LANG" list >/dev/null 2>&1
+fi
 ORDER_FILE="$PAIMON_HOME/RuntimeCache/genshin-order.json"
 LAST_ORDER_FILE="$PAIMON_HOME/RuntimeCache/genshin-order-last.json"
 ENTRY=$(node --input-type=commonjs -e "

@@ -12,6 +12,34 @@ const T = (zh: string, en: string) => i18n(zh, en);
 let _toolsHandler: ((args: any, ctx: any) => Promise<void>) | null = null;
 export function setToolsHandler(h: (args: any, ctx: any) => Promise<void>) { _toolsHandler = h; }
 
+// 2026-09-13：保存最近一次 ctx，供面板“功能入口”条目的 onActivate 使用（getAllItems 本身无 ctx）
+let _ctx: any = null;
+
+// 2026-09-13：把 /m /i /c /b /t 统一到设置面板。
+// 背景：2026-09-11 的 1ecb240d（auto-checkpoint）把 register.ts 里这些独立命令的注册删了
+// （意图是“合并进设置面板”），但面板 getAllItems 里并没有加回对应入口 → 模型切换等功能直接“消失”。
+// 这里用 settings-list 支持的 item.onActivate 把它们做回面板可见入口（面板即全功能入口）。
+function featureEntries(): any[] {
+  const g = globalThis as any;
+  let curModel = "";
+  try { curModel = g.__genshinGetModel?.()?.id || ""; } catch { /* 模型未就绪（首个 turn 前） */ }
+  const guard = (fn: () => any) => () => {
+    try { fn(); } catch (e) { console.error("[god.frontend.tui/commands/settings.ts] feature entry: " + ((e as any)?.message || e)); }
+  };
+  return [
+    { id: "_hdr_features", label: T("── 功能 ──", "── Features ──"), currentValue: "", values: [] },
+    { id: "f_model", label: T("模型", "Model"), currentValue: curModel, values: [], onActivate: guard(() => {
+      const h = g.__genshinHandleModelCommand;
+      if (typeof h === "function") { h(); return; }
+      _ctx?.ui?.notify?.(T("模型选择器未就绪", "Model selector not ready"), "error");
+    }) },
+    { id: "f_identity", label: T("身份与用量", "Identity & Usage"), currentValue: "", values: [], onActivate: guard(() => identityHandler("", _ctx)) },
+    { id: "f_services", label: T("服务与凭证", "Services"), currentValue: "", values: [], onActivate: guard(() => configHandler("", _ctx)) },
+    { id: "f_bg", label: T("后台任务", "Background"), currentValue: "", values: [], onActivate: guard(() => bgHandler("", _ctx)) },
+    { id: "f_tools", label: T("工具管理", "Tools"), currentValue: "", values: [], onActivate: guard(() => { if (_toolsHandler) _toolsHandler("", _ctx); }) },
+  ];
+}
+
 function save(key: string, value: any) {
   try {
     const sm = (globalThis as any).__genshinSettingsManager;
@@ -38,9 +66,10 @@ function getAllItems() {
   const toolMode = toolExpanded ? T("完整", "Full") : T("摘要", "Summary");
   const readMode = readExpanded ? T("完整", "Full") : T("摘要", "Summary");
   const exeCallMode = executeDisplay === "title" ? T("仅标题", "Title") : executeDisplay === "command" ? T("仅命令", "Cmd") : T("标题+命令", "Title+Cmd");
-  const exeResultMode = compactExecute ? T("摘要", "Summary") : T("完整", "Full");
+  const exeResultMode = compactExecute === "fold" ? T("折叠", "Fold") : compactExecute ? T("摘要", "Summary") : T("完整", "Full");
 
   const items: any[] = [
+    ...featureEntries(),
     { id: "_hdr_display", label: T("── 显示 ──", "── Display ──"), currentValue: "", values: [] },
     { id: "renderMode", label: T("渲染模式", "Render Mode"), currentValue: renderMode, values: ["line", "streaming", "block"] },
     { id: "thinking", label: "Thinking", currentValue: thinkHidden ? T("隐藏", "Hidden") : (g.__genshinThinkingFirstLine ? T("首行", "First line") : T("完整", "Full")), values: [T("首行", "First line"), T("完整", "Full"), T("隐藏", "Hidden")] },
@@ -56,7 +85,7 @@ function getAllItems() {
       { id: "writeExpanded", label: T("  Write", "  Write"), currentValue: writeExpanded ? T("完整", "Full") : T("摘要", "Summary"), values: [T("摘要", "Summary"), T("完整", "Full")] },
       { id: "editExpanded", label: T("  Edit", "  Edit"), currentValue: editExpanded ? T("完整", "Full") : T("摘要", "Summary"), values: [T("摘要", "Summary"), T("完整", "Full")] },
       { id: "executeDisplay", label: T("  Execute 调用", "  Execute Call"), currentValue: exeCallMode, values: [T("仅标题", "Title"), T("标题+命令", "Title+Cmd"), T("仅命令", "Cmd")] },
-      { id: "compactExecute", label: T("  Execute 结果", "  Execute Result"), currentValue: exeResultMode, values: [T("摘要", "Summary"), T("完整", "Full")] },
+      { id: "compactExecute", label: T("  Execute 结果", "  Execute Result"), currentValue: exeResultMode, values: [T("完整", "Full"), T("摘要", "Summary"), T("折叠", "Fold")] },
     );
     if (executeDisplay !== "title") {
       items.push({ id: "breakAnd", label: T("    && 换行", "    && Break"), currentValue: breakAnd ? T("拆分", "Split") : T("不拆", "Keep"), values: [T("不拆", "Keep"), T("拆分", "Split")] });
@@ -154,10 +183,13 @@ function handleChange(id: string, value: string) {
       save("executeDisplay", mode);
       break;
     }
-    case "compactExecute":
-      g.__genshinCompactExecute = value === T("摘要", "Summary");
-      save("compactExecute", g.__genshinCompactExecute);
+    case "compactExecute": {
+      // 2026-09-13（房东）：三态——完整(false) / 摘要("summary"，只首行) / 折叠("fold"，只显示一行提示不展内容)
+      const mode = value === T("折叠", "Fold") ? "fold" : value === T("摘要", "Summary") ? "summary" : false;
+      g.__genshinCompactExecute = mode;
+      save("compactExecute", mode);
       break;
+    }
     case "breakAnd":
       g.__genshinExecuteBreakAnd = value === T("拆分", "Split");
       save("executeBreakAnd", g.__genshinExecuteBreakAnd);
@@ -246,6 +278,7 @@ const SUB_HANDLERS: Record<string, (args: any, ctx: any) => Promise<void>> = {
 };
 
 export async function settingsHandler(args: any, ctx: any) {
+  _ctx = ctx; // 供面板“功能入口”条目的 onActivate 使用（2026-09-13）
   const argStr = typeof args === "string" ? args.trim() : args?.args?.trim?.() || "";
   if (argStr) {
     const handler = SUB_HANDLERS[argStr] || SUB_HANDLERS[argStr.toLowerCase()];
