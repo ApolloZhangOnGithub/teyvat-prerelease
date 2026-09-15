@@ -2443,6 +2443,20 @@ export class InteractiveMode {
             text = text.trim();
             if (!text)
                 return;
+            // 2026-09-16（用户）：paste 大内容自动转文件——超阈值落盘 AgentWorkDir，消息只写路径 + 预览（对齐 web 文件分享语义，不爆 token）
+            const _pasteThreshold = Number(process.env.GENSHIN_PASTE_FILE_CHARS) || 2000;
+            if (text.length > _pasteThreshold) {
+                try {
+                    const _sid = process.env.PAIMON_AGENT_ID || "unknown";
+                    const _dir = path.join(os.homedir(), ".teyvat", "AgentWorkDir", "Individual", _sid, "paste");
+                    fs.mkdirSync(_dir, { recursive: true });
+                    const _fname = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`;
+                    const _fp = path.join(_dir, _fname);
+                    fs.writeFileSync(_fp, text, "utf8");
+                    const _preview = text.slice(0, 200);
+                    text = `[用户粘贴内容已存: ${_fp}]\n（${text.length} 字符，预览前 ${_preview.length} 字）\n${_preview}...\n\n请 read 上述路径取回完整内容。`;
+                } catch (e) { console.error("[god.frontend.tui/overrides/modes/interactive/interactive-mode.js] paste 落盘失败: " + (e?.message || e)); }
+            }
             // genshin: 原生命令全部禁用，所有 /command 走 extension registerCommand
             // Handle bash command (! for normal, !! for excluded from context)
             if (text.startsWith("!")) {
