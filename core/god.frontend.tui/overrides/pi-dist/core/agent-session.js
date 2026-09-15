@@ -17,26 +17,22 @@ import { gzipSync, gunzipSync } from "node:zlib";
 import { basename, dirname, join } from "node:path";
 import { homedir } from "node:os";
 
-// 2026-08-18 per-agent 模型记忆（用户要求：模型切换必须 per-agent，不能写共享 settings.json）：
-// 切换的模型写入 SocialData/registry.json 里本 agent 的记录（每 agent 独立，互不污染），
-// 启动时读它作为初始模型（见 main.js buildSessionOptions）；无记忆的 agent 回退共享 settings 默认。
+// 2026-08-18 per-agent 模型记忆（用户要求：模型切换必须 per-agent，不能写共享 settings.json）。
+// 2026-09-16（用户批评）：模型记忆原先写 SocialData/registry.json（social 注册表），与在线状态/心跳混在一起=垃圾管理。
+// 迁到 config/individual/<sid>/model.json（每 agent 独立配置，不混 social 数据）。启动读它（见 main.js buildSessionOptions）。
 function savePerAgentModel(provider, modelId) {
   const _dbg = (msg) => { try { const p = join(homedir(), ".teyvat/LogData/save-model-debug.log"); require("fs").appendFileSync(p, `[${new Date().toISOString()}] ${msg}\n`); } catch (e) { /* 诊断日志失败静默，不影响模型切换 */ } };
   try {
     const myId = process.env.PAIMON_AGENT_ID || "";
     _dbg(`savePerAgentModel provider=${provider} modelId=${modelId} myId=${myId}`);
     if (!/^[a-f0-9]{8}$/.test(myId)) { _dbg(`  skip: myId 不是 8 位 hex`); return; }
-    const regPath = join(homedir(), ".teyvat/SocialData/registry.json");
-    if (!existsSync(regPath)) { _dbg(`  skip: registry 不存在`); return; }
-    const reg = JSON.parse(readFileSync(regPath, "utf8"));
-    if (!reg[myId]) { _dbg(`  skip: reg[${myId}] 不存在（registry 里有 ${Object.keys(reg).length} 个 agent）`); return; }
-    reg[myId].model = modelId;
-    reg[myId].modelProvider = provider;
-    reg[myId].lastSeen = Date.now();
-    const tmp = regPath + ".tmp-" + process.pid;
-    writeFileSync(tmp, JSON.stringify(reg, null, 2));
-    renameSync(tmp, regPath);
-    _dbg(`  ✓ 写成功 model=${modelId} provider=${provider}`);
+    const indDir = join(homedir(), ".teyvat/config/individual", myId);
+    const modelFile = join(indDir, "model.json");
+    mkdirSync(indDir, { recursive: true });
+    const tmp = modelFile + ".tmp-" + process.pid;
+    writeFileSync(tmp, JSON.stringify({ model: modelId, modelProvider: provider }, null, 2));
+    renameSync(tmp, modelFile);
+    _dbg(`  ✓ 写成功 model=${modelId} provider=${provider} → config/individual/${myId}/model.json`);
   } catch (e) { _dbg(`  ✗ 写失败: ${e?.message || e}`); }
 }
 import { clampThinkingLevel, cleanupSessionResources, getSupportedThinkingLevels, isContextOverflow, isRetryableAssistantError, modelsAreEqual, resetApiProviders, streamSimple, } from "@earendil-works/pi-ai/compat";
@@ -1286,7 +1282,7 @@ export class AgentSession {
         const thinkingLevel = this._getThinkingLevelForModelSwitch();
         this.agent.state.model = model;
         this.sessionManager.appendModelChange(model.provider, model.id);
-        // 2026-08-18 per-agent：写 SocialData/registry.json 本 agent 记录（不写共享 settings——避免跨 agent 污染）
+        // 2026-08-18 per-agent：写 config/individual/<sid>/model.json 本 agent 记录（不写共享 settings——避免跨 agent 污染）
         savePerAgentModel(model.provider, model.id);
         // Re-clamp thinking level for new model's capabilities
         this.setThinkingLevel(thinkingLevel);

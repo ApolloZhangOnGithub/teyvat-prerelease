@@ -322,10 +322,9 @@ function buildSessionOptions(parsed, scopedModels, hasExistingSession, modelRegi
       try {
         const myId = process.env.PAIMON_AGENT_ID || "";
         if (/^[a-f0-9]{8}$/.test(myId)) {
-          const regPath = join(homedir(), ".teyvat/SocialData/registry.json");
-          if (existsSync(regPath)) {
-            const reg = JSON.parse(readFileSync(regPath, "utf8"));
-            const rec = reg[myId];
+          const modelFile = join(homedir(), ".teyvat/config/individual", myId, "model.json");
+          if (existsSync(modelFile)) {
+            const rec = JSON.parse(readFileSync(modelFile, "utf8"));
             if (rec?.model) {
               const savedModel =
                 (rec.modelProvider && modelRegistry.find(rec.modelProvider, rec.model)) ||

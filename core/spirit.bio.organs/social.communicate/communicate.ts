@@ -120,7 +120,6 @@ export function registerSelf(): void {
     name: getMyName(),
     version: sys.version,
     model: sys.model,
-    modelProvider: reg[sid]?.modelProvider, // 2026-09-16（用户：/m 切换 per-agent 记忆坏）：registerSelf 重建对象时必须保留 savePerAgentModel 写的 modelProvider（之前丢掉→重启只能按 id 模糊匹配→切到别的 provider 的同名模型）
     lastSeen: Date.now(),
     focus: reg[sid]?.focus ?? "off",
   };
