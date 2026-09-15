@@ -14,6 +14,7 @@ const NATIVE_SHIFT_ENTER_SEQUENCE = "\x1b[13;2u";
 const DESIRED_KITTY_KEYBOARD_PROTOCOL_FLAGS = 7;
 const KEYBOARD_PROTOCOL_RESPONSE_FRAGMENT_TIMEOUT_MS = 150;
 const KITTY_KEYBOARD_PROTOCOL_QUERY = `\x1b[>${DESIRED_KITTY_KEYBOARD_PROTOCOL_FLAGS}u\x1b[?u\x1b[c`;
+let _wsizeAt = 0, _wsizeCols = 0, _wsizeRows = 0; // 2026-09-16：getWindowSize 加固的 1s 缓存（resize 事件丢失时能拿实时值，且避免高频 ioctl 开销）
 export function parseKeyboardProtocolNegotiationSequence(sequence) {
     const kittyFlags = sequence.match(/^\x1b\[\?(\d+)u$/);
     if (kittyFlags) {
@@ -380,9 +381,21 @@ export class ProcessTerminal {
         }
     }
     get columns() {
+        const now = Date.now();
+        if (now - _wsizeAt < 1000 && _wsizeCols > 0) return _wsizeCols;
+        try {
+            const sz = process.stdout.getWindowSize ? process.stdout.getWindowSize() : undefined;
+            if (Array.isArray(sz) && sz[0] > 0) { _wsizeAt = now; _wsizeCols = sz[0]; return sz[0]; }
+        } catch { /* 非 TTY 回退 */ }
         return process.stdout.columns || Number(process.env.COLUMNS) || 80;
     }
     get rows() {
+        const now = Date.now();
+        if (now - _wsizeAt < 1000 && _wsizeRows > 0) return _wsizeRows;
+        try {
+            const sz = process.stdout.getWindowSize ? process.stdout.getWindowSize() : undefined;
+            if (Array.isArray(sz) && sz[1] > 0) { _wsizeAt = now; _wsizeRows = sz[1]; return sz[1]; }
+        } catch { /* 非 TTY 回退 */ }
         return process.stdout.rows || Number(process.env.LINES) || 24;
     }
     moveBy(lines) {
