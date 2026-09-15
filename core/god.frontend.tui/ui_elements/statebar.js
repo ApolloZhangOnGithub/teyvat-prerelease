@@ -269,7 +269,7 @@ export class StatusBar {
         this._startTime = Date.now();
       }
       this._tickFn = null;
-      this._spinner(theme.fg("accent", (globalThis.__genshinSYM?.snow || "❄")) + " " + theme.fg("accent", "Waiting..."), null);
+      this._spinner(theme.fg("accent", (globalThis.__genshinSYM?.snow || "*")) + " " + theme.fg("accent", "Waiting..."), null);
       if (!globalThis.__restTimers) globalThis.__restTimers = new Map();
       if (globalThis.__restTimers.has("main")) clearInterval(globalThis.__restTimers.get("main"));
       const rid = setInterval(() => {
@@ -286,7 +286,7 @@ export class StatusBar {
         globalThis.__genshinSessionEndVerb = SESSION_VERBS.hibernate;
       }
       this._tickFn = null;
-      this._spinner(theme.fg("accent", (globalThis.__genshinSYM?.snow || "❄")) + " " + theme.fg("accent", "Hibernating..."), null);
+      this._spinner(theme.fg("accent", (globalThis.__genshinSYM?.snow || "*")) + " " + theme.fg("accent", "Hibernating..."), null);
       if (!globalThis.__hbTimers) globalThis.__hbTimers = new Map();
       if (globalThis.__hbTimers.has("main")) clearInterval(globalThis.__hbTimers.get("main"));
       const id = setInterval(() => {
@@ -319,7 +319,7 @@ export class StatusBar {
     if (!text) return;
     const def = STATUS_DEFS[this._status] || { color: "accent" };
     const prefix = (this._status === "resting" || this._status === "hibernated")
-      ? theme.fg(def.color, (globalThis.__genshinSYM?.snow || "❄")) + " "
+      ? theme.fg(def.color, (globalThis.__genshinSYM?.snow || "*")) + " "
       : "";
     this._spinner(prefix + colored(def.color, text));
   }
@@ -408,7 +408,7 @@ export class StatusBar {
       const label = waitForUser ? "Waiting for user..." : "Waiting...";
       const detail = theme.fg(def.color, parts.join(" · "));
       const monPart = monTitle ? " " + theme.fg("dim", monTitle) : "";
-      this._spinner(theme.fg(def.color, (globalThis.__genshinSYM?.snow || "❄")) + " " + theme.fg(def.color, label) + " (" + detail + ")" + monPart);
+      this._spinner(theme.fg(def.color, (globalThis.__genshinSYM?.snow || "*")) + " " + theme.fg(def.color, label) + " (" + detail + ")" + monPart);
     }
   }
 
@@ -441,7 +441,7 @@ export class StatusBar {
     const msgLabel = socialPendingLabel();
     if (msgLabel) parts.push(msgLabel);
     const detail = parts.join(" · ");
-    const snowflake = theme.fg("warning", (globalThis.__genshinSYM?.snow || "❄"));
+    const snowflake = theme.fg("warning", (globalThis.__genshinSYM?.snow || "*"));
     const label = theme.fg("warning", "Hibernating...");
     const text = snowflake + " " + label + (detail ? " (" + detail + ")" : "");
     this._spinner(text);

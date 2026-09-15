@@ -118,7 +118,7 @@ export class AssistantMessageComponent extends Container {
                             const maxW = Math.max(10, w - GUTTER - 4);
                             // teyvat 2026-09-13：按显示宽度截断（CJK 占 2 列）——之前按字符数截，中文行超出终端宽度被 alt-screen 硬切，省略号也被切掉
                             const truncated = truncateToWidth(full, maxW, "…");
-                            return [theme.fg("thinkingText", "∴") + " " + theme.fg("thinkingText", truncated)];
+                            return [theme.fg("thinkingText", globalThis.__genshinSYM?.arrow || ">") + " " + theme.fg("thinkingText", truncated)];
                         },
                         invalidate: () => {},
                     });

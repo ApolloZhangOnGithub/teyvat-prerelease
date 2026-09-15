@@ -37,7 +37,7 @@ export class UserMessageComponent extends Container {
             return lines;
         }
         // 将首行前 2 个空格（Box paddingX=2）替换为 dim ❯ ，使 ❯ 与 • 对齐 (col 0-1)，内容仍在 col 2
-        lines[0] = lines[0].replace(/^((?:\x1b\[[^m]*m)*)  /, (_, ansi) => ansi + theme.fg("dim", "❯ "));
+        lines[0] = lines[0].replace(/^((?:\x1b\[[^m]*m)*)  /, (_, ansi) => ansi + theme.fg("dim", (globalThis.__genshinSYM?.prompt || ">") + " ")); // 2026-09-16：❯(U+276F) 是 ambiguous，Windows 系渲染 2 格→行溢出顶头；改走 SYM.prompt（Windows=">"）
         return lines;
     }
 }

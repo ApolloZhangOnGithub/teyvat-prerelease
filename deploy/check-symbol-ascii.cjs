@@ -33,6 +33,11 @@ if (vals.length !== 8) {
 
 const bad = [];
 for (const v of vals) {
+  // 禁转义："\u2192" 文本层是 ASCII 但运行时是 →，能绕过上面的 ASCII 检查
+  if (v.includes("\\")) {
+    bad.push(`"${v}" 用了转义写法（可绕过 ASCII 检查，运行时可能是宽字符）`);
+    continue;
+  }
   for (const ch of v) {
     const code = ch.codePointAt(0);
     if (code < 0x20 || code > 0x7e) {
