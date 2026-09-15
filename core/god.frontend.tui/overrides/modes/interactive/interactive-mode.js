@@ -519,6 +519,7 @@ export class InteractiveMode {
             this._chatUnloaded = true;
         }
         globalThis.__genshinGetModel = () => this.session.model;
+        globalThis.__genshinModelRegistry = () => this.session.modelRegistry; // 2026-09-16：探针复用 getApiKeyAndHeaders
         // 2026-09-13（用户）：把真正的 MarkdownTheme 挂到全局——heart-hibernate 等器官层渲染器拿不到
         // getMarkdownTheme（它在 pi dist 的 theme.js，器官层 import 不到）；用普通 theme 传给 Markdown 组件
         // 会在含列表/代码块的 summary 上炸（theme.listBullet is not a function）→ 异常被 tool-execution 静默吞 → 空行/丢内容
