@@ -380,9 +380,21 @@ export class ProcessTerminal {
         }
     }
     get columns() {
+        // 2026-09-16（用户报 Read 折行顶头/windows agent 排查）：process.stdout.columns 是 resize 事件驱动的缓存值，
+        // resize 通知丢失（复用器/WSLg/进程被 stop 过）时停在旧值 → 旧值 > 实际列数 → TUI 按旧宽度折行输出超宽
+        // → 终端自己在最右列硬折 → 续行 col 0 顶头（"长度不够时自动换行有问题"）。
+        // 改用 getWindowSize()（底层 ioctl TIOCGWINSZ 实时查询内核，不受 resize 事件影响），失败回退 columns/COLUMNS。
+        try {
+            const sz = process.stdout.getWindowSize ? process.stdout.getWindowSize() : undefined;
+            if (Array.isArray(sz) && sz[0] > 0) return sz[0];
+        } catch { /* getWindowSize 不可用（headless/非 TTY）回退 */ }
         return process.stdout.columns || Number(process.env.COLUMNS) || 80;
     }
     get rows() {
+        try {
+            const sz = process.stdout.getWindowSize ? process.stdout.getWindowSize() : undefined;
+            if (Array.isArray(sz) && sz[1] > 0) return sz[1];
+        } catch { /* 同上回退 */ }
         return process.stdout.rows || Number(process.env.LINES) || 24;
     }
     moveBy(lines) {

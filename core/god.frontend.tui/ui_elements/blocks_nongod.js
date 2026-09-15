@@ -21,7 +21,7 @@ const _isWSL = process.platform === "linux" && !!(process.env.WSL_DISTRO_NAME ||
 // 2026-09-13（ISSUE 226）：SYM 只定义一次——此前 globalThis.__genshinSYM 与 export const SYM 是两个内容相同的字面量，改一处漏一处。
 // 消费方两种取法都行（import SYM / globalThis.__genshinSYM），拿到的是同一个对象。结果行折线一律 SYM.result，禁止手写 "⎿"（门禁 check-execute-render）。
 export const SYM = _isWSL
-  ? { dot: "*", diamond: "+", diamondOpen: "o", result: "→", star: "*", snow: "*", prompt: ">", arrow: ">" }
+  ? { dot: "*", diamond: "+", diamondOpen: "o", result: ">", star: "*", snow: "*", prompt: ">", arrow: ">" } // 2026-09-16（用户报 Read 折行顶头/windows agent 排查）：result 原为 "→"(U+2192)，是 East Asian Ambiguous 字符——Windows Terminal+CJK 字体渲染 2 格但 visibleWidth 算 1 格，行溢出→终端硬折续行顶头。换真 ASCII ">"
   : { dot: "⏺", diamond: "◆", diamondOpen: "◇", result: "⎿", star: "✤", snow: "❄", prompt: "❯", arrow: "▸" };
 globalThis.__genshinSYM = SYM;
 
