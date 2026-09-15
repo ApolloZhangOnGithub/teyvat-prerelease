@@ -32,6 +32,7 @@ const bgValid = new Set([...Object.keys(dark.colors), ...Object.keys(light.color
 // 本地同名 helper（不是 Theme 的方法）——已人工确认，登记豁免
 const LOCAL_HELPERS = [
   { file: "model-selector.js", reason: "文件内 `const fg = (color, text) => color === \"plain\" ? text : theme.fg(color, text)` 自己处理了 plain" },
+  { file: "theme.js", reason: "Theme 类实现本体（fg/bg 方法与 colors 定义所在）——是定义不是使用；2026-09-15 WSL bold 加白时新建了 theme.js override（pi 原版同文件同样会被扫）" },
 ];
 
 const RE_FG = /\bfg\(\s*"([A-Za-z0-9_]+)"/g;
@@ -52,6 +53,9 @@ function walk(dir, out = []) {
 
 for (const file of walk(core)) {
   const rel = relative(core, file);
+  // 2026-09-15：Theme 类实现本体（theme.js——fg/bg 方法与 colors 定义所在）整文件跳过——是定义不是使用
+  // （2026-09-15 WSL bold 加白时新建了 theme.js override 纳入扫描，15034 处 white 全是定义表）
+  if (file.endsWith("theme.js")) { scanned++; continue; }
   const exemptFile = LOCAL_HELPERS.some((h) => file.endsWith(h.file));
   const lines = readFileSync(file, "utf8").split("\n");
   scanned++;
