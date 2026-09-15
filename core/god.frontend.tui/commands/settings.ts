@@ -62,10 +62,10 @@ function getAllItems() {
   const codeHighlight = g.__genshinCodeHighlight ?? false;
   const executeSummary = g.__genshinExecuteSummary === true;
   const executeDot = g.__genshinExecuteDot === true;
-  const executeResult = g.__genshinExecuteResult ?? "full";
+  const executeResult = g.__genshinExecuteResult ?? "summary"; // 2026-09-15（用户）默认不展开
   const waitShow = g.__genshinWaitShow === true;
   const toolElapsed = g.__genshinToolElapsed === true;
-  const resultAt = g.__genshinResultAt ?? true;
+  const resultAt = g.__genshinResultAt ?? false; // 2026-09-15（用户）默认关闭
   const amemDisplay = g.__genshinAmemDisplay ?? "fold";
   const breakAnd = g.__genshinExecuteBreakAnd ?? false;
 

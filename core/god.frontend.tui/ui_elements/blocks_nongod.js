@@ -237,7 +237,7 @@ export function bulletText(dotStr, text, cont) {
             // 其余（diff 行号 `\d+[+- ]`、bullet 前缀等）保持原行为不变
             const ownStripped = l.replace(/\x1b\[[0-9;]*m/g, '');
             const isLineNoBar = /^\s*\d+\s*│/.test(ownStripped);
-            const pad = isLineNoBar ? 0 : indentW;
+            const pad = isLineNoBar ? (ownStripped.match(/^\s*\d+\s*│\s*/)?.[0]?.length ?? 0) : indentW; // 2026-09-15（用户）：行号行的 wrap 续行对齐到内容列（不再顶格）——Read/Write 长行换行第 2 行与工具对齐
             return lineWrapped.map((line, j) => {
               return ' '.repeat(pad) + ansiPrefix + line;
             });
