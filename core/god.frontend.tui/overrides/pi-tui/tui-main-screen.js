@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { deleteKittyImage, isImageLine } from "./terminal-image.js";
 import { TuiBase } from "./tui.js";
 import { visibleWidth } from "./utils.js";
+import { isBusy } from "./perf.js";
 const KITTY_SEQUENCE_PREFIX = "\x1b_G";
 function parseKittyImageHeader(line) {
     const sequenceStart = line.indexOf(KITTY_SEQUENCE_PREFIX);
@@ -153,6 +154,17 @@ export class TuiMainScreen extends TuiBase {
     doRender() {
         if (this.stopped)
             return;
+        // 2026-09-16：CPU 高占用时冻结 chatContainer（消息区降级只渲染 input，不动 MIN_RENDER_INTERVAL_MS 帧率）
+        const _chat = globalThis.__genshinChatContainer;
+        if (_chat) {
+            const _busy = isBusy();
+            if (_busy && !_chat.frozen) {
+                _chat.frozen = true; // 冻结：render 返回缓存，只重绘 input/footer
+            }
+            else if (!_busy && _chat.frozen) {
+                _chat.unfreeze(); // 恢复：清缓存 + invalidate，下次全量重算
+            }
+        }
         const width = this.terminal.columns;
         const height = this.terminal.rows;
         const widthChanged = this.previousWidth !== 0 && this.previousWidth !== width;

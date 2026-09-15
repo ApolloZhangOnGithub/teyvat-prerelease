@@ -60,6 +60,9 @@ function parseSizeValue(value, referenceSize) {
  */
 export class Container {
     children = [];
+    // 2026-09-16：CPU 高占用时冻结（render 返回缓存，跳过子组件渲染，实现"优先渲染 input、上方降级"）
+    frozen = false;
+    _frozenLines = null;
     addChild(component) {
         this.children.push(component);
     }
@@ -73,11 +76,22 @@ export class Container {
         this.children = [];
     }
     invalidate() {
+        if (this.frozen) return; // 冻结：不递归清子缓存（保留缓存供 render 命中）
         for (const child of this.children) {
             child.invalidate?.();
         }
     }
     render(width) {
+        if (this.frozen) {
+            // 冻结：返回缓存（首次冻结时渲染一次并缓存），不调子组件 render → 子组件即使 self-invalidate 也不影响
+            if (this._frozenLines !== null) return this._frozenLines;
+            const lines = this._renderChildren(width);
+            this._frozenLines = lines;
+            return lines;
+        }
+        return this._renderChildren(width);
+    }
+    _renderChildren(width) {
         const lines = [];
         for (const child of this.children) {
             // teyvat: 单组件渲染失败 → 记日志（D0100）并跳过该组件，保 TUI 存活
@@ -93,6 +107,11 @@ export class Container {
             }
         }
         return lines;
+    }
+    unfreeze() {
+        this.frozen = false;
+        this._frozenLines = null;
+        this.invalidate(); // 清子缓存，恢复后强制重算
     }
 }
 /**

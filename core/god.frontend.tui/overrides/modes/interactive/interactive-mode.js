@@ -410,6 +410,7 @@ export class InteractiveMode {
         this.headerContainer = new Container();
         this.loadedResourcesContainer = new Container();
         this.chatContainer = new Container();
+        globalThis.__genshinChatContainer = this.chatContainer; // 2026-09-16：doRender 里 CPU 高时冻结它（渲染降级）
         // 顶部永久空行（滚到最上方时有一行黑色间隔，视觉提示这是历史顶部）
         // hook clear 保证任何 clear() 后都自动加回
         const _origClear = this.chatContainer.clear.bind(this.chatContainer);
