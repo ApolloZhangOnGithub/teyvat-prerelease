@@ -1147,7 +1147,8 @@ export default function registerMemory(pi: ExtensionAPI) {
 
   // 2026-09-16（用户定稿）：max_tokens=1 探针——prevPrompt 是上一轮过时值，发一条最小请求拿当前真实 prompt_tokens。
   // 复用 pi 的 getApiKeyAndHeaders（auth 解析） + model.baseUrl/id；失败静默 fallback prevPrompt。
-  let _probeTokens: number | null = null;
+  // 全局缓存 __genshinProbeTokens 供 footer/gauge/infos/amem 所有显示点读取（当前真实值，不再用过时值/est）。
+  if ((globalThis as any).__genshinProbeTokens === undefined) (globalThis as any).__genshinProbeTokens = null;
   async function _probeContextTokens(): Promise<void> {
     try {
       const model = (globalThis as any).__genshinGetModel?.();
@@ -1166,9 +1167,10 @@ export default function registerMemory(pi: ExtensionAPI) {
       });
       if (!resp.ok) return;
       const j: any = await resp.json();
-      if (typeof j?.usage?.prompt_tokens === "number") _probeTokens = j.usage.prompt_tokens;
+      if (typeof j?.usage?.prompt_tokens === "number") (globalThis as any).__genshinProbeTokens = j.usage.prompt_tokens;
     } catch { /* 探针失败静默——fallback prevPrompt */ }
   }
+  (globalThis as any).__genshinProbeContextTokens = _probeContextTokens;
 
   function _ctxStats(_ctxContent: string): string {
     const ft = (n: number) => n < 1000 ? n + "" : n < 1e6 ? (n / 1000).toFixed(1) + "k" : (n / 1e6).toFixed(1) + "M";
@@ -1176,8 +1178,8 @@ export default function registerMemory(pi: ExtensionAPI) {
     // 2026-09-16（用户定稿）：est（estimateTokens 文件体量估算，CJK×1.8 经验式）是垃圾——比真实 API 值高 30%+，
     // 且 amem 后文件缩水但活窗口不降（ISSUE 204）误导。全部清理，改用**真实值**：优先探针（max_tokens=1 请求拿当前
     // prompt_tokens，见 _probeContextTokens），探针未完成时 fallback prevPrompt（上一轮 API 真实值，同 gauge/footer 源）。
-    const api = _probeTokens ?? _pondSess.prevPrompt;
-    return api ? `api window ${ft(api)} tok (${pct(api)}%, ${_probeTokens ? "probe" : "last turn"})` : "api window 待首轮请求";
+    const api = (globalThis as any).__genshinProbeTokens ?? _pondSess.prevPrompt;
+    return api ? `api window ${ft(api)} tok (${pct(api)}%, ${(globalThis as any).__genshinProbeTokens ? "probe" : "last turn"})` : "api window 待首轮请求";
   }
 
   // context 概览：JSONL 条目类型分布 + 可编辑范围提示（fetch 无 id 时附上，解决"盲人摸象"）

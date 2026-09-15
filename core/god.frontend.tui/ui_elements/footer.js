@@ -192,6 +192,13 @@ export class FooterComponent {
     }
     render(width) {
         try {
+        // 2026-09-16（用户定稿）：探针节流触发——footer 每帧渲染，只在缓存过期（>30s）或无值时 fire-and-forget 探针拿当前真实值
+        // （探针结果写 __genshinProbeTokens，下面 totalTokens 优先读它，不再用过时 latestPromptTokens / est 磁盘估算）
+        const _probeNow = Date.now();
+        if (!globalThis.__genshinProbeAt || _probeNow - globalThis.__genshinProbeAt > 30000) {
+          globalThis.__genshinProbeAt = _probeNow;
+          globalThis.__genshinProbeContextTokens?.();
+        }
         const state = this.session.state;
         const fullId = process.env.PAIMON_AGENT_ID || "";
         // Calculate cumulative usage from ALL session entries (not just post-compaction messages)
@@ -240,7 +247,8 @@ export class FooterComponent {
         // 2026-09-12（ISSUE 203，用户定调“以 API 报的为准”）：窗口实占改用 API 真实 prompt（input+cacheRead+cacheWrite）。
         // 原 est(context.md+work+cx) 是“记忆文件全量体量”（非窗口实占，且 CJK×1.8 系数偏高 ~1.3×，>70% 时实注入还只tai tail）——
         // 现在：有 API 值就用真实值；无（首轮/无 assistant 消息）才回退 est。diskTokens 保留（ctxPct 等仍用）。
-        const totalTokens = latestPromptTokens > 0 ? latestPromptTokens : (diskTokens.ctx + diskTokens.work + diskTokens.cx);
+        const probe = globalThis.__genshinProbeTokens;
+        const totalTokens = probe > 0 ? probe : latestPromptTokens;
         const totalPercent = contextWindow > 0 ? Math.min(100, (totalTokens / contextWindow) * 100) : 0;
         const ctxPct = contextWindow > 0 ? ((diskTokens.ctx / contextWindow) * 100).toFixed(1) : "0";
         const workPct = contextWindow > 0 && diskTokens.work > 0 ? ((diskTokens.work / contextWindow) * 100).toFixed(1) : "0";
@@ -313,7 +321,8 @@ export class FooterComponent {
           // memStr = `记忆${tp}% [对话${ctxPct} 工作${workPct} 新皮层${cxPct}]/${ctxWindowStr}`;
           // 2026-09-13：无 API 值（首轮/重启后尚无成功回复）时回退磁盘估算，显式标 est——否则与 API 值口径不同却长得一样，看起来像乱跳
           // 2026-09-13（用户澄清）：只去掉 "contexted" 前缀字，百分比照常显示（不是隐藏整个显示）
-          memStr = latestPromptTokens > 0 ? `${tp}%/${ctxWindowStr}` : `${tp}% est/${ctxWindowStr}`;
+          // 2026-09-16（用户定稿）：est 兑底去掉——totalPercent 已是探针/latestPromptTokens 的真实值，不再有 est 估算标注
+          memStr = `${tp}%/${ctxWindowStr}`;
         }
         if (totalPercent > 90) {
           memStr = theme.fg("error", memStr);

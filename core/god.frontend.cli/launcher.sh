@@ -433,7 +433,14 @@ case "$NAME" in
         exit 0
       fi
       PKG_PINNED=$(node -e "console.log(require('$UP_DIR/package.json').pinnedDev||'')" 2>/dev/null)
-      if ( cd "$UP_DIR" && PAIMON_VIA_MAKE=1 MAKELEVEL=1 PAIMON_CHANNEL=prerelease PAIMON_VER="$PKG_VER" PAIMON_PINNED_DEV="$PKG_PINNED" bash deploy/install.sh 2>&1 | tail -5 ); then
+      # 2026-09-16（用户报"拉取有动画但之后卡着闪烁光标"）：install.sh 输出被 `| tail -5` 吞掉——
+      # install.sh 里 pip/npm 自动装依赖慢时（网络/下载），用户看不到任何进度 → 以为卡死。
+      # 修：install.sh 阶段挂 spinner（输出重定向日志，失败时显示日志尾部）——不再无声卡死。
+      ( cd "$UP_DIR" && PAIMON_VIA_MAKE=1 MAKELEVEL=1 PAIMON_CHANNEL=prerelease PAIMON_VER="$PKG_VER" PAIMON_PINNED_DEV="$PKG_PINNED" bash deploy/install.sh > "$UP_DIR/.update-install.log" 2>&1 ) &
+      _inst_pid=$!
+      _tt_spinner "$_inst_pid" "部署更新中"
+      wait "$_inst_pid" && _inst_ok=1 || _inst_ok=0
+      if [ "$_inst_ok" = "1" ]; then
         echo "$NEW_HEAD" > "$UP_DIR/.last-deployed-head"
         echo -e "  \033[32mOK\033[0m prerelease $PKG_VER 已更新并部署"
         rm -f "$HOME/.teyvat/RuntimeCache/update-check.json" 2>/dev/null
@@ -441,7 +448,8 @@ case "$NAME" in
         _TEL="$HOME/.local/lib/teyvat/extensions/teyvat/god.frontend.cli/telemetry-update.sh"
         [ -x "$_TEL" ] && bash "$_TEL" "$OLD_VER" "$PKG_VER" "$CHANNEL" "$UP_TRIGGER" || true
       else
-        echo -e "  \033[31mERROR\033[0m prerelease 更新失败"
+        echo -e "  \033[31mERROR\033[0m prerelease 更新失败（部署日志尾部：）"
+        tail -8 "$UP_DIR/.update-install.log" 2>/dev/null
         exit 1
       fi
     elif [ -d "$SOURCE_DIR/.git" ]; then
@@ -542,28 +550,27 @@ if [ -n "$NAME" ] && [ "$MODE" != "org" ] && [ "$MODE" != "note" ] && [ "$MODE" 
   fi
 fi
 # ── web UI ──
+# ── web UI（TUI Web 版：I.Ecosystems/web-tui.server）──
 if [ "$MODE" = "web" ]; then
-  PAIMON_SERVER_DIR="${PAIMON_SERVER_DIR:-$PAIMON_EXT/universe.infotech/cloud.servers/genshin-server}"
-  if [ ! -f "$PAIMON_SERVER_DIR/server.js" ]; then
-    echo "Error: genshin web server not found at $PAIMON_SERVER_DIR"
+  # 2026-09-16：原入口指向已不存在的 universe.infotech/cloud.servers/genshin-server；
+  # 改为 I.Ecosystems/web-tui.server（内核 rpc 常驻 + 浏览器 TUI 界面；详见该目录 .SPEC/README）
+  PAIMON_SERVER_DIR="${PAIMON_SERVER_DIR:-$PAIMON_EXT/I.Ecosystems/web-tui.server}"
+  if [ ! -f "$PAIMON_SERVER_DIR/server.mjs" ]; then
+    echo "Error: web-tui server not found at $PAIMON_SERVER_DIR"
     exit 1
   fi
-  PAIMON_PORT="${PAIMON_PORT:-3000}"
-  # Kill any existing genshin-server (only node server.js, not other processes on the port)
-  OLD_PIDS=$(pgrep -f "node.*genshin-server/server.js" 2>/dev/null)
-  [ -n "$OLD_PIDS" ] && echo "$OLD_PIDS" | xargs kill 2>/dev/null && sleep 0.5
-  cd "$PAIMON_SERVER_DIR" && PAIMON_PORT="$PAIMON_PORT" node server.js </dev/null > "$HOME/.teyvat/LogData/genshin-web.log" 2>&1 &
+  PAIMON_WEB_PORT="${PAIMON_WEB_PORT:-${PAIMON_PORT:-8791}}"
+  lsof -t -i :"$PAIMON_WEB_PORT" 2>/dev/null | xargs kill 2>/dev/null || true
+  sleep 0.5
+  cd "$PAIMON_SERVER_DIR" && PAIMON_WEB_PORT="$PAIMON_WEB_PORT" nohup node server.mjs </dev/null > "$HOME/.teyvat/LogData/web-tui.log" 2>&1 &
   SERVER_PID=$!
-  disown $SERVER_PID
-  ACTUAL_PORT=""
-  for i in $(seq 1 30); do
-    ACTUAL_PORT=$(grep -o 'http://127.0.0.1:[0-9]*' "$HOME/.teyvat/LogData/genshin-web.log" 2>/dev/null | head -1 | grep -o '[0-9]*$')
-    [ -n "$ACTUAL_PORT" ] && break
+  disown $SERVER_PID 2>/dev/null
+  for i in $(seq 1 20); do
+    curl -s -m 1 "http://127.0.0.1:$PAIMON_WEB_PORT/api/agents" >/dev/null 2>&1 && break
     sleep 0.5
   done
-  [ -z "$ACTUAL_PORT" ] && ACTUAL_PORT=$PAIMON_PORT
-  echo "genshin web: http://127.0.0.1:$ACTUAL_PORT (pid $SERVER_PID)"
-  open "http://127.0.0.1:$ACTUAL_PORT"
+  echo "genshin web（TUI Web 版）: http://127.0.0.1:$PAIMON_WEB_PORT (pid $SERVER_PID)"
+  open "http://127.0.0.1:$PAIMON_WEB_PORT"
   exit 0
 fi
 
