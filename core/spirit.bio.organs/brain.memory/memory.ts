@@ -762,14 +762,15 @@ export default function registerMemory(pi: ExtensionAPI) {
     // 2026-08-15 再修：不要每 1% 都发（80/81/82…堆积，queue 里一堆旧消息清理后还显示）——
     // 同一提醒周期（>=80% 连续期间）只发一条，回落 <80% 清除，下次再达 80% 才重新提醒。
     const fmtTok = (n: number) => n < 1000 ? n + "" : n < 1e6 ? (n / 1000).toFixed(1) + "k" : (n / 1e6).toFixed(1) + "M";
-    const ctxTok = estimateTokens(context);
     const capTs = _fmtLocalTs(Date.now()).slice(6, 14); // HH:MM:SS（本地时区）
     // 2026-09-12（ISSUE 203）：显示改用 API 真实值（_pondSess.prevPrompt = input+cacheRead，与 gauge/footer 同源）；
     // usageRatio（est 5 项）保留作“记忆体量/截断”阈值——两者语义不同，分别标注不再混用。
     const _apiTok = _pondSess.prevPrompt ?? 0;
+    // 2026-09-16（用户定稿）：est（estimateTokens 文件估算）是垃圾——全部清理，只保留 api 真实值。
+    // usageRatio（est 5 项）仍保留作“记忆体量/截断”阈值（内部触发逻辑，不显示）。
     let capacityLine = _apiTok > 0
-      ? `context ${fmtTok(_apiTok)} tokens / ${fmtTok(modelMax)} (api@${capTs}) · 记忆体量 est ${rawPct}%`
-      : `context ${fmtTok(ctxTok)} tokens / ${fmtTok(modelMax)} (est@${capTs})`;
+      ? `context ${fmtTok(_apiTok)} tokens / ${fmtTok(modelMax)} (api@${capTs})`
+      : "context 待首轮请求";
     if (usageRatio >= CAPACITY.FORCE) capacityLine += i18n(" — 立即用 amem 整理", " — use amem immediately");
     else if (usageRatio >= CAPACITY.URGE) capacityLine += i18n(" — 建议 amem 整理", " — consider amem cleanup");
     if (usageRatio >= CAPACITY.URGE) {
@@ -891,11 +892,11 @@ export default function registerMemory(pi: ExtensionAPI) {
       const workMem = readFile(workPath);
       const cortex = readFile(cortexPath);
 
+      // 2026-09-16（用户定稿）：est 是垃圾——只留 chars（准确），不显示 ~estimateTokens 估算
       const stats = [
-        `context: ${ctxAfter.length} chars (~${estimateTokens(ctxAfter)} tokens)`,
-        `work_memory: ${workMem.length} chars (~${estimateTokens(workMem)} tokens)`,
-        `cortex: ${cortex.length} chars (~${estimateTokens(cortex)} tokens)`,
-        `total: ~${estimateTokens(ctxAfter) + estimateTokens(workMem) + estimateTokens(cortex)} tokens`,
+        `context: ${ctxAfter.length} chars`,
+        `work_memory: ${workMem.length} chars`,
+        `cortex: ${cortex.length} chars`,
       ].join("\n");
 
       return {
@@ -1144,16 +1145,14 @@ export default function registerMemory(pi: ExtensionAPI) {
     return p;
   }
 
-  function _ctxStats(ctxContent: string): string {
-    const ctxTok = estimateTokens(ctxContent);
+  function _ctxStats(_ctxContent: string): string {
     const ft = (n: number) => n < 1000 ? n + "" : n < 1e6 ? (n / 1000).toFixed(1) + "k" : (n / 1e6).toFixed(1) + "M";
     const pct = (n: number) => modelMax > 0 ? Math.round((n / modelMax) * 100) : 0;
-    // 2026-09-13（ISSUE 203/204 口径标注）：两个数语义不同，分别标清——
-    //   est = context.md 文件体量（amem 直接改的对象，归档后立刻下降）
-    //   api = 上一轮 API 真实 prompt（活对话窗口，含已注入的旧快照，amem 后不会立刻降——见 ISSUE 204）
-    // 之前只显示 est 却叫 "context"，和 footer 的 api 值对不上，看起来像数字乱跳。
+    // 2026-09-16（用户定稿）：est（estimateTokens 文件体量估算，CJK×1.8 经验式）是垃圾——
+    // 比真实 API 值高 30%+，且 amem 后文件体量立刻降但活窗口不降（ISSUE 204），误导用户以为清理有效。
+    // 全部清理，只保留 api window（上一轮 API 真实 prompt = _pondSess.prevPrompt，与 gauge/footer 同源）。
     const api = _pondSess.prevPrompt;
-    return `context.md est ${ft(ctxTok)} tok (${pct(ctxTok)}% of ${ft(modelMax)})` + (api ? ` · api window ${ft(api)} tok (${pct(api)}%, last turn)` : "");
+    return api ? `api window ${ft(api)} tok (${pct(api)}%, last turn)` : "api window 待首轮请求";
   }
 
   // context 概览：JSONL 条目类型分布 + 可编辑范围提示（fetch 无 id 时附上，解决"盲人摸象"）
@@ -1496,7 +1495,7 @@ export default function registerMemory(pi: ExtensionAPI) {
           const tsL = ts.latest || d.timestamp;
           return { content: [{ type: "text", text:
             `amem fetch ${params.id}:\ntitle: ${JSON.stringify(d.title)}\nsummary: ${JSON.stringify(d.summary)}\n` +
-            `excised: ${d.excised?.length || 0}c (~${typeof d.excised_tokens === "number" ? d.excised_tokens : estimateTokens(String(d.excised || ""))} tok) | ${d.action && d.action !== "manage" ? `modified: ${d.modified?.length || 0}c` : `revision: ${d.revision?.length || 0}c`}\n` +
+            `excised: ${d.excised?.length || 0}c | ${d.action && d.action !== "manage" ? `modified: ${d.modified?.length || 0}c` : `revision: ${d.revision?.length || 0}c`}\n` +
             `time_span: ${_normTs(tsE)} ~ ${_normTs(tsL)}\nreverted: ${!!d.reverted}` }], details: { entry: d } };
         }
         if (entries.length === 0) {
@@ -1517,26 +1516,14 @@ export default function registerMemory(pi: ExtensionAPI) {
         }
         const cap = params.limit != null ? Math.max(1, params.limit) : 30;
         const shown = list.slice(-cap); // 最新在前显示
-        // 每条的 token 占比（breakthrough agent 反馈）：归档条目加估算 token，方便决定优先 revert 哪些
-        const ctxForTok = readFile(contextPath);
-        const totalTok = estimateTokens(ctxForTok);
         let r = `amem fetch: ${list.length}${list.length !== entries.length ? `/${entries.length}` : ""} entries` +
           (params.from || params.to ? ` (${params.from || "…"} ~ ${params.to || "…"})` : "") +
           `${shown.length < list.length ? `, showing latest ${shown.length}` : ""}, ${idx.total_excised_chars || 0}c total excised.\n`;
         for (let i = 0; i < shown.length; i++) {
           const e = shown[i], ts = e.time_span || {}, rv = e.reverted ? " [REVERTED]" : "";
-          // token：优先用归档时算好的 excised_tokens；历史条目没有 → 读归档文件按 estimateTokens 现算。
-          // 2026-09-13：之前 excised_length×0.6 一刀切——中文按 1.8 tok/字 少算 3 倍、英文按 1/4 多算 2.4 倍，"数字乱跳"的来源之一
-          let estTok: number = typeof e.excised_tokens === "number" ? e.excised_tokens : -1;
-          if (estTok < 0) {
-            const _mf = _amemManageFile(String(e.id)); let d: any = null;
-            try { d = _mf ? JSON.parse(readFile(_mf)) : null; } catch { /* 坏归档文件：按 0 计 */ }
-            estTok = d?.excised ? estimateTokens(String(d.excised)) : 0;
-          }
-          const pct = totalTok > 0 ? Math.min(99, Math.round((estTok / totalTok) * 100)) : 0;
           const tsE = ts.earliest || (ts.latest ? null : e.timestamp);
           const tsL = ts.latest || e.timestamp;
-          r += `  [${i}] ${e.id} | ${JSON.stringify(e.title || "")} | ${e.excised_length}c(~${estTok} tokens ${pct}%) | ${_normTs(tsE)} ~ ${_normTs(tsL)}${rv}\n`;
+          r += `  [${i}] ${e.id} | ${JSON.stringify(e.title || "")} | ${e.excised_length}c | ${_normTs(tsE)} ~ ${_normTs(tsL)}${rv}\n`;
         }
         const ctxContent = readFile(contextPath);
         return { content: [{ type: "text", text: r + _ctxOverview(ctxContent) }], details: { index: idx, shown: shown.length } };
@@ -1891,7 +1878,7 @@ export default function registerMemory(pi: ExtensionAPI) {
           }
         }
         return { content: [{ type: "text", text:
-          `amem ${actName} check: ${swept.length} entries (${normTypes.join(",")}) in [${rStart}..${rEnd}], ${sweptText.length}c (~${estimateTokens(sweptText)} tok)${rangeHint}.\n` +
+          `amem ${actName} check: ${swept.length} entries (${normTypes.join(",")}) in [${rStart}..${rEnd}], ${sweptText.length}c${rangeHint}.\n` +
           `hash_key=${key}${preview}\n${_ctxStats(ctx)}\nProvide hash_key + title(≥10c) + summary(≥50c) to apply (same types; the range is locked to this check).` }],
           details: { hash_key: key, swept_count: swept.length, swept_chars: sweptText.length } };
       }
