@@ -110,6 +110,8 @@ const _genshinBuiltinRenderers = {
         renderCall: (args, t) => renderToolCall.label(t, "Read", args?.file_path || args?.path || ""),
         renderResult: (result, _opts, t, ctx) => {
             if (ctx?.isError) return renderMessage.summary(t, { isError: true }, (result?.content || [])[0]?.text);
+            // 2026-09-15（用户）：/s 工具输出隐藏——成功结果不显示只留调用行，错误仍显示
+            if (globalThis.__genshinToolOutputHide === true) return renderMessage.silent();
             const raw = (result?.content || [])[0]?.text || "";
             const elapsed = toolElapsed(t, _opts);
             const filePath = _opts?.args?.file_path || _opts?.args?.path || "";
@@ -185,6 +187,8 @@ const _genshinBuiltinRenderers = {
         },
         renderResult: (result, _opts, t, ctx) => {
             if (ctx?.isError) return renderMessage.summary(t, { isError: true }, (result?.content || [])[0]?.text);
+            // 2026-09-15（用户）：/s 工具输出隐藏
+            if (globalThis.__genshinToolOutputHide === true) return renderMessage.silent();
             const filePath = _opts?.args?.file_path || _opts?.args?.path || "";
             const fileContent = _opts?.args?.content || "";
             const fileLines = fileContent.split("\n").filter(l => l.trim());
@@ -221,6 +225,8 @@ const _genshinBuiltinRenderers = {
         },
         renderResult: (result, _opts, t, ctx) => {
             if (ctx?.isError) return renderMessage.summary(t, { isError: true }, (result?.content || [])[0]?.text);
+            // 2026-09-15（用户）：/s 工具输出隐藏（优先于 DETAIL_EDIT）
+            if (globalThis.__genshinToolOutputHide === true) return renderMessage.silent();
             if (process.env.DETAIL_EDIT === "0") return renderMessage.silent();
             const diff = result?.details?.diff;
             if (!diff) return renderMessage.silent();

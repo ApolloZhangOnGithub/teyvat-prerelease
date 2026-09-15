@@ -337,6 +337,23 @@ case "$NAME" in
     echo -e "  \033[1mgenshin update\033[0m"
     echo "  ─────────────────────────────────"
     SOURCE_DIR="$HOME/.local/lib/teyvat/source"
+    # ── update 动画：spinner（git pull/clone 阶段无输出时给转圈反馈——2026-09-15 用户要求，复用 install-prerelease 模式）──
+    _tt_spinner() { # $1=pid $2=label——转圈直到进程结束
+      local pid=$1 label="$2" chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠠' i=0
+      printf "  \033[2m%s  " "$label"
+      while kill -0 "$pid" 2>/dev/null; do
+        printf "\r  \033[36m%s\033[2m %s\033[0m" "${chars:i%10:1}" "$label"
+        i=$((i+1)); sleep 0.08
+      done
+      printf "\r                                        \r"
+    }
+    _tt_run_bg() { # $1=label 其余=命令——后台跑 + spinner，吞输出（成功/失败由退出码）
+      local label="$1"; shift
+      "$@" >/dev/null 2>&1 &
+      local pid=$!
+      _tt_spinner "$pid" "$label"
+      wait "$pid"
+    }
     VER_JSON="$HOME/.teyvat/agent/version.json"
     CHANNEL="minutely"
     [ -f "$VER_JSON" ] && CHANNEL=$(node -e "try{console.log(JSON.parse(require('fs').readFileSync('$VER_JSON','utf8')).channel)}catch{console.log('minutely')}" 2>/dev/null)
@@ -357,7 +374,7 @@ case "$NAME" in
       if [ ! -d "$UP_DIR/.git" ]; then
         git clone https://github.com/ApolloZhangOnGithub/teyvat-release.git "$UP_DIR" 2>&1 | tail -2
       else
-        ( cd "$UP_DIR" && git pull --ff-only 2>&1 | tail -2 )
+        _tt_run_bg "拉取 release 更新中" git -C "$UP_DIR" pull --ff-only
       fi
       echo -e "  \033[32mOK\033[0m release 源已更新（$UP_DIR）——运行其中的 C.deploy/install.sh 完成部署"
     elif [ "$CHANNEL" = "prerelease" ] || [ "$CHANNEL" = "beta" ]; then
@@ -378,10 +395,10 @@ case "$NAME" in
           exit 1
         fi
       else
-        if ! ( cd "$UP_DIR" && git pull --ff-only --autostash 2>&1 | tail -2 ); then
+      if ! _tt_run_bg "拉取更新中" git -C "$UP_DIR" pull --ff-only --autostash; then
           echo -e "  \033[31mERROR\033[0m prerelease pull 失败（本地改动与更新冲突且 autostash 未解决——详见上方 git 输出；自动生成文件的脏改动可 git checkout -- 清理）"
           exit 1
-        fi
+      fi
       fi
       # 触发部署（postinstall 语义等价物）：显式跑包内 install.sh。install.sh 防裸跑要求 make 环境
       # （PAIMON_VIA_MAKE=1 + MAKELEVEL）——prerelease 消费方无 make，这里显式伪装
@@ -414,7 +431,7 @@ case "$NAME" in
     elif [ -d "$SOURCE_DIR/.git" ]; then
       echo "  channel: $CHANNEL (source: $SOURCE_DIR)"
       cd "$SOURCE_DIR" || { echo "  ERROR: 进不去 $SOURCE_DIR"; exit 1; }
-      git pull --ff-only --autostash || { echo "  ERROR: git pull 失败（本地改动冲突——autostash 未解决，详见上方输出）"; exit 1; }
+      _tt_run_bg "拉取源码更新中" git -C "$SOURCE_DIR" pull --ff-only --autostash || { echo "  ERROR: git pull 失败（本地改动冲突——autostash 未解决，详见上方输出）"; exit 1; }
       # 2026-09-11（prime-agent）：原来是硬编码 `Codebase/deploy/install.sh` —— 那是 Continents 重构**之前**的布局，
       # 现在源码树是 A.core/ + C.deploy/（见 C.deploy/bootstrap.sh）；照旧路径必然 "No such file"，
       # 也就是 source 通道的 `genshin update` 一直是坏的。改为按候选探测 + 找不到就明确报错。

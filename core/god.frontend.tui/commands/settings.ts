@@ -87,6 +87,8 @@ function getAllItems() {
     { id: "toolExpanded", label: T("工具输出", "Tool Output"), currentValue: toolMode, values: [T("摘要", "Summary"), T("完整", "Full")] },
     // 2026-09-13（用户）：工具结果耗时戳 [0.009s] 默认隐藏
     { id: "toolElapsed", label: T("工具耗时", "Tool Elapsed"), currentValue: toolElapsed ? T("显示", "Show") : T("隐藏", "Hide"), values: [T("隐藏", "Hide"), T("显示", "Show")] },
+    // 2026-09-15（用户）：工具输出隐藏开关——Read/Write/Edit 结果块整体不显示（只留调用行），错误仍显示
+    { id: "toolOutputShow", label: T("工具输出", "Tool Output"), currentValue: ((g as any).__genshinToolOutputHide === true) ? T("隐藏", "Hide") : T("显示", "Show"), values: [T("显示", "Show"), T("隐藏", "Hide")] },
     { id: "resultAt", label: T("at 时间戳", "At Timestamp"), currentValue: resultAt ? T("显示", "Show") : T("隐藏", "Hide"), values: [T("显示", "Show"), T("隐藏", "Hide")] },
     // 2026-09-13（用户）：Amem 输出三态——隐藏/折叠/显示（默认折叠）
     { id: "amemDisplay", label: T("Amem 输出", "Amem Output"), currentValue: amemDisplay === "hide" ? T("隐藏", "Hide") : amemDisplay === "show" ? T("显示", "Show") : T("折叠", "Fold"), values: [T("隐藏", "Hide"), T("折叠", "Fold"), T("显示", "Show")] },
@@ -244,6 +246,13 @@ function handleChange(id: string, value: string) {
       const on = value === T("显示", "Show");
       g.__genshinToolElapsed = on;
       save("toolElapsed", on);
+      break;
+    }
+    case "toolOutputShow": {
+      // 2026-09-15（用户）：工具输出隐藏开关（Read/Write/Edit 结果块）
+      const hide = value === T("隐藏", "Hide");
+      g.__genshinToolOutputHide = hide;
+      save("toolOutputHide", hide);
       break;
     }
     case "resultAt": {
