@@ -736,8 +736,11 @@ export default function (pi: ExtensionAPI) {
       // **不加载 tsconfig**；而 A.core/tsconfig.json 于 09-13 22:12 出现后 → 每次都 TS5112 且 exit=1
       // → 本守卫对**每个** .ts/.tsx 编辑都误报「语法错误」（实测本机复现，跨 agent 均受影响）。
       // 改用 bun build --no-bundle 做纯语法检查：cwd 无关、.ts/.tsx 通吃、能精确报行列（bun 为 teyvat 既有依赖）。
-      const checker = ext === "ts" || ext === "tsx" ? "bun build --no-bundle"
-        : ext === "js" || ext === "mjs" || ext === "cjs" ? "node --check"
+      // 2026-09-15（ISSUE 255，用户怒批 server.mjs WARN 后提前修）：.js/.mjs 也改 bun build——
+      // node --check 对 .js 按 CJS 解析、对 .mjs 的顶层 await 也误判——teyvat 全生态 ESM（顶层 await/import 常见），
+      // bun build 按 ESM 原生解析不误报；.cjs 保留 node --check（CJS 语义正确）。
+      const checker = ext === "ts" || ext === "tsx" || ext === "js" || ext === "mjs" ? "bun build --no-bundle"
+        : ext === "cjs" ? "node --check"
         : ext === "py" ? "python3 -m py_compile"
         : ext === "go" ? "gofmt -e" // 2026-09-14：go build <file> 会把二进制丢进 cwd；gofmt -e 只查语法
         : null; // rs：cargo check 不接受单文件参数，原写法在装了 cargo 的机器上每次 .rs 编辑都误报"语法错误"

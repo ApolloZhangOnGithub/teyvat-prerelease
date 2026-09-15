@@ -39,6 +39,11 @@ elif command -v ss >/dev/null 2>&1; then
   _proxy_found=$(ss -tlnp 2>/dev/null | grep -iE "clash|mihomo|verge" | grep -oE ':[0-9]+' | grep -oE '[0-9]+' | sort -u | tr '\n' ' ')
 fi
 # 常见代理端口优先（进程监听的 ∩ 常见列表；17897=Clash Verge 另一常见端口——2026-09-15 windows agent WSL 实测补充）
+# 2026-09-16（windows agent WSL 实测）：用户已显式设置代理 env 时**跳过整个探测**——
+# 此前探测会覆盖用户的显式配置（实测：显式导出 HTTPS_PROXY=17897，launcher 仍去连死端口 7890）。
+# 鸡生蛋提醒：本修复装在 launcher 里，而装 launcher 要靠 update 用旧 launcher 跑——旧版用户卡 update 时
+# 逃生口：HTTPS_PROXY=http://127.0.0.1:<活代理端口> git -C ~/.local/lib/teyvat/update-prerelease pull --ff-only --autostash
+if [ -z "${https_proxy:-}${HTTPS_PROXY:-}${http_proxy:-}${HTTP_PROXY:-}" ]; then
 for _p in 17897 7892 7897 7890 7891 7898 1080 10809 8888 2080; do
   case " $_proxy_found " in *" $_p "*) _proxy_port=$_p; break;; esac
 done
@@ -66,6 +71,7 @@ fi
 if [ -z "${https_proxy:-}" ] && [ -n "$_proxy_port" ]; then
   export https_proxy="http://127.0.0.1:$_proxy_port" http_proxy="http://127.0.0.1:$_proxy_port"
 fi
+fi # 用户已设代理 env 时跳过整个探测块
 
 RUNTIME_CLI="$PAIMON_RUNTIME/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"
 # ── 启动器快照（防"运行中被就地编辑"竞态）──────────────────────────────
