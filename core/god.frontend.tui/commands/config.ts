@@ -66,9 +66,26 @@ function syncModelsJson(services: Record<string, any>) {
     if (!existsSync(MODELS_FILE)) return;
     const m = JSON.parse(readFileSync(MODELS_FILE, "utf8"));
     const svc = services.bigmodel;
-    const prov = m.providers?.bigmodel;
-    if (svc && prov) {
-      if (typeof svc.apiKey === "string" && svc.apiKey.trim()) prov.apiKey = svc.apiKey.trim();
+    if (!svc) return;
+    // 2026-09-15（主人定位，windows_first_agent_01 转达）：新装机器 models.json 只有空 touch，
+    // providers.bigmodel 不存在时原先静默 no-op → /c 的 key 永远到不了运行时（setModel 报 No API key）。
+    // 修复：缺失时创建 provider（官方端点 + 常用模型条目），把 /c 的 key 落进去。
+    if (!m.providers) m.providers = {};
+    if (!m.providers.bigmodel) {
+      m.providers.bigmodel = {
+        name: "智谱",
+        baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+        api: "openai-completions",
+        models: [
+          // contextWindow 显式写 1M（bigmodel 无内置同名 provider，避免 model-registry 的 128000 fallback）；
+          // glm-5.3-flash 原生多模态（models.dev modalities.input 含 image），显式写 input 让 isVisionModel 放行 Eyes(native)
+          { id: "glm-5.3-flash", name: "GLM-5.3-Flash", contextWindow: 1000000, input: ["text", "image"] },
+          { id: "glm-5.3", name: "GLM-5.3", contextWindow: 1000000, input: ["text"] },
+        ],
+      };
+    }
+    if (typeof svc.apiKey === "string" && svc.apiKey.trim()) {
+      m.providers.bigmodel.apiKey = svc.apiKey.trim();
       writeFileSync(MODELS_FILE, JSON.stringify(m, null, 4));
     }
   } catch (e) { console.error("[god.frontend.tui/commands/config.ts] syncModelsJson: " + ((e as any)?.message || e)); }

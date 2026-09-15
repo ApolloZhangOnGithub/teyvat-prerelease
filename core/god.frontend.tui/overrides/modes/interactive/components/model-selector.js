@@ -108,6 +108,9 @@ export class ModelSelectorComponent extends Container {
     // 2026-09-04：models.dev 目录合并——**只读缓存**（零网络，不卡 /m；缓存由启动时的后台预同步维护，见模块级 syncModelsDevCache）
     // 离线/缓存不存在 → 返回 []（用内置目录）。
     MODELSDEV_PROVIDERS = { openrouter: "openrouter", bigmodel: "zhipuai", deepseek: "deepseek" }; // 2026-09-13 启用 bigmodel/deepseek
+    // 2026-09-15（主人定位）：无内置同名 provider 的（如 bigmodel）——合成条目的 baseUrl/api 从官方端点表取，
+    // 否则 fallback 到 openrouter 打错地址。新 provider 启用时在此补端点。
+    MODELSDEV_ENDPOINTS = { bigmodel: { baseUrl: "https://open.bigmodel.cn/api/paas/v4", api: "openai-completions" } };
     MODELSDEV_URL = "https://models.dev/api.json";
     MODELSDEV_TTL_MS = 24 * 60 * 60 * 1000;
     MODELSDEV_CACHE_FILE = () => join(homedir(), ".teyvat", "RuntimeCache", process.env.PAIMON_AGENT_ID || "unknown", "modelsdev-catalog.json");
@@ -185,7 +188,7 @@ export class ModelSelectorComponent extends Container {
             if (!mdProv?.models) continue;
             // 2026-09-13：该 provider 的 api/baseUrl 从**内置同名模型**继承。
             // （原实现把 baseUrl 硬编码成 openrouter——一旦启用 bigmodel/deepseek，请求会打到错误的端点）
-            const base = inherit[prov] || {};
+            const base = inherit[prov] || this.MODELSDEV_ENDPOINTS?.[prov] || {};
             for (const mdModel of Object.values(mdProv.models)) {
                 const fullId = mdModel.id; // models.dev 的 id 自带子前缀（openrouter: z-ai/glm-5.3；zhipuai: glm-5.3）
                 const key = `${prov}::${fullId}`;
