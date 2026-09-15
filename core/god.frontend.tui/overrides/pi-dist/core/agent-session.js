@@ -21,22 +21,23 @@ import { homedir } from "node:os";
 // 切换的模型写入 SocialData/registry.json 里本 agent 的记录（每 agent 独立，互不污染），
 // 启动时读它作为初始模型（见 main.js buildSessionOptions）；无记忆的 agent 回退共享 settings 默认。
 function savePerAgentModel(provider, modelId) {
+  const _dbg = (msg) => { try { const p = join(homedir(), ".teyvat/LogData/save-model-debug.log"); require("fs").appendFileSync(p, `[${new Date().toISOString()}] ${msg}\n`); } catch (e) { /* 诊断日志失败静默，不影响模型切换 */ } };
   try {
     const myId = process.env.PAIMON_AGENT_ID || "";
-    if (!/^[a-f0-9]{8}$/.test(myId)) return;
+    _dbg(`savePerAgentModel provider=${provider} modelId=${modelId} myId=${myId}`);
+    if (!/^[a-f0-9]{8}$/.test(myId)) { _dbg(`  skip: myId 不是 8 位 hex`); return; }
     const regPath = join(homedir(), ".teyvat/SocialData/registry.json");
-    if (!existsSync(regPath)) return;
+    if (!existsSync(regPath)) { _dbg(`  skip: registry 不存在`); return; }
     const reg = JSON.parse(readFileSync(regPath, "utf8"));
-    if (reg[myId]) {
-      reg[myId].model = modelId;
-      reg[myId].modelProvider = provider;
-      reg[myId].lastSeen = Date.now();
-      // 2026-09-13：registry.json 被所有 agent 与 launcher 并发读——tmp+rename 原子写，读者不会读到 0 字节
-      const tmp = regPath + ".tmp-" + process.pid;
-      writeFileSync(tmp, JSON.stringify(reg, null, 2));
-      renameSync(tmp, regPath);
-    }
-  } catch { /* 写失败不影响切换 */ }
+    if (!reg[myId]) { _dbg(`  skip: reg[${myId}] 不存在（registry 里有 ${Object.keys(reg).length} 个 agent）`); return; }
+    reg[myId].model = modelId;
+    reg[myId].modelProvider = provider;
+    reg[myId].lastSeen = Date.now();
+    const tmp = regPath + ".tmp-" + process.pid;
+    writeFileSync(tmp, JSON.stringify(reg, null, 2));
+    renameSync(tmp, regPath);
+    _dbg(`  ✓ 写成功 model=${modelId} provider=${provider}`);
+  } catch (e) { _dbg(`  ✗ 写失败: ${e?.message || e}`); }
 }
 import { clampThinkingLevel, cleanupSessionResources, getSupportedThinkingLevels, isContextOverflow, isRetryableAssistantError, modelsAreEqual, resetApiProviders, streamSimple, } from "@earendil-works/pi-ai/compat";
 import { getThemeByName, theme } from "../modes/interactive/theme/theme.js";
