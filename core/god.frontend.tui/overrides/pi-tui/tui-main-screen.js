@@ -4,6 +4,9 @@ import { deleteKittyImage, isImageLine } from "./terminal-image.js";
 import { TuiBase } from "./tui.js";
 import { visibleWidth } from "./utils.js";
 import { isBusy, recordRenderMs } from "./perf.js";
+// 2026-09-16：冻结/解冻滞回状态（连续 N 帧忙才冻结、连续 M 帧闲才解冻，避免阈值附近抖动反复全量重绘）
+let _busyStreak = 0;
+let _idleStreak = 0;
 const KITTY_SEQUENCE_PREFIX = "\x1b_G";
 function parseKittyImageHeader(line) {
     const sequenceStart = line.indexOf(KITTY_SEQUENCE_PREFIX);
@@ -158,10 +161,12 @@ export class TuiMainScreen extends TuiBase {
         const _chat = globalThis.__genshinChatContainer;
         if (_chat) {
             const _busy = isBusy();
-            if (_busy && !_chat.frozen) {
+            // 滞回：连续 3 帧忙才冻结，连续 10 帧闲才解冻（解冻=清缓存+全量重绘很贵，条件更严防抖动）
+            if (_busy) { _busyStreak++; _idleStreak = 0; } else { _idleStreak++; _busyStreak = 0; }
+            if (!_chat.frozen && _busyStreak >= 3) {
                 _chat.frozen = true; // 冻结：render 返回缓存，只重绘 input/footer
             }
-            else if (!_busy && _chat.frozen) {
+            else if (_chat.frozen && _idleStreak >= 10) {
                 _chat.unfreeze(); // 恢复：清缓存 + invalidate，下次全量重算
             }
         }
