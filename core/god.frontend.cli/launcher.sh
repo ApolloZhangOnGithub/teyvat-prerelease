@@ -38,8 +38,8 @@ if command -v lsof >/dev/null 2>&1; then
 elif command -v ss >/dev/null 2>&1; then
   _proxy_found=$(ss -tlnp 2>/dev/null | grep -iE "clash|mihomo|verge" | grep -oE ':[0-9]+' | grep -oE '[0-9]+' | sort -u | tr '\n' ' ')
 fi
-# 常见代理端口优先（进程监听的 ∩ 常见列表）
-for _p in 7897 7890 7892 7891 7898 1080 10809 8888 2080; do
+# 常见代理端口优先（进程监听的 ∩ 常见列表；17897=Clash Verge 另一常见端口——2026-09-15 windows agent WSL 实测补充）
+for _p in 7897 7890 7892 17897 7891 7898 1080 10809 8888 2080; do
   case " $_proxy_found " in *" $_p "*) _proxy_port=$_p; break;; esac
 done
 # 无交集 → 进程端口任取（排除 control/dns 等非代理端口）
@@ -51,7 +51,7 @@ if [ -z "$_proxy_port" ] && [ -n "$_proxy_found" ]; then
 fi
 # 无进程 → 常见端口 /dev/tcp 探测
 if [ -z "$_proxy_port" ]; then
-  for _p in 7897 7890 7892 7891 7898 1080 10809 8888 2080; do (exec 3<>/dev/tcp/127.0.0.1/$_p) 2>/dev/null && { exec 3>&- 3<&-; _proxy_port=$_p; break; }; done
+  for _p in 7897 7890 7892 17897 7891 7898 1080 10809 8888 2080; do (exec 3<>/dev/tcp/127.0.0.1/$_p) 2>/dev/null && { exec 3>&- 3<&-; _proxy_port=$_p; break; }; done
 fi
 if [ -z "${https_proxy:-}" ] && [ -n "$_proxy_port" ]; then
   export https_proxy="http://127.0.0.1:$_proxy_port" http_proxy="http://127.0.0.1:$_proxy_port"
