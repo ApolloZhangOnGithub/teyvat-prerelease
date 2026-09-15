@@ -358,6 +358,19 @@ export default function (pi: ExtensionAPI) {
     // session_start 把当前 model 挂到 __genshinGetModel（interactive-mode L510 只在 TUI 定义）。
     // ctx.model 是框架维护的当前值（/m 切换随 ctx 更新）；TUI 模式下 interactive-mode 会再覆盖（语义一致）。
     (globalThis as any).__genshinGetModel = () => ctx.model;
+    // 2026-09-16（探针 headless 失效修复）：探针 _probeContextTokens 依赖 __genshinModelRegistry（getApiKeyAndHeaders）
+    // 和 __genshinGetSession（system+messages+tools），但这俩只在 TUI（interactive-mode L522-524）定义，headless 器官环境
+    // 探针直接 return 失效 → amem 状态行只能 fallback 过时的 prevPrompt。这里补上（ctx 有 modelRegistry/getSystemPrompt/sessionManager）。
+    (globalThis as any).__genshinModelRegistry = () => ctx.modelRegistry;
+    (globalThis as any).__genshinGetSession = () => ({
+      agent: {
+        state: {
+          systemPrompt: typeof ctx.getSystemPrompt === "function" ? ctx.getSystemPrompt() : undefined,
+          messages: ctx.sessionManager?.buildSessionContext?.()?.messages || [],
+          tools: undefined,
+        },
+      },
+    });
     // ── 自检：wait/hibernate 的 terminate:true 依赖 agent-session.js override ──
     // override 未部署（npm update 覆盖 / install 遗漏）时 wait 后 agent loop 不终止，
     // 导致 heart 卡 resting、"Already resting. Ignoring wait." 死循环（2026-08-13 报修）。
