@@ -30,6 +30,7 @@ export PAIMON_CONFIG="$PAIMON_HOME/config"
 # 2026-09-09（用户实测：Clash Verge 监听 7892/17897——原硬编码 7897/7890 探测不到 → 裸连波动 HTTP2 framing/超时）：
 # 改智能检测——①从代理进程（clash/mihomo/verge）实际监听端口发现（lsof/ss）②常见端口交集优先
 # ③无进程则常见端口列表 /dev/tcp 探测。不能硬编码单一端口。
+_detect_proxy() {  # 2026-09-16（用户报"genshin 2b 进入 agent 刷 [proxy] 垃圾"）：只在 update 需要 git 访问 GitHub 时调用，不再全局无条件探测（进入 agent 根本不访问网络）
 _proxy_port=""
 _proxy_found=""
 if command -v lsof >/dev/null 2>&1; then
@@ -72,6 +73,7 @@ if [ -z "${https_proxy:-}" ] && [ -n "$_proxy_port" ]; then
   export https_proxy="http://127.0.0.1:$_proxy_port" http_proxy="http://127.0.0.1:$_proxy_port"
 fi
 fi # 用户已设代理 env 时跳过整个探测块
+}
 
 RUNTIME_CLI="$PAIMON_RUNTIME/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"
 # ── 启动器快照（防"运行中被就地编辑"竞态）──────────────────────────────
@@ -382,6 +384,7 @@ case "$NAME" in
       rm -f "$HOME/.teyvat/RuntimeCache/update-check.json" 2>/dev/null
       exit 0
     fi
+    _detect_proxy  # 2026-09-16：只在 update（git 访问 GitHub）时探测代理——进入 agent 不访问网络，不探测不刷日志
     if [ "$CHANNEL" = "release" ]; then
       # ⚠️ npm 分发已废弃（2026-09-05 用户定稿）——release 改走 git tag（teyvat-release 仓库）
       echo "  channel: release (git tag)"
