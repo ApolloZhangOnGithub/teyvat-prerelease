@@ -63,6 +63,7 @@ export class Container {
     // 2026-09-16：CPU 高占用时冻结（render 返回缓存，跳过子组件渲染，实现"优先渲染 input、上方降级"）
     frozen = false;
     _frozenLines = null;
+    _frozenWidth = null;
     addChild(component) {
         this.children.push(component);
     }
@@ -84,9 +85,11 @@ export class Container {
     render(width) {
         if (this.frozen) {
             // 冻结：返回缓存（首次冻结时渲染一次并缓存），不调子组件 render → 子组件即使 self-invalidate 也不影响
-            if (this._frozenLines !== null) return this._frozenLines;
+            // 缓存键含 width：冻结期间 resize 时缓存失效、按新宽度重算，避免返回旧宽度行溢出
+            if (this._frozenLines !== null && this._frozenWidth === width) return this._frozenLines;
             const lines = this._renderChildren(width);
             this._frozenLines = lines;
+            this._frozenWidth = width;
             return lines;
         }
         return this._renderChildren(width);
@@ -111,6 +114,7 @@ export class Container {
     unfreeze() {
         this.frozen = false;
         this._frozenLines = null;
+        this._frozenWidth = null;
         this.invalidate(); // 清子缓存，恢复后强制重算
     }
 }

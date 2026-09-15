@@ -37,13 +37,13 @@ function _readOsCpus() {
 
 // cpuPercent：os.cpus() 差分（两次采样求 idle 占比），跨平台可用。窗口默认 500ms（太短抖动大）。
 export function cpuPercent(sampleWindowMs = 500) {
+  const nowAt = Date.now();
+  if (_lastCpu && nowAt - _lastCpu.at < sampleWindowMs) return _lastCpuPercent; // 先判窗口再读（省 32 核遍历）
   const now = _readOsCpus();
   if (!_lastCpu) {
     _lastCpu = now;
     return 0;
   }
-  const elapsed = now.at - _lastCpu.at;
-  if (elapsed < sampleWindowMs) return _lastCpuPercent;
   const idleDelta = now.idle - _lastCpu.idle;
   const totalDelta = now.total - _lastCpu.total;
   _lastCpu = now;
@@ -54,14 +54,14 @@ export function cpuPercent(sampleWindowMs = 500) {
 
 // stealPercent：/proc/stat steal 字段的差分（宿主抢 CPU 占比，仅 Linux/WSL 有意义）。
 export function stealPercent(sampleWindowMs = 500) {
+  const nowAt = Date.now();
+  if (_lastSteal && nowAt - _lastSteal.at < sampleWindowMs) return _lastStealPercent; // 先判窗口再读
   const now = _readProcStat();
   if (!now) return 0;
   if (!_lastSteal) {
     _lastSteal = now;
     return 0;
   }
-  const elapsed = now.at - _lastSteal.at;
-  if (elapsed < sampleWindowMs) return _lastStealPercent;
   const stealDelta = now.steal - _lastSteal.steal;
   const totalDelta = now.total - _lastSteal.total;
   _lastSteal = now;
@@ -70,9 +70,10 @@ export function stealPercent(sampleWindowMs = 500) {
   return _lastStealPercent;
 }
 
-// isBusy：CPU 高占用判定。阈值走 env（GENSHIN_CPU_BUSY_PCT，默认 90）。
-// 或条件：本 VM CPU% 高 或 宿主 steal 高（WSL 整机拖慢）。
+// isBusy：CPU 高占用判定。阈值走 env（GENSHIN_CPU_BUSY_PCT 默认 90；GENSHIN_STEAL_BUSY_PCT 默认 20——
+// steal 是宿主抢走的时间占比，个位数就明显拖慢 WSL，不能用 90 当阈值）。或条件：本 VM CPU% 高 或 宿主 steal 高。
 export function isBusy() {
-  const threshold = Number(process.env.GENSHIN_CPU_BUSY_PCT) || 90;
-  return cpuPercent() > threshold || stealPercent() > threshold;
+  const cpuPct = Number(process.env.GENSHIN_CPU_BUSY_PCT) || 90;
+  const stealPct = Number(process.env.GENSHIN_STEAL_BUSY_PCT) || 20;
+  return cpuPercent() > cpuPct || stealPercent() > stealPct;
 }
