@@ -1178,8 +1178,8 @@ export default function registerMemory(pi: ExtensionAPI) {
     // 2026-09-16（用户定稿）：est（estimateTokens 文件体量估算，CJK×1.8 经验式）是垃圾——比真实 API 值高 30%+，
     // 且 amem 后文件缩水但活窗口不降（ISSUE 204）误导。全部清理，改用**真实值**：优先探针（max_tokens=1 请求拿当前
     // prompt_tokens，见 _probeContextTokens），探针未完成时 fallback prevPrompt（上一轮 API 真实值，同 gauge/footer 源）。
-    const api = (globalThis as any).__genshinProbeTokens ?? _pondSess.prevPrompt;
-    return api ? `api window ${ft(api)} tok (${pct(api)}%, ${(globalThis as any).__genshinProbeTokens ? "probe" : "last turn"})` : "api window 待首轮请求";
+    const api = _pondSess.prevPrompt;
+    return api ? `api window ${ft(api)} tok (${pct(api)}%, last turn)` : "api window 待首轮请求";
   }
 
   // context 概览：JSONL 条目类型分布 + 可编辑范围提示（fetch 无 id 时附上，解决"盲人摸象"）
@@ -1411,7 +1411,6 @@ export default function registerMemory(pi: ExtensionAPI) {
       if (!personDir) return { content: [{ type: "text", text: "ERR: No person directory." }], details: {}, isError: true };
       if (getSessionRole() !== "main") return { content: [{ type: "text", text: "ERR: Only main session." }], details: {}, isError: true };
       _refreshAmemLimits(); // ISSUE 147：按当前模型窗口刷新保护区/容量阈值（切模型后也能跟上）
-      await _probeContextTokens(); // 2026-09-16：max_tokens=1 探针拿当前真实 context token（失败静默 fallback prevPrompt）
 
       const contextPath = path.join(personDir, "context.md");
       const manageDir = path.join(personDir, "ActiveManage");

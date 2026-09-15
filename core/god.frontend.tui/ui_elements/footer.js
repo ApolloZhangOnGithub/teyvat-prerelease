@@ -192,13 +192,6 @@ export class FooterComponent {
     }
     render(width) {
         try {
-        // 2026-09-16（用户定稿）：探针节流触发——footer 每帧渲染，只在缓存过期（>30s）或无值时 fire-and-forget 探针拿当前真实值
-        // （探针结果写 __genshinProbeTokens，下面 totalTokens 优先读它，不再用过时 latestPromptTokens / est 磁盘估算）
-        const _probeNow = Date.now();
-        if (!globalThis.__genshinProbeAt || _probeNow - globalThis.__genshinProbeAt > 30000) {
-          globalThis.__genshinProbeAt = _probeNow;
-          globalThis.__genshinProbeContextTokens?.();
-        }
         const state = this.session.state;
         const fullId = process.env.PAIMON_AGENT_ID || "";
         // Calculate cumulative usage from ALL session entries (not just post-compaction messages)
@@ -247,8 +240,9 @@ export class FooterComponent {
         // 2026-09-12（ISSUE 203，用户定调“以 API 报的为准”）：窗口实占改用 API 真实 prompt（input+cacheRead+cacheWrite）。
         // 原 est(context.md+work+cx) 是“记忆文件全量体量”（非窗口实占，且 CJK×1.8 系数偏高 ~1.3×，>70% 时实注入还只tai tail）——
         // 现在：有 API 值就用真实值；无（首轮/无 assistant 消息）才回退 est。diskTokens 保留（ctxPct 等仍用）。
-        const probe = globalThis.__genshinProbeTokens;
-        const totalTokens = probe > 0 ? probe : latestPromptTokens;
+        // 2026-09-16（用户报 0.0%）：探针（max_tokens=1 请求）返回的是探针请求自身的小 token 数（不带当前 context），
+        // 不是 context 占用——用它显示 0.0%。回退 latestPromptTokens（最近一次 API 回复的真实 prompt = 当前 context 占用）。
+        const totalTokens = latestPromptTokens;
         const totalPercent = contextWindow > 0 ? Math.min(100, (totalTokens / contextWindow) * 100) : 0;
         const ctxPct = contextWindow > 0 ? ((diskTokens.ctx / contextWindow) * 100).toFixed(1) : "0";
         const workPct = contextWindow > 0 && diskTokens.work > 0 ? ((diskTokens.work / contextWindow) * 100).toFixed(1) : "0";
