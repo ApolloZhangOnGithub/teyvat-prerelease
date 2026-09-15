@@ -39,7 +39,7 @@ elif command -v ss >/dev/null 2>&1; then
   _proxy_found=$(ss -tlnp 2>/dev/null | grep -iE "clash|mihomo|verge" | grep -oE ':[0-9]+' | grep -oE '[0-9]+' | sort -u | tr '\n' ' ')
 fi
 # 常见代理端口优先（进程监听的 ∩ 常见列表；17897=Clash Verge 另一常见端口——2026-09-15 windows agent WSL 实测补充）
-for _p in 7897 7890 7892 17897 7891 7898 1080 10809 8888 2080; do
+for _p in 17897 7892 7897 7890 7891 7898 1080 10809 8888 2080; do
   case " $_proxy_found " in *" $_p "*) _proxy_port=$_p; break;; esac
 done
 # 无交集 → 进程端口任取（排除 control/dns 等非代理端口）
@@ -49,9 +49,19 @@ if [ -z "$_proxy_port" ] && [ -n "$_proxy_found" ]; then
     _proxy_port=$_p; break
   done
 fi
-# 无进程 → 常见端口 /dev/tcp 探测
+# 无进程 → 常见端口 /dev/tcp 探测。
+# 2026-09-16（windows agent WSL 量化实测）：WSL 里连 127.0.0.1 没人监听的端口不是秒拒 ECONNREFUSED，
+# 而是挂到 TCP 超时（单次 ≥6s 实测）——列表前两个是死端口就会卡 4 分钟像死机。
+# 修：①探测按活概率排序（17897/7892 优先）②每个探测加 timeout 1s（WSL 有 timeout；macOS 无 timeout 但本地拒绝秒回无需）③全失败打日志不走无声卡死。
 if [ -z "$_proxy_port" ]; then
-  for _p in 7897 7890 7892 17897 7891 7898 1080 10809 8888 2080; do (exec 3<>/dev/tcp/127.0.0.1/$_p) 2>/dev/null && { exec 3>&- 3<&-; _proxy_port=$_p; break; }; done
+  for _p in 17897 7892 7897 7890 7891 7898 1080 10809 8888 2080; do
+    if command -v timeout >/dev/null 2>&1; then
+      timeout 1 bash -c "exec 3<>/dev/tcp/127.0.0.1/$_p" 2>/dev/null && { _proxy_port=$_p; break; }
+    else
+      (exec 3<>/dev/tcp/127.0.0.1/$_p) 2>/dev/null && { exec 3>&- 3<&-; _proxy_port=$_p; break; }
+    fi
+  done
+  [ -z "$_proxy_port" ] && echo "  [proxy] 代理候选端口全部超时/未命中，走裸连（有代理环境请确认 Clash 已启动）"
 fi
 if [ -z "${https_proxy:-}" ] && [ -n "$_proxy_port" ]; then
   export https_proxy="http://127.0.0.1:$_proxy_port" http_proxy="http://127.0.0.1:$_proxy_port"
