@@ -171,7 +171,7 @@ export const MESSAGE_TYPES: Record<string, MessageTypeDef> = {
     category: "notice",
     source: "fileacts",  // 2026-09-13 审计：按真实发送方纠正（原声明对不上，boundary-warn 全是误报）
     label: "Alert From System: syntax error",
-    feed: true, feedAs: "followUp", triggerNewTurn: true,
+    feed: true, feedAs: "nextTurn", triggerNewTurn: false, // 2026-09-16（用户怒批）：语法错误检测结果不该 followUp+触发新 turn（像 user 输入一样"注入 input"），改系统提示方式（同 system-error：nextTurn + 不触发新 turn）
     render: true,
     description: "语法错误",
   },
