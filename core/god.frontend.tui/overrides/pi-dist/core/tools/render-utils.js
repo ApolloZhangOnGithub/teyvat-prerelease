@@ -38,9 +38,12 @@ export function getTextOutput(result, showImages) {
     const textBlocks = result.content.filter((c) => c.type === "text");
     const imageBlocks = result.content.filter((c) => c.type === "image");
     let output = textBlocks.map((c) => sanitizeBinaryOutput(stripAnsi(c.text || "")).replace(/\r/g, "")
-        // 2026-09-15（ISSUE 260）：防御性清洗——上游某环节吞 ESC 后残留的裸 SGR 参数（如 "[38;5;149m"）
-        // stripAnsi 正则本身完整（实测 \x1b[38;5;149m 全剥），但 WSL 现场仍有残渣到模型上下文——加一层兜底
-        .replace(/\[[0-9;]*[A-Za-z]/g, "")
+        // 2026-09-15（ISSUE 260）：防御性清洗——上游某环节吞 ESC 后残留的裸 SGR 参数（如 "[38;5;149m"）。
+        // R5 三段式（windows agent 实测 17/17：残渣全清 + 11 条正常代码原样——宽正则版会剪坏 arr[i]/[link]/[0x1f] 已废弃）：
+        // ① 带 ESC 的真序列整段剥 ② SGR 残渣（至少一个参数+m）③ 裸 reset [m 加边界断言（前非空白后非字母——避开 [m]/[merge]/[member]）
+        .replace(/\u001b\[[0-9;]*[A-Za-z]/g, "")
+        .replace(/\[[0-9;]+m/g, "")
+        .replace(/(\S)\[m(?![A-Za-z])/g, "$1")
     ).join("\n");
     const caps = getCapabilities();
     if (imageBlocks.length > 0 && (!caps.images || !showImages)) {
