@@ -86,7 +86,7 @@ function inlineHighlight(text, oldText, type) {
 }
 
 function buildDiffLines(content, lineNum, marker, decorFg) {
-    const termWidth = (process.stdout.getWindowSize?.()?.[0] || process.stdout.columns || 80); // 2026-09-16：同 terminal.js，用 ioctl 实时宽度，不信 resize 缓存
+    const termWidth = process.stdout.columns || 80;
     const lnLen = lineNum.length;
     const gutterWidth = 1 + lnLen + 1 + 1;
     const lineWidth = termWidth - DIFF_CONTAINER_INDENT - gutterWidth;
@@ -194,7 +194,7 @@ const _genshinBuiltinRenderers = {
             const fileLines = fileContent.split("\n").filter(l => l.trim());
             const num = fileLines.length || 1;
             const hlResult = hlLines(fileContent, filePath);
-            const writeMaxW = ((process.stdout.getWindowSize?.()?.[0] || process.stdout.columns || 80)) - DIFF_CONTAINER_INDENT;
+            const writeMaxW = (process.stdout.columns || 80) - DIFF_CONTAINER_INDENT;
             const lnPad = 3;
             const gutterW = lnPad + 2;
             const contentW = Math.max(10, writeMaxW - gutterW);
@@ -286,7 +286,7 @@ const _genshinBuiltinRenderers = {
                     entries.push({d: false, line: t.fg("dim", ` ${ln}  ${content}`)});
                 }
             }
-            const termW = (process.stdout.getWindowSize?.()?.[0] || process.stdout.columns || 80);
+            const termW = process.stdout.columns || 80;
             const diffPadW = termW - DIFF_CONTAINER_INDENT;
             const body = [];
             for (const e of entries) {
