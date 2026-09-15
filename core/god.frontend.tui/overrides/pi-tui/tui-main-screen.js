@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { deleteKittyImage, isImageLine } from "./terminal-image.js";
 import { TuiBase } from "./tui.js";
 import { visibleWidth } from "./utils.js";
-import { isBusy } from "./perf.js";
+import { isBusy, recordRenderMs } from "./perf.js";
 const KITTY_SEQUENCE_PREFIX = "\x1b_G";
 function parseKittyImageHeader(line) {
     const sequenceStart = line.indexOf(KITTY_SEQUENCE_PREFIX);
@@ -179,7 +179,9 @@ export class TuiMainScreen extends TuiBase {
             return targetScreenRow - currentScreenRow;
         };
         // Render all components to get new lines
+        const _renderT0 = performance.now();
         let newLines = this.render(width);
+        recordRenderMs(performance.now() - _renderT0); // 2026-09-16：renderMs 判据（渲染组件树耗时，直接测"渲染吃力"）
         // Composite overlays into the rendered lines (before differential compare)
         if (this.hasOverlayEntries) {
             newLines = this.compositeOverlays(newLines, width, height);

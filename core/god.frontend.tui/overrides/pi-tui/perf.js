@@ -9,6 +9,7 @@ let _lastCpu = null;
 let _lastCpuPercent = 0;
 let _lastSteal = null;
 let _lastStealPercent = 0;
+let _lastRenderMs = 0;
 
 function _readProcStat() {
   if (process.platform !== "linux") return null;
@@ -70,10 +71,16 @@ export function stealPercent(sampleWindowMs = 500) {
   return _lastStealPercent;
 }
 
-// isBusy：CPU 高占用判定。阈值走 env（GENSHIN_CPU_BUSY_PCT 默认 90；GENSHIN_STEAL_BUSY_PCT 默认 20——
-// steal 是宿主抢走的时间占比，个位数就明显拖慢 WSL，不能用 90 当阈值）。或条件：本 VM CPU% 高 或 宿主 steal 高。
+// isBusy：CPU 高占用判定。阈值走 env（GENSHIN_CPU_BUSY_PCT 默认 90；GENSHIN_STEAL_BUSY_PCT 默认 20；
+// GENSHIN_RENDER_MS_BUSY 默认 30——每帧渲染耗时，直接测"渲染吃力"，跨平台零依赖，是 steal 在 WSL 取不到值时的有效补充）。
 export function isBusy() {
   const cpuPct = Number(process.env.GENSHIN_CPU_BUSY_PCT) || 90;
   const stealPct = Number(process.env.GENSHIN_STEAL_BUSY_PCT) || 20;
-  return cpuPercent() > cpuPct || stealPercent() > stealPct;
+  const renderPct = Number(process.env.GENSHIN_RENDER_MS_BUSY) || 30;
+  return cpuPercent() > cpuPct || stealPercent() > stealPct || _lastRenderMs > renderPct;
+}
+
+// recordRenderMs：doRender 每帧调用，记录当帧渲染耗时（供 isBusy 的 renderMs 判据用）。
+export function recordRenderMs(ms) {
+  _lastRenderMs = ms;
 }
