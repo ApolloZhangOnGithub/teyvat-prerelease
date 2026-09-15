@@ -1166,7 +1166,14 @@ export default function registerMemory(pi: ExtensionAPI) {
       const msgs: any[] = [];
       if (st?.systemPrompt) msgs.push({ role: "system", content: st.systemPrompt });
       for (const m of (st?.messages || [])) {
-        if (m && m.role && m.content !== undefined) msgs.push({ role: m.role, content: m.content });
+        if (!m || !m.role) continue;
+        // 完整保留 provider 消息字段（tool_calls/tool_call_id/name）——只取 role+content 会丢工具调用，
+        // OpenAI 兼容 API 对 tool 消息缺 tool_call_id / assistant 有 tool_calls 无 tool 结果会 400 → 探针失败。
+        const msg: any = { role: m.role, content: m.content };
+        if (m.tool_calls !== undefined) msg.tool_calls = m.tool_calls;
+        if (m.tool_call_id !== undefined) msg.tool_call_id = m.tool_call_id;
+        if (m.name !== undefined) msg.name = m.name;
+        msgs.push(msg);
       }
       const reqBody: any = { model: modelId, messages: msgs, max_tokens: 1, stream: false };
       if (Array.isArray(st?.tools) && st.tools.length) reqBody.tools = st.tools;
