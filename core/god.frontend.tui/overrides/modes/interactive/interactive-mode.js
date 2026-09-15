@@ -33,7 +33,7 @@ import { isInstallTelemetryEnabled } from "../../core/telemetry.js";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.js";
 import { getChangelogPath, getNewEntries, normalizeChangelogLinks, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard, readClipboardText } from "../../utils/clipboard.js";
-import { copyRich } from "../../ui_elements/rich-clipboard.js"; // 2026-09-14（用户）：/copy 富文本剪贴板（HTML + 纯文本双 flavor）；2026-09-15（主人定位）：原三层 ../../../ 从 dist/modes/interactive 算到包根（文件不在）——实际部署在 dist/ui_elements/，两层 ../../ 正确
+import { copyRich } from "../../ui_elements/rich-clipboard.js"; // 2026-09-14（用户）：/copy 富文本剪贴板（HTML + 纯文本双 flavor）；2026-09-15（用户定位）：原三层 ../../../ 从 dist/modes/interactive 算到包根（文件不在）——实际部署在 dist/ui_elements/，两层 ../../ 正确
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
 import { parseGitUrl } from "../../utils/git.js";
 import { getCwdRelativePath } from "../../utils/paths.js";

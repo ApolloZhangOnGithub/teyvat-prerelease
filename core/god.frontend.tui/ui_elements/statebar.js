@@ -9,7 +9,7 @@ import { theme } from "../theme/theme.js";
 import { Container, Spacer, Text } from "@earendil-works/pi-tui"; // 2026-09-13：.46 引入 new Container() 却没 import——默认"消息底部"模式下每次状态切换 ReferenceError，状态栏从不渲染
 import { debug } from '#gene_riboswitch';
 
-// 2026-09-15（主人定位，windows_first_agent_01 转达）：✳（U+2733）在 Windows/WSL 终端被字体回退渲染成 emoji，视觉不一致——
+// 2026-09-15（用户定位，windows_first_agent_01 转达）：✳（U+2733）在 Windows/WSL 终端被字体回退渲染成 emoji，视觉不一致——
 // WSL 环境下从轮换字符集中去掉（WSL_DISTRO_NAME/WSL_INTEROP 是 WSL 标准环境变量）
 const _isWSL = Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP);
 const SPARKLE_CHARS = _isWSL

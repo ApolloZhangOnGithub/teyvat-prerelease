@@ -304,6 +304,35 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event: any, ctx: any) => {
     if (isWorkerSession(ctx)) return;
     setUI(ctx.ui);
+    // 2026-09-15（windows agent 建议，ISSUE 259 同期）：启动迁移——services.json 的 bigmodel key 自动落到
+    // models.json 的 providers.bigmodel（缺失则创建），老用户升级后无需手动 /c 触发。
+    // 幂等：已存在时只在 key 变化时写入。逻辑与 config.ts 的 syncModelsJson 保持一致（后续可抽公共模块）。
+    try {
+      const _uaFile = join(homedir(), ".teyvat/UserAccount/services.json");
+      const _mFile = join(homedir(), ".teyvat/config/models.json");
+      if (existsSync(_uaFile) && existsSync(_mFile)) {
+        const _svc = JSON.parse(readFileSync(_uaFile, "utf8"))?.bigmodel;
+        if (_svc?.apiKey && typeof _svc.apiKey === "string" && _svc.apiKey.trim()) {
+          const _m = JSON.parse(readFileSync(_mFile, "utf8"));
+          if (!_m.providers) _m.providers = {};
+          if (!_m.providers.bigmodel) {
+            _m.providers.bigmodel = {
+              name: "智谱",
+              baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+              api: "openai-completions",
+              models: [
+                { id: "glm-5.3-flash", name: "GLM-5.3-Flash", contextWindow: 1000000, input: ["text", "image"] },
+                { id: "glm-5.3", name: "GLM-5.3", contextWindow: 1000000, input: ["text"] },
+              ],
+            };
+          }
+          if (_m.providers.bigmodel.apiKey !== _svc.apiKey.trim()) {
+            _m.providers.bigmodel.apiKey = _svc.apiKey.trim();
+            writeFileSync(_mFile, JSON.stringify(_m, null, 4));
+          }
+        }
+      }
+    } catch (e: any) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] bigmodel migrate: " + ((e as any)?.message || e)); }
     // 2026-09-14（ISSUE 240 同期互搏修复）：attach 回前台的 display-shown 改在 session_start 注入——
     // 原在 before_agent_start（第一次对话）注入 → 横幅出现在对话中段（房东：「位置根本不对」，
     // 「✤ Shown」出现在对话中间而非 attach 那一刻）。session_start 注入 = TUI 启动即渲染在顶部。

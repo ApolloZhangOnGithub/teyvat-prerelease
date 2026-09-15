@@ -67,7 +67,7 @@ function syncModelsJson(services: Record<string, any>) {
     const m = JSON.parse(readFileSync(MODELS_FILE, "utf8"));
     const svc = services.bigmodel;
     if (!svc) return;
-    // 2026-09-15（主人定位，windows_first_agent_01 转达）：新装机器 models.json 只有空 touch，
+    // 2026-09-15（用户定位，windows_first_agent_01 转达）：新装机器 models.json 只有空 touch，
     // providers.bigmodel 不存在时原先静默 no-op → /c 的 key 永远到不了运行时（setModel 报 No API key）。
     // 修复：缺失时创建 provider（官方端点 + 常用模型条目），把 /c 的 key 落进去。
     if (!m.providers) m.providers = {};
@@ -207,7 +207,8 @@ export async function configHandler(_args: any, ctx: any) {
           for (const field of fields) {
             const cur = (typeof svc[field] === "string" && svc[field].trim()) ? svc[field].slice(0, 8) + "..." : T("(未设置)", "(not set)");
             const newVal = await ctx.ui.input(`${display}.${field} [${cur}]`);
-            if (newVal !== undefined && newVal !== null) {
+            // 2026-09-15（windows agent 发现）：空输入直接回车会把已有 key 写成空串静默丢失——空输入视为"不修改"
+            if (newVal !== undefined && newVal !== null && newVal.trim()) {
               svc[field] = newVal.trim();
               services[key] = svc;
               saveServices(services);
@@ -289,7 +290,8 @@ export async function configHandler(_args: any, ctx: any) {
       if (fi < 0) break;
       const field = fields[fi];
       const newVal = await ctx.ui.input(`${display}.${field}`);
-      if (newVal !== undefined && newVal !== null) {
+      // 2026-09-15（windows agent 发现）：空输入直接回车会把已有 key 写成空串静默丢失——空输入视为"不修改"
+      if (newVal !== undefined && newVal !== null && newVal.trim()) {
         svc[field] = newVal.trim();
         services[key] = svc;
         mkdirSync(UA_DIR, { recursive: true });

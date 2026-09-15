@@ -108,7 +108,7 @@ export class ModelSelectorComponent extends Container {
     // 2026-09-04：models.dev 目录合并——**只读缓存**（零网络，不卡 /m；缓存由启动时的后台预同步维护，见模块级 syncModelsDevCache）
     // 离线/缓存不存在 → 返回 []（用内置目录）。
     MODELSDEV_PROVIDERS = { openrouter: "openrouter", bigmodel: "zhipuai", deepseek: "deepseek" }; // 2026-09-13 启用 bigmodel/deepseek
-    // 2026-09-15（主人定位）：无内置同名 provider 的（如 bigmodel）——合成条目的 baseUrl/api 从官方端点表取，
+    // 2026-09-15（用户定位）：无内置同名 provider 的（如 bigmodel）——合成条目的 baseUrl/api 从官方端点表取，
     // 否则 fallback 到 openrouter 打错地址。新 provider 启用时在此补端点。
     MODELSDEV_ENDPOINTS = { bigmodel: { baseUrl: "https://open.bigmodel.cn/api/paas/v4", api: "openai-completions" } };
     MODELSDEV_URL = "https://models.dev/api.json";
