@@ -28,7 +28,7 @@
 	},
 	"colors": {
 		"accent": "accent",
-		"border": "claude",
+		"border": "lightGray",
 		"borderAccent": "#D77757",
 		"borderMuted": "lightGray",
 		"success": "green",

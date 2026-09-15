@@ -30,7 +30,7 @@
 	},
 	"colors": {
 		"accent": "accent",
-		"border": "claude",
+		"border": "darkGray",
 		"borderAccent": "bluePurple",
 		"borderMuted": "darkGray",
 		"success": "green",

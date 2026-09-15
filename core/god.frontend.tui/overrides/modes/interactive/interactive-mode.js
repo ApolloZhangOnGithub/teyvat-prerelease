@@ -1532,7 +1532,9 @@ export class InteractiveMode {
         const extensionRunner = this.session.extensionRunner;
         this.setupExtensionShortcuts(extensionRunner);
         this.showLoadedResources({ force: false, showDiagnosticsWhenQuiet: true });
-        this.showStartupNoticesIfNeeded();
+        // 2026-09-16（用户）：changelog 横幅延迟渲染，让 Life Restarted（session_start 800ms 异步发送）先渲染在第一个。
+        // 否则 changelog 横幅（init 同步）抢在 Life Restarted 前面，重启后顶部第一条变成 changelog 的边框线（用户报"重启不渲染在第一个"）。
+        setTimeout(() => this.showStartupNoticesIfNeeded(), 1500);
     }
     applyRuntimeSettings() {
         configureHttpDispatcher(this.settingsManager.getHttpIdleTimeoutMs());
