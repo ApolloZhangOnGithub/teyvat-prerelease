@@ -257,8 +257,20 @@ export class AgentSession {
             if (result.terminate) {
                 try { runner.abortFn?.(); } catch (e) { console.error("[god.frontend.tui/overrides/pi-dist/core/agent-session.js] " + (e?.message || e)); }
             }
+            // 2026-09-16（ISSUE 260 回归/windows agent 排查）：这里清洗 content（给模型的那份）——一处覆盖
+            // 所有工具（read/grep/ls/find/bash/edit + 扩展 + 出错结果，串行/并行全经过 afterToolCall）。
+            // 只洗 content、不动 details（Edit 的 baseContent/diff 匹配仍用磁盘原字节）。R5 三段式同 render-utils.js。
+            const cleanToolTexts = (content) => (content || []).map((c) => {
+                if (c && typeof c.text === "string") {
+                    return { ...c, text: c.text
+                        .replace(/\u001b\[[0-9;]*[A-Za-z]/g, "")     // ① 带 ESC 的真序列整段剥
+                        .replace(/\[[0-9;]+m/g, "")                   // ② SGR 残渣
+                        .replace(/(\S)\[m(?![A-Za-z])/g, "$1") };      // ③ 裸 reset [m（边界断言避开 [m]/[merge]）
+                }
+                return c;
+            });
             if (!runner.hasHandlers("tool_result")) {
-                return undefined;
+                return { content: cleanToolTexts(result.content), details: result.details, isError };
             }
             const hookResult = await runner.emitToolResult({
                 type: "tool_result",
@@ -270,10 +282,10 @@ export class AgentSession {
                 isError,
             });
             if (!hookResult) {
-                return undefined;
+                return { content: cleanToolTexts(result.content), details: result.details, isError };
             }
             return {
-                content: hookResult.content,
+                content: cleanToolTexts(hookResult.content),
                 details: hookResult.details,
                 isError: hookResult.isError ?? isError,
             };
