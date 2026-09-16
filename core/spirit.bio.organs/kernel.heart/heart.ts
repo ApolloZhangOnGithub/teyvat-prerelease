@@ -28,16 +28,11 @@ function _urgentContextNote(): string {
     if (!pid) return "";
     const g = readGrowthLast(pid);
     if (!g) return "";
-    const est = g.ratio || 0;
     const api = typeof g.api_ratio === "number" ? g.api_ratio : null;
-    const r = api ?? est;
-    if (r < 95) return "";
-    if (api === null || est >= 60) {
-      return i18n(`\n\n[URGENT] context 使用已达 ${r.toFixed(1)}%（记忆文件 est ${est.toFixed(1)}%），距离 API 限制极近。你必须立即执行 amem archive 清理记忆再做其他任何事。不要忽略。`,
-        `\n\n[URGENT] context usage at ${r.toFixed(1)}% (memory files est ${est.toFixed(1)}%), dangerously close to API limit. You MUST immediately run amem archive to free memory before doing anything else. Do NOT ignore this.`);
-    }
-    return i18n(`\n\n[URGENT] 活对话窗口已达 ${r.toFixed(1)}%，但记忆文件只占 ${est.toFixed(1)}%——是本次会话的对话本身撑大的，amem 归档降不下来。请立刻收尾当前工作并 self-reboot 进入新会话，或用 /compact。`,
-      `\n\n[URGENT] live context window at ${r.toFixed(1)}% while memory files are only ${est.toFixed(1)}% — this session's own conversation is what is big; amem cannot shrink it. Wrap up now and self-reboot into a fresh session, or use /compact.`);
+    // 2026-09-16（用户定稿）：去掉 est——只保留 api（活对话窗口 = 记忆，唯一口径）。
+    if (api === null || api < 95) return "";
+    return i18n(`\n\n[URGENT] context 使用已达 ${api.toFixed(1)}%，距离 API 限制极近。你必须立即执行 amem archive 清理记忆再做其他任何事。不要忽略。`,
+      `\n\n[URGENT] context usage at ${api.toFixed(1)}%, dangerously close to API limit. You MUST immediately run amem archive to free memory before doing anything else. Do NOT ignore this.`);
   } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); return ""; }
 }
 import { sendCustomMessage, messageTriggersTurn } from "#kernel_backbone";

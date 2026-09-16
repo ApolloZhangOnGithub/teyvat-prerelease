@@ -453,21 +453,15 @@ export default function registerMemory(pi: ExtensionAPI) {
     // context >= 95% 时只允许 amem/status/wait/hibernate/intentions——其他工具一律拦截
     if (!AMEM_EXEMPT_TOOLS.has(event.toolName)) {
       try {
-        // 2026-09-13（H3）：之前读 personDir/monitor/growth.jsonl（从未存在）→ 这个拦截从未生效。
-        // 口径：api（上一轮真实 prompt，进程内即时值）为主——那才是接近 API 上限的信号；est（记忆文件体量）决定 amem 帮不帮得上：
-        //   api ≥95% 且 est ≥60% → 拦：先 amem（归档后 context 事件换快照，窗口下一轮就降）；
-        //   api ≥95% 但 est 很小 → 是活对话本身撑大的，amem 归档不了——不拦（拦了就把 agent 锁死在"必须先 amem"），交给 URGENT 提示 /compact 或 self-reboot；
-        //   没有 api 值（首轮）→ 只看 est。
+        // 2026-09-16（用户定稿）：去掉 est，只保留 api（活对话窗口 prompt_tokens）——活对话就是记忆，
+        // 记忆文件体量估算（est）是垃圾（CJK×1.8 虚高且与实注入对不上），一律不用。
         const pid = personDir ? path.basename(personDir) : "";
-        const g = pid ? readGrowthLast(pid) : null;
-        const est = g?.ratio ?? 0;
         _refreshModelMax();
         const api = _pondSess.prevPrompt ? (_pondSess.prevPrompt / modelMax) * 100 : null;
-        const ratio = api ?? est;
-        if (ratio >= 95 && (api === null || est >= 60)) {
+        if (api !== null && api >= 95) {
           return { block: true, reason: i18n(
-            `context 使用已达 ${ratio.toFixed(1)}%（记忆文件 est ${est.toFixed(1)}%），必须先执行 amem archive 清理记忆再做其他操作。`,
-            `Context usage at ${ratio.toFixed(1)}% (memory files est ${est.toFixed(1)}%), you must run amem archive to free memory before any other action.`
+            `context 使用已达 ${api.toFixed(1)}%，必须先执行 amem archive 清理记忆再做其他操作。`,
+            `Context usage at ${api.toFixed(1)}%, you must run amem archive to free memory before any other action.`
           ) };
         }
       } catch (e) { /* growth.jsonl 读取失败不阻塞 */ }
@@ -771,9 +765,11 @@ export default function registerMemory(pi: ExtensionAPI) {
     let capacityLine = _apiTok > 0
       ? `context ${fmtTok(_apiTok)} tokens / ${fmtTok(modelMax)} (api@${capTs})`
       : "context 待首轮请求";
-    if (usageRatio >= CAPACITY.FORCE) capacityLine += i18n(" — 立即用 amem 整理", " — use amem immediately");
-    else if (usageRatio >= CAPACITY.URGE) capacityLine += i18n(" — 建议 amem 整理", " — consider amem cleanup");
-    if (usageRatio >= CAPACITY.URGE) {
+    // 2026-09-16（用户定稿）：去掉 est——记忆/amem 判断也只用 api（活对话窗口 = 记忆，唯一口径）
+    const _apiRatio = _apiTok > 0 ? _apiTok / modelMax : 0;
+    if (_apiRatio >= CAPACITY.FORCE) capacityLine += i18n(" — 立即用 amem 整理", " — use amem immediately");
+    else if (_apiRatio >= CAPACITY.URGE) capacityLine += i18n(" — 建议 amem 整理", " — consider amem cleanup");
+    if (_apiRatio >= CAPACITY.URGE) {
       if (_lastCapacityUrge === 0) {
         _lastCapacityUrge = rawPct;
         sendCustomMessage(pi, "memory-capacity", capacityLine);

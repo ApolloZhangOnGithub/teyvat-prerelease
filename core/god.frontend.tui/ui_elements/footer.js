@@ -230,30 +230,11 @@ export class FooterComponent {
                 }
             }
         }
-        // Calculate context usage from session (handles compaction correctly).
-        // After compaction, tokens are unknown until the next LLM response.
-        // 从磁盘读 context/work_memory/cortex，统一 CJK 估算法（同 memory.ts 容量警告一致）
-        let diskTokens = { ctx: 0, work: 0, cx: 0 };
-        try {
-          const base = `${homedir()}/.teyvat/MemoryData/${fullId}`;
-            const ctxTxt = cachedReadFile(`${base}/context.md`);
-            const wmTxt = cachedReadFile(`${base}/work_memory.md`);
-            const cxTxt = cachedReadFile(`${base}/neocortex.md`);
-            const est = (t) => { let cjk=0; for(let i=0;i<t.length;i++){const c=t.charCodeAt(i);if((c>=0x3400&&c<=0x9fff)||(c>=0xf900&&c<=0xfaff)||(c>=0x3000&&c<=0x30ff)||(c>=0xff00&&c<=0xffef))cjk++} return Math.round(cjk*1.8+(t.length-cjk)*0.25); };
-            diskTokens = { ctx: est(ctxTxt), work: est(wmTxt), cx: est(cxTxt) };
-        } catch(e) { try { require("fs").appendFileSync((process.env.HOME||"")+"/.teyvat/LogData/genshin-catch-errors.log", "[??] " + (e?.stack||e) + "\n"); } catch (e) { console.error("[god.frontend.tui/ui_elements/footer.js] " + (e?.message || e)); } }
+        // 2026-09-16（用户定稿）：去掉 est（记忆文件体量估算，CJK×1.8 虚高）——只保留 api（探针/latestPromptTokens 真实值）。
         const contextWindow = state.model?.contextWindow ?? 1000000;
-        // 2026-09-12（ISSUE 203，用户定调“以 API 报的为准”）：窗口实占改用 API 真实 prompt（input+cacheRead+cacheWrite）。
-        // 原 est(context.md+work+cx) 是“记忆文件全量体量”（非窗口实占，且 CJK×1.8 系数偏高 ~1.3×，>70% 时实注入还只tai tail）——
-        // 现在：有 API 值就用真实值；无（首轮/无 assistant 消息）才回退 est。diskTokens 保留（ctxPct 等仍用）。
-        // 2026-09-16（用户定稿）：probe 优先（max_tokens=1 带完整 context 的探针，返回真实当前占用，缓存命中成本低）；
-        // 探针未跑时 fallback latestPromptTokens（最近一次 API 回复的真实 prompt）。
         const probe = globalThis.__genshinProbeTokens;
         const totalTokens = probe > 0 ? probe : latestPromptTokens;
         const totalPercent = contextWindow > 0 ? Math.min(100, (totalTokens / contextWindow) * 100) : 0;
-        const ctxPct = contextWindow > 0 ? ((diskTokens.ctx / contextWindow) * 100).toFixed(1) : "0";
-        const workPct = contextWindow > 0 && diskTokens.work > 0 ? ((diskTokens.work / contextWindow) * 100).toFixed(1) : "0";
-        const cxPct = contextWindow > 0 && diskTokens.cx > 0 ? ((diskTokens.cx / contextWindow) * 100).toFixed(1) : "0";
         // Replace home directory with ~
         let pwd = formatCwdForFooter(this.session.sessionManager.getCwd(), process.env.HOME || process.env.USERPROFILE);
         // Add git branch if available

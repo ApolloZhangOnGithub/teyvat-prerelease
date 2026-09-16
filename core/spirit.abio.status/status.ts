@@ -282,9 +282,8 @@ export function registerStatusTool(_pi: ExtensionAPI) {
               const pctOf = (n: number) => cap > 0 ? ` (${Math.round((n / cap) * 100)}%)` : "";
               const capStr = cap > 0 ? ` / ${fmtT(cap)}` : "";
               const api = typeof g.api_tokens === "number" ? g.api_tokens : 0;
-              const est = g.tokens || 0;
-              if (api > 0) lines.push(`Context (api, last turn): ${fmtT(api)}${capStr} tokens${pctOf(api)}`);
-              if (est > 0) lines.push(`Memory files (est): ${fmtT(est)}${capStr} tokens${pctOf(est)}`);
+              // 2026-09-16（用户定稿）：去掉 est——只显示 api（活对话窗口 = 记忆，唯一口径）
+              if (api > 0) lines.push(`Context (api): ${fmtT(api)}${capStr} tokens${pctOf(api)}`);
             }
           } catch (e) { console.error("[spirit.abio.status/status.ts] " + ((e as any)?.message || e)); }
 
