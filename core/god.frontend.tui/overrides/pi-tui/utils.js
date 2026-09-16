@@ -202,6 +202,12 @@ function graphemeWidth(segment) {
     // （iTerm2 / Terminal.app / tmux 默认 ambiguous=narrow）→ 行比边框短 1 格。补齐契约：输出层在序号后补一个真实空格
     // （padEnclosedForNarrowCells，terminal.js write 调用），排版 2 格 = 屏幕 2 格；终端本身给 2 格（tui.js 启动 CPR 探测）时不补。
     if (cp >= 0x2460 && cp <= 0x24ff) width = 2;
+    // teyvat 2026-09-17（ISSUE 261）：Windows 系终端（win32 / WSL / Windows Terminal）+ CJK 字体
+    // 把 ambiguous / neutral 符号（→ ❯ ∴ • ◆ ✓ ⏺ ⎿ …）画成 2 格，而 EAW 表按 1 格算 → 行尾溢出 1 格，
+    // 终端在最右列硬折、续行 col 0 顶头（用户报"Read 后面的地址换行第二行顶头"）。
+    // EAW 表只能当候选集（不少符号 EAW 是 neutral，表里本来就查不出），唯一可靠判据是终端实测（CPR）。
+    // 只在"终端实测说这类符号占 2 格"时纠正；黑名单（框线/拉丁/数学/货币/序号）恒 1 格。
+    if (ambiguousCells() === 2 && isAmbiguousWideCp(cp)) width = 2;
     // Intl.Segmenter can group multiple terminal-spacing code points into one
     // grapheme. Count trailing visible code points that terminals may allocate
     // cells for: Indic consonants after marks, halfwidth/fullwidth forms, and
@@ -245,6 +251,65 @@ export function padEnclosedForNarrowCells(str) {
   return str.replace(enclosedAlnumRegex, "$& ");
 }
 /**
+ * teyvat 2026-09-17（ISSUE 261）：ambiguous/neutral 符号宽度判据。
+ * 终端实测（tui.js 启动 CPR 探测 → globalThis.__genshinAmbiguousCells = 1|2；GENSHIN_AMBIGUOUS_CELLS 可指定）
+ * 说这类符号占 2 格时才按 2 格算；探测不到 → 退化：Windows 系（win32/WSL/WT）按 2 格，其余按 1 格（mac/linux 不变）。
+ * 用"符号区块"而不是 EAW 表——不少符号 EAW 是 neutral，表里查不出问题，但 CJK 字体按全角画。
+ */
+const AMBIGUOUS_WIDE_BLOCKS = [
+    [0x2190, 0x21ff], // 箭头 → ↑
+    [0x2300, 0x23ff], // 杂项技术 ⏺ ⎿ ⌘
+    [0x25a0, 0x25ff], // 几何 + 白圆点 ◆ ◦ ●
+    [0x2600, 0x26ff], // 杂项符号 ★ ☆
+    [0x2700, 0x27bf], // 装饰 ✓ ✳ ❄ ❯
+    [0x2b00, 0x2bff], // 杂项箭头/几何
+    [0x1f000, 0x1faff] // emoji 兜底
+];
+// 黑名单（恒 1 格，即使落在候选区块里也不纠正）：框线/块元素、拉丁/希腊/西里尔、货币、数学运算符、带圈数字
+const AMBIGUOUS_NARROW_BLOCKS = [
+    [0x2500, 0x259f], // 框线 + 块元素（必须 1 格）
+    [0x00a1, 0x04ff], // 拉丁扩展 / 希腊 / 西里尔
+    [0x2010, 0x203f], // 标点
+    [0x20a0, 0x218f], // 货币 + 字母式符号
+    [0x2200, 0x22ff], // 数学运算符
+    [0x2460, 0x24ff]  // 带圈数字（已有专门处理）
+];
+// 落在窄区块里、但 CJK 字体常按全角画的符号（例外）
+const AMBIGUOUS_WIDE_EXCEPT = new Set([0x2022 /* • 着重号 */]);
+function inBlocks(cp, blocks) {
+    for (const [lo, hi] of blocks) { if (cp >= lo && cp <= hi) return true; }
+    return false;
+}
+export function isAmbiguousWideCp(cp) {
+    if (AMBIGUOUS_WIDE_EXCEPT.has(cp)) return true;
+    if (inBlocks(cp, AMBIGUOUS_NARROW_BLOCKS)) return false;
+    return inBlocks(cp, AMBIGUOUS_WIDE_BLOCKS);
+}
+let _ambiguousCellsFallback;
+let _ambiguousCellsLast;
+export function ambiguousCells() {
+    const v = globalThis.__genshinAmbiguousCells;
+    let resolved;
+    if (v === 1 || v === 2) {
+        resolved = v;
+    } else {
+        if (_ambiguousCellsFallback === undefined) {
+            // 探测未出/不可用：Windows 系按 2 格（CJK 字体全角），其余按 1 格
+            const isWinTerm = process.platform === "win32"
+                || !!process.env.WSL_DISTRO_NAME || !!process.env.WSL_INTEROP
+                || !!process.env.WT_SESSION;
+            _ambiguousCellsFallback = isWinTerm ? 2 : 1;
+        }
+        resolved = _ambiguousCellsFallback;
+    }
+    // 判据变化（探测回包/环境变量）→ 清宽度缓存；否则 visibleWidth 会回旧的 1 格值，纠正不生效
+    if (resolved !== _ambiguousCellsLast) {
+        _ambiguousCellsLast = resolved;
+        try { widthCache.clear(); } catch { /* widthCache 未就绪（模块初始化期） */ }
+    }
+    return resolved;
+}
+/**
  * Calculate the visible width of a string in terminal columns.
  */
 export function visibleWidth(str) {
@@ -256,7 +321,10 @@ export function visibleWidth(str) {
         return str.length;
     }
     // Check cache
-    const cached = widthCache.get(str);
+    // teyvat 2026-09-17（ISSUE 261）：缓存键带上 ambiguous 判据（1|2）——探测回包后判据变，
+    // 旧键自然落空、重算为新宽度（否则 visibleWidth 直接命中旧值，纠正不生效）。
+    const cacheKey = str + "\u0000" + ambiguousCells();
+    const cached = widthCache.get(cacheKey);
     if (cached !== undefined) {
         return cached;
     }
@@ -286,7 +354,7 @@ export function visibleWidth(str) {
             widthCache.delete(firstKey);
         }
     }
-    widthCache.set(str, width);
+    widthCache.set(cacheKey, width);
     return width;
 }
 /** Remove ANSI, OSC, and APC control sequences while preserving visible text. */

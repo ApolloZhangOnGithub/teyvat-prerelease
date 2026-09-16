@@ -531,26 +531,59 @@ export class TuiBase extends Container {
      */
     probeEnclosedCells() {
         const env = process.env.GENSHIN_ENCLOSED_CELLS;
-        if (env === "1" || env === "2") { globalThis.__genshinEnclosedCells = Number(env); return; }
+        if (env === "1" || env === "2") {
+            globalThis.__genshinEnclosedCells = Number(env);
+            this.probeAmbiguousCells(); // 序号宽度外部指定了，但仍要测 ambiguous 符号
+            return;
+        }
         if (!process.stdout.isTTY || !process.stdin.isTTY) return;
         if (this._enclosedProbeTimer) { clearTimeout(this._enclosedProbeTimer); this._enclosedProbeTimer = undefined; } // 重入先清旧定时器
+        this._probeStage = "enclosed";
         this._enclosedProbePending = true;
         // 直接走 process.stdout：terminal.write() 会给 ② 补空格，那样量出来的就不是终端自己的分配了
         process.stdout.write("\r②\x1b[6n\r\x1b[K");
+        this._enclosedProbeTimer = setTimeout(() => { this._enclosedProbePending = false; }, 1500);
+    }
+    /**
+     * teyvat 2026-09-17（ISSUE 261）：探终端给 ambiguous/neutral 符号（→ ❯ ✓ • …）分配几格。
+     * 与 probeEnclosedCells 同一套 CPR 机制，链式跟在序号探测之后（终端同一时间只等一个 CPR 回包）。
+     * 结果写 globalThis.__genshinAmbiguousCells，utils.js 的 graphemeWidth 用它纠正宽度；GENSHIN_AMBIGUOUS_CELLS 可指定。
+     */
+    probeAmbiguousCells() {
+        const env = process.env.GENSHIN_AMBIGUOUS_CELLS;
+        if (env === "1" || env === "2") { globalThis.__genshinAmbiguousCells = Number(env); return; }
+        if (!process.stdout.isTTY || !process.stdin.isTTY) return;
+        if (globalThis.__genshinAmbiguousCells === 1 || globalThis.__genshinAmbiguousCells === 2) return;
+        if (this._enclosedProbeTimer) { clearTimeout(this._enclosedProbeTimer); this._enclosedProbeTimer = undefined; }
+        this._probeStage = "ambiguous";
+        this._enclosedProbePending = true;
+        process.stdout.write("\r→\x1b[6n\r\x1b[K");
         this._enclosedProbeTimer = setTimeout(() => { this._enclosedProbePending = false; }, 1500);
     }
     consumeCursorPositionReport(data) {
         if (!this._enclosedProbePending) return false;
         const m = data.match(/^\x1b\[(\d+);(\d+)R$/);
         if (!m) return false;
+        const stage = this._probeStage === "ambiguous" ? "ambiguous" : "enclosed";
         this._enclosedProbePending = false;
+        this._probeStage = undefined;
         if (this._enclosedProbeTimer) { clearTimeout(this._enclosedProbeTimer); this._enclosedProbeTimer = undefined; }
-        const cells = Number.parseInt(m[2], 10) - 1; // 行首 col=1，② 之后 col=1+格数
-        if (cells === 1 || cells === 2) {
-            const prev = globalThis.__genshinEnclosedCells;
-            globalThis.__genshinEnclosedCells = cells;
-            // 2026-09-14：默认假设就是 1 格（补空格）——只有终端答"2 格"且之前不是 2 才需要全量重绘；主屏模式下无谓的 requestRender(true) 会清掉刚画出的行内 UI
-            if (cells === 2 && prev !== 2) this.requestRender(true);
+        const cells = Number.parseInt(m[2], 10) - 1; // 行首 col=1，符号之后 col=1+格数
+        if (stage === "enclosed") {
+            if (cells === 1 || cells === 2) {
+                const prev = globalThis.__genshinEnclosedCells;
+                globalThis.__genshinEnclosedCells = cells;
+                // 2026-09-14：默认假设就是 1 格（补空格）——只有终端答"2 格"且之前不是 2 才需要全量重绘；主屏模式下无谓的 requestRender(true) 会清掉刚画出的行内 UI
+                if (cells === 2 && prev !== 2) this.requestRender(true);
+            }
+            this.probeAmbiguousCells(); // 接着测 ambiguous 符号
+        } else {
+            if (cells === 1 || cells === 2) {
+                const prev = globalThis.__genshinAmbiguousCells;
+                globalThis.__genshinAmbiguousCells = cells;
+                // ambiguous 符号默认按 1 格；终端答"2 格"时要重绘才对齐
+                if (cells === 2 && prev !== 2) this.requestRender(true);
+            }
         }
         return true;
     }
