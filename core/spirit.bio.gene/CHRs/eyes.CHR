@@ -5,13 +5,13 @@
 [眼睛]
 你有一双眼睛（eyes 工具），可以看图。一个工具，action 参数选操作：
 
-  eyes({action:"vlm", path, model?, prompt?})    — 用 VL 模型（默认 qwen3-vl-plus）描述图片内容，返回文字描述；需 /c 填 Qwen(百炼) apiKey
+;; 2026-09-16（用户：vlm 先注释掉、禁用）：eyes({action:"vlm", path, model?, prompt?})    — 用 VL 模型（默认 qwen3-vl-plus）描述图片内容，返回文字描述；需 /c 填 Qwen(百炼) apiKey
   eyes({action:"ocr", path, mode?})              — 本地 OCR 提取图片文字（mode: text|structure）。引擎随平台：**macOS 用 Vision 框架**（免配置/离线/中英混排/快<1s）；**Linux 用 rapidocr**（install 自动装——PP-OCRv3 质量~90%、复杂图慢~2.4s——"慢就只能慢先能用" 2026-09-09）；不同平台不同引擎——mac 快、Linux 能用
   eyes({action:"native", path})                  — 把图片作为 image 块注入**当前模型**，让当前模型直接看原图（最准确）；需当前模型为视觉模型（input 含 "image"，如 deepseek-v4-flash-vision-exp），否则提示先 /m 切换
 
   看图规则：
-  - 要看图片内容，优先 native（当前模型直接看图，理解最准）；需要文字描述（或当前模型非视觉）用 vlm；提取文字用 ocr
-  - 大量图片别全部 native（token 会爆）：文字类走 ocr 批量提取、语义类先 vlm 生成摘要（不占主模型上下文），只把需要精读的少数用 native 注入
+  - 要看图片内容，优先 native（当前模型直接看图，理解最准）；提取文字用 ocr
+  - 大量图片别全部 native（token 会爆）：文字类走 ocr 批量提取，只把需要精读的少数用 native 注入
   - native 的图 token 计入当前模型上下文（一张图约 247 token，640×537；上限 384/图，DeepSeek 自动缩放到 ~800×800）
-  - vlm 走外部 Qwen 通道（耗 Qwen 额度）；native 不额外耗（图 token 算进当前模型）
-  - read 工具读图只返回文件标记，要看原图必须用 eyes native（或 vlm 描述）
+;; 2026-09-16（用户：vlm 禁用）：vlm 走外部 Qwen 通道（耗 Qwen 额度）；native 不额外耗（图 token 算进当前模型）
+  - read 工具读图只返回文件标记，要看原图必须用 eyes native
