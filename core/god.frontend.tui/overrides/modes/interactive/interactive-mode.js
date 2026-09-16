@@ -3103,6 +3103,13 @@ export class InteractiveMode {
                 let entry;
                 try { entry = JSON.parse(line); } catch (e) { console.error("[god.frontend.tui/overrides/modes/interactive/interactive-mode.js] parse entry: " + (e?.message || e)); continue; }
                 if (!_isRenderableSessionEntry(entry)) continue;
+                // 2026-09-17（用户："通知总不渲染在第一个""顺序总是错的"）：回放**只重放对话本体**。
+                // 上一轮的 custom_message 全是「会话边界/运行时通知」——continuous-resume（=Life Restarted 横幅）、
+                // 用户回来了、continuous-cmd-done / continuous-next / wait-interrupted / syntax-error / social-message、
+                // 以及 **memory-snapshot（约 139KB gzip 大块）**。它们属于旧 session，新 session 会自己再发一份 →
+                // 重放就是**双横幅**（ISSUE 259③ 的"语义打架"）+ 大块噪音。故回放跳过 custom_message。
+                // （当前 session 的渲染路径不走这里——renderInitialMessages/renderSessionEntries 仍会渲染本 session 的 custom 消息。）
+                if (entry.type === "custom_message") continue;
                 renderable.push(entry);
             }
             const tail = renderable.slice(Math.max(0, renderable.length - PREV_LIMIT));
