@@ -192,12 +192,12 @@ export class FooterComponent {
     }
     render(width) {
         try {
-        // 2026-09-16（用户定稿）：探针节流触发——footer 每帧渲染，只在缓存过期（>30s）时 fire-and-forget 探针带完整 context 拿当前真实值
-        const _probeNow = Date.now();
-        if (!globalThis.__genshinProbeAt || _probeNow - globalThis.__genshinProbeAt > 30000) {
-          globalThis.__genshinProbeAt = _probeNow;
-          globalThis.__genshinProbeContextTokens?.();
-        }
+        // 2026-09-16（用户：禁用垃圾管线——探针 headless 假 0%，且 footer 每 30s 节流触发发 max_tokens=1 请求频繁消耗。逐行注释不删，footer 读 __genshinProbeTokens 为 null → fallback latestPromptTokens）
+        // const _probeNow = Date.now();
+        // if (!globalThis.__genshinProbeAt || _probeNow - globalThis.__genshinProbeAt > 30000) {
+        //   globalThis.__genshinProbeAt = _probeNow;
+        //   globalThis.__genshinProbeContextTokens?.();
+        // }
         const state = this.session.state;
         const fullId = process.env.PAIMON_AGENT_ID || "";
         // Calculate cumulative usage from ALL session entries (not just post-compaction messages)
