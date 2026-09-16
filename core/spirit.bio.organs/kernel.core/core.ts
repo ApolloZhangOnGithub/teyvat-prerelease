@@ -38,8 +38,9 @@ import body_hands_fileread from "../hands.fileacts/fileacts-read.ts";   // read 
 import body_hands_webacts from "#hands_webacts";
 import brain_memory from "#brain_memory";   // 记忆机能（原 brain.hippocampus/hippocampus-memory.ts，已独立为器官）；2026-08-18 统一 default 导出（原 registerMemory 具名，NORM-009 func 入口统一）
 // 2026-08-20 技术债处理（用户责令）：以下两个 import 注释掉（不导入）——
-//  brain.hippocampus：@FUTURE 预留（promotor.dna:103）+ TRADITIONAL_HIPPOCAMPUS 开关关（false）→ 不装配
-//  brain.metaconsciousness：rna.json 无注册 → 装配循环不查 REGISTRY → 不装配（REGISTRY 映射为死映射）
+//  2026-09-16（用户）：两个目录已改名加 @ABANDONED. 前缀（@ABANDONED.brain.hippocampus / @ABANDONED.brain.metaconsciousness）。
+//  @ABANDONED.brain.hippocampus：@FUTURE 预留（promotor.dna:103）+ TRADITIONAL_HIPPOCAMPUS 开关关（false）→ 不装配
+//  @ABANDONED.brain.metaconsciousness：rna.json 无注册 → 装配循环不查 REGISTRY → 不装配（REGISTRY 映射为死映射）
 // import brain_hippocampus_spawn from "#brain_hippocampus";   // 海马体 spawn（default export）
 // @Dep import brain_amygdala from "#brain_amygdala";  // @ABANDONED 杏仁核
 import brain_senses_bioclock from "#brain_bioclock";

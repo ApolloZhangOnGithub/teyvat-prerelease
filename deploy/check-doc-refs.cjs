@@ -44,7 +44,8 @@ for (const base of scanRoots) {
 }
 const existsRef = (ref) => index.some((x) => x === ref || x.endsWith("/" + ref));
 
-const RE = /(?<![\w~/$.-])((?:[A-Za-z0-9_][A-Za-z0-9_.-]*\/)+[A-Za-z0-9_][A-Za-z0-9_.-]*\.(?:ts|js|cjs|mjs|sh|json))(?![A-Za-z0-9_.-])/g;
+// 2026-09-16：路径段字符集加 @（支持 @ABANDONED.* 前缀目录）；前视排除集也加 @
+const RE = /(?<![\w~/$.-@])((?:[@A-Za-z0-9_][A-Za-z0-9_.-]*\/)+[@A-Za-z0-9_][A-Za-z0-9_.-]*\.(?:ts|js|cjs|mjs|sh|json))(?![A-Za-z0-9_.-])/g;
 const files = [];
 for (const ext of ["WIKI", "NORM"]) {
   for (const p of fs.readdirSync(path.join(docsRoot, "Dev.Common"), { recursive: true, withFileTypes: true })) {

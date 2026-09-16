@@ -29,7 +29,7 @@ const CRITICAL = [
     match: /writeFileSync\(\s*(PHONE_STATE_FILE|PHONE_SCREEN_FILE)/, why: "手机态被 TUI/手机读取", atomicOk: /writeFileAtomic\(\s*PHONE_(STATE|SCREEN)_FILE/ },
   { id: "phone-state(kernel)", files: ["universe.infotech/local.mobile/system.kernel/kernel.ts"],
     match: /writeFileSync\(\s*(_stateFile|_stateFile\.replace)/, why: "手机态 JSON（同族文件）", atomicOk: /writeFileAtomic\(\s*_stateFile/ },
-  { id: "scFlag", files: ["spirit.bio.organs/brain.metaconsciousness/metaconsciousness.ts"],
+  { id: "scFlag", files: ["spirit.bio.organs/@ABANDONED.brain.metaconsciousness/metaconsciousness.ts"],
     match: /writeFileSync\(\s*scFlag\(/, why: "scDisabled 用 JSON.parse 读它", atomicOk: /writeFileAtomic\(\s*scFlag\(/ },
 ];
 // 存在性标志文件（只看存在与否，允许非原子写）——登记在此以说明"为什么豁免"

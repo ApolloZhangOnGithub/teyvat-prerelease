@@ -601,5 +601,9 @@
   },
   "aliasToReal": {
     "memory.hippocampus": "brain.hippocampus"
-  }
+  },
+  "warnings": [
+    "spirit.bio.organs/@ABANDONED.brain.hippocampus/ 有 .ts 但未在 promotor.dna 声明 func。",
+    "spirit.bio.organs/@ABANDONED.brain.metaconsciousness/ 有 .ts 但未在 promotor.dna 声明 func。"
+  ]
 }

@@ -10,7 +10,6 @@ import { memoryDir,  personDataDir as _personDataDir, memoryDataDir, sessionDirF
 import { registerPaimonTool, sendCustomMessage, resultContent } from "#kernel_backbone";
 import { renderToolCall, renderMessage, SYM } from "#tui_blockrender";
 import { createHash, randomBytes } from "node:crypto";
-import { execSync } from "node:child_process";
 import { logerr } from "#paths";
 import { appendAsync } from "#kernel_nerves";
 import { i18n } from "#tui_localizations";
