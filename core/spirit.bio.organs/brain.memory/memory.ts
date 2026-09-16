@@ -1203,7 +1203,12 @@ export default function registerMemory(pi: ExtensionAPI) {
       });
       if (!resp.ok) return;
       const j: any = await resp.json();
-      if (typeof j?.usage?.prompt_tokens === "number") (globalThis as any).__genshinProbeTokens = j.usage.prompt_tokens;
+      if (typeof j?.usage?.prompt_tokens === "number") {
+        // 2026-09-16（windows agent 实测：headless 探针报 0%/1.2k，真实 444k——payload 几乎是空的）：
+        // 自检：prompt_tokens 太小说明拿到的 messages/tools 是空的（headless 拿不到完整 context），
+        // 不写探针（保持 null → fallback prevPrompt 真实值），避免把假 0% 当真显示误导注入裁剪/footer。
+        if (j.usage.prompt_tokens >= 5000) (globalThis as any).__genshinProbeTokens = j.usage.prompt_tokens;
+      }
     } catch { /* 探针失败静默——fallback prevPrompt */ }
   }
   (globalThis as any).__genshinProbeContextTokens = _probeContextTokens;
