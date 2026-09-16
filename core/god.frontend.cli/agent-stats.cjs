@@ -24,16 +24,7 @@ function dirSize(dir) {
   return total;
 }
 
-function estTokens(t) {
-  let cjk = 0;
-  for (let i = 0; i < t.length; i++) {
-    const c = t.charCodeAt(i);
-    if ((c >= 0x3400 && c <= 0x9fff) || (c >= 0xf900 && c <= 0xfaff) || (c >= 0x3000 && c <= 0x30ff) || (c >= 0xff00 && c <= 0xffef)) cjk++;
-  }
-  return Math.round(cjk * 1.8 + (t.length - cjk) * 0.25);
-}
-
-/** 计算单个 agent 的列表统计（重活：逐文件走目录 + 全文估 token，只在运行时/离线兜底时跑） */
+/** 计算单个 agent 的列表统计（重活：逐文件走目录 + 读 growth.jsonl api_tokens，只在运行时/离线兜底时跑） */
 function computeAgentStats(home, memDir, id) {
   const md = path.join(memDir, id);
   const memSize = dirSize(md);
@@ -43,11 +34,18 @@ function computeAgentStats(home, memDir, id) {
     totalSize += dirSize(path.join(path.dirname(memDir), sub, id));
   }
   const readFile = (f) => { try { return fs.readFileSync(path.join(md, f), "utf8"); } catch { return ""; } };
-  const ctxTokens = estTokens(readFile("context.md"));
-  const workTokens = estTokens(readFile("work_memory.md"));
-  const neoTokens = estTokens(readFile("neocortex.md"));
+  // 2026-09-16（用户定稿）：去掉 est——列表的 context 占用也读 growth.jsonl 的 api_tokens（真实 prompt，唯一口径）
+  let apiTokens = 0;
+  try {
+    const gPath = path.join(path.dirname(memDir), "AgentFileData", "MonitorData", id, "growth.jsonl");
+    const raw = fs.readFileSync(gPath, "utf8");
+    const lines = raw.trim().split("\n");
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try { const j = JSON.parse(lines[i]); if (typeof j.api_tokens === "number") { apiTokens = j.api_tokens; break; } } catch { /* 跳过坏行 */ }
+    }
+  } catch { /* 无 growth.jsonl 则 0 */ }
   const memoir = fs.existsSync(path.join(home, "MemoirData", id + ".MEMOIR"));
-  return { memSize, totalSize, ctxTokens, workTokens, neoTokens, memoir, updatedAt: Date.now() };
+  return { memSize, totalSize, apiTokens, memoir, updatedAt: Date.now() };
 }
 
 function statsPath(home, id) {
@@ -66,4 +64,4 @@ function readStats(home, id) {
   try { return JSON.parse(fs.readFileSync(statsPath(home, id), "utf8")); } catch { return null; }
 }
 
-module.exports = { computeAgentStats, writeStats, readStats, estTokens, dirSize };
+module.exports = { computeAgentStats, writeStats, readStats, dirSize };

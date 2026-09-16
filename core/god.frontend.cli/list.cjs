@@ -46,7 +46,7 @@ const LOGO = LOGO_FG + BOLD;
 const KIND_COLORS = { 'coding-agent': M, 'coding': M };
 
 const { pad, lpad, vw } = require(path.join(__dirname, 'pad.cjs'));
-const { computeAgentStats, readStats, estTokens } = require(path.join(__dirname, 'agent-stats.cjs'));
+const { computeAgentStats, readStats } = require(path.join(__dirname, 'agent-stats.cjs'));
 
 function fmtSizeRaw(b) {
   const mb = b / 1024 / 1024;
@@ -151,10 +151,8 @@ if (filter === 'list') {
     p._memSize = s.memSize ?? 0;
     p._size = s.totalSize ?? 0;
     p._memoir = !!s.memoir;
-    p._ctxTokens = s.ctxTokens ?? 0;
-    p._workTokens = s.workTokens ?? 0;
-    p._neoTokens = s.neoTokens ?? 0;
-    p._totalTokens = (s.ctxTokens ?? 0) + (s.workTokens ?? 0) + (s.neoTokens ?? 0);
+    p._apiTokens = s.apiTokens ?? 0;
+    p._totalTokens = s.apiTokens ?? 0;
     // RSI-001: 辈分 + 社会资历
     p._age = '';
     try {
@@ -345,9 +343,6 @@ for (let i = 0; i < list.length; i++) {
   const memoir = pad(p._memoir ? '✓' : '✗', 6);
   const ctxWindow = 1000000;
   const pct = ctxWindow > 0 ? ((p._totalTokens / ctxWindow) * 100).toFixed(1) : '0.0';
-  const dpct = ctxWindow > 0 ? ((p._ctxTokens / ctxWindow) * 100).toFixed(1) : '0.0';
-  const wpct = ctxWindow > 0 && p._workTokens > 0 ? ((p._workTokens / ctxWindow) * 100).toFixed(1) : '0';
-  const npct = ctxWindow > 0 && p._neoTokens > 0 ? ((p._neoTokens / ctxWindow) * 100).toFixed(1) : '0';
   const fmtTokShort = (n) => n >= 1000000 ? (n/1000000).toFixed(1)+'M' : n >= 1000 ? (n/1000).toFixed(1)+'K' : String(n);
   const statusPart = showStatus ? '  ' + statusColor + pad(statusFull, tw) + statusReset : '';
   const host = detailMode ? (p.hostname || (zh ? '本机' : 'local')) : '';
@@ -357,8 +352,7 @@ for (let i = 0; i < list.length; i++) {
   rows1.push(row1);
   savedActive.push(p._active);
   if (detailMode) {
-    const breakdown = D + (zh ? '[对话' + dpct + ' 工作' + wpct + ' 新皮层' + npct + ']' : '[chat' + dpct + ' work' + wpct + ' ctx' + npct + ']') + R;
-    const memLine = '      ' + D + (zh ? '记忆' + pct + '% ' : 'mem ' + pct + '% ') + breakdown + '/' + fmtTokShort(ctxWindow);
+    const memLine = '      ' + D + (zh ? '记忆' + pct + '% ' : 'mem ' + pct + '% ') + '/' + fmtTokShort(ctxWindow);
     rows2.push(memLine + '  ' + D + fmtSizeRaw(p._size).trim() + R);
   } else { rows2.push(''); }
 }
