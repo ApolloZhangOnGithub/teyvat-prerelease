@@ -1,16 +1,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { homedir } from "node:os";
-import { estimateTokens } from "#paths";
 
 const PAIMON = path.join(homedir(), ".teyvat");
 const PLIST = path.join(PAIMON, "MemoryData", "plist.json");
 
 // ── helpers ──
-
-function readFile(p: string): string {
-  try { return fs.readFileSync(p, "utf-8"); } catch (e) { console.error("[god.frontend.tui/commands/infos.ts] " + ((e as any)?.message || e)); return ""; }
-}
 
 function loadPlist(): any[] {
   try { return JSON.parse(fs.readFileSync(PLIST, "utf8")); } catch (e) { console.error("[god.frontend.tui/commands/infos.ts] " + ((e as any)?.message || e)); return []; }
@@ -97,20 +92,8 @@ function renderContextUsage(): string[] {
     ? (modelMax / 1000000).toFixed(0) + "M context"
     : (modelMax / 1000).toFixed(0) + "k context";
 
-  const dnaIndex = readFile(path.join(personDir, "dna/index.md"));
-  const cortex = readFile(path.join(personDir, "neocortex.md"));
-  const workMem = readFile(path.join(personDir, "work_memory.md"));
-  const context = readFile(path.join(personDir, "context.md"));
-  const deepCortex = readFile(path.join(personDir, "deep_cortex.md"));
-
-  const cats = [
-    { name: "DNA",          tokens: estimateTokens(dnaIndex),  color: "\x1b[90m" },
-    { name: "Cortex",       tokens: estimateTokens(cortex),    color: "\x1b[33m" },
-    { name: "Work Memory",  tokens: estimateTokens(workMem),   color: "\x1b[32m" },
-    { name: "Context",      tokens: estimateTokens(context),   color: "\x1b[34m" },
-  ];
-  const used = cats.reduce((s, c) => s + c.tokens, 0);
-  const free = Math.max(0, modelMax - used);
+  // 2026-09-17（用户：去掉所有 est，只留 api 口径）：原先按文件估算的 DNA/Cortex/WorkMemory/Context
+  // 分类、以及那个 ◉ 分布图全是 est 口径（且读的文件可能不存在，每次报 ENOENT 噪音）——已全部移除。
   const total = modelMax;
   const pct = (n: number) => total > 0 ? (n / total * 100).toFixed(1) : "0.0";
   const fmt = (n: number) => n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n);
@@ -118,25 +101,6 @@ function renderContextUsage(): string[] {
   const D = "\x1b[90m";
   const B = "\x1b[1m";
   const A = "\x1b[96m";
-
-  const cols = 20;
-  const totalCells = 200;
-  const cellSize = total / totalCells;
-  const rows = Math.ceil(totalCells / cols);
-  const grid: string[] = [];
-  let cellIdx = 0;
-  for (let r = 0; r < rows; r++) {
-    let row = "    ";
-    for (let c = 0; c < cols; c++) {
-      if (cellIdx >= totalCells) { row += "  "; cellIdx++; continue; }
-      const cellMid = (cellIdx + 0.5) * cellSize;
-      let acc = 0; let ci = -1;
-      for (let i = 0; i < cats.length; i++) { acc += cats[i].tokens; if (cellMid < acc) { ci = i; break; } }
-      row += ci >= 0 ? cats[ci].color + "\u25C9 " + R : D + "\u25E6 " + R;
-      cellIdx++;
-    }
-    grid.push(row);
-  }
 
   // 2026-09-16（用户：去掉所有 est，只留 api 口径）——原 "memory files est" + "Estimated usage by category" 已移除。
   // 两个口径：api = 上一轮真实 prompt（活窗口，footer 同源）；est 口径已下线。
@@ -147,17 +111,7 @@ function renderContextUsage(): string[] {
     apiTok > 0 ? `api window (last turn): ${fmt(apiTok)}/${fmt(total)} tokens (${pct(apiTok)}%)` : `${D}api window: n/a (no completed turn yet)${R}`,
   ];
 
-  const gridW = 4 + cols * 2;
-  const pad = " ".repeat(gridW);
-  const lines: string[] = [""];
-  const maxRows = Math.max(grid.length, info.length);
-  for (let i = 0; i < maxRows; i++) {
-    const left = i < grid.length ? grid[i] : pad;
-    const right = i < info.length ? "  " + info[i] : "";
-    lines.push(left + right);
-  }
-
-  return lines;
+  return ["", ...info];
 }
 
 // ── main handler ──
