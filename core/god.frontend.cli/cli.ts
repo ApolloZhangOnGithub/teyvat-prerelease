@@ -919,7 +919,98 @@ async function cmdConfigProvider(pName: string, args: string[]): Promise<void> {
 function cmdConfig(name: string, args: string[]): void {
   if (name === 'provider') { cmdConfigProvider(args[0] || '', args.slice(1)).then(() => {}, (e) => { console.error('✗ ' + ((e as any)?.message || e)); process.exit(1); }); return; }
   console.log('genshin config 子命令：');
-  console.log('  genshin config provider <name> --base-url <url> [--token <key>] [--models id1,id2]  配置 OpenAI 兼容 provider（默认自动发现模型，--models 可手动指定）');
+  console.log('  genshin provider [list]                                        列出已配 provider');
+  console.log('  genshin provider add <name> --base-url <url> [--token <key>] [--models id1,id2]   新增 provider（Y/n 确认）');
+  console.log('  genshin provider remove <name>                                 移除 provider（Y/n 确认）');
+  console.log('  （旧写法 genshin config provider <name> ... 仍可用）');
+}
+
+// ── genshin provider：查看 / 新增 / 移除 OpenAI 兼容 provider（2026-09-16 用户：从 config provider 独立）──
+// 新增/移除均需 Y/n 确认（文案与 launcher.sh 的 _confirm 一致："(Y 确认，其他取消)"）。
+const MODELS_JSON = () => path.join(PAIMON, 'config', 'models.json');
+
+async function confirmYN(promptZh: string, promptEn: string): Promise<boolean> {
+  const rd = await import('node:readline');
+  const isZh = process.env.PAIMON_LANG === 'zh' || /zh_CN/.test(process.env.LANG || '') || /zh_CN/.test(process.env.LC_ALL || '');
+  const rl = rd.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(isZh ? `${promptZh} (Y 确认，其他取消) ` : `${promptEn} (Y to confirm) `, (ans: string) => {
+      rl.close();
+      resolve(/^y$/i.test((ans || '').trim()));
+    });
+  });
+}
+
+function readModelsJson(): any {
+  try { return JSON.parse(fs.readFileSync(MODELS_JSON(), 'utf8')); } catch { return { providers: {} }; }
+}
+function writeModelsJson(m: any): void {
+  const f = MODELS_JSON();
+  const tmp = f + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(m, null, 2));
+  fs.renameSync(tmp, f);
+}
+
+async function cmdProvider(args: string[]): Promise<void> {
+  const sub = (args[0] || '').trim();
+  const m = readModelsJson();
+  const provs: Record<string, any> = m.providers || {};
+  const names = Object.keys(provs);
+
+  // 无参 / list → 列出
+  if (!sub || sub === 'list' || sub === 'ls') {
+    if (!names.length) { console.log('  （未配置任何自定义 provider；genshin provider add <name> --base-url <url> --token <key> 新增）'); return; }
+    console.log(`  已配置 ${names.length} 个 provider（~/.teyvat/config/models.json）：`);
+    for (const n of names) {
+      const p = provs[n] || {};
+      const cnt = Array.isArray(p.models) ? p.models.length : 0;
+      console.log(`   • ${n.padEnd(20)} ${String(p.baseUrl || '?').padEnd(42)} ${String(cnt).padStart(3)} 个模型${p.apiKey ? '' : '  ⚠ 无 key'}`);
+    }
+    return;
+  }
+
+  // remove <name> → Y/n 确认后移除
+  if (sub === 'remove' || sub === 'rm') {
+    const name = (args[1] || '').trim();
+    if (!name) { console.error('usage: genshin provider remove <name>'); process.exit(1); }
+    if (!provs[name]) { console.error(`✗ provider "${name}" 不存在`); process.exit(1); }
+    const ok = await confirmYN(`移除 provider "${name}"（${(provs[name].models || []).length} 个模型）及其 enabledModels 注册？`, `Remove provider "${name}" and its enabledModels entry?`);
+    if (!ok) { console.log('  已取消'); return; }
+    delete provs[name];
+    m.providers = provs;
+    writeModelsJson(m);
+    // 同步移除 enabledModels 里的 <name>/*
+    try {
+      const sf = path.join(PAIMON, 'config', 'settings.json');
+      if (fs.existsSync(sf)) {
+        const st = JSON.parse(fs.readFileSync(sf, 'utf8'));
+        if (Array.isArray(st.enabledModels)) {
+          const before = st.enabledModels.length;
+          st.enabledModels = st.enabledModels.filter((p: string) => p !== name + '/*' && p !== name);
+          if (st.enabledModels.length !== before) fs.writeFileSync(sf, JSON.stringify(st, null, 2));
+        }
+      }
+    } catch (e) { console.error('[provider remove] enabledModels 清理失败: ' + ((e as any)?.message || e)); }
+    console.log(`✅ provider "${name}" 已移除`);
+    return;
+  }
+
+  // add <name> --base-url ... → Y/n 确认后新增（复用 cmdConfigProvider）
+  if (sub === 'add') {
+    const name = (args[1] || '').trim();
+    const rest = args.slice(2);
+    const flag = (k: string) => { const i = rest.indexOf('--' + k); return i >= 0 ? rest[i + 1] : undefined; };
+    const baseUrl = flag('base-url') || flag('base_url') || '';
+    if (!name || !baseUrl) { console.error('usage: genshin provider add <name> --base-url <url> --token <key> [--models id1,id2]'); process.exit(1); }
+    if (provs[name]) { console.error(`✗ provider "${name}" 已存在（先 genshin provider remove ${name}）`); process.exit(1); }
+    const ok = await confirmYN(`新增 provider "${name}"（${baseUrl}）？`, `Add provider "${name}" (${baseUrl})?`);
+    if (!ok) { console.log('  已取消'); return; }
+    await cmdConfigProvider(name, rest);
+    return;
+  }
+
+  console.error(`未知子命令: ${sub}。用法：genshin provider [list] | add <name> --base-url <url> --token <key> | remove <name>`);
+  process.exit(1);
 }
 
 async function cmdLogin() {
@@ -1076,6 +1167,9 @@ async function main() {
       case 'archived': cmdList('archived'); return;
       case 'settings': cmdSettings(); return;
       case 'config': cmdConfig(name, rest.slice(1)); return;
+      case 'provider':
+        // 2026-09-16（用户）：provider 从 config provider 独立——无参/list 列表、add/remove（Y/n 确认）
+        await cmdProvider(rest.slice(1)); return;
       case 'help': cmdList('help'); return;
       case 'org': cmdOrg(name, rest[1]); return;
       case 'archive': case 'unarchive':

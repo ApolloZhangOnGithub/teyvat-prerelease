@@ -309,6 +309,10 @@ case "$NAME" in
     # 2026-09-07：config 子命令（genshin config provider <name> --base-url <url> [--token <key>]——自动配 OpenAI 兼容 provider）
     cd "$PAIMON_EXT/.." && bun "$PAIMON_CLI_TS" config "$@"
     exit $?;;
+  provider|p)
+    # 2026-09-16（用户）：provider 从 config provider 独立——用 provider（list）/ add / remove；add与remove 均带 Y/n 确认
+    cd "$PAIMON_EXT/.." && bun "$PAIMON_CLI_TS" provider "$@"
+    exit $?;;
   rename)
     cd "$PAIMON_EXT/.." && bun "$PAIMON_CLI_TS" rename "$@"
     exit $?;;
