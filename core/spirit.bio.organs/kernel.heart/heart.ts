@@ -405,6 +405,19 @@ export default function (pi: ExtensionAPI) {
       const m = sf?.match(/\/.teyvat\/SessionData\/([a-f0-9]+)\//) || sf?.match(/\.teyvat\/sessions\/([a-f0-9]+)\//);
       if (m) sessionPersonId = m[1];
     } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
+    // 2026-09-16（用户：config/individual 应每个 agent 都有，不该依赖 /m 切换一次才存在）：
+    // session_start 时自动生成本 agent 的 config/individual/<sid>/model.json（不存在就写当前生效模型 + provider）。
+    // 之前只依赖 savePerAgentModel（/m 切换时才写）→ 从没切过模型的 agent 这份配置就是空的。
+    try {
+      if (/^[a-f0-9]{8}$/.test(sessionPersonId) && ctx.model?.id) {
+        const _cfgDir = join(homedir(), ".teyvat/config/individual", sessionPersonId);
+        const _cfgFile = join(_cfgDir, "model.json");
+        if (!existsSync(_cfgFile)) {
+          mkdirSync(_cfgDir, { recursive: true });
+          writeFileSync(_cfgFile, JSON.stringify({ model: ctx.model.id, modelProvider: ctx.model.provider }, null, 2));
+        }
+      }
+    } catch (e: any) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] config/individual 自动生成: " + ((e as any)?.message || e)); }
     if (sessionPersonId && !isWorkerSession(ctx)) {
       const pidFile = join(memoryDir(sessionPersonId), "main.pid");
       // 2026-09-11（ISSUE 182）：①读 main.pid 容忍 ENOENT/空（首次启动/损坏均预期）——原 readFileSync 抛 ENOENT
