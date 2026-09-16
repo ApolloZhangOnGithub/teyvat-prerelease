@@ -159,6 +159,12 @@ export class FooterComponent {
         this.autoCompactEnabled = enabled;
     }
     invalidate() {
+        // 2026-09-16（用户报：resize 时 footer 残留）：原本是空函数——
+        // statebar 的 sparkle 帧（120ms）调 _invalidate() → footer.invalidate() 就是空转，
+        // 以为"下个真 render cycle 会一并重绘"，但 resize（尤其 height 变大）/静置时没有那个 cycle
+        // → footer 的 spinner 旧帧未重绘，与新内容叠加→残留（多行 Working）。
+        // 改为触发 requestRender（doRender 是 diff，只重画变化行，非全量输出；消息组件 render 有缓存）。
+        this._requestRender?.();
     }
     dispose() {
         this.clearSpinner();
