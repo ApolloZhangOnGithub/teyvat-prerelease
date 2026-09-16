@@ -417,9 +417,10 @@ export function registerPaimonTool(toolDef: any): void {
               } catch (e) { console.error("[spirit.bio.organs/kernel.backbone/backbone.ts] " + ((e as any)?.message || e)); }
             }
             const fmtTok = (n: number) => n < 1000 ? n + "" : n < 1e6 ? (n / 1000).toFixed(1) + "k" : (n / 1e6).toFixed(1) + "M";
-            // 2026-09-13（ISSUE 203）：两个口径分开标——"ctx.md … est" 是记忆文件体量估算（amem 直接改的对象），
-            // "api …" 是上一轮 API 真实 prompt（活窗口，footer 同源）。之前统一叫 contexted，与 footer 的 contexted N% 同名不同义，看起来像乱跳。
-            const ctxPart = ctxTok > 0 ? `, ctx.md ${fmtTok(ctxTok)} est` : "";
+            // 2026-09-16（用户：去掉所有 est、只保留 api 一个口径）：ctx.md 是记忆文件体量估算（第二个口径），
+            // 用户定稿只留 api（活窗口真实值）。逐行注释不删，ctxPart 置空（下游 ${ctxPart}${apiPart} 只剩 api）。
+            // const ctxPart = ctxTok > 0 ? `, ctx.md ${fmtTok(ctxTok)} est` : "";
+            const ctxPart = "";
             let apiPart = "";
             try {
               const api = (globalThis as any).__genshinPondSess?.prevPrompt || 0;

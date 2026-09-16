@@ -281,7 +281,9 @@ export function registerStatusTool(_pi: ExtensionAPI) {
               const fmtT = (n: number) => n < 1000 ? n + "" : n < 1e6 ? (n / 1000).toFixed(1) + "k" : (n / 1e6).toFixed(1) + "M";
               const pctOf = (n: number) => cap > 0 ? ` (${Math.round((n / cap) * 100)}%)` : "";
               const capStr = cap > 0 ? ` / ${fmtT(cap)}` : "";
-              const api = typeof g.api_tokens === "number" ? g.api_tokens : 0;
+              // 2026-09-16（用户：status 的 api 显示过时——之前只读 growth.jsonl 最后一行，滞后一轮）：
+              // 优先读实时值（与工具行 backbone.ts 同源）：__genshinProbeTokens（探针）→ __genshinPondSess.prevPrompt（当前轮）→ growth.jsonl（文件兼底）。
+              const api = (globalThis as any).__genshinProbeTokens || (globalThis as any).__genshinPondSess?.prevPrompt || (typeof g.api_tokens === "number" ? g.api_tokens : 0);
               // 2026-09-16（用户定稿）：去掉 est——只显示 api（活对话窗口 = 记忆，唯一口径）
               if (api > 0) lines.push(`Context (api): ${fmtT(api)}${capStr} tokens${pctOf(api)}`);
             }
