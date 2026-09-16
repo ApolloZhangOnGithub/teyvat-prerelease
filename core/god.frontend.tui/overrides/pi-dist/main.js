@@ -285,22 +285,21 @@ async function createSessionManager(parsed, cwd, sessionDir, settingsManager) {
     }
     return SessionManager.create(cwd, sessionDir, { id: parsed.sessionId });
 }
-// 2026-09-16（windows agent 定位：/m 写入的 id 可能非注册表规范 id，如 deepseek-flash vs deepseek-v4-flash）：
-// 宽容解析：精确查 → 全局按 id 查 → 后缀/关键词匹配（报候选），全失败返回 undefined（由调用方 warning）。
-function _resolveModelTolerant(modelRegistry, provider, id) {
-    if (!id) return undefined;
-    const direct = provider ? modelRegistry.find(provider, id) : undefined;
-    if (direct) return direct;
-    const pool = modelRegistry.models || modelRegistry.getAvailable?.() || [];
-    let m = pool.find((x) => x.id === id);
-    if (m) return m;
-    const fuzzy = pool.filter((x) => x.id.endsWith(id) || id.endsWith(x.id) || (id.includes("flash") && x.id.includes("flash")));
-    if (fuzzy.length) {
-        console.warn(chalk.yellow(`⚠️ 模型 id "${id}" 未精确匹配，已模糊匹配到 "${fuzzy[0].id}"。候选: ${fuzzy.slice(0, 3).map((x) => x.id).join(", ")}`));
-        return fuzzy[0];
-    }
-    return undefined;
-}
+// 2026-09-16 用户：禁用垃圾管线——宽容匹配/自动纠 id 是静默兑底（掩盖 id 写错），逐行注释不删。恢复精确 find，写错 id 就报错。
+// function _resolveModelTolerant(modelRegistry, provider, id) {
+//     if (!id) return undefined;
+//     const direct = provider ? modelRegistry.find(provider, id) : undefined;
+//     if (direct) return direct;
+//     const pool = modelRegistry.models || modelRegistry.getAvailable?.() || [];
+//     let m = pool.find((x) => x.id === id);
+//     if (m) return m;
+//     const fuzzy = pool.filter((x) => x.id.endsWith(id) || id.endsWith(x.id) || (id.includes("flash") && x.id.includes("flash")));
+//     if (fuzzy.length) {
+//         console.warn(chalk.yellow(`⚠️ 模型 id "${id}" 未精确匹配，已模糊匹配到 "${fuzzy[0].id}"。候选: ${fuzzy.slice(0, 3).map((x) => x.id).join(", ")}`));
+//         return fuzzy[0];
+//     }
+//     return undefined;
+// }
 function buildSessionOptions(parsed, scopedModels, hasExistingSession, modelRegistry, settingsManager) {
     const options = {};
     const diagnostics = [];
@@ -345,7 +344,7 @@ function buildSessionOptions(parsed, scopedModels, hasExistingSession, modelRegi
               // 2026-09-16（windows agent 定位，main.js:331 vs AuthStorage.create()@523）：
               // getAvailable() 依赖 auth（hasConfiguredAuth），auth 未加载时返回空 → 解析失败掉 fallback。
               // 只用 find()（查 this.models，不过滤 auth，不受 AuthStorage 时机影响）。
-              const savedModel = _resolveModelTolerant(modelRegistry, rec.modelProvider, rec.model);
+              const savedModel = modelRegistry.find(rec.modelProvider, rec.model);
               if (savedModel) options.model = savedModel;
               else {
                 // 2026-09-16（用户：静默 fallback 难以察觉，排查 glm 耗时 3h）：显式 warning
@@ -359,7 +358,7 @@ function buildSessionOptions(parsed, scopedModels, hasExistingSession, modelRegi
     if (!options.model && !hasExistingSession) {
         const savedProvider = settingsManager.getDefaultProvider();
         const savedModelId = settingsManager.getDefaultModel();
-        const savedModel = savedProvider && savedModelId ? _resolveModelTolerant(modelRegistry, savedProvider, savedModelId) : undefined;
+        const savedModel = savedProvider && savedModelId ? modelRegistry.find(savedProvider, savedModelId) : undefined;
         if (savedModel) {
             const savedInScope = scopedModels.find((sm) => modelsAreEqual(sm.model, savedModel));
             if (savedInScope) {
@@ -369,10 +368,12 @@ function buildSessionOptions(parsed, scopedModels, hasExistingSession, modelRegi
                 }
             }
             else {
-                // 2026-09-16（用户：defaultModel 是明确选择，优先于 enabledModels 白名单——
-                // enabledModels 与 defaultModel 矛盾时不静默掉到 scopedModels[0]，仍用 defaultModel 并报警）
-                options.model = savedModel;
-                console.warn(chalk.yellow(`⚠️ settings 默认模型 "${savedModelId}" (${savedProvider}) 不在 enabledModels 范围，仍按默认值使用。`));
+                // 2026-09-16 用户：禁用垃圾管线——defaultModel 优先是自动纠正（enabledModels 矛盾时自动换），逐行注释。
+                // 恢复：不自动用 defaultModel，掉 scopedModels[0] 但显式 warning（让用户看到矛盾）。
+                // options.model = savedModel;
+                // console.warn(chalk.yellow(`⚠️ settings 默认模型 "${savedModelId}" (${savedProvider}) 不在 enabledModels 范围，仍按默认值使用。`));
+                options.model = scopedModels[0].model;
+                console.warn(chalk.yellow(`⚠️ settings 默认模型 "${savedModelId}" (${savedProvider}) 不在 enabledModels 范围，回退到 "${scopedModels[0].model.id}"。`));
             }
         }
         else if (scopedModels.length > 0) {
