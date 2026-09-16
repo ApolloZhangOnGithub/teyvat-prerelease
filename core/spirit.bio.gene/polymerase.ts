@@ -307,7 +307,12 @@ function compile(
       if (!e.isDirectory() || INFRA_DIRS.has(e.name)) continue;
       const dirPath = `${ORGANS_DIR}/${e.name}`;
       const hasTS = readdirSync(dirPath).some((f: string) => f.endsWith(".ts") && !f.includes(".CHANGELOG") && !f.endsWith(".SPEC"));
-      if (hasTS && !p.funcs[e.name]?.abandoned && !p.funcs[e.name]?.future) {
+      // 2026-09-17（用户：加 abandoned 字段管理废弃器官）：`@ABANDONED.` 前缀目录对应的声明名
+      // 可能是去前缀名（@ABANDONED.brain.hippocampus ↔ @ABANDONED @FUTURE func brain.hippocampus）。
+      // 规则：原名命中即已声明；只命中去前缀名时，要求该声明为 abandoned/future（即“废弃声明”才允许目录带前缀）。
+      const _base = e.name.replace(/^@ABANDONED\./, "");
+      const _decl = p.funcs[e.name] || ((_base !== e.name && (p.funcs[_base]?.abandoned || p.funcs[_base]?.future)) ? p.funcs[_base] : undefined);
+      if (hasTS && !_decl) {
         warnings.push(`spirit.bio.organs/${e.name}/ 有 .ts 但未在 promotor.dna 声明 func。`);
       }
     }
