@@ -113,7 +113,7 @@ export default function registerReadTool(_pi: any): void {
       }
       // 2026-09-07 用户定稿：图片嵌入统一走 eyes 的 action:"native"（当前模型看原图）——read 读图时提示引导，不再自己嵌入
       if (IMAGE_EXTS.test(ext)) {
-        return { content: [{ type: "text", text: i18n(`图片文件 [${params.path}]。如需模型看图（原图嵌入，需视觉模型），请用 Eyes(action:'native', path="${params.path}") 注入；或 Eyes(action:'vlm', path=...) 让 VL 描述、Eyes(action:'ocr', path=...) 提取文字。`, `Image file [${params.path}]. To have the model see the original (needs a vision model), use Eyes(action:'native', path="${params.path}") to inject; or Eyes(action:'vlm', path=...) for VL description, Eyes(action:'ocr', path=...) for text extraction.`) }] };
+        return { content: [{ type: "text", text: i18n(`图片文件 [${params.path}]。如需模型看图（原图嵌入，需视觉模型），请用 Eyes(action:'native', path="${params.path}") 注入；或 Eyes(action:'ocr', path=...) 提取文字。（vlm 动作已于 2026-09-16 禁用）`, `Image file [${params.path}]. To have the model see the original (needs a vision model), use Eyes(action:'native', path="${params.path}") to inject; or Eyes(action:'ocr', path=...) for text extraction. (vlm action disabled 2026-09-16)`) }] };
       }
       // 非 office：走 pi 原生 read（文本截断 / offset/limit 全保留）
       const result = await baseRead.execute(_id, params, signal, onUpdate, ctx);

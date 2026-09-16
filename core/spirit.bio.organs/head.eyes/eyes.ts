@@ -1,5 +1,6 @@
 // spirit.bio.organs/head.eyes/eyes.ts — 眼睛：看图工具层（VL 视觉 + 本地 OCR）
-// 能力层：vision.vlm（qwen VL 描述图片）+ vision.ocr（macOS Vision 本地 OCR，免配置中英混排）
+// 能力层：vision.ocr（macOS Vision 本地 OCR，免配置中英混排）+ 模型直接看图（native）
+// 2026-09-16（用户：先把 vlm 注释掉、禁用）：VL 描述（vision.vlm / qwen VL）通路已禁用，保留 ocr / native。
 // 封装模式参考 social：一个工具，action 参数选操作，每种 action 的参数在 messageDescription 里写清楚；
 // backend 模块级单例 + formatX 纯函数（hands.webacts 同款）。
 //
@@ -12,14 +13,14 @@ import { Type } from "@sinclair/typebox";
 import { registerPaimonTool, resultContent } from "#kernel_backbone";
 import { renderToolCall, renderMessage } from "#tui_blockrender";
 import { i18n } from "#tui_localizations";
-import { createVlmBackend } from "#vision_vlm";
+// 2026-09-16（用户：vlm 禁用）：import { createVlmBackend } from "#vision_vlm";
 import { createOcrEngine } from "#vision_ocr";
 import type { OcrStructured } from "#vision_ocr";
 
 // ── 配置与 backend（模块级单例）────────────────────────────────────────
-const DEFAULT_MODEL = "qwen3-vl-plus";
-const DEFAULT_PROMPT = i18n("请用中文简洁描述这张图片/截图的内容。", "Please briefly describe this image/screenshot in English.");
-const vlm = createVlmBackend("qwen")!;
+// 2026-09-16（用户：vlm 禁用）：const DEFAULT_MODEL = "qwen3-vl-plus";
+// 2026-09-16（用户：vlm 禁用）：const DEFAULT_PROMPT = i18n("请用中文简洁描述这张图片/截图的内容。", "Please briefly describe this image/screenshot in English.");
+// 2026-09-16（用户：vlm 禁用）：const vlm = createVlmBackend("qwen")!;
 // 2026-09-09（first-tester 漏改）：OCR engine 无参按平台选（darwin→macvision / Linux→rapidocr）——之前硬传 "vision" 绕过平台选择，Linux 上永远走 macvision 报缺 PyObjC
 const ocr = createOcrEngine()!;
 
@@ -37,15 +38,16 @@ function currentModel(ctx: any): any {
 }
 
 // ── 格式化：能力结果 → 工具结果（execute 只做取参/调用/格式化）─────────
-function formatLook(r: any, model: string): { content: any[]; details: any; isError: boolean } {
-  if ("error" in r) {
-    return { content: [{ type: "text", text: i18n(`Eyes vlm 失败: ${r.error}`, `Eyes vlm failed: ${r.error}`) }], details: {}, isError: true };
-  }
-  const usage = r.usage
-    ? `\n\n---\ntokens: ${r.usage.total_tokens} (${i18n("入", "in")}${r.usage.prompt_tokens} ${i18n("出", "out")}${r.usage.completion_tokens}) · 模型: ${model}`
-    : "";
-  return { content: [{ type: "text", text: r.text + usage }], details: { model }, isError: false };
-}
+// 2026-09-16（用户：vlm 禁用）——formatLook 随 vlm 一并禁用：
+// function formatLook(r: any, model: string): { content: any[]; details: any; isError: boolean } {
+//   if ("error" in r) {
+//     return { content: [{ type: "text", text: i18n(`Eyes vlm 失败: ${r.error}`, `Eyes vlm failed: ${r.error}`) }], details: {}, isError: true };
+//   }
+//   const usage = r.usage
+//     ? `\n\n---\ntokens: ${r.usage.total_tokens} (${i18n("入", "in")}${r.usage.prompt_tokens} ${i18n("出", "out")}${r.usage.completion_tokens}) · 模型: ${model}`
+//     : "";
+//   return { content: [{ type: "text", text: r.text + usage }], details: { model }, isError: false };
+// }
 
 function formatOcrText(r: any): { content: any[]; details: any; isError: boolean } {
   if ("error" in r) {
@@ -66,22 +68,22 @@ export default function (pi: ExtensionAPI) {
     name: "eyes",
     label: "Eyes",
     messageDescription:
-      "看图：VL 视觉 + 本地 OCR + 图片注入。一个工具，action 参数选择操作：\n" +
-      "  action:\"vlm\"   path, model?, prompt?  — 用 VL 模型描述图片内容\n" +
-      "      model 默认 qwen3-vl-plus；prompt 缺省为「请用中文简洁描述这张图片/截图的内容。」\n" +
+      "看图：本地 OCR + 图片注入。一个工具，action 参数选择操作：\n" +
+      // 2026-09-16（用户：vlm 禁用）：action:"vlm" 已禁用
       "  action:\"ocr\"   path, mode?           — 本地 OCR：macOS 用 Vision（免配置、中英混排、快）；Linux 用 rapidocr（install 自动装——质量~90% 复杂图慢~2.4s）\n" +
       "      mode: text=纯文本（默认）| structure=带坐标行 + 区域分类（menubar/sidebar/content/button/statusbar）\n" +
       "  action:\"native\" path                   — 把图片作为 image 块注入当前模型（模型看原图；需当前为视觉模型，否则提示切换）",
-    promptSnippet: "Eyes({action, path, ...}) — vlm=VL 描述图片 | ocr=本地提取文字 | native=注入图给当前模型看",
+    promptSnippet: "Eyes({action, path, ...}) — ocr=本地提取文字 | native=注入图给当前模型看（vlm 已禁用）",
     parameters: Type.Object({
-      action: Type.String({ messageDescription: "vlm | ocr | native" }),
+      action: Type.String({ messageDescription: "ocr | native（vlm 已禁用）" }),
       path: Type.String({ messageDescription: i18n("图片文件路径", "Image file path") }),
-      model: Type.Optional(Type.String({ messageDescription: i18n("VL 模型（action=vlm，默认 qwen3-vl-plus）", "VL model (action=vlm, default qwen3-vl-plus)") })),
-      prompt: Type.Optional(Type.String({ messageDescription: i18n("自定义提问（action=vlm）", "Custom question (action=vlm)") })),
+      // 2026-09-16（用户：vlm 禁用）——model/prompt 参数仅 vlm 用，注释禁用：
+      // model: Type.Optional(Type.String({ messageDescription: i18n("VL 模型（action=vlm，默认 qwen3-vl-plus）", "VL model (action=vlm, default qwen3-vl-plus)") })),
+      // prompt: Type.Optional(Type.String({ messageDescription: i18n("自定义提问（action=vlm）", "Custom question (action=vlm)") })),
       mode: Type.Optional(Type.String({ messageDescription: i18n("ocr 输出模式：text（默认）| structure（action=ocr）", "ocr output mode: text (default) | structure (action=ocr)") })),
     }),
     renderCall(args: any, theme: any) {
-      const a = args?.action ?? "vlm";
+      const a = args?.action ?? "ocr"; // 2026-09-16（用户：vlm 禁用）默认 action 改为 ocr
       // 2026-08-15 统一：与 amem/social 一致——工具名 + action，不用 "Eyes.Ocr" 分层名
       const detail = a === "ocr"
         ? `${args?.path || "?"}${args?.mode === "structure" ? " [structure]" : ""}`
@@ -93,15 +95,19 @@ export default function (pi: ExtensionAPI) {
     },
     async execute(_id, rawParams, _signal, _onUpdate, _ctx) {
       const p = (rawParams ?? {}) as any;
-      const action = String(p.action ?? "vlm").trim();
+      const action = String(p.action ?? "ocr").trim(); // 2026-09-16（用户：vlm 禁用）默认 action 改为 ocr
       if (!p.path) {
-        return { content: [{ type: "text", text: i18n("Eyes 需要 path（图片路径）。用法: Eyes({action:'vlm'|'ocr', path})", "Eyes requires path (image path). Usage: Eyes({action:'vlm'|'ocr', path})") }], details: {}, isError: true };
+        return { content: [{ type: "text", text: i18n("Eyes 需要 path（图片路径）。用法: Eyes({action:'ocr'|'native', path})", "Eyes requires path (image path). Usage: Eyes({action:'ocr'|'native', path})") }], details: {}, isError: true };
       }
       switch (action) {
+        // 2026-09-16（用户：vlm 先注释掉、禁用）：
+        // case "vlm": {
+        //   const model = p.model || DEFAULT_MODEL;
+        //   const prompt = p.prompt || DEFAULT_PROMPT;
+        //   return formatLook(await vlm.describeImage(p.path, prompt, model), model);
+        // }
         case "vlm": {
-          const model = p.model || DEFAULT_MODEL;
-          const prompt = p.prompt || DEFAULT_PROMPT;
-          return formatLook(await vlm.describeImage(p.path, prompt, model), model);
+          return { content: [{ type: "text", text: i18n("Eyes 的 vlm 动作已禁用（2026-09-16）。请用 ocr（本地提取文字）或 native（把图注入当前视觉模型）。", "Eyes vlm action is disabled (2026-09-16). Use ocr (local text extraction) or native (inject the image into a vision model).") }], details: {}, isError: true };
         }
         case "ocr": {
           if (p.mode === "structure") {
@@ -131,7 +137,7 @@ export default function (pi: ExtensionAPI) {
           }
         }
         default:
-          return { content: [{ type: "text", text: i18n(`未知 action: ${action}。用 vlm（VL 描述图片）或 ocr（本地 OCR）。`, `Unknown action: ${action}. Use vlm (VL image description) or ocr (local OCR).`) }], details: {}, isError: true };
+          return { content: [{ type: "text", text: i18n(`未知 action: ${action}。用 ocr（本地 OCR）或 native（注入图给视觉模型）。vlm 已禁用。`, `Unknown action: ${action}. Use ocr (local OCR) or native (inject image to a vision model). vlm is disabled.`) }], details: {}, isError: true };
       }
     },
   });
