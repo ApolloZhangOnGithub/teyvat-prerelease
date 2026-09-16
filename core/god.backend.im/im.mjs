@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * im.server — IM 本机后端（I.Ecosystems/im.server/，2026-09-13 从 C.deploy/im-gui-demo/ 迁入）
+ * god.backend.im（im.mjs）— IM 本机后端（god.backend.im/，2026-09-13 从 C.deploy/im-gui-demo/ 迁入）
  *
  * 角色：本进程是一个「外部 bridge agent」，经 social 管道与 teyvat agent 双向通讯。
  *   参考：C.deploy/claude-code-bridge.py + B.docs/.../Cross-Framework(External Agent Bridge).WIKI

@@ -372,31 +372,33 @@ export default function kernelMain(pi: ExtensionAPI) {
             const e = v as any;
             if (e.default && !e.abandoned) enabled.add(k);
           }
-          // 每模型工具覆盖清单：spirit.bio.gene/tools/<model-id>.json（出生时克隆 template.json）
-          try {
-            // session_start 事件不带 model（heart.ts 的 before_agent_start 才有 event.model）。
-            // 从 ctx.model / settings.defaultModel 兜底取当前模型 id。
-            let modelId = ((ctx as any)?.model?.id || "").toString();
-            if (!modelId) {
-              try {
-                const sPath = userFile("settings.json");
-                if (existsSync(sPath)) {
-                  const s = JSON.parse(readFileSync(sPath, "utf8"));
-                  modelId = (s?.defaultModel || "").toString();
-                }
-              } catch (e) { console.error("[spirit.bio.organs/kernel.core/core.ts] " + ((e as any)?.message || e)); }
-            }
-            if (modelId) {
-              const modelPath = resolve(DIRS.core, `spirit.bio.gene/tools/${modelId}.json`);
-              if (existsSync(modelPath)) {
-                const ov = JSON.parse(readFileSync(modelPath, "utf8"))?.overrides || {};
-                for (const [k, v] of Object.entries(ov)) {
-                  if (v === true) enabled.add(k);
-                  else if (v === false) { enabled.delete(k); _removedByOverride.add(k.toLowerCase()); }
-                }
-              }
-            }
-          } catch (e2) { logerr("K024", e2); }
+          // 2026-09-16（用户：spirit.bio.gene/tools 这文件夹是垃圾，不能再用了）：每模型工具覆盖清单已废弃。
+          // 原逻辑：spirit.bio.gene/tools/<model-id>.json（出生时克隆 template.json）——session_start 按当前模型覆盖 enabled 工具集。
+          // 弃用原因：与 tools.manifest.json 两套工具控制、难维护、静默改模型工具集。现已逐行注释。
+          // try {
+          //   // session_start 事件不带 model（heart.ts 的 before_agent_start 才有 event.model）。
+          //   // 从 ctx.model / settings.defaultModel 兜底取当前模型 id。
+          //   let modelId = ((ctx as any)?.model?.id || "").toString();
+          //   if (!modelId) {
+          //     try {
+          //       const sPath = userFile("settings.json");
+          //       if (existsSync(sPath)) {
+          //         const s = JSON.parse(readFileSync(sPath, "utf8"));
+          //         modelId = (s?.defaultModel || "").toString();
+          //       }
+          //     } catch (e) { console.error("[spirit.bio.organs/kernel.core/core.ts] " + ((e as any)?.message || e)); }
+          //   }
+          //   if (modelId) {
+          //     const modelPath = resolve(DIRS.core, `spirit.bio.gene/tools/${modelId}.json`);
+          //     if (existsSync(modelPath)) {
+          //       const ov = JSON.parse(readFileSync(modelPath, "utf8"))?.overrides || {};
+          //       for (const [k, v] of Object.entries(ov)) {
+          //         if (v === true) enabled.add(k);
+          //         else if (v === false) { enabled.delete(k); _removedByOverride.add(k.toLowerCase()); }
+          //       }
+          //     }
+          //   }
+          // } catch (e2) { logerr("K024", e2); }
           allowed = enabled;
         } catch (e) { console.error("[spirit.bio.organs/kernel.core/core.ts] " + ((e as any)?.message || e)); allowed = new Set(); }
       } else {

@@ -50,14 +50,15 @@ export function toolsHandler(getActiveTools: () => string[], setActiveTools?: (t
           const m = getToolManifest();
           const base = new Set<string>();
           for (const [k, v] of Object.entries(m.tools || {})) { if ((v as any).default && !(v as any).abandoned) base.add(k); }
-          const modelId = (ctx?.model?.id || "").toString();
-          if (modelId) {
-            const mmp = path.join(DIRS.core, `spirit.bio.gene/tools/${modelId}.json`);
-            if (fs.existsSync(mmp)) {
-              const ov = JSON.parse(fs.readFileSync(mmp, "utf8"))?.overrides || {};
-              for (const [k, v] of Object.entries(ov)) { if (v === true) base.add(k); else if (v === false) base.delete(k); }
-            }
-          }
+          // 2026-09-16（用户：gene/tools 废弃）：模型覆盖已移除，reset 只回 manifest default
+          // const modelId = (ctx?.model?.id || "").toString();
+          // if (modelId) {
+          //   const mmp = path.join(DIRS.core, `spirit.bio.gene/tools/${modelId}.json`);
+          //   if (fs.existsSync(mmp)) {
+          //     const ov = JSON.parse(fs.readFileSync(mmp, "utf8"))?.overrides || {};
+          //     for (const [k, v] of Object.entries(ov)) { if (v === true) base.add(k); else if (v === false) base.delete(k); }
+          //   }
+          // }
           const cur = getActiveTools() ?? [];
           setActiveTools(cur.filter((t: string) => base.has(t)));
         } catch (e) { console.error("[god.frontend.tui/commands/tools.ts] " + ((e as any)?.message || e)); }
@@ -69,15 +70,15 @@ export function toolsHandler(getActiveTools: () => string[], setActiveTools?: (t
     // ── 读 manifest（全部工具 + default + chr）── 走 ribosome 管线
     const manifestTools: Record<string, any> = getToolManifest().tools || {};
 
-    // ── 读模型覆盖（当前模型）──
-    let modelOverrides: Record<string, boolean> = {};
-    try {
-      const modelId = (ctx?.model?.id || "").toString();
-      if (modelId) {
-        const mmp = path.join(DIRS.core, `spirit.bio.gene/tools/${modelId}.json`);
-        if (fs.existsSync(mmp)) modelOverrides = JSON.parse(fs.readFileSync(mmp, "utf8"))?.overrides || {};
-      }
-    } catch (e) { console.error("[god.frontend.tui/commands/tools.ts] " + ((e as any)?.message || e)); }
+    // ── 读模型覆盖（2026-09-16 用户：gene/tools 废弃，不再读）──
+    const modelOverrides: Record<string, boolean> = {}
+    // try {
+    //   const modelId = (ctx?.model?.id || "").toString();
+    //   if (modelId) {
+    //     const mmp = path.join(DIRS.core, `spirit.bio.gene/tools/${modelId}.json`);
+    //     if (fs.existsSync(mmp)) modelOverrides = JSON.parse(fs.readFileSync(mmp, "utf8"))?.overrides || {};
+    //   }
+    // } catch (e) { console.error("[god.frontend.tui/commands/tools.ts] " + ((e as any)?.message || e)); }
 
     // ── toggle：/tools <name> ──
     if (arg && arg !== "reset") {

@@ -451,7 +451,7 @@ if [ "$RSYNC_OK" = "0" ]; then
 fi
 
 # I.Ecosystems（服务端/生态域，2026-09-13 用户定稿：后端放 I.Ecosystems）同样同步进 runtime——
-# genshin im --local 从 runtime 跑 I.Ecosystems/im.server/server.mjs，故必须随部署落地。
+# genshin im --local 从 runtime 跑 god.backend.im/im.mjs（2026-09-16 从 I.Ecosystems/im.server 迁入），故必须随部署落地。
 if [ -d "$PKG_ROOT/I.Ecosystems" ]; then
   RSYNC_ECO=0
   for attempt in 1 2 3; do

@@ -327,12 +327,12 @@ case "$NAME" in
     node "$PAIMON_CLI/devices.cjs" "$@"
     exit $?;;
   im)
-    # [2026-09-13] IM 前端入口：--local=起本机后端（I.Ecosystems/im.server，:8790）+开 localhost；无参=开公网网页
-    # 前端 god.frontend.im（index.html 本机版 / im.html 公网版）；后端 I.Ecosystems/im.server（用户定稿）
+    # [2026-09-13] IM 前端入口：--local=起本机后端（god.backend.im，:8790）+开 localhost；无参=开公网网页
+    # 前端 god.frontend.im（index.html 本机版 / im.html 公网版）；后端 god.backend.im（2026-09-16 从 I.Ecosystems/im.server 迁入）
     if [ "$2" = "--local" ]; then
-      IM_SRV="$PAIMON_EXT/I.Ecosystems/im.server/server.mjs"
+      IM_SRV="$PAIMON_EXT/god.backend.im/im.mjs"
       if [ ! -f "$IM_SRV" ]; then
-        echo "$(_l "  im.server 未部署（runtime 缺 I.Ecosystems/im.server/server.mjs）——先 make 部署" "  im.server not deployed (runtime missing I.Ecosystems/im.server/server.mjs) — run make first")"
+        echo "$(_l "  god.backend.im 未部署（runtime 缺 god.backend.im/im.mjs）——先 make 部署" "  god.backend.im not deployed (runtime missing god.backend.im/im.mjs) — run make first")"
         exit 1
       fi
       if ! curl -s --max-time 1 "http://localhost:8790/" >/dev/null 2>&1; then
