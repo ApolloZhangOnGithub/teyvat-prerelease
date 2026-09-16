@@ -155,8 +155,8 @@ const _genshinBuiltinRenderers = {
                 let metaSuffix = "";
                 if (filePath) {
                   try {
-                    // 2026-09-16（用户：execSync 阻塞）——原每次渲染 Read 行都 execSync(xattr)（同步阻塞）。
-                    // 改：进程内缓存（FileMeta 变化不频繁）+ 异步 execFile 首次填充，不阻塞渲染。
+                    // 2026-09-16（用户：execSync 去掉）——渲染 Read 行时不再同步 execSync(xattr)。
+                    // 进程内缓存 + 异步 execFile；数据回来后 refreshUI 重绘（用户要保留 refreshUI）。
                     const { execFile } = require("child_process");
                     const _g = globalThis;
                     _g.__genshinMetaCache = _g.__genshinMetaCache || new Map();
@@ -171,7 +171,7 @@ const _genshinBuiltinRenderers = {
                             const meta = JSON.parse(String(stdout || "").trim());
                             const last = meta?.edits?.[meta.edits.length - 1]?.agent || meta?.created?.agent;
                             _g.__genshinMetaCache.set(filePath, last || null);
-                            try { globalThis.__genshinRefreshUI?.(); } catch (e) { console.error("[tool-execution.js] " + ((e && e.message) || e)); }
+                            try { globalThis.__genshinRefreshUI?.(); } catch (e) { console.error("[tool-execution.js] refreshUI: " + ((e && e.message) || e)); }
                           }
                         } catch (e) { console.error("[tool-execution.js] meta parse: " + ((e && e.message) || e)); }
                       });
