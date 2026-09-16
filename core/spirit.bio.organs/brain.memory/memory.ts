@@ -188,8 +188,12 @@ export default function registerMemory(pi: ExtensionAPI) {
   // amem 后 gauge 暂时过期（到下一个 model response 才更新），但不再用另一个口径覆盖——
   // 之前用 memTokens 估算覆盖导致 gauge 在两个口径之间来回跳（30% vs 65%）。
   function _refreshGaugeAfterContextChange(_newCtx: string): void {
-    // amem 改了 context.md → before_agent_start 会检测缩水并替换对话中的旧快照消息
-    // （不需要 snapshotDirty flag——快照在对话消息里不在 system prompt 里）
+    // 2026-09-16（用户暴怒：amem 不生效——archive 只改磁盘不改内存）：
+    // amem 改了 context.md → 立即重建快照并设 _snapshotOverride，让 context 事件（下一轮 LLM 调用前）替换 memory-snapshot。
+    // 之前这里空着，靠 before_agent_start 的异步检测（meta2.ctxLen 缩水判断）——98% 卡死时那条链断了，api 纹丝不动。
+    if (getSessionRole() === "main" && _snapshotInjected) {
+      _snapshotOverride = buildSnapshot({ excludeRowsSince: _sessionStartTs });
+    }
   }
 
   // ── session_start: 注入"记忆快照"一次（稳定前缀 = 缓存命中的关键）────────────
