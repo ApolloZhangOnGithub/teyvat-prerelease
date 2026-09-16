@@ -90,7 +90,9 @@ export class SettingsList {
                 valueText = this.theme.value(truncateToWidth(item.currentValue, valueMaxWidth, ""), isSelected);
             }
             else if (item.submenu || item.onActivate) {
-                valueText = this.theme.hint("→");
+                // 2026-09-16（用户）：右箭头曾用 hint（dim 暗色），而其他条目（label）都是亮色 → 不一致。
+                // 改走 label（与条目文字同色；选中时 bold），保持整行高亮一致。
+                valueText = this.theme.label("→", isSelected);
             }
             else {
                 valueText = "";
