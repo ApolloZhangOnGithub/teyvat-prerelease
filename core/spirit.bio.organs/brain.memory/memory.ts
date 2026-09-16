@@ -194,6 +194,24 @@ export default function registerMemory(pi: ExtensionAPI) {
     if (getSessionRole() === "main" && _snapshotInjected) {
       _snapshotOverride = buildSnapshot({ excludeRowsSince: _sessionStartTs });
     }
+    // 2026-09-16（用户：动态 amem——实时改内存，不重启）：
+    // amem 清了 context.md，但活对话（agent.state.messages）里的 toolResult/toolCall 还是旧的，api 大头不降。
+    // 这里成对裁剪：删 toolResult + 清 assistant 的 tool_calls（避免 OpenAI 兼容 API 缺 tool_result 400）。
+    const _sess = (globalThis as any).__genshinGetSession?.();
+    const _msgs = _sess?.agent?.state?.messages;
+    if (Array.isArray(_msgs)) {
+      const _kept: any[] = [];
+      for (const _m of _msgs) {
+        if (!_m || _m.role === "toolResult") continue; // 删工具结果（api 大头）
+        if (_m.role === "assistant" && Array.isArray(_m.tool_calls) && _m.tool_calls.length) {
+          const _textOnly = (_m.content || []).filter((_c: any) => _c?.type === "text" || _c?.type === "thinking");
+          _kept.push({ ..._m, tool_calls: undefined, content: _textOnly.length ? _textOnly : [{ type: "text", text: "" }] });
+          continue;
+        }
+        _kept.push(_m);
+      }
+      _sess.agent.state.messages = _kept;
+    }
   }
 
   // ── session_start: 注入"记忆快照"一次（稳定前缀 = 缓存命中的关键）────────────
