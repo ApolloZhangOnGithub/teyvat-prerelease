@@ -411,7 +411,7 @@ export function registerAmemTool(pi: ExtensionAPI, deps: AmemDeps): void {
   function _rowKind(o: any): string {
     if (!o) return "?";
     if (o.type === "bad_frame") return "bad_frame";
-    if (o.role === "toolResult" || o.role === "tool") return "toolResult";
+    if (o.role === "toolResult" || o.role === "tool") return "toolResult:" + (o.toolName || o.tool?.name || "?");
     // 2026-09-17（用户）：toolCall 细分到工具名——`types:["toolCall:execute"]` 可单独归档某一类
     // （execute/edit/write/read/wait/... 各算一类）。通用 `toolCall` 仍匹配全部（matchRow 前缀）。
     if (o.type === "toolCall") return "toolCall:" + (o.tool?.name || "?");
@@ -861,8 +861,10 @@ export function registerAmemTool(pi: ExtensionAPI, deps: AmemDeps): void {
         const tSet = new Set(normTypes);
         const matchRow = (o: any) => {
           const k = _rowKind(o);
-          // 2026-09-17：`toolCall` 前缀匹配 `toolCall:<工具名>`（通用选中全部）；`toolCall:execute` 精确命中一类。
-          return tSet.has(k) || (k.startsWith("toolCall:") && tSet.has("toolCall")) || tSet.has(String(o.role || ""));
+          // 2026-09-17：`toolCall`/`toolResult` 前缀匹配 `toolCall:<工具名>`/`toolResult:<工具名>`（通用选中全部）；
+          // `toolCall:execute` / `toolResult:execute` 精确命中一类。
+          const _prefixMatch = (k.startsWith("toolCall:") && tSet.has("toolCall")) || (k.startsWith("toolResult:") && tSet.has("toolResult"));
+          return tSet.has(k) || _prefixMatch || tSet.has(String(o.role || ""));
         };
         const splitRange = (rs: number, re: number) => {
           const kept: string[] = [], swept: string[] = [];

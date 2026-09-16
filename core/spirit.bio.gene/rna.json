@@ -603,7 +603,18 @@
     "memory.hippocampus": "brain.hippocampus"
   },
   "warnings": [
+    "spirit.bio.organs/brain.bioclock/ 有 .ts 但未在 promotor.dna 声明 func。",
+    "spirit.bio.organs/hands.fileacts/ 有 .ts 但未在 promotor.dna 声明 func。",
+    "spirit.bio.organs/kernel.help/ 有 .ts 但未在 promotor.dna 声明 func。",
+    "spirit.bio.organs/head.eyes/ 有 .ts 但未在 promotor.dna 声明 func。",
+    "spirit.bio.organs/brain.memory/ 有 .ts 但未在 promotor.dna 声明 func。",
     "spirit.bio.organs/@ABANDONED.brain.hippocampus/ 有 .ts 但未在 promotor.dna 声明 func。",
-    "spirit.bio.organs/@ABANDONED.brain.metaconsciousness/ 有 .ts 但未在 promotor.dna 声明 func。"
+    "spirit.bio.organs/kernel.heart/ 有 .ts 但未在 promotor.dna 声明 func。",
+    "spirit.bio.organs/head.ears/ 有 .ts 但未在 promotor.dna 声明 func。",
+    "spirit.bio.organs/@ABANDONED.brain.metaconsciousness/ 有 .ts 但未在 promotor.dna 声明 func。",
+    "spirit.bio.organs/social.communicate/ 有 .ts 但未在 promotor.dna 声明 func。",
+    "spirit.bio.organs/head.mouth/ 有 .ts 但未在 promotor.dna 声明 func。",
+    "spirit.bio.organs/hands.webacts/ 有 .ts 但未在 promotor.dna 声明 func。",
+    "spirit.bio.organs/brain.intentions/ 有 .ts 但未在 promotor.dna 声明 func。"
   ]
 }

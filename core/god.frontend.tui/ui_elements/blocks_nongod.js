@@ -491,8 +491,10 @@ export function renderExecuteResult(theme, state) {
   const mode = globalThis.__genshinExecuteResult ?? "full";
   const indent = " ".repeat(GUTTER);
   const c = C();
-  // 2026-09-14（用户）：at 时间戳开关——/s「at 时间戳」（globalThis.__genshinResultAt，默认开）
-  const clock = st.endTs != null && (globalThis.__genshinResultAt ?? true) ? theme.fg("dim", ` at ${fmtClock(st.endTs)}`) : "";
+  // 2026-09-14（用户）：at 时间戳开关——/s「at 时间戳」（globalThis.__genshinResultAt，默认**关**）
+  // 2026-09-17（用户：设置里隐藏了为什么还显示）：原 `?? true` 与 settings.ts 的 `?? false` 不一致——
+  // 未设值时渲染默认开。改为 `=== true`（只有显式开启才显示），与设置面板默认一致。
+  const clock = st.endTs != null && globalThis.__genshinResultAt === true ? theme.fg("dim", ` at ${fmtClock(st.endTs)}`) : "";
   if (st.kind === "created") {
     const kind = st.terminal ? "terminal process" : "bash process";
     const named = st.terminal && st.tname ? ` named ${st.tname}` : "";

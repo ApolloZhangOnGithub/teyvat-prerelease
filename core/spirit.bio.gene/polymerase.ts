@@ -27,6 +27,7 @@ type Duty = { name: string; desc: string; coded: string | null };
 type FuncDecl = {
   name: string;
   future: boolean;
+  abandoned: boolean;
   session: string[]; // ["all"] / ["none"] / ["main", ...]
   abled: { mode: "any" | "none" | "list"; list: string[] };
   alias: string[];
@@ -79,10 +80,12 @@ function parseAssembler(text: string) {
       } else if ((m = t.match(/^((?:@[A-Za-z]+\s+)*)(?:future\s+)?func\s+(\S+)/))) {
         const name = m[2];
         const tags = (m[1] || "").trim().split(/\s+/).filter(Boolean);
-        const isFuture = tags.includes("@FUTURE") || tags.includes("@ABANDONED") || /(?:^|\s)future\s+func\s/.test(t); // 2026-09-13：`(?:future\s+)?` 是非捕获组，m[1] 里永远没有 future——裸 `future func x` 此前不会被标记
+        const isAbandoned = tags.includes("@ABANDONED");
+        const isFuture = tags.includes("@FUTURE") || isAbandoned || /(?:^|\s)future\s+func\s/.test(t); // 2026-09-13：`(?:future\s+)?` 是非捕获组，m[1] 里永远没有 future——裸 `future func x` 此前不会被标记
         funcs[name] = {
           name,
           future: isFuture,
+          abandoned: isAbandoned, // 2026-09-17（用户）：@ABANDONED 单独成字段（废弃声明）
           session: [],
           abled: { mode: "list", list: [] },
           alias: [],
@@ -304,7 +307,7 @@ function compile(
       if (!e.isDirectory() || INFRA_DIRS.has(e.name)) continue;
       const dirPath = `${ORGANS_DIR}/${e.name}`;
       const hasTS = readdirSync(dirPath).some((f: string) => f.endsWith(".ts") && !f.includes(".CHANGELOG") && !f.endsWith(".SPEC"));
-      if (hasTS && !p.funcs[e.name]) {
+      if (hasTS && !p.funcs[e.name]?.abandoned && !p.funcs[e.name]?.future) {
         warnings.push(`spirit.bio.organs/${e.name}/ 有 .ts 但未在 promotor.dna 声明 func。`);
       }
     }

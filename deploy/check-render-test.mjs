@@ -142,6 +142,10 @@ try {
   class FC { constructor() { this.children = []; } addChild(c) { this.children.push(c); } }
   B.initBlockrender(FT, FC, visibleWidth, wrapTextWithAnsi);
   const t = { fg: (_k, s) => s, bold: (s) => s };
+  // 2026-09-17（用户：at 时间戳开关失效）：blocks_nongod 改为 `=== true`（与 settings 默认关一致），
+  // 显式开启才显示 at HH:MM:SS。测试这里显式开启（并另测默认关）。
+  globalThis.__genshinResultAt = true;
+
   const flat = (node, out = []) => { if (node?.text !== undefined) out.push(node.text); for (const c of node?.children || []) flat(c, out); return out; };
   const fixedTs = new Date(2026, 8, 13, 9, 39, 52).getTime();
   delete globalThis.__genshinExecuteResult;
