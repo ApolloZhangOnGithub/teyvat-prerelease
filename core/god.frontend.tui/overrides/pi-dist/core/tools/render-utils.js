@@ -44,7 +44,8 @@ export function getTextOutput(result, showImages) {
         .replace(/\u001b\[[0-9;]*[A-Za-z]/g, "")
         .replace(/\[[0-9;]+m/g, "")
         .replace(/(\S)\[m(?![A-Za-z])/g, "$1")
-    ).join("\n");
+        .replace(/\b(?:38|48);[25](?:;\d+)*\b/g, "")
+    ).join("\n")
     const caps = getCapabilities();
     if (imageBlocks.length > 0 && (!caps.images || !showImages)) {
         const imageIndicators = imageBlocks

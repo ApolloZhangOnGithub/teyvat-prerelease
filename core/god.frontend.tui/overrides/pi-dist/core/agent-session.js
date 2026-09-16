@@ -261,7 +261,8 @@ export class AgentSession {
                     return { ...c, text: c.text
                         .replace(/\u001b\[[0-9;]*[A-Za-z]/g, "")     // ① 带 ESC 的真序列整段剥
                         .replace(/\[[0-9;]+m/g, "")                   // ② SGR 残渣
-                        .replace(/(\S)\[m(?![A-Za-z])/g, "$1") };      // ③ 裸 reset [m（边界断言避开 [m]/[merge]）
+                        .replace(/(\S)\[m(?![A-Za-z])/g, "$1") 
+                        .replace(/\b(?:38|48);[25](?:;\d+)*\b/g, "")}
                 }
                 return c;
             });
