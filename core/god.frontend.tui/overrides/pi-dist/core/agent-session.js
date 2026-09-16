@@ -21,7 +21,7 @@ import { homedir } from "node:os";
 // 2026-09-16（用户批评）：模型记忆原先写 SocialData/registry.json（social 注册表），与在线状态/心跳混在一起=垃圾管理。
 // 迁到 config/individual/<sid>/model.json（每 agent 独立配置，不混 social 数据）。启动读它（见 main.js buildSessionOptions）。
 function savePerAgentModel(provider, modelId) {
-  const _dbg = (msg) => { try { const p = join(homedir(), ".teyvat/LogData/save-model-debug.log"); require("fs").appendFileSync(p, `[${new Date().toISOString()}] ${msg}\n`); } catch (e) { /* 诊断日志失败静默，不影响模型切换 */ } };
+  const _dbg = (msg) => { try { const p = join(homedir(), ".teyvat/LogData/save-model-debug.log"); require("fs").mkdirSync(join(homedir(), ".teyvat/LogData"), { recursive: true }); require("fs").appendFileSync(p, `[${new Date().toISOString()}] ${msg}\n`); } catch (e) { /* 诊断日志失败静默，不影响模型切换 */ } };
   try {
     const myId = process.env.PAIMON_AGENT_ID || "";
     _dbg(`savePerAgentModel provider=${provider} modelId=${modelId} myId=${myId}`);
