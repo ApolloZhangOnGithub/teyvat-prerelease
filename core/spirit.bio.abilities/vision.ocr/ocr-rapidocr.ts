@@ -7,7 +7,7 @@
 // 实现 OcrEngine 接口（ocr.ts）——输出格式与 ocr-vision-engine 对齐（ts 端同解析）。
 // 日志 → ~/.teyvat/LogData/<agentId>/eyes.log（与 ocr-vision.ts 同款）。
 
-import { execFile, execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync, appendFileSync, mkdirSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -32,11 +32,12 @@ const OCR_TIMEOUT_MS = 180_000; // rapidocr 首载模型冷启动 + 识别，留
 const MAX_BUFFER = 16 * 1024 * 1024;
 
 // rapidocr 可用性只探测一次（进程内缓存）。缺依赖时给出可操作的安装提示（不静默）。
+// 2026-09-16（用户：execSync 阻塞）——原 execFileSync 同步阻塞事件循环 15s。改异步 execFileAsync。
 let rapidocrCache: null | boolean = null;
-export function hasRapidocr(): boolean {
+async function hasRapidocr(): Promise<boolean> {
   if (rapidocrCache !== null) return rapidocrCache;
   try {
-    execFileSync("python3", ["-c", "import rapidocr_onnxruntime"], { timeout: 15_000 });
+    await execFileAsync("python3", ["-c", "import rapidocr_onnxruntime"], { timeout: 15_000 });
     rapidocrCache = true;
   } catch (e) {
     console.error("[spirit.bio.abilities/vision.ocr/ocr-rapidocr.ts] " + ((e as any)?.message || e));
@@ -63,7 +64,7 @@ function buildArgs(imagePath: string, options: OcrOptions, mode: "text" | "json"
 export class RapidocrOcrEngine implements OcrEngine {
   async readText(imagePath: string, options: OcrOptions = {}): Promise<{ text: string } | { error: string }> {
     if (!existsSync(imagePath)) return { error: `文件不存在: ${imagePath}` };
-    if (!hasRapidocr()) {
+    if (!(await hasRapidocr())) {
       return { error: "需要 rapidocr（Linux 本地 OCR）：pip3 install rapidocr_onnxruntime onnxruntime pillow（或 install.sh Linux 分支已自动装）" };
     }
     const t0 = Date.now();
@@ -83,7 +84,7 @@ export class RapidocrOcrEngine implements OcrEngine {
 
   async readStructure(imagePath: string, options: OcrOptions = {}): Promise<OcrStructured | { error: string }> {
     if (!existsSync(imagePath)) return { error: `文件不存在: ${imagePath}` };
-    if (!hasRapidocr()) {
+    if (!(await hasRapidocr())) {
       return { error: "需要 rapidocr（Linux 本地 OCR）：pip3 install rapidocr_onnxruntime onnxruntime pillow（或 install.sh Linux 分支已自动装）" };
     }
     const t0 = Date.now();

@@ -7,7 +7,7 @@
 //   不依赖网络、不花钱、中英混排准确率高（实测比 tesseract 快 ~10 倍，全屏 Retina 截图 ~1.4s）。
 // 日志 → ~/.teyvat/LogData/<agentId>/eyes.log（与 vlm.ts 同款，JSON 行）。
 
-import { execFile, execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync, appendFileSync, mkdirSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -32,11 +32,12 @@ const OCR_TIMEOUT_MS = 120_000; // 含 python 冷启动 + 大图放大，留足�
 const MAX_BUFFER = 16 * 1024 * 1024;
 
 // PyObjC 可用性只探测一次（进程内缓存）。缺依赖时给出可操作的安装提示（不静默）。
+// 2026-09-16（用户：execSync 阻塞）——原 execFileSync 同步阻塞事件循环 15s。改异步 execFileAsync。
 let pyobjcCache: null | boolean = null;
-function hasPyObjc(): boolean {
+async function hasPyObjc(): Promise<boolean> {
   if (pyobjcCache !== null) return pyobjcCache;
   try {
-    execFileSync("python3", ["-c", "import Quartz, Vision, Foundation"], { timeout: 15_000 });
+    await execFileAsync("python3", ["-c", "import Quartz, Vision, Foundation"], { timeout: 15_000 });
     pyobjcCache = true;
   } catch (e) { console.error("[spirit.bio.abilities/vision.ocr/ocr-macvision.ts] " + ((e as any)?.message || e));
     pyobjcCache = false;
@@ -68,7 +69,7 @@ function buildArgs(imagePath: string, options: OcrOptions, mode: "text" | "json"
 export class MacvisionOcrEngine implements OcrEngine {
   async readText(imagePath: string, options: OcrOptions = {}): Promise<{ text: string } | { error: string }> {
     if (!existsSync(imagePath)) return { error: `文件不存在: ${imagePath}` };
-    if (!hasPyObjc()) {
+    if (!(await hasPyObjc())) {
       return { error: "需要 PyObjC（macOS Vision 本地 OCR）：pip3 install pyobjc-framework-Quartz pyobjc-framework-Vision" };
     }
     const t0 = Date.now();
@@ -88,7 +89,7 @@ export class MacvisionOcrEngine implements OcrEngine {
 
   async readStructure(imagePath: string, options: OcrOptions = {}): Promise<OcrStructured | { error: string }> {
     if (!existsSync(imagePath)) return { error: `文件不存在: ${imagePath}` };
-    if (!hasPyObjc()) {
+    if (!(await hasPyObjc())) {
       return { error: "需要 PyObjC（macOS Vision 本地 OCR）：pip3 install pyobjc-framework-Quartz pyobjc-framework-Vision" };
     }
     const t0 = Date.now();
