@@ -688,28 +688,24 @@ export default function registerMemory(pi: ExtensionAPI) {
     }).filter((l): l is string => l !== null).join("\n");
 
     // 默认【整份注入】(守"不切")；cortex + work_memory 永远全量。
-    // 兜底(仅防死锁)：若整份会超过安全上限(窗口 70%)，只把 context 切到「尾部刚好放得下」——
-    // 保命优先(它是永不停止的生命，崩死比丢最旧 context 更糟)，并在块标题里提示用 amem 整理。
-    // 注意：截断 = 隐性遗忘，最旧记忆模型将完全看不到。平时(没超)绝不切。
-    let trimmed = false;
-    const SAFE = Math.round(modelMax * 0.70); // 留 30% 给对话+补全
-    const ctxBudget = SAFE - estimateTokens(dnaIndex) - estimateTokens(stateDlc) - estimateTokens(cortex) - estimateTokens(workMem);
-    if (ctxBudget <= 0) {
-      context = "";
-      trimmed = true;
-    } else if (estimateTokens(context) > ctxBudget) {
-      const beforeLen = context.length;
-      let lo = 0, hi = context.length;
-      while (lo < hi) { const mid = Math.ceil((lo + hi) / 2); if (estimateTokens(context.slice(-mid)) <= ctxBudget) lo = mid; else hi = mid - 1; }
-      context = context.slice(-lo);
-      trimmed = true;
-      // 截断可见化：记录丢了多长，避免"静默遗忘"——agent 至少知道最旧记忆没进来。
-      try {
-        // 2026-09-13：单独一个文件——混进 growth.jsonl 会让"读最后一行"的读者拿到没有 ratio 的行（readGrowthLast 已能跳过，但分开更干净）
-        monitorAppend("snapshot_trim.jsonl",
-          JSON.stringify({ ts: new Date().toISOString(), event: "snapshot_trim", dropped: beforeLen - context.length, kept: context.length }) + "\n");
-      } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
-    }
+    // 2026-09-16（用户：禁用垃圾管线——静默 70% 截断切最旧记忆 = 隐性遗忘，且 snapshot_trim.jsonl 从不存在即从未触发。逐行注释禁用，不是删除）
+    // let trimmed = false;
+    // const SAFE = Math.round(modelMax * 0.70); // 留 30% 给对话+补全
+    // const ctxBudget = SAFE - estimateTokens(dnaIndex) - estimateTokens(stateDlc) - estimateTokens(cortex) - estimateTokens(workMem);
+    // if (ctxBudget <= 0) {
+    //   context = "";
+    //   trimmed = true;
+    // } else if (estimateTokens(context) > ctxBudget) {
+    //   const beforeLen = context.length;
+    //   let lo = 0, hi = context.length;
+    //   while (lo < hi) { const mid = Math.ceil((lo + hi) / 2); if (estimateTokens(context.slice(-mid)) <= ctxBudget) lo = mid; else hi = mid - 1; }
+    //   context = context.slice(-lo);
+    //   trimmed = true;
+    //   try {
+    //     monitorAppend("snapshot_trim.jsonl",
+    //       JSON.stringify({ ts: new Date().toISOString(), event: "snapshot_trim", dropped: beforeLen - context.length, kept: context.length }) + "\n");
+    //   } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
+    // }
     const parts: string[] = [];
     if (dnaIndex) parts.push(dnaIndex);
     if (stateDlc) parts.push(stateDlc);
@@ -718,7 +714,7 @@ export default function registerMemory(pi: ExtensionAPI) {
     if (typeRef) parts.push(typeRef);
     if (cortex) parts.push(`[MEMORY — Cortex (long-term)]\n${cortex}`);
     if (workMem) parts.push(`[MEMORY — Work Memory]\n${workMem}`);
-    if (context) parts.push(`[MEMORY — Context${trimmed ? "（WARN: 兜底截断：已超窗口，只注入了最近一截，更旧的 context 没进来 → 立即用 amem 整理（sweep/manage），否则这些旧记忆一直读不到）" : ""}]\n${context}`);
+    if (context) parts.push(`[MEMORY — Context]\n${context}`);
     return parts.join("\n\n");
   }
 
@@ -1452,7 +1448,7 @@ export default function registerMemory(pi: ExtensionAPI) {
       if (!personDir) return { content: [{ type: "text", text: "ERR: No person directory." }], details: {}, isError: true };
       if (getSessionRole() !== "main") return { content: [{ type: "text", text: "ERR: Only main session." }], details: {}, isError: true };
       _refreshAmemLimits(); // ISSUE 147：按当前模型窗口刷新保护区/容量阈值（切模型后也能跟上）
-      await _probeContextTokens(); // 2026-09-16：max_tokens=1 探针带完整 context 拿当前真实 context token（失败静默 fallback prevPrompt）
+      // await _probeContextTokens(); // 2026-09-16 用户：禁用垃圾管线（探针 headless 假 0%/1.2k 误导），逐行注释不删；amem 状态行 fallback prevPrompt 真实值
 
       const contextPath = path.join(personDir, "context.md");
       const manageDir = path.join(personDir, "ActiveManage");
