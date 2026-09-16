@@ -1396,11 +1396,14 @@ export default function registerMemory(pi: ExtensionAPI) {
         .replace(/^"[^"]*"\s*→\s*/, "")
         .replace(/,\s*archived\s+\S+/, "")
         .trim();
-      // 2026-09-16（用户：结果行我关心的是 removed 多少 K，不是几个 entry）：
-      // 把 "removed 94 entries (76345c, ~38015 tok)" → "removed 76.3K"；无体量的（如 fetch/mark）保留原样。
-      const _fmtK = (c: number) => c >= 10000 ? (c / 1000).toFixed(1) + "K" : c + "c";
+      // 2026-09-16（用户：动词跟命令走——archive 就是 "Archived xxK tokens"，否则就是别的）：
+      // 从 firstLine 的 "amem <action>";取 action → 对应过去分词；体量取括号里的 tok 换算成 K。
+      const _act = (firstLine.match(/^amem\s+(\w+)/) || [])[1] || "";
+      const _verbMap: Record<string, string> = { archive: "Archived", sweep: "Archived", manage: "Managed", revert: "Reverted", fetch: "Fetched", mark_enter: "Marked", mark_exit: "Marked" };
+      const _verb = _verbMap[_act] || (_act ? _act[0].toUpperCase() + _act.slice(1) : "");
+      const _fmtK = (n: number) => n >= 1000 ? (n / 1000).toFixed(1) + "K" : String(n);
       const _m = summary.match(/^(\S+) (\d+) entries\s*\((\d+)c,\s*~?(\d+) tok\)/);
-      const display = _m ? `${_m[1]} ${_fmtK(Number(_m[3]))}` : summary.replace(/^(\S+) (\d+) entries\b/, "$1");
+      const display = _m ? `${_verb} ${_fmtK(Number(_m[4]))} tokens` : summary.replace(/^(\S+) (\d+) entries\b/, "$1");
       c.addChild(new Txt(indent + theme.fg("dim", SYM.result + "  ") + theme.fg("toolOutput", display || firstLine), 0, 0));
       // 2026-09-13（用户）：折叠模式 = 只显示上面的摘要行，不显示参数表格
       if (amemDisplay === "fold") return c;
