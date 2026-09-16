@@ -340,24 +340,27 @@ function buildSessionOptions(parsed, scopedModels, hasExistingSession, modelRegi
         }
       } catch { /* 读失败回退默认 */ }
     }
-    if (!options.model && scopedModels.length > 0 && !hasExistingSession) {
-        // Check if saved default is in scoped models - use it if so, otherwise first scoped model
+    if (!options.model && !hasExistingSession) {
         const savedProvider = settingsManager.getDefaultProvider();
         const savedModelId = settingsManager.getDefaultModel();
         const savedModel = savedProvider && savedModelId ? modelRegistry.find(savedProvider, savedModelId) : undefined;
-        const savedInScope = savedModel ? scopedModels.find((sm) => modelsAreEqual(sm.model, savedModel)) : undefined;
-        if (savedInScope) {
-            options.model = savedInScope.model;
-            // Use thinking level from scoped model config if explicitly set
-            if (!parsed.thinking && savedInScope.thinkingLevel) {
-                options.thinkingLevel = savedInScope.thinkingLevel;
+        if (savedModel) {
+            const savedInScope = scopedModels.find((sm) => modelsAreEqual(sm.model, savedModel));
+            if (savedInScope) {
+                options.model = savedInScope.model;
+                if (!parsed.thinking && savedInScope.thinkingLevel) {
+                    options.thinkingLevel = savedInScope.thinkingLevel;
+                }
+            }
+            else {
+                // 2026-09-16（用户：defaultModel 是明确选择，优先于 enabledModels 白名单——
+                // enabledModels 与 defaultModel 矛盾时不静默掉到 scopedModels[0]，仍用 defaultModel 并报警）
+                options.model = savedModel;
+                console.warn(chalk.yellow(`⚠️ settings 默认模型 "${savedModelId}" (${savedProvider}) 不在 enabledModels 范围，仍按默认值使用。`));
             }
         }
-        else {
+        else if (scopedModels.length > 0) {
             options.model = scopedModels[0].model;
-            // 2026-09-16（用户）：静默 fallback 难以察觉，显式 warning
-            console.warn(chalk.yellow(`⚠️ settings 默认模型 "${savedModelId}" (${savedProvider}) 不在 scoped，回退到 "${scopedModels[0].model.id}"。`));
-            // Use thinking level from first scoped model if explicitly set
             if (!parsed.thinking && scopedModels[0].thinkingLevel) {
                 options.thinkingLevel = scopedModels[0].thinkingLevel;
             }
