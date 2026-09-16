@@ -257,21 +257,21 @@ export class ModelSelectorComponent extends Container {
                 }
             } catch (e) { console.error("[teyvat model-selector] 下架过滤失败（保留全部）: " + (e?.message ?? e)); }
             // 补元数据：openWeights / family / _vendor / _series
-            // openWeights 数据源：open-weights.json（从 OpenRouter API 抓取维护的权威映射）> models.dev catalog > 未知
+            // openWeights 数据源：open_weighted_lists.json（从 OpenRouter API 抓取维护的权威映射）> models.dev catalog > 未知
             let owMap = {};
             try {
-                // model-selector.js 部署在 pi dist（runtime/），open-weights.json 在 extensions/teyvat/——用 PAIMON_EXT（launcher 导出）+ fallback
+                // model-selector.js 部署在 pi dist（runtime/），open_weighted_lists.json 在 extensions/teyvat/——用 PAIMON_EXT（launcher 导出）+ fallback
                 const owCandidates = [
-                    join(process.env.PAIMON_EXT || join(homedir(), ".local/lib/teyvat/extensions/teyvat"), "spirit.bio.gene/open-weights.json"),
+                    join(process.env.PAIMON_EXT || join(homedir(), ".local/lib/teyvat/extensions/teyvat"), "spirit.bio.gene/open_weighted_lists.json"),
                 ];
                 for (const p of owCandidates) { if (existsSync(p)) { owMap = JSON.parse(readFileSync(p, "utf8")); break; } }
-            } catch { /* open-weights.json 缺失 → 全部未知 */ }
+            } catch { /* open_weighted_lists.json 缺失 → 全部未知 */ }
             const catalog = this.readModelsDevCache();
             for (const model of availableModels) {
                 // vendor 提取（openrouter ID 格式 vendor/model-name；非 openrouter 取 provider）
                 const vendor = model.id.includes("/") ? model.id.split("/")[0].toLowerCase() : model.provider.toLowerCase();
                 model._vendor = vendor;
-                // openWeights：open-weights.json 精确查找（按完整 ID，再按 base ID 去掉版本后缀）
+                // openWeights：open_weighted_lists.json 精确查找（按完整 ID，再按 base ID 去掉版本后缀）
                 if (model.openWeights === undefined) {
                     const ow = owMap[model.id] ?? owMap[model.id.split(":")[0]];
                     if (ow !== undefined) model.openWeights = ow;

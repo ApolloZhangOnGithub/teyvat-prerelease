@@ -1394,10 +1394,14 @@ export default function registerMemory(pi: ExtensionAPI) {
       const summary = firstLine
         .replace(/^amem\s+\w+\s*/, "")
         .replace(/^"[^"]*"\s*→\s*/, "")
-        .replace(/\s*\([^)]*\)/, "")
         .replace(/,\s*archived\s+\S+/, "")
         .trim();
-      c.addChild(new Txt(indent + theme.fg("dim", SYM.result + "  ") + theme.fg("toolOutput", summary || firstLine), 0, 0));
+      // 2026-09-16（用户：结果行我关心的是 removed 多少 K，不是几个 entry）：
+      // 把 "removed 94 entries (76345c, ~38015 tok)" → "removed 76.3K"；无体量的（如 fetch/mark）保留原样。
+      const _fmtK = (c: number) => c >= 10000 ? (c / 1000).toFixed(1) + "K" : c + "c";
+      const _m = summary.match(/^(\S+) (\d+) entries\s*\((\d+)c,\s*~?(\d+) tok\)/);
+      const display = _m ? `${_m[1]} ${_fmtK(Number(_m[3]))}` : summary.replace(/^(\S+) (\d+) entries\b/, "$1");
+      c.addChild(new Txt(indent + theme.fg("dim", SYM.result + "  ") + theme.fg("toolOutput", display || firstLine), 0, 0));
       // 2026-09-13（用户）：折叠模式 = 只显示上面的摘要行，不显示参数表格
       if (amemDisplay === "fold") return c;
       // 参数表格：找出所有 key: value 行，key 列对齐
