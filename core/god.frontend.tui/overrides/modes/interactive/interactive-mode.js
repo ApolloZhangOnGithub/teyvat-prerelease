@@ -871,7 +871,13 @@ export class InteractiveMode {
         // 两次调用直接叠加。保留 _replayPreviousSession()（读 restart-session.json 渲染旧 session 文件，新 session 场景专用）。
         // genshin 2026-09-04：self-reboot 后渲染上一轮 session 历史（用户设计要求：session 保持新建，
         // 但新 session TUI 要重放旧 session 的上文，否则感觉很难受）
-        this._replayPreviousSession();
+        // 2026-09-17（用户："重启的通知总是不渲染在第一个" + "这些消息的渲染顺序总是错的"；ISSUE 259
+        // 定稿"一类事件一条横幅，注入在会话边界，渲染位置=TUI 启动视图顶部"）：
+        // 回放原先在 run() 同步执行 → 历史抢在 Life Restarted（session_start 异步 ~800ms）前面，重启后顶部
+        // 第一条变成旧历史。与 changelog 同一套处理（changelog 已延到 1500ms）：回放延到 **1200ms**，
+        // 与 Life Restarted(800) / changelog(1500) 错开 → 重启后顺序为【Life Restarted → 历史回放 → changelog】。
+        // 无 restart-session.json 时 _replayPreviousSession() 直接 return（新会话无历史，不影响）。
+        setTimeout(() => { try { this._replayPreviousSession(); } catch (e) { console.error("[god.frontend.tui/overrides/modes/interactive/interactive-mode.js] replay: " + (e?.message || e)); } }, 1200);
         // ISSUE 114：自重启保留输入框草稿（wake-restart 标记 → 恢复 editor 内容；轮询保存）
         this._genshinInitInputDraft();
         // genshin: 版本由 install.sh 管理，禁用自动更新检查
