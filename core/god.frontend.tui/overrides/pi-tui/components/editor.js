@@ -12,6 +12,16 @@ const wordSegmenter = getWordSegmenter();
 const PASTE_MARKER_REGEX = /\[paste #(\d+)( (\+\d+ lines|\d+ chars))?\]/g;
 /** Non-global version for single-segment testing. */
 const PASTE_MARKER_SINGLE = /^\[paste #(\d+)( (\+\d+ lines|\d+ chars))?\]$/;
+
+// 2026-09-17（用户：38;5 残渣 = 粘贴彩色文本泄漏可打印尾巴）：整段剥掉完整 ANSI/CSI/OSC 序列。
+// 逐字节过滤只丢掉 ESC(0x1b<32)，会把 "[38;5;222m" 这类可打印尾巴留在编辑器里 → 混进消息/文件 → diff 残渣。
+// 只剔**完整序列**（\x1b 打头 + 终止字节）——代码里裸的 "38;5"（无 ESC）一律不动，不误伤真实内容。
+function stripAnsiComplete(s) {
+    return s
+        .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "")            // OSC（含 OSC 8 链接/标题）
+        .replace(/\x1b\[[0-9;:?<=>!]*[\x20-\x2f]*[\x40-\x7e]/g, "") // CSI/SGR（38;5;222m / 9m / 2J / ?25l …）
+        .replace(/\x1b[\x30-\x7e]/g, "");                              // 两字节 ESC 序列（\x1b7 \x1b8 \x1b= …；0x30-0x7E）
+}
 /** Check if a segment is a paste marker (i.e. was merged by segmentWithMarkers). */
 function isPasteMarker(segment) {
     return segment.length >= 10 && PASTE_MARKER_SINGLE.test(segment);
@@ -770,7 +780,9 @@ export class Editor {
         }
         // Regular characters
         if (data.charCodeAt(0) >= 32) {
-            this.insertCharacter(data);
+            // 2026-09-17（用户：38;5 残渣）：非 bracketed-paste 的终端会把整块（含内嵌 ANSI）直接送来——
+            // 先整段剥 ANSI，避免 ESC 进编辑器（否则经模型一轮后会被复述成 "[38;5;Nm" 残渣）。
+            this.insertCharacter(stripAnsiComplete(data));
         }
     }
     layoutText(contentWidth) {
@@ -1029,7 +1041,9 @@ export class Editor {
             return match;
         });
         // Clean the pasted text: normalize line endings, expand tabs
-        const cleanText = this.normalizeText(decodedText);
+        // 2026-09-17（用户：38;5 残渣）：先整段剥 ANSI（模块级 stripAnsiComplete），再归一化。
+        // 否则下面的逐字节过滤只丢 ESC、把可打印尾巴（"[38;5;222m"）泄漏进编辑器。
+        const cleanText = this.normalizeText(stripAnsiComplete(decodedText));
         // Filter out non-printable characters except newlines
         let filteredText = cleanText
             .split("")
