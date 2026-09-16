@@ -330,6 +330,11 @@ function buildSessionOptions(parsed, scopedModels, hasExistingSession, modelRegi
                 (rec.modelProvider && modelRegistry.find(rec.modelProvider, rec.model)) ||
                 modelRegistry.getAvailable().find((m) => m.id === rec.model);
               if (savedModel) options.model = savedModel;
+              else {
+                // 2026-09-16（用户：静默 fallback 难以察觉，排查 glm 耗时 3h）：
+                // 配置的模型不可用（未配 key 或 id 不存在）→ 显式 warning，不无声换模型。
+                console.warn(chalk.yellow(`⚠️ per-agent 模型 "${rec.model}" (${rec.modelProvider || "?"}) 不可用（未配 key 或 id 不存在），已回退默认模型。`));
+              }
             }
           }
         }
@@ -350,6 +355,8 @@ function buildSessionOptions(parsed, scopedModels, hasExistingSession, modelRegi
         }
         else {
             options.model = scopedModels[0].model;
+            // 2026-09-16（用户）：静默 fallback 难以察觉，显式 warning
+            console.warn(chalk.yellow(`⚠️ settings 默认模型 "${savedModelId}" (${savedProvider}) 不在 scoped，回退到 "${scopedModels[0].model.id}"。`));
             // Use thinking level from first scoped model if explicitly set
             if (!parsed.thinking && scopedModels[0].thinkingLevel) {
                 options.thinkingLevel = scopedModels[0].thinkingLevel;
