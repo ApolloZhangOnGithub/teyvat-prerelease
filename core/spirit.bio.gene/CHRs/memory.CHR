@@ -25,7 +25,7 @@ hash_key 由系统生成，你无法自己计算。如果 check 之后 context �
 
 **archive（推荐名，语义=归档）免锚点模式处理：工具区产物（toolResult=工具执行结果、toolCall=工具调用记录）+ think（思考记录）**。
 - **think 可一键批量归档**（2026-08-18 用户定稿）：think 是过程性思维（推导/犹豫/重复），结论已固化到后续 text/toolCall，归档对功能性影响小——`types:["a.think"]` 免锚点批量清，原文存 ActiveManage 可 revert，方便安全试验。**务必带 exclude_tail 保护最近思考**（不得低于保护区 = 窗口的 10%，1M 窗口即 100000；低于会被拒并告知正确值）。
-- **禁止归档对话记忆**（user 消息、text 对话、assistant 输出）——那是你的记忆本身，归档错就是失忆。系统会拒绝包含这些的 types（免锚点模式）。
+- **禁止 archive 对话**（user 消息 / text / assistant 输出）——archive 是**整体移除**（context 里不再有它，原文只存 ActiveManage/<id>.json 供 revert），对对话而言就是**丢记忆**。要压缩对话请用 **manage**（原位替换成总结块，可读可 revert）。系统会拒绝包含这些的 types（免锚点模式）。
 - **锚定区间（文本/时间戳/位置任一）允许归档任意记忆类**——你显式指定了范围，安全语义由"原位留总结块+可 revert"保证，如 `ts_from+ts_to + types:["think"]` 批量归档某时间段思考。sweep 是旧名别名，行为相同。
 
 - `amem(action:"archive", types:["toolResult"], exclude_tail:100000)` → 免锚点归档工具执行结果（大量网页抓取/长输出这类纯工具产物适合；100000 是 1M 窗口的例子，保护区 = 窗口的 10%）
