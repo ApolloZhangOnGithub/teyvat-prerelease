@@ -42,6 +42,8 @@ import { resolvePath } from "../utils/paths.js";
 import { sleep } from "../utils/sleep.js";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.js";
 import { executeBashWithOperations } from "./bash-executor.js";
+// 2026-09-16（根因修复：给模型前精确剔真 ANSI，见 afterToolCall 注释）
+import { stripAnsi } from "../utils/ansi.js";
 import { calculateContextTokens, collectEntriesForBranchSummary, compact, estimateContextTokens, estimateTokens, generateBranchSummary, prepareCompaction, shouldCompact, } from "./compaction/index.js";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.js";
 import { exportSessionToHtml } from "./export-html/index.js";
@@ -253,22 +255,32 @@ export class AgentSession {
             if (result.terminate) {
                 try { runner.abortFn?.(); } catch (e) { console.error("[god.frontend.tui/overrides/pi-dist/core/agent-session.js] " + (e?.message || e)); }
             }
-            // 2026-09-16（用户：清洗不对——不能无脑正则剥工具结果给模型，会误伤代码里的 38;5；改回给模型原始 content，
-            // ANSI 残渣由渲染层 stripAnsi 完整处理，渲染值 vs 原始值不一致时才修上游）
+            // 2026-09-16（根因修复，用户报的“diff 里 38;5;222m”）：
+            // 之前给模型**原始 content**（含命令输出的真 ANSI，teyvat 还强制 `grep --color=always`）。
+            // LLM 看不到/不生成 ESC（0x1b）——它复述这段内容时把 ESC 丢了，只留下 `[38;5;Nm`，
+            // 写回文件/出现在 diff 里就固化成残渣（ISSUE 260）。WSL 的 pty 让命令更常输出彩色，故只在 WSL 明显。
+            // 修法：给模型前用 stripAnsi **精确剔真转义序列**（ESC [ … 终止字节）——
+            // 这不是用户否定的“无脑正则清洗”（只匹配真实序列，代码里无 ESC 的 `38;5` 一律不动，不误伤），
+            // 也不是渲染层硬剥残渣（那是掩盖）。这是数据规范：LLM 不需要也不该看到色码。
+            // 原始 content 仍在 result.details / session 里保留（供校验/回查）。
+            const _stripAnsiContent = (c) => Array.isArray(c)
+                ? c.map((b) => (b && b.type === "text" && typeof b.text === "string") ? { ...b, text: stripAnsi(b.text) } : b)
+                : c;
+            const _cleanContent = _stripAnsiContent(result.content);
             if (!runner.hasHandlers("tool_result")) {
-                return { content: result.content, details: result.details, isError };
+                return { content: _cleanContent, details: result.details, isError };
             }
             const hookResult = await runner.emitToolResult({
                 type: "tool_result",
                 toolName: toolCall.name,
                 toolCallId: toolCall.id,
                 input: args,
-                content: result.content,
+                content: _cleanContent,
                 details: result.details,
                 isError,
             });
             if (!hookResult) {
-                return { content: result.content, details: result.details, isError };
+                return { content: _cleanContent, details: result.details, isError };
             }
             return {
                 content: hookResult.content,
