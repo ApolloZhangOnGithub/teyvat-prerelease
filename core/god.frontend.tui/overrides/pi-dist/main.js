@@ -5,7 +5,7 @@
  * createAgentSession() options. The SDK does the heavy lifting.
  */
 import { createInterface } from "node:readline";
-import { existsSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { modelsAreEqual } from "@earendil-works/pi-ai";
@@ -316,34 +316,21 @@ function buildSessionOptions(parsed, scopedModels, hasExistingSession, modelRegi
         }
     }
     // 2026-08-18 per-agent 模型记忆（用户要求：模型切换必须 per-agent，不能写共享 settings）。
-    // 2026-09-16 迁到 config/individual/<sid>/model.json（不混 social registry），并带旧数据迁移：
-    // 读新位置，若空则 fallback 旧位置 SocialData/registry.json 并迁过去（版本间 deploy 必须做数据迁移）。
+    // 2026-09-16 迁到 config/individual/<sid>/model.json（不混 social registry）。
+    // 只读 config/individual，不 fallback（用户定稿：不要各种 fallback——判定严格、信息说清楚，不靠兜底掩盖）。
     if (!options.model) {
       try {
         const myId = process.env.PAIMON_AGENT_ID || "";
         if (/^[a-f0-9]{8}$/.test(myId)) {
-          const indDir = join(homedir(), ".teyvat/config/individual", myId);
-          const modelFile = join(indDir, "model.json");
-          let rec = null;
+          const modelFile = join(homedir(), ".teyvat/config/individual", myId, "model.json");
           if (existsSync(modelFile)) {
-            rec = JSON.parse(readFileSync(modelFile, "utf8"));
-          } else {
-            // 迁移：旧版本把 per-agent 模型存 SocialData/registry.json，读旧位置并迁到新位置。
-            const regPath = join(homedir(), ".teyvat/SocialData/registry.json");
-            if (existsSync(regPath)) {
-              const reg = JSON.parse(readFileSync(regPath, "utf8"));
-              const old = reg[myId];
-              if (old?.model || old?.modelProvider) {
-                rec = { model: old.model, modelProvider: old.modelProvider };
-                try { mkdirSync(indDir, { recursive: true }); writeFileSync(modelFile, JSON.stringify(rec, null, 2)); } catch { /* 迁移写失败不影响读取 */ }
-              }
+            const rec = JSON.parse(readFileSync(modelFile, "utf8"));
+            if (rec?.model) {
+              const savedModel =
+                (rec.modelProvider && modelRegistry.find(rec.modelProvider, rec.model)) ||
+                modelRegistry.getAvailable().find((m) => m.id === rec.model);
+              if (savedModel) options.model = savedModel;
             }
-          }
-          if (rec?.model) {
-            const savedModel =
-              (rec.modelProvider && modelRegistry.find(rec.modelProvider, rec.model)) ||
-              modelRegistry.getAvailable().find((m) => m.id === rec.model);
-            if (savedModel) options.model = savedModel;
           }
         }
       } catch { /* 读失败回退默认 */ }
