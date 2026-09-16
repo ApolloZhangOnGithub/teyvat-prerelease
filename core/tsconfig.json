@@ -15,6 +15,7 @@
     "paths": {
       "#paths": ["./paths.ts"],
       "#tui_blockrender": ["./god.frontend.tui/ui_elements/blocks_nongod.js"],
+      "#tui_env": ["./god.frontend.tui/ui_elements/env.js"],
       "#tui_localizations": ["./god.frontend.tui/localizations/i18n.ts"],
       "#tui_renderers": ["./god.frontend.tui/ui_elements/renderers.ts"],
       "#gene_riboswitch": ["./spirit.bio.gene/_debug_riboswitch.ts"],

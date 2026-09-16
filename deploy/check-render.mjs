@@ -54,6 +54,9 @@ try {
   const blocksSrc = join(core, "god.frontend.tui", "ui_elements", "blocks_nongod.js");
   if (!existsSync(blocksSrc)) fail(`blocks_nongod.js 缺失: ${blocksSrc}`);
   cpSync(blocksSrc, join(pkg, "blocks_nongod.js"));
+  // blocks_nongod.js 依赖 env.js（统一环境标识符，同目录相对 import）
+  const envSrc = join(core, "god.frontend.tui", "ui_elements", "env.js");
+  if (existsSync(envSrc)) cpSync(envSrc, join(pkg, "env.js"));
   cpSync(join(srcPiTui, "keybindings.js"), join(pkg, "keybindings.js"));
   cpSync(join(srcPiTui, "keys.js"), join(pkg, "keys.js"));
   symlinkSync(markedDir, join(pkg, "node_modules", "marked"), "dir");

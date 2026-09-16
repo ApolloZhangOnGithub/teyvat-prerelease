@@ -286,6 +286,7 @@ _override() {
   cp -f "$1" "$2" 2>/dev/null || { echo -e "  ${RED}COPY FAIL${R}  $1 → $2"; LINK_FAIL=1; }
 }
 _override "$IMPL/god.frontend.tui/ui_elements/blocks_nongod.js" "$PI_DIST/modes/interactive/components/blocks_nongod.js"
+_override "$IMPL/god.frontend.tui/ui_elements/env.js" "$PI_DIST/modes/interactive/components/env.js"
 _override "$IMPL/god.frontend.tui/overrides/pi-tui/components/custom-message.js" "$PI_DIST/modes/interactive/components/custom-message.js"
 
 # （2026-08-14 移除）tool-execution.js 的 visibleWidth/wrapTextWithAnsi 注入 sed：
@@ -328,6 +329,7 @@ if [ -d "$OVERRIDES/utils" ]; then
 fi
 if [ -d "$PI_TUI_DIST" ]; then
   _override "$IMPL/god.frontend.tui/ui_elements/blocks_nongod.js" "$PI_TUI_DIST/blocks_nongod.js"
+  _override "$IMPL/god.frontend.tui/ui_elements/env.js" "$PI_TUI_DIST/env.js"
   for f in $(cd "$OVERRIDES/pi-tui" && find . -name '*.js'); do
     mkdir -p "$(dirname "$PI_TUI_DIST/$f")"
     _override "$OVERRIDES/pi-tui/$f" "$PI_TUI_DIST/$f"

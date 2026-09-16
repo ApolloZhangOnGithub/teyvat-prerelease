@@ -16,9 +16,11 @@
 
 export const GUTTER = 2; // 内容列：bullet "• " 占 2 列，内容从第 2 列起
 
-// 2026-09-16（windows agent 补充）：Windows 系终端（原生 win32/WSL/Windows Terminal）——这些终端的 ⏺◆◇⎿→ 等
-// ambiguous/emoji 字符渲染 2 格但 visibleWidth 算 1 格，行溢出终端硬折；用 ASCII 符号替代。Mac 不受影响。
-const _needsAsciiSym = process.platform === "win32" || !!(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP) || !!process.env.WT_SESSION;
+import { isWsl } from "./env.js";
+
+// 2026-09-16（用户定稿：只要 wsl，别的不要）：只 WSL 用 ASCII 符号回退（⏺◆◇⎿→ 渲染 2 格但 visibleWidth 算 1 格，
+// 行溢出终端硬折）。之前 win32/WT_SESSION 也算进去，收紧到只 isWsl()。Mac/Linux 不受影响。
+const _needsAsciiSym = isWsl();
 // 2026-09-13（ISSUE 226）：SYM 只定义一次——此前 globalThis.__genshinSYM 与 export const SYM 是两个内容相同的字面量，改一处漏一处。
 // 消费方两种取法都行（import SYM / globalThis.__genshinSYM），拿到的是同一个对象。结果行折线一律 SYM.result，禁止手写 "⎿"（门禁 check-execute-render）。
 export const SYM = _needsAsciiSym

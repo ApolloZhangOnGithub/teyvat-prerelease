@@ -160,10 +160,17 @@ export class AssistantMessageComponent extends Container {
             }
             else if (message.stopReason === "error") {
                 if (!this.errorShown) {
-                    this.errorShown = true;
                     const errorMsg = message.errorMessage || "Unknown error";
-                    this.contentContainer.addChild(new Spacer(1));
-                    this.contentContainer.addChild(new Text(theme.fg("error", `Error: ${errorMsg}`), 1, 0));
+                    // 2026-09-16（ISSUE 216）：fatal 错误（402 余额不足等）heart.ts 会发中文「系统暂停」通知，
+                    // 这里不再渲染英文 Error: {...}（重复显示）。只渲染非 fatal 的错误。
+                    const errObj = message.error;
+                    const isFatal = /402|insufficient.balance|quota.exceeded|account.deactivated|billing|payment.required/i.test(String(errorMsg))
+                        || (errObj?.status === 402 || errObj?.statusCode === 402);
+                    if (!isFatal) {
+                        this.errorShown = true;
+                        this.contentContainer.addChild(new Spacer(1));
+                        this.contentContainer.addChild(new Text(theme.fg("error", `Error: ${errorMsg}`), 1, 0));
+                    }
                 }
             }
         }

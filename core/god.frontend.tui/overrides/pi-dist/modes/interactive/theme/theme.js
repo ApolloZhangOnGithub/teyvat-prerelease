@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 
 // 2026-09-15（用户）：WSL 检测——Windows Terminal 对 SGR 1 不做 bold-brighten（iTerm 提亮纯白）
+// 内联判断（不 import #tui_env——theme.js 被 fileacts-guard 探针在无 package.json 的临时目录加载，别名/相对路径都会解析失败）
 const _isWSLTheme = process.platform === "linux" && !!(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP);
 import * as path from "node:path";
 import { getCapabilities, } from "@earendil-works/pi-tui";
