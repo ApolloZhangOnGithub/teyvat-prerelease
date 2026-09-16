@@ -253,21 +253,10 @@ export class AgentSession {
             if (result.terminate) {
                 try { runner.abortFn?.(); } catch (e) { console.error("[god.frontend.tui/overrides/pi-dist/core/agent-session.js] " + (e?.message || e)); }
             }
-            // 2026-09-16（ISSUE 260 回归/windows agent 排查）：这里清洗 content（给模型的那份）——一处覆盖
-            // 所有工具（read/grep/ls/find/bash/edit + 扩展 + 出错结果，串行/并行全经过 afterToolCall）。
-            // 只洗 content、不动 details（Edit 的 baseContent/diff 匹配仍用磁盘原字节）。R5 三段式同 render-utils.js。
-            const cleanToolTexts = (content) => (content || []).map((c) => {
-                if (c && typeof c.text === "string") {
-                    return { ...c, text: c.text
-                        .replace(/\u001b\[[0-9;]*[A-Za-z]/g, "")     // ① 带 ESC 的真序列整段剥
-                        .replace(/\[[0-9;]+m/g, "")                   // ② SGR 残渣
-                        .replace(/(\S)\[m(?![A-Za-z])/g, "$1") 
-                        .replace(/\b(?:38|48);[25](?:;\d+)*\b/g, "")}
-                }
-                return c;
-            });
+            // 2026-09-16（用户：清洗不对——不能无脑正则剥工具结果给模型，会误伤代码里的 38;5；改回给模型原始 content，
+            // ANSI 残渣由渲染层 stripAnsi 完整处理，渲染值 vs 原始值不一致时才修上游）
             if (!runner.hasHandlers("tool_result")) {
-                return { content: cleanToolTexts(result.content), details: result.details, isError };
+                return { content: result.content, details: result.details, isError };
             }
             const hookResult = await runner.emitToolResult({
                 type: "tool_result",
@@ -279,10 +268,10 @@ export class AgentSession {
                 isError,
             });
             if (!hookResult) {
-                return { content: cleanToolTexts(result.content), details: result.details, isError };
+                return { content: result.content, details: result.details, isError };
             }
             return {
-                content: cleanToolTexts(hookResult.content),
+                content: hookResult.content,
                 details: hookResult.details,
                 isError: hookResult.isError ?? isError,
             };

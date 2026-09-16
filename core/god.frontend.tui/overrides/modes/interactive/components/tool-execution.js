@@ -231,7 +231,7 @@ const _genshinBuiltinRenderers = {
             let diff = result?.details?.diff;
             if (!diff) return renderMessage.silent();
             // 2026-09-16（ISSUE 260/windows agent 补充）：diff 显示层也清洗 ANSI 残渣（只清显示，不动磁盘原字节）
-            diff = String(diff).replace(/\u001b\[[0-9;]*[A-Za-z]/g, "").replace(/\[[0-9;]+m/g, "").replace(/(\S)\[m(?![A-Za-z])/g, "$1");
+            diff = String(diff);
             // pi diff 格式: "+NNN content" / "-NNN content" / " NNN content"（绝对行号内嵌）
             // 也兼容 unified diff 的 @@ header
             const lines = diff.split("\n");
