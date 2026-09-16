@@ -412,7 +412,9 @@ export function registerAmemTool(pi: ExtensionAPI, deps: AmemDeps): void {
     if (!o) return "?";
     if (o.type === "bad_frame") return "bad_frame";
     if (o.role === "toolResult" || o.role === "tool") return "toolResult";
-    if (o.type === "toolCall") return "toolCall";
+    // 2026-09-17（用户）：toolCall 细分到工具名——`types:["toolCall:execute"]` 可单独归档某一类
+    // （execute/edit/write/read/wait/... 各算一类）。通用 `toolCall` 仍匹配全部（matchRow 前缀）。
+    if (o.type === "toolCall") return "toolCall:" + (o.tool?.name || "?");
     if (o.role === "user") return "user";
     if (o.role === "assistant") return o.type || "assistant";
     return o.role || o.type || "?";
@@ -857,7 +859,11 @@ export function registerAmemTool(pi: ExtensionAPI, deps: AmemDeps): void {
         // 行匹配：按 _rowKind 分类（toolResult/toolCall/user/think/text/bad_frame），或整 role（"assistant" = 全部 assistant 行）。
         // 之前 `tSet.has(o.role) || tSet.has(o.type)` 让 "text" 同时命中 user 消息和 toolResult 行（后者 type 也是 "text"）。
         const tSet = new Set(normTypes);
-        const matchRow = (o: any) => tSet.has(_rowKind(o)) || tSet.has(String(o.role || ""));
+        const matchRow = (o: any) => {
+          const k = _rowKind(o);
+          // 2026-09-17：`toolCall` 前缀匹配 `toolCall:<工具名>`（通用选中全部）；`toolCall:execute` 精确命中一类。
+          return tSet.has(k) || (k.startsWith("toolCall:") && tSet.has("toolCall")) || tSet.has(String(o.role || ""));
+        };
         const splitRange = (rs: number, re: number) => {
           const kept: string[] = [], swept: string[] = [];
           for (const line of ctx.slice(rs, re).split("\n")) {
