@@ -746,16 +746,23 @@ export default function (pi: ExtensionAPI) {
         : null; // rs：cargo check 不接受单文件参数，原写法在装了 cargo 的机器上每次 .rs 编辑都误报"语法错误"
       if (checker) {
         try {
-          const { execSync } = await import("node:child_process");
-          execSync(`${checker} "${filePath}"`, { encoding: "utf8", timeout: 10000 });
-        } catch (e: any) {
-          const err = (e.stderr || e.stdout || e.message || "").toString().slice(0, 500);
-          // 检查器本身不可用（未装 bun/python3 等，shell 返回 127）不算「语法错误」，静默跳过——
-          // 避免环境差异把每次编辑都刷成误报（原 TS5112 即此类误报）。
-          if ((e as any)?.status === 127 || /command not found/.test(err)) return;
-          result.content.push({ type: "text", text: i18n(`WARN: 语法错误:\n${err}\n请立即修复。`, `WARN: Syntax error:\n${err}\nPlease fix immediately.`) });
-          try { sendCustomMessage(pi, "syntax-error", i18n(`WARN: 语法错误 ${basename(filePath)}:\n${err}`, `WARN: Syntax error in ${basename(filePath)}:\n${err}`)); } catch (e) { console.error("[spirit.bio.organs/hands.fileacts/fileacts.ts] " + ((e as any)?.message || e)); }
-        }
+          // 2026-09-16（用户：syntax 检查阻塞）——原用 execSync（同步阻塞事件循环，每次 edit/write 卡住）。
+          // 改异步 execFile：不阻塞事件循环，检查在后台跑。
+          const { execFile } = await import("node:child_process");
+          const st = await new Promise<{ code: number | null; err: string }>((resolveCheck) => {
+            execFile("/bin/sh", ["-c", `${checker} "${filePath}"`], { encoding: "utf8", timeout: 10000 }, (err: any, _stdout: any, stderr: any) => {
+              resolveCheck({ code: err?.code ?? (err ? 1 : 0), err: ((err?.stdout || stderr || err?.message || "") as any).toString() });
+            });
+          });
+          if (st.code !== 0) {
+            const err = st.err.slice(0, 500);
+            // 检查器本身不可用（未装 bun/python3 等，shell 返回 127）不算「语法错误」，静默跳过——
+            // 避免环境差异把每次编辑都刷成误报（原 TS5112 即此类误报）。
+            if (st.code === 127 || /command not found/.test(err)) return;
+            result.content.push({ type: "text", text: i18n(`WARN: 语法错误:\n${err}\n请立即修复。`, `WARN: Syntax error:\n${err}\nPlease fix immediately.`) });
+            try { sendCustomMessage(pi, "syntax-error", i18n(`WARN: 语法错误 ${basename(filePath)}:\n${err}`, `WARN: Syntax error in ${basename(filePath)}:\n${err}`)); } catch (e) { console.error("[spirit.bio.organs/hands.fileacts/fileacts.ts] " + ((e as any)?.message || e)); }
+          }
+        } catch (e: any) { console.error("[spirit.bio.organs/hands.fileacts/fileacts.ts] syntaxCheck execFile: " + ((e as any)?.message || e)); }
       }
     }
 
@@ -774,9 +781,12 @@ export default function (pi: ExtensionAPI) {
       // 编辑 DNA 文件后自动装配（promotor.dna 声明 + CHRs/*.CHR 内容）
       if (path.endsWith(".dna") || path.endsWith(".CHR")) {
         try {
-          const { execSync } = await import("node:child_process");
+          // 2026-09-16（用户：syntax 检查阻塞）——原 execSync 同步阻塞，改异步 execFile。
+          const { execFile } = await import("node:child_process");
           const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-          const out = execSync(`cd ${root} && bun spirit.bio.gene/polymerase.ts`, { encoding: "utf8", timeout: 10000 });
+          const out = await new Promise<string>((resolveTr) => {
+            execFile("bun", ["spirit.bio.gene/polymerase.ts"], { encoding: "utf8", timeout: 10000, cwd: root }, (_err: any, stdout: any) => resolveTr(String(stdout || "")));
+          });
           if (out.includes("✗ error") || out.includes("WARN:")) {
             // 直接追加到 event 结果，模型立即可见
             const lines = out.split("\n").filter((l: string) => l.includes("✗") || l.includes("WARN:"));
