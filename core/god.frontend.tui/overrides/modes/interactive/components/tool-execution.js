@@ -155,14 +155,28 @@ const _genshinBuiltinRenderers = {
                 let metaSuffix = "";
                 if (filePath) {
                   try {
-                    const { execSync } = require("child_process");
-                    const raw = execSync(`xattr -p com.genshin.meta "${filePath}"`, { encoding: "utf8", timeout: 1000, stdio: ["ignore","pipe","ignore"] });
-                    const meta = JSON.parse(raw.trim());
-                    const last = meta?.edits?.[meta.edits.length-1]?.agent || meta?.created?.agent;
-                    if (last) metaSuffix = ` ` + theme.fg("dim", `[last editor: ${last}]`);
-                  } catch {
-                    // xattr 属性缺失/损坏：last-editor 是可选装饰，失败静默（文件无 com.genshin.meta 属性是常态，不刷日志）
-                  }
+                    // 2026-09-16（用户：execSync 阻塞）——原每次渲染 Read 行都 execSync(xattr)（同步阻塞）。
+                    // 改：进程内缓存（FileMeta 变化不频繁）+ 异步 execFile 首次填充，不阻塞渲染。
+                    const { execFile } = require("child_process");
+                    const _g = globalThis;
+                    _g.__genshinMetaCache = _g.__genshinMetaCache || new Map();
+                    const _cached = _g.__genshinMetaCache.get(filePath);
+                    if (_cached !== undefined) {
+                      if (_cached) metaSuffix = " " + theme.fg("dim", `[last editor: ${_cached}]`);
+                    } else {
+                      _g.__genshinMetaCache.set(filePath, null); // 占位：避免重复触发
+                      execFile("xattr", ["-p", "com.genshin.meta", filePath], { encoding: "utf8", timeout: 1000 }, (err, stdout) => {
+                        try {
+                          if (!err) {
+                            const meta = JSON.parse(String(stdout || "").trim());
+                            const last = meta?.edits?.[meta.edits.length - 1]?.agent || meta?.created?.agent;
+                            _g.__genshinMetaCache.set(filePath, last || null);
+                            try { globalThis.__genshinRefreshUI?.(); } catch (e) { console.error("[tool-execution.js] " + ((e && e.message) || e)); }
+                          }
+                        } catch (e) { console.error("[tool-execution.js] meta parse: " + ((e && e.message) || e)); }
+                      });
+                    }
+                  } catch (e) { console.error("[tool-execution.js] meta: " + ((e && e.message) || e)); }
                 }
                 const summary = `Read ${t.bold(String(lineCount))} lines${fileName ? " from " + fileName : ""}${metaSuffix}${elapsed}`;
                 // Read 开关权限最高（同第一处）
