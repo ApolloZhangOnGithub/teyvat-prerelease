@@ -39,6 +39,11 @@ function renderIdentity(query: string): string[] {
   } catch (e) { console.error("[god.frontend.tui/commands/infos.ts] " + ((e as any)?.message || e)); }
   lines.push(`  Name:     ${record.name}`);
   if (record.kind) lines.push(`  Kind:     ${record.kind}`);
+  // 2026-09-16（用户）：身份与用量要显示版本号（agent 级 version.json，与 status/social list 同源）。
+  try {
+    const v = JSON.parse(fs.readFileSync(path.join(PAIMON, "agent", "version.json"), "utf8"));
+    if (v?.genshin) lines.push(`  Version:  ${v.genshin}${v.channel ? ` (${v.channel})` : ""}`);
+  } catch (e) { console.error("[god.frontend.tui/commands/infos.ts] " + ((e as any)?.message || e)); }
   if (record.model) lines.push(`  Model:    ${record.model}`);
   if (record.created) lines.push(`  Created:  ${record.created.slice(0, 19).replace("T", " ")}`);
   if (record.lastSeen) lines.push(`  LastSeen: ${record.lastSeen.slice(0, 19).replace("T", " ")}`);
@@ -133,21 +138,14 @@ function renderContextUsage(): string[] {
     grid.push(row);
   }
 
-  // 两个口径分开：api = 上一轮真实 prompt（活窗口，footer 同源）；est = 记忆文件体量（下面按类别拆的就是它）
+  // 2026-09-16（用户：去掉所有 est，只留 api 口径）——原 "memory files est" + "Estimated usage by category" 已移除。
+  // 两个口径：api = 上一轮真实 prompt（活窗口，footer 同源）；est 口径已下线。
   const apiTok = Number((globalThis as any).__genshinPondSess?.prevPrompt || 0);
   const info = [
     `${B}${A}Context Usage${R}`,
     `${B}${model} (${windowLabel})${R}`,
     apiTok > 0 ? `api window (last turn): ${fmt(apiTok)}/${fmt(total)} tokens (${pct(apiTok)}%)` : `${D}api window: n/a (no completed turn yet)${R}`,
-    `memory files est: ${fmt(used)}/${fmt(total)} tokens (${pct(used)}%)`,
-    ``,
-    `${D}Estimated usage by category (memory files on disk)${R}`,
   ];
-  for (const c of cats) {
-    if (c.tokens > 0) info.push(`${c.color}\u25C9${R} ${c.name}: ${fmt(c.tokens)} tokens (${pct(c.tokens)}%)`);
-  }
-  info.push(`${D}\u25E6${R} Free space: ${fmt(free)} (${pct(free)}%)`);
-  if (deepCortex) info.push(`${D}\u25CE${R} Deep Cortex (disk): ${fmt(estimateTokens(deepCortex))} tokens`);
 
   const gridW = 4 + cols * 2;
   const pad = " ".repeat(gridW);
