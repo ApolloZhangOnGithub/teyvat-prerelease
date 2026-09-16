@@ -14,8 +14,10 @@ const cp = require("node:child_process");
 
 const core = path.resolve(process.argv[2] || path.join(__dirname, "..", "A.core"));
 const mem = path.join(core, "spirit.bio.organs/brain.memory/memory.ts");
+// 2026-09-16（amem 分离）：amem 段已搬到 memory-amem.ts——扫两者拼合内容（收口函数 _amemManageFile 在新文件）。
+const memAmem = path.join(core, "spirit.bio.organs/brain.memory/memory-amem.ts");
 if (!fs.existsSync(mem)) { console.error("[param-paths] FAIL: 找不到 " + mem); process.exit(1); }
-const src = fs.readFileSync(mem, "utf8");
+const src = fs.readFileSync(mem, "utf8") + "\n" + (fs.existsSync(memAmem) ? fs.readFileSync(memAmem, "utf8") : "");
 let bad = 0;
 const need = (name, re, invert = false) => {
   const hit = re.test(src);
@@ -42,8 +44,7 @@ const CASES = [
 ];
 let fn = null;
 try {
-  const i = src.indexOf("const _amemManageFile = ");
-  let depth = 0, end = -1;
+  const i = src.indexOf("const _amemManageFile = ");  let depth = 0, end = -1;
   for (let k = src.indexOf("{", src.indexOf("=> {", i)); k < src.length; k++) {
     if (src[k] === "{") depth++;
     else if (src[k] === "}") { depth--; if (depth === 0) { end = k + 1; break; } }
