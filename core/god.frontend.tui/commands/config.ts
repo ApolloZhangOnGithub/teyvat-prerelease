@@ -65,29 +65,31 @@ function syncModelsJson(services: Record<string, any>) {
   try {
     if (!existsSync(MODELS_FILE)) return;
     const m = JSON.parse(readFileSync(MODELS_FILE, "utf8"));
-    const svc = services.bigmodel;
-    if (!svc) return;
-    // 2026-09-15（用户定位，windows_first_agent_01 转达）：新装机器 models.json 只有空 touch，
-    // providers.bigmodel 不存在时原先静默 no-op → /c 的 key 永远到不了运行时（setModel 报 No API key）。
-    // 修复：缺失时创建 provider（官方端点 + 常用模型条目），把 /c 的 key 落进去。
     if (!m.providers) m.providers = {};
+    // bigmodel 缺失时创建（/c 维护，官方端点 + 常用模型）
     if (!m.providers.bigmodel) {
       m.providers.bigmodel = {
         name: "智谱",
         baseUrl: "https://open.bigmodel.cn/api/paas/v4",
         api: "openai-completions",
         models: [
-          // contextWindow 显式写 1M（bigmodel 无内置同名 provider，避免 model-registry 的 128000 fallback）；
-          // glm-5.3-flash 原生多模态（models.dev modalities.input 含 image），显式写 input 让 isVisionModel 放行 Eyes(native)
           { id: "glm-5.3-flash", name: "GLM-5.3-Flash", contextWindow: 1000000, input: ["text", "image"] },
           { id: "glm-5.3", name: "GLM-5.3", contextWindow: 1000000, input: ["text"] },
         ],
       };
     }
-    if (typeof svc.apiKey === "string" && svc.apiKey.trim()) {
-      m.providers.bigmodel.apiKey = svc.apiKey.trim();
-      writeFileSync(MODELS_FILE, JSON.stringify(m, null, 4));
+    // 2026-09-16（用户：/c 的 key 与 config 脱节，只通 bigmodel）——泛化：遍历 services.json 所有 provider，
+    // 有 apiKey 且 models.json 里已有对应 provider 的，同步 key（不再只认 bigmodel）。
+    let changed = false;
+    for (const [pid, svc] of Object.entries(services)) {
+      if (!svc || typeof svc.apiKey !== "string" || !svc.apiKey.trim()) continue;
+      if (!m.providers[pid]) continue; // models.json 没有的 provider（fal.ai 等自定义），跳过（不静默造残缺 provider）
+      if (m.providers[pid].apiKey !== svc.apiKey.trim()) {
+        m.providers[pid].apiKey = svc.apiKey.trim();
+        changed = true;
+      }
     }
+    if (changed) writeFileSync(MODELS_FILE, JSON.stringify(m, null, 4));
   } catch (e) { console.error("[god.frontend.tui/commands/config.ts] syncModelsJson: " + ((e as any)?.message || e)); }
 }
 
@@ -171,9 +173,10 @@ function ensureServices(): Record<string, any> {
 function _writeServicesAtomic(services: Record<string, any>) { const tmp = UA_FILE + ".tmp-" + process.pid; writeFileSync(tmp, JSON.stringify(services, null, 2)); renameSync(tmp, UA_FILE); }
 function saveServices(services: Record<string, any>) { try { mkdirSync(UA_DIR, { recursive: true }); _writeServicesAtomic(services); } catch (e) { console.error("[config.ts] " + ((e as any)?.message || e)); } }
 function syncAfterChange(key: string, svc: Record<string, any>, services: Record<string, any>) {
-  if (key === "bigmodel") { syncModelsJson(services); syncProviderRegistration(key, svc); }
-  else if (PROVIDER_ENV_KEYS[key]) { syncProviderEnvKey(key, services); syncProviderRegistration(key, svc); }
-  else if (key === "qwen") syncProviderRegistration(key, svc);
+  // 2026-09-16（用户：/c 与 config 脱节，只通 bigmodel）——统一：所有 provider 都同步 key 到位
+  syncModelsJson(services);                       // 泛化后遍历所有 provider → models.json（自定义/bigmodel）
+  if (PROVIDER_ENV_KEYS[key]) syncProviderEnvKey(key, services);  // 内置 provider 额外写 env（pi 内置只认 env）
+  syncProviderRegistration(key, svc);             // 所有 provider 都做 /m 注册/停用
 }
 
 export async function configHandler(_args: any, ctx: any) {
