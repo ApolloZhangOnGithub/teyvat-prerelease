@@ -751,9 +751,52 @@ export class ModelRegistry {
      * Find a model by provider and ID.
      */
     find(provider, modelId) {
-        return this.models.find(
+        const direct = this.models.find(
             (m) => m.provider === provider && m.id === modelId,
         );
+        if (direct)
+            return direct;
+        // 2026-09-16（用户/windows_first_agent_01：统一 id 空间）——registry 未命中时回落到 models.dev 目录（/m 列表的源）。
+        // 之前 /m 只列目录条目，启动解析只查 registry——deepseek-flash 这类"只在目录里"的 id 选得中、跑得动，
+        // 却写进 config/individual 后重启 find=undefined → 回退+告警（用户炸了三轮）。
+        // 这里按目录条目**精确**合成一条 model（非模糊/后缀猜测，不违背用户禁用的"宽容匹配"），并注册进 models（后续直接命中）。
+        return this._synthesizeFromCatalog(provider, modelId);
+    }
+    /**
+     * 从 models.dev 目录合成 registry 缺失的 model（方案 2：统一 id 空间）。
+     * 目录有 id/name/limit/modalities；api/baseUrl 取同 provider 的内置模板
+     * （catalog 的 provider.api 字段是 URL、协议在 npm，不能直接当 pi 的 api 用）。
+     */
+    _synthesizeFromCatalog(provider, modelId) {
+        try {
+            if (this._mdCat === undefined) {
+                const home = process.env.PAIMON_HOME || `${process.env.HOME}/.teyvat`;
+                const agent = process.env.PAIMON_AGENT_ID || "";
+                this._mdCat = JSON.parse(readFileSync(`${home}/RuntimeCache/${agent}/modelsdev-catalog.json`, "utf8"));
+            }
+            const mdKey = { openrouter: "openrouter", bigmodel: "zhipuai", deepseek: "deepseek" }[provider] || provider;
+            const m = this._mdCat?.[mdKey]?.models?.[modelId];
+            if (!m)
+                return undefined;
+            const tmpl = this.models.find((x) => x.provider === provider);
+            if (!tmpl)
+                return undefined;
+            const synth = {
+                ...tmpl,
+                id: modelId,
+                name: m.name || modelId,
+                contextWindow: m.limit?.context ?? tmpl.contextWindow,
+                maxTokens: m.limit?.output ?? tmpl.maxTokens,
+                input: Array.isArray(m.modalities?.input) && m.modalities.input.length > 0 ? m.modalities.input : tmpl.input,
+            };
+            if (!this.models.some((x) => x.provider === provider && x.id === modelId)) {
+                this.models.push(synth);
+            }
+            return synth;
+        }
+        catch {
+            return undefined;
+        }
     }
     /**
      * Get API key for a model.

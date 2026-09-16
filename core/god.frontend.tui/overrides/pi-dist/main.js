@@ -347,8 +347,10 @@ function buildSessionOptions(parsed, scopedModels, hasExistingSession, modelRegi
               const savedModel = modelRegistry.find(rec.modelProvider, rec.model);
               if (savedModel) options.model = savedModel;
               else {
-                // 2026-09-16（用户：静默 fallback 难以察觉，排查 glm 耗时 3h）：显式 warning
-                console.warn(chalk.yellow(`⚠️ per-agent 模型 "${rec.model}" (${rec.modelProvider || "?"}) 不可用（未配 key 或 id 不存在），已回退默认模型。`));
+                // 2026-09-16（用户：静默 fallback 难以察觉，排查 glm 耗时 3h）：显式 warning。
+                // 2026-09-16（windows_first_agent_01 实测）：原文案"未配 key 或 id 不存在"误导——find 只查 id 不查 auth，
+                // key 与解析无关；真相是该 id 既不在注册表、也不在 models.dev 目录（重启无法保留）。
+                console.warn(chalk.yellow(`⚠️ per-agent 模型 "${rec.model}" (${rec.modelProvider || "?"}) 无法解析：该 id 不在注册表、也不在 models.dev 目录（重启无法保留）。请在 /m 改选一个有效模型。已回退默认。`));
               }
             }
           }
