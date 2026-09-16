@@ -1,4 +1,5 @@
 import * as os from "node:os";
+import { appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { getCapabilities, getImageDimensions, hyperlink, imageFallback } from "@earendil-works/pi-tui";
 import { stripAnsi } from "../../utils/ansi.js";
@@ -37,8 +38,18 @@ export function getTextOutput(result, showImages) {
         return "";
     const textBlocks = result.content.filter((c) => c.type === "text");
     const imageBlocks = result.content.filter((c) => c.type === "image");
-    let output = textBlocks.map((c) => sanitizeBinaryOutput(stripAnsi(c.text || "")).replace(/\r/g, "")
-    ).join("\n")
+    let output = textBlocks.map((c) => {
+        const raw = c.text || "";
+        const stripped = stripAnsi(raw);
+        // 2026-09-16（用户定稿：清洗不对——不无脑正则剥，改「校验渲染值 vs 原始值」只报告）。
+        // stripAnsi 后若仍残有 ANSI（完整 CSI 或裸 SGR 参数 38;5;222m/9m），说明上游某环节剥了一半（ESC/[ 被剥留参数），
+        // 这里只写诊断日志定位上游，不硬剥（硬剥会误伤代码里真实的 38;5）。
+        const residue = stripped.match(/\x1b\[[0-9;]*[A-Za-z]|\b\d+(?:;\d+)*m\b/g);
+        if (residue) {
+            try { appendFileSync((process.env.HOME || "") + "/.teyvat/LogData/ansi-residue.log", `[${new Date().toISOString()}] ANSI 残渣(渲染值≠原始值): ${JSON.stringify(residue.slice(0, 3))} 原始前120字: ${raw.slice(0, 120).replace(/\n/g, " ")}\n`); } catch { /* 诊断日志失败静默 */ }
+        }
+        return sanitizeBinaryOutput(stripped).replace(/\r/g, "");
+    }).join("\n")
     const caps = getCapabilities();
     if (imageBlocks.length > 0 && (!caps.images || !showImages)) {
         const imageIndicators = imageBlocks
