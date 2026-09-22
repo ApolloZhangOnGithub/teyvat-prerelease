@@ -387,7 +387,10 @@ case "$NAME" in
           local bak="$dir/.local-changes-$(date +%Y%m%d-%H%M%S).diff"
           git -C "$dir" diff > "$bak" 2>/dev/null
           echo -e "  \033[33m*\033[0m 本地改动已备份到 $bak"
-          git -C "$dir" checkout -- . 2>/dev/null
+          # 2026-09-23：autostash pop 冲突后仓库是 **unmerged** 态（merge 冲突标记），
+          # git checkout -- . 解决不了（报 "path ... is unmerged"）。改用 reset --hard HEAD 一并丢弃。
+          git -C "$dir" merge --abort 2>/dev/null
+          git -C "$dir" reset --hard HEAD 2>/dev/null
           git -C "$dir" clean -fd 2>/dev/null
         fi
         _tt_run_bg "拉取更新中" git -C "$dir" pull --ff-only

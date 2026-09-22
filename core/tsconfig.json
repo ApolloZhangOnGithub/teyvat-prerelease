@@ -39,6 +39,7 @@
       "#vision_vlm": ["./spirit.bio.abilities/vision.vlm/vlm.ts"],
       "#vision_ocr": ["./spirit.bio.abilities/vision.ocr/ocr.ts"],
       "#vision_ax": ["./spirit.bio.abilities/vision.ax/ax.ts"],
+      "#blocktrace": ["./spirit.bio.abilities/blocktrace/blocktrace.ts"],
       "#internet_fetch": ["./spirit.bio.abilities/internet.fetch/fetch.ts"],
       "#internet_search": ["./spirit.bio.abilities/internet.search/search.ts"],
       "#office_docx": ["./spirit.bio.abilities/office.docx/docx.ts"],
