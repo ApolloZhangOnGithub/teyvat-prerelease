@@ -1091,14 +1091,18 @@ function registerSocialTools(pi: ExtensionAPI): void {
           }
           const allCount = agents.length + remoteLines.length;
           if (!allCount && !remoteLines.length) return { content: [{ type: "text", text: "(no agents registered)" }], details: { social: true, action: "list", count: 0, lines: [] } };
-          const lines = agents.map(a => {
+          const rows = agents.map(a => {
             const mark = a.sid === me ? " (me)" : "";
             const ago = a.lastSeen > 0 ? Math.max(0, Math.floor((now - a.lastSeen) / 1000)) : -1;
             const online = ago >= 0 && ago < 600;
             const state = online ? "online" : ago >= 0 ? `${Math.floor(ago / 60)}m ago` : "never";
-            return `${a.name} (${a.sid})${mark}  focus:${a.focus}  ${state}  ${a.version} ${a.model}`;
-          }).concat(remoteLines.length ? [`-- remote (${remoteLines.length}) --`].concat(remoteLines) : []);
-          return { content: [{ type: "text", text: `Agents (${allCount}):\n${lines.map(l => "  " + l).join("\n")}` }], details: { social: true, action: "list", count: allCount, lines } };
+            return `| ${a.name}${mark} | ${a.sid} | ${a.focus} | ${state} | ${a.version} | ${a.model} |`;
+          });
+          // 2026-09-23 用户：直接用原生 markdown 表格（| 竖线，TUI 自动渲染）
+          const table = ["| 名称 | sid | focus | 状态 | 版本 | 模型 |", "|---|---|---|---|---|---|", ...rows]
+            .concat(remoteLines.length ? ["", ...remoteLines.map(r => `- ${r}`)] : [])
+            .join("\n");
+          return { content: [{ type: "text", text: `Agents (${allCount}):\n\n${table}` }], details: { social: true, action: "list", count: allCount, lines: rows } };
         }
         case "global": {
           // 跨设备 agents 发现（2026-09-05 用户定稿）：拉 /auth/devices（设备+各设备上传的 genshin 结果）

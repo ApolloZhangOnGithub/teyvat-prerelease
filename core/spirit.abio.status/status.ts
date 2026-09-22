@@ -12,7 +12,6 @@ import { registerPaimonTool } from "#kernel_backbone";
 import { renderToolCall, renderMessage } from "#tui_blockrender";
 import { i18n } from "#tui_localizations";
 import { readGrowthLast } from "#paths";
-import { renderAlignedTable } from "#tui_renderers";
 const T = (zh: string, en: string) => i18n(zh, en);
 
 // ── Codeforces 风格履历段位（CF 官方 rating 颜色，2015 "Second Revolution of Colors" 改革后至今）──
@@ -245,14 +244,14 @@ export function registerStatusTool(_pi: ExtensionAPI) {
               }
             } catch (e) { console.error("[spirit.abio.status/status.ts] " + ((e as any)?.message || e)); /* catalog 加载失败则仅用 models.json */ }
             const seen = new Set<string>();
-            const lines: string[] = [`${T("可用模型", "Available models")} (${T("★=当前", "★=current")}, ${T("screenshot=视觉模型", "screenshot=vision model")}):`];
+            const rows: string[] = [];
             const push = (m: any, prov: string) => {
               const key = prov + "::" + (m.id || m);
               if (seen.has(key)) return; seen.add(key);
               const isVision = Array.isArray(m.input) && m.input.includes("image");
-              const star = (m.id === curId) ? "★ " : "      ";
-              const vis = isVision ? " [视觉]" : "";
-              lines.push(`${star}${m.id}${vis}  (${prov})`);
+              const star = (m.id === curId) ? "★" : "";
+              const vis = isVision ? "✓" : "";
+              rows.push(`| ${m.id} | ${prov} | ${vis} | ${star} |`);
             };
             // 先 built-in catalog（官方，含 vision）
             for (const it of merged) push(it, it.provider);
@@ -260,7 +259,9 @@ export function registerStatusTool(_pi: ExtensionAPI) {
             for (const [prov, p] of Object.entries(models.providers || {})) {
               for (const mm of ((p as any).models || [])) push(mm, String(prov));
             }
-            return { content: [{ type: "text", text: lines.join("\n") }] };
+            // 2026-09-23 用户：直接用原生 markdown 表格
+            const table = [`${T("可用模型", "Available models")} (${T("★=当前", "★=current")}, ✓=${T("视觉", "vision")}):`, "", "| 模型 | provider | 视觉 | 当前 |", "|---|---|---|---|", ...rows].join("\n");
+            return { content: [{ type: "text", text: table }] };
           } catch (e: any) {
             return { content: [{ type: "text", text: T(`读取模型失败: ${e?.message || e}`, `Failed to load models: ${e?.message || e}`) }], isError: true };
           }
@@ -331,10 +332,11 @@ export function registerStatusTool(_pi: ExtensionAPI) {
           let ta: any = null;
           try { ta = JSON.parse(readFileSync(join(homedir(), ".teyvat/config/tools-auth", pid, "tools-auth.json"), "utf8")); } catch (err) { console.error("[spirit.abio.status/status.ts] " + ((err as any)?.message || err)); }
           rows.push([T("持久授权", "persistent"), grTool, "", ta ? `enable[${(ta.enabled || []).join(",") || T("无", "none")}] disable[${(ta.disabled || []).join(",") || T("无", "none")}]` : T("(无)", "(none)")]);
-          // 渲染对齐表格（复用 renderers.ts 的通用函数，2026-09-23）
+          // 直接输出原生 markdown 表格（TUI 自动渲染，2026-09-23 用户定稿）
           const header = [T("授权项", "item"), T("组", "group"), T("状态", "status"), T("详情", "detail")];
-          const table = renderAlignedTable([header, ...rows], { indent: "  " });
-          return { content: [{ type: "text", text: [T("授权状态（时间=授权时刻）", "Permissions (time = authorized at)") + ":", ...table].join("\n") }] };
+          const md = [header, ...rows].map((r) => "| " + r.join(" | ") + " |");
+          md.splice(1, 0, "|" + header.map(() => "---").join("|") + "|");
+          return { content: [{ type: "text", text: T("授权状态（时间=授权时刻）", "Permissions (time = authorized at)") + ":\n\n" + md.join("\n") }] };
         } catch (e: any) {
           return { content: [{ type: "text", text: T(`读取权限失败: ${e?.message || e}`, `Failed to read permissions: ${e?.message || e}`) }], isError: true };
         }
