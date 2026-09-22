@@ -581,8 +581,10 @@ export class TuiBase extends Container {
             if (cells === 1 || cells === 2) {
                 const prev = globalThis.__genshinAmbiguousCells;
                 globalThis.__genshinAmbiguousCells = cells;
-                // ambiguous 符号默认按 1 格；终端答"2 格"时要重绘才对齐
-                if (cells === 2 && prev !== 2) this.requestRender(true);
+                // 2026-09-23（ISSUE 269）：探测写 \r→…\r\x1b[K 会清掉当前行（可能是 editor 的 ❯ 提示符）。
+                // 之前只在 cells===2 时全量重绘（怕扰行内 UI），但 cells===1（mac/iTerm2 默认）时不清 → 重启后 ❯ 被清、下次输入才恢复。
+                // 改为探测后总是全量重绘恢复被清的行。
+                this.requestRender(true);
             }
         }
         return true;

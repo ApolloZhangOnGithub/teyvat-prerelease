@@ -201,11 +201,13 @@ export function wrapHanging(lines, width, h) {
 //   renderResult() { return renderMessage.silent(); },
 
 // 组件注入：调用方通过 initBlockrender() 注入 Text/Container/helpers，避免循环依赖
-let _Text = null, _Container = null, _visibleWidth = null, _wrapTextWithAnsi = null;
-export function initBlockrender(Text, Container, visibleWidth, wrapTextWithAnsi) {
+let _Text = null, _Container = null, _visibleWidth = null, _wrapTextWithAnsi = null, _Markdown = null, _markdownTheme = null;
+export function initBlockrender(Text, Container, visibleWidth, wrapTextWithAnsi, Markdown, markdownTheme) {
   _Text = Text; _Container = Container;
   if (visibleWidth) _visibleWidth = visibleWidth;
   if (wrapTextWithAnsi) _wrapTextWithAnsi = wrapTextWithAnsi;
+  if (Markdown) _Markdown = Markdown;
+  if (markdownTheme) _markdownTheme = markdownTheme;
 }
 
 // 自举：从 pi-tui 动态加载 helpers（install.sh 部署后可直接 import）
@@ -400,6 +402,21 @@ export const renderMessage = {
     const indent = " ".repeat(GUTTER);
     const prefix = indent + (err ? theme.fg("error", SYM.result + "  ") : theme.fg("dim", SYM.result + "  "));
     return bulletText(prefix, err ? theme.fg("error", text) : theme.fg("toolOutput", text));
+  },
+
+  // markdown 渲染：内容走 Markdown 实例（渲染表格/列表/代码块等），供需要富文本的工具结果用
+  // 与 assistant 文字同款管线（new Markdown + markdownBullet）；未注入 Markdown 时退回 output（纯文本）
+  // 2026-09-23 用户定稿：tool result 要能渲染 markdown 表格
+  markdown(theme, ctx, content) {
+    const text = stripResultTokenMark(content?.[0]?.text ?? "");
+    if (!text || !_Markdown || !_markdownTheme) return this.output(theme, ctx, content);
+    const err = isToolError(ctx?.toolName, text, ctx);
+    const md = new _Markdown(text, GUTTER, 0, _markdownTheme);
+    const dotStr = (err ? theme.fg("error", SYM.result + " ") : theme.fg("dim", SYM.result + " "));
+    return {
+      render: (w) => markdownBullet(md, dotStr, w),
+      invalidate: () => { if (md.invalidate) md.invalidate(); },
+    };
   },
 
   // 简短摘要（同上逻辑，不截断——调用方自己控制长度）
