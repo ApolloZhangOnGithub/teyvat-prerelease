@@ -192,7 +192,9 @@ for (const p of picked) {
   let fresh;
   try { fresh = JSON.parse(fs.readFileSync(PLIST, 'utf8')); } catch (e) { fresh = null; console.error('[god.frontend.cli/archive.cjs] plist 重读失败，用内存副本写回: ' + (e?.message || e)); }
   const base = Array.isArray(fresh) ? fresh : list;
-  const byId = new Map(picked.map(p => [p.id, p]));
+  // 2026-09-22（用户实测 `genshin a 1` 报 TypeError: picked.map is not a function）：picked 是 **Set**（L32 new Set()），
+  // Set 没有 .map —— 本文件其它处都是 [...picked]（L156/157/164），只这行漏了，走到写回就必崩。
+  const byId = new Map([...picked].map(p => [p.id, p]));
   for (const p of base) { const q = byId.get(p.id); if (q) { p.archived = q.archived; p.archivedAt = q.archivedAt; } }
   const out = base.map(p => { const { _active, _ago, ...rest } = p; return rest; });
   const tmp = PLIST + '.tmp-' + process.pid;

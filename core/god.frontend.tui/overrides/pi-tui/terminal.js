@@ -89,7 +89,15 @@ export class ProcessTerminal {
         // Enable bracketed paste mode - terminal will wrap pastes in \x1b[200~ ... \x1b[201~
         process.stdout.write("\x1b[?2004h");
         // Set up resize handler immediately
-        process.stdout.on("resize", this.resizeHandler);
+        // 2026-09-22（用户报：resize 后渲染完全错乱，多/少空行，要等新内容才自愈）：
+        // 下面 columns/rows 有 **1s 尺寸缓存**（_wsizeAt/_wsizeCols/_wsizeRows，2026-09-16 加来处理"resize 事件丢失"），
+        // 而这里原来**不清缓存** → resize 后 doRender 读到的是**旧尺寸**（连 fullRedraw 判断也跟着错）
+        // → 满屏错位；等 1s 缓存过期（或下一次新内容渲染）才自愈——症状完全对应。
+        // 现在：resize 事件到达先让缓存失效，再转发给原 handler（读 this.resizeHandler 的实时值）。
+        process.stdout.on("resize", () => {
+            _wsizeAt = 0; _wsizeCols = 0; _wsizeRows = 0;
+            if (this.resizeHandler) this.resizeHandler();
+        });
         // Refresh terminal dimensions - they may be stale after suspend/resume
         // (SIGWINCH is lost while process is stopped). Unix only.
         if (process.platform !== "win32") {
