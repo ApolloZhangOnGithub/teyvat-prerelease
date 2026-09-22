@@ -190,7 +190,7 @@ export async function configHandler(_args: any, ctx: any) {
       if (ga !== gb) return ga.localeCompare(gb);
       return (DEFAULTS[a]?.name || a).localeCompare(DEFAULTS[b]?.name || b, "zh-CN");
     });
-    const getItems = () => displayKeys.map(key => {
+    const svcItems = displayKeys.map(key => {
       const svc = services[key] || {};
       const cn = DEFAULTS[key]?.name || key; const en = DEFAULTS[key]?.en || "";
       const fields = Object.keys(DEFAULTS[key]?.fields || svc).filter((f: string) => f !== "enabled");
@@ -221,6 +221,26 @@ export async function configHandler(_args: any, ctx: any) {
         },
       };
     });
+    // 2026-09-22（用户：唯一真相）：/login 写进 pi authStorage 的凭证也放进这张表——**凭证只有这一处视图**。
+    // 只读：编辑/移除仍走 pi 原生的 /login 与 /logout（authStorage 是 pi 的存储，teyvat 不直改）。
+    // 读取链（唯一）：pi 的 getApiKeyAndHeaders = models.json.apiKey → env → authStorage。
+    const authItems: any[] = [];
+    try {
+      const st = (globalThis as any).__genshinModelRegistry?.()?.authStorage;
+      const ids: string[] = typeof st?.list === "function" ? st.list() : [];
+      for (const pid of ids) {
+        const rec = st.get(pid);
+        const kind = rec?.type === "oauth" ? T("OAuth（/login）", "OAuth (/login)") : T("API key（/login）", "API key (/login)");
+        const nm = DEFAULTS[pid]?.name || pid;
+        authItems.push({
+          id: `__pi_auth__${pid}`,
+          label: `${nm} ${T("（/login）", "(/login)")}`,
+          currentValue: kind,
+          onActivate: async () => { ctx.ui.notify(T(`provider「${pid}」的凭证由 /login 写入（pi authStorage）；要移除用 /logout。`, `Provider "${pid}" credential was written by /login (pi authStorage); remove it with /logout.`)); },
+        });
+      }
+    } catch (e) { console.error("[config.ts] authStorage list: " + ((e as any)?.message || e)); }
+    const getItems = () => [...svcItems, ...authItems];
     await showSettingsList([T("设置", "Settings"), T("服务配置", "Service Config")], getItems, (id: string, value: string) => {
       const svc = services[id] || {};
       svc.enabled = value === T("启用", "On") ? "y" : "n";

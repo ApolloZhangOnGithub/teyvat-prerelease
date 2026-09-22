@@ -432,6 +432,15 @@ done
 for f in auth.json models.json settings.json; do
   SRC="$HOME/.teyvat/config/$f"
   DEST="$HOME/.teyvat/agent/$f"
+  # 2026-09-22（a_great_agent_on_imac_01 报的 #5：config/ 与 UserAccount/ 数据分裂）：
+  # 旧体系（genshin）的真实配置在 UserAccount/，迁过来后 config/ 被下面的 touch 建成 **0 字节空文件**，
+  # 而 pi 读的是 config/（经 agent/ 软链）→ 直接报 `Failed to parse models.json: Unexpected end of JSON input`。
+  # 所以建空文件**之前**先做一次回填：config 缺失或为空、且 UserAccount 有内容 → 复制过来（UserAccount 原样保留，不删）。
+  if [ ! -s "$SRC" ] && [ -s "$HOME/.teyvat/UserAccount/$f" ]; then
+    mkdir -p "$HOME/.teyvat/config"
+    cp "$HOME/.teyvat/UserAccount/$f" "$SRC"
+    ok "回填 config/$f ← UserAccount/$f（迁移遗留；UserAccount 原文保留）"
+  fi
   [ -e "$SRC" ] || touch "$SRC" 2>/dev/null
   ln -sf "../config/$f" "$DEST" 2>/dev/null
 done
@@ -726,8 +735,13 @@ _deployed "$EXT/spirit.bio.organs/kernel.heart/heart.ts"
 _deployed "$EXT/spirit.bio.organs/hands.executes/executes.ts"
 _deployed "$EXT/spirit.bio.organs/head.mouth/mouth.ts"
 _deployed "$EXT/spirit.bio.organs/head.ears/ears.ts"
-_deployed "$EXT/spirit.bio.organs/@ABANDONED.brain.metaconsciousness/metaconsciousness.ts"
-_deployed "$EXT/spirit.bio.organs/@ABANDONED.brain.hippocampus/hippocampus-sleep.ts"
+# 2026-09-22（a_great_agent_on_imac_01 报的阻断 bug，IMAC 实测）：@ABANDONED.* 两个目录**不随包分发**——
+# A.core/.gitignore:15 有 `*ABANDONED*`，发布仓里根本没有它们（已核实），且运行时也没有任何代码 import
+# （core.ts 里的 import 已注释，只剩注释/字符串提及）。所以它们**不能**出现在这份"必须存在"清单里：
+# 否则从发布仓装的新机器必定 MISSING → err 退出 → 连带跳过后续 patch 与 manifest 生成（安装直接挂）。
+# 教训：这份清单应由"实际分发内容的 manifest"驱动，不该手写硬编码路径（手写=迟早和 .gitignore/重构对不上）。
+# _deployed "$EXT/spirit.bio.organs/@ABANDONED.brain.metaconsciousness/metaconsciousness.ts"
+# _deployed "$EXT/spirit.bio.organs/@ABANDONED.brain.hippocampus/hippocampus-sleep.ts"
 _deployed "$EXT/spirit.bio.gene/rna.json"
 _deployed "$EXT/god.frontend.cli/launcher.sh"
 _deployed "$EXT/universe.infotech/cloud.servers/browser_service.cjs"
@@ -835,33 +849,13 @@ ENDPATCH
     node "$_patch_mr" "$_mr_js" && rm -f "$_patch_mr"
   fi
 
-  # patch model-registry.js: models.json 只写 id 的自建 provider 模型缺 contextWindow/maxTokens → fallback 128000/16384（pi L508）。
-  # 2026-09-07 alice 报告 + ISSUE 143/144：应继承 built-in catalog 值（deepseek v4 = 1000000/384000），否则 UI 假 128k + 误导 compaction。
-  _mreg_js="$PI_DIST/core/model-registry.js"
-  if [ -f "$_mreg_js" ]; then
-    _patch_mreg="$PI_DIST/core/.patch-model-registry.cjs"
-    cat > "$_patch_mreg" <<'ENDPATCH'
-const fs = require('fs');
-const target = process.argv[2];
-let src = fs.readFileSync(target, 'utf8');
-let changes = 0;
-// 1) getBuiltInDefaults 缓存加 contextWindow/maxTokens（builtIn[0] = 该 provider 首模型，同系列通常同值）
-const o1 = 'const defaults = { api: builtIn[0].api, baseUrl: builtIn[0].baseUrl };';
-const n1 = 'const defaults = { api: builtIn[0].api, baseUrl: builtIn[0].baseUrl, contextWindow: builtIn[0].contextWindow, maxTokens: builtIn[0].maxTokens };';
-if (src.includes(o1)) { src = src.split(o1).join(n1); changes++; }
-// 2) contextWindow fallback 128000 → 先继承 builtInDefaults
-const o2 = 'contextWindow: modelDef.contextWindow ?? 128000,';
-const n2 = 'contextWindow: modelDef.contextWindow ?? builtInDefaults?.contextWindow ?? 128000,';
-if (src.includes(o2)) { src = src.split(o2).join(n2); changes++; }
-// 3) maxTokens fallback 16384 → 先继承 builtInDefaults
-const o3 = 'maxTokens: modelDef.maxTokens ?? 16384,';
-const n3 = 'maxTokens: modelDef.maxTokens ?? builtInDefaults?.maxTokens ?? 16384,';
-if (src.includes(o3)) { src = src.split(o3).join(n3); changes++; }
-fs.writeFileSync(target, src);
-console.log('patch-model-registry:' + changes + ' (期望 3)');
-ENDPATCH
-    node "$_patch_mreg" "$_mreg_js" && rm -f "$_patch_mreg"
-  fi
+  # ── 已移除：patch model-registry.js（contextWindow/maxTokens 继承）2026-09-22 ──
+  # 原因（a_great_agent_on_imac_01 报的 #4：长期 `patch-model-registry:0 (期望 3)` 静默失配）：
+  #   `model-registry.js` 现在是 teyvat 的**整文件 override**（god.frontend.tui/overrides/pi-dist/core/model-registry.js），
+  #   而 ISSUE 143/144 的三条修复早已落在 override 里（L671-676 的 defaults 自带 contextWindow/maxTokens；
+  #   且全文已无 `?? 128000` / `?? 16384`）——针对 stock 文件的字符串补丁再也匹配不到，永远 0/3。
+  #   留着它=每次安装打一条唬人的 `0 (期望 3)`（静默 no-op 管线）。所以直接删。
+  #   以后同类需求请改 override 源文件（走 make），不要再加后置字符串补丁。
 
   # patch runtime package.json: add #gene_riboswitch import (inline, no temp file)
   node -e "

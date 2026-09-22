@@ -175,7 +175,17 @@ export default function kernelMain(pi: ExtensionAPI) {
       }
       (globalThis as any).__genshinSessionEndReason = "crash"; crashLog("uncaughtException", e);
     });
-    process.prependListener("unhandledRejection", (e: any) => { (globalThis as any).__genshinSessionEndReason = "crash"; crashLog("unhandledRejection", e); });
+    process.prependListener("unhandledRejection", (e: any) => {
+      (globalThis as any).__genshinSessionEndReason = "crash"; crashLog("unhandledRejection", e);
+      // 2026-09-22（a_great_agent_on_imac_01 报的 #7 第二条：启动期 TypeError 被吞 → 进程空转"卡住"）：
+      // **挂上任何 unhandledRejection 监听 = 关掉 Node 默认的"未处理 rejection 就崩溃退出"**。
+      // 于是主流程死在 async 里（如 buildSessionOptions 越界）、事件循环还活着 → TUI 永远起不来、
+      // 终端不进 raw 模式、用户只能干等（找不到任何报错）——比直接崩还难查。
+      // 这里补回默认语义：落盘之后**退出**（exit 监听会写 session 结束记录），launcher 能重启、用户能看到错。
+      // 注：绕开 console.error（它被重定向到 LogData/*/console-error.log，上不了屏）直写 stderr。
+      try { process.stderr.write(`[teyvat] unhandledRejection（已记录到 ErrorData/*/crash.log），进程退出：\n${e?.stack ?? e}\n`); } catch { /* stderr 也可能坏，无妨 */ }
+      process.exit(1);
+    });
     process.prependListener("SIGINT", () => { (globalThis as any).__genshinSessionEndReason = "user-ctrl-c"; });
     process.prependListener("SIGTERM", () => { (globalThis as any).__genshinSessionEndReason = "user-ctrl-c"; });
     // exit 时同步写 session 结束记录（exit 一定会触发，比 session_shutdown 可靠）

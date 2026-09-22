@@ -300,10 +300,14 @@ async function createSessionManager(parsed, cwd, sessionDir, settingsManager) {
 //     }
 //     return undefined;
 // }
-function buildSessionOptions(parsed, scopedModels, hasExistingSession, modelRegistry, settingsManager) {
+function buildSessionOptions(parsed, scopedModels, sessionContext, modelRegistry, settingsManager) {
     const options = {};
     const diagnostics = [];
     let cliThinkingFromModel = false;
+    // 2026-09-22（用户：需要唯一真相的改好）：会话上下文只当"记录"读。
+    // pi 会把本会话最后一次 model_change 放在 sessionContext.model（session-manager 的 getSessionContextSettings）——
+    // 它是"那时用过什么"，**不是**决策源；决策只走下面的配置链（CLI → per-agent → settings 默认 → scoped[0]）。
+    const sessionModel = sessionContext?.model ?? null;
     // Model from CLI
     // - supports --provider <name> --model <pattern>
     // - supports --model <provider>/<pattern>
@@ -357,7 +361,10 @@ function buildSessionOptions(parsed, scopedModels, hasExistingSession, modelRegi
         }
       } catch { /* 读失败回退默认 */ }
     }
-    if (!options.model && !hasExistingSession) {
+    // 2026-09-22（用户：唯一真相）：去掉 `!hasExistingSession` 门——此前"已有会话"时配置链被**整段跳过**，
+    // 于是"配置说的"和"会话记的"各说各话、静默分叉（恢复会话时 settings 默认不生效，只能碰运气）。
+    // 现在配置链**永远**参与：per-agent 文件 > settings 默认（经 enabledModels 校验）> scoped[0] 兼底（显式 warning）。
+    if (!options.model) {
         const savedProvider = settingsManager.getDefaultProvider();
         const savedModelId = settingsManager.getDefaultModel();
         const savedModel = savedProvider && savedModelId ? modelRegistry.find(savedProvider, savedModelId) : undefined;
@@ -369,7 +376,7 @@ function buildSessionOptions(parsed, scopedModels, hasExistingSession, modelRegi
                     options.thinkingLevel = savedInScope.thinkingLevel;
                 }
             }
-            else {
+            else if (scopedModels.length > 0) {
                 // 2026-09-16 用户：禁用垃圾管线——defaultModel 优先是自动纠正（enabledModels 矛盾时自动换），逐行注释。
                 // 恢复：不自动用 defaultModel，掉 scopedModels[0] 但显式 warning（让用户看到矛盾）。
                 // options.model = savedModel;
@@ -377,12 +384,36 @@ function buildSessionOptions(parsed, scopedModels, hasExistingSession, modelRegi
                 options.model = scopedModels[0].model;
                 console.warn(chalk.yellow(`⚠️ settings 默认模型 "${savedModelId}" (${savedProvider}) 不在 enabledModels 范围，回退到 "${scopedModels[0].model.id}"。`));
             }
+            else {
+                // 2026-09-22（a_great_agent_on_imac_01 报的阻断 bug：`scopedModels[0].model` 越界崩溃 → unhandledRejection 卡死）：
+                // 这条分支原本直接读 scopedModels[0]，但 `enabledModels` 没配/解析不出任何模型时 scopedModels 是空数组
+                // （默认模型配了、enabledModels 没配 → 必现；TypeError 抛在 async 初始化里被吞 → 进程空转、终端不进 raw、用户卡住）。
+                // 修：有 scoped[0] 就按原样退它；**一个都没有**时用用户明确配的默认模型（总不能没模型跑），并显式告警。
+                if (scopedModels.length > 0) {
+                    options.model = scopedModels[0].model;
+                    console.warn(chalk.yellow(`⚠️ settings 默认模型 "${savedModelId}" (${savedProvider}) 不在 enabledModels 范围，回退到 "${scopedModels[0].model.id}"。`));
+                }
+                else {
+                    options.model = savedModel;
+                    console.warn(chalk.yellow(`⚠️ settings 默认模型 "${savedModelId}" (${savedProvider}) 不在 enabledModels 范围，且 enabledModels 解析不出任何模型 → 按 settings 默认模型继续（建议去 /s 把模型范围配上）。`));
+                }
+            }
         }
         else if (scopedModels.length > 0) {
             options.model = scopedModels[0].model;
             if (!parsed.thinking && scopedModels[0].thinkingLevel) {
                 options.thinkingLevel = scopedModels[0].thinkingLevel;
             }
+        }
+    }
+    // 2026-09-22（用户：唯一真相）：会话里那份模型 vs 本次配置决定的模型——不一致就**显式说清**（不静默分叉）。
+    // 正常情况下两者一致（/m 会同时写 per-agent 文件 + 会话的 model_change）；不一致 = 真有东西对不上。
+    if (options.model && sessionModel) {
+        const sameModel = sessionModel.provider === options.model.provider && sessionModel.modelId === options.model.id;
+        if (!sameModel) {
+            const msg = `会话记录里的模型是 ${sessionModel.provider || "?"}/${sessionModel.modelId || "?"}，配置决定的是 ${options.model.provider}/${options.model.id}——本次按**配置**使用（配置是唯一真相，会话只是记录；要改配置用 /m）。`;
+            console.warn(chalk.yellow(`⚠️ ${msg}`));
+            diagnostics.push({ type: "warning", message: msg });
         }
     }
     // Thinking level from CLI (takes precedence over scoped model thinking levels set above)
@@ -618,7 +649,10 @@ export async function main(args, options) {
         ];
         const modelPatterns = parsed.models ?? settingsManager.getEnabledModels();
         const scopedModels = modelPatterns && modelPatterns.length > 0 ? await resolveModelScope(modelPatterns, modelRegistry) : [];
-        const { options: sessionOptions, cliThinkingFromModel, diagnostics: sessionOptionDiagnostics, } = buildSessionOptions(parsed, scopedModels, sessionManager.buildSessionContext().messages.length > 0, modelRegistry, settingsManager);
+        // 2026-09-22（用户：唯一真相）：把整个会话上下文交给 buildSessionOptions——配置链是唯一决定点，
+        // 会话里的 model_change 只用来"对不上就说清楚"（此前只传 messages.length > 0 当开关用）。
+        const sessionContext = sessionManager.buildSessionContext();
+        const { options: sessionOptions, cliThinkingFromModel, diagnostics: sessionOptionDiagnostics, } = buildSessionOptions(parsed, scopedModels, sessionContext, modelRegistry, settingsManager);
         diagnostics.push(...sessionOptionDiagnostics);
         if (parsed.apiKey) {
             if (!sessionOptions.model) {

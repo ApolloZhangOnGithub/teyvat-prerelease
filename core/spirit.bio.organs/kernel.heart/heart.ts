@@ -408,14 +408,31 @@ export default function (pi: ExtensionAPI) {
     // 2026-09-16（用户：config/individual 应每个 agent 都有，不该依赖 /m 切换一次才存在）：
     // session_start 时自动生成本 agent 的 config/individual/<sid>/model.json（不存在就写当前生效模型 + provider）。
     // 之前只依赖 savePerAgentModel（/m 切换时才写）→ 从没切过模型的 agent 这份配置就是空的。
+    // 2026-09-22（a_great_agent_on_imac_01 报的 #6：占位符被固化）：模型没解析出来时 ctx.model 是**哨兵**
+    // （provider/id/api 都是 "unknown"，见 interactive-mode.js:210 的判定）——那时**不要写文件**，
+    // 否则把 unknown 固化进配置 → 之后每次启动都报"无法解析"、还盖住了真实的默认模型（实测踩到）。
+    // 另外：已固化的 unknown 记录要**自愈**（用当前真实模型改写），不让坏状态一直留在磁盘上。
     try {
-      if (/^[a-f0-9]{8}$/.test(sessionPersonId) && ctx.model?.id) {
+      const _mid = ctx.model?.id;
+      const _mprov = ctx.model?.provider;
+      const _isUnknownModel = !_mid || !_mprov || _mid === "unknown" || _mprov === "unknown";
+      if (/^[a-f0-9]{8}$/.test(sessionPersonId) && !_isUnknownModel) {
         const _cfgDir = join(homedir(), ".teyvat/config/individual", sessionPersonId);
         const _cfgFile = join(_cfgDir, "model.json");
-        if (!existsSync(_cfgFile)) {
-          mkdirSync(_cfgDir, { recursive: true });
-          writeFileSync(_cfgFile, JSON.stringify({ model: ctx.model.id, modelProvider: ctx.model.provider }, null, 2));
+        let _needWrite = !existsSync(_cfgFile);
+        if (!_needWrite) {
+          try {
+            const _rec = JSON.parse(readFileSync(_cfgFile, "utf8"));
+            if (!_rec?.model || _rec.model === "unknown" || _rec?.modelProvider === "unknown") _needWrite = true;
+          } catch { _needWrite = true; } // 损坏/空文件也重写
         }
+        if (_needWrite) {
+          mkdirSync(_cfgDir, { recursive: true });
+          writeFileSync(_cfgFile, JSON.stringify({ model: _mid, modelProvider: _mprov }, null, 2));
+          dlog(`config/individual/${sessionPersonId}/model.json 写入 ${_mprov}/${_mid}`);
+        }
+      } else if (sessionPersonId && _isUnknownModel) {
+        dlog("config/individual 自动生成跳过：模型未解析（unknown 哨兵不落盘，#6）");
       }
     } catch (e: any) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] config/individual 自动生成: " + ((e as any)?.message || e)); }
     if (sessionPersonId && !isWorkerSession(ctx)) {
