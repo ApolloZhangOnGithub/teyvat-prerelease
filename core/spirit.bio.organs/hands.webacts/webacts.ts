@@ -31,6 +31,10 @@ const BG_HARD_TIMEOUT_MS = 90_000;   // ISSUE 119：后台推送硬超时——�
 //   1) 凭据类路径**一律禁止**（私钥/密钥/授权文件/binding/gh 配置…）—— 连 root agent 也不放行
 //   2) 别的 agent 的私有数据目录禁止（除非本 agent 在 authorize.json 里 all/root —— 与 execute 守卫同口径）
 //   3) 其余照旧允许（工作目录、/tmp、Documents…，保持"网盘式分享"的用途）
+// 2026-09-22（a_great_agent_on_imac_01 报的 #8，结论：**误报**）：upload **不**走 fileacts 的写白名单
+// （`checkAuth` 全仓只有 fileacts.ts:526 一个调用点；git 溯源 webacts 从未用过它）——“读/上传”对同一路径的判据
+// 本来就一致（read 与 upload 都只禁凭据 + 他人私有数据）。当时那句 `/a 授权其他通道` 是 **1MB 超限**提示里的
+// 误导性尾巴，已改（1MB 是服务端限制，与目录授权无关）。
 const UPLOAD_DENY_PATTERNS = [
   /(^|\/)\.ssh\//i, /(^|\/)\.aws\//i, /(^|\/)\.config\/gh\//i,
   /(^|\/)\.gnupg\//i, /(^|\/)\.codex\//i, /(^|\/)\.claude[^\/]*($|\/)/i,
@@ -224,7 +228,10 @@ export default function (pi: ExtensionAPI) {
           const data = nfs.readFileSync(resolved);
           const MAX = 1024 * 1024;
           if (data.length > MAX) {
-            return { content: [{ type: "text", text: i18n(`文件 ${data.length} B 超上限 1MB——需用户处理（截断/压缩后重传，或用户 /a 授权其他通道）`, `file ${data.length}B exceeds 1MB limit — user needed (truncate/compress, or /a authorize another channel)`) }], details: {}, isError: true };
+            // 2026-09-22（a_great_agent_on_imac_01 报的 #8）：原文案结尾写“或用户 /a 授权其他通道”——
+            // 很容易被读成“不在白名单、要走 /a 授权”（实测就有 agent 这么误报）。1MB 是**服务端限制**，
+            // `/a` 是**写目录授权**，跟上传大小毫无关系。文案必须说清楚，别让人往权限方向排查。
+            return { content: [{ type: "text", text: i18n(`文件 ${data.length} B 超上限 1MB（服务端限制，与 /a 目录授权无关）——请用户截断/压缩后重传，或改用其他分享通道`, `file ${data.length}B exceeds the 1MB server-side limit (unrelated to /a directory authorization) — truncate/compress and retry, or use another sharing channel`) }], details: {}, isError: true };
           }
           const b = JSON.parse(nfs.readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8"));
           if (!b?.token || !b?.deviceId) return { content: [{ type: "text", text: i18n("未绑定 GitHub——先 genshin login", "not bound — run genshin login first") }], details: {}, isError: true };
