@@ -41,7 +41,7 @@ step "1/3 并行准备（拉发布仓库 + 装依赖 + bun）"
 # 路 A：拉 prerelease 仓库
 A_LABEL="拉 prerelease 仓库"
 if [ ! -d "$DIR/.git" ]; then
-  ( git clone --depth 1 https://github.com/ApolloZhangOnGithub/paimon-code-prerelease.git "$DIR" ) >/dev/null 2>&1 &
+  ( git clone --depth 1 https://github.com/ApolloZhangOnGithub/teyvat-prerelease.git "$DIR" ) >/dev/null 2>&1 &
 else
   ( git -C "$DIR" pull --ff-only ) >/dev/null 2>&1 &
   A_LABEL="更新 prerelease 仓库"

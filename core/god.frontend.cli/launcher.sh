@@ -265,7 +265,7 @@ while [ $# -gt 0 ]; do
             // prerelease: 远程 git 源——2026-09-08 修：本机跑 minutely 从不 checkout prerelease → 本地目录永远空 → 永远 (无) 假象。改查远程 prerelease 仓库 package.json（同 release 行远程机制）；本地 update-prerelease 作 fallback
             // ISSUE 138 双号：alpha 号 + 对应 pinnedDev 号都显示（用户关心内容对应哪个 dev）
             let preVer = '', preDev = '';
-            try { const _pj = JSON.parse(require('child_process').execSync('curl -s -m 6 https://raw.githubusercontent.com/ApolloZhangOnGithub/paimon-code-prerelease/main/package.json',{encoding:'utf8',timeout:8000}).trim()); preVer = _pj.version || ''; preDev = _pj.pinnedDev || ''; } catch {}
+            try { const _pj = JSON.parse(require('child_process').execSync('curl -s -m 6 https://raw.githubusercontent.com/ApolloZhangOnGithub/teyvat-prerelease/main/package.json',{encoding:'utf8',timeout:8000}).trim()); preVer = _pj.version || ''; preDev = _pj.pinnedDev || ''; } catch {}
             if (!preVer) try { const pp = h + '/.local/lib/teyvat/update-prerelease/package.json'; if (fs.existsSync(pp)) { const _pj = JSON.parse(fs.readFileSync(pp,'utf8')); preVer = _pj.version || ''; preDev = _pj.pinnedDev || ''; } } catch {}
             rows.push(['prerelease', (preVer || N) + (preVer && preDev ? '  → ' + preDev : ''), isCur('prerelease')])
             // release: npm + GitHub  ⚠️ npm 分发已废弃（2026-09-05 用户定稿，见 Versioning WIKI）——优先 git 源
@@ -434,7 +434,7 @@ case "$NAME" in
       fi
       echo -e "  \033[32mOK\033[0m release 源已更新（$UP_DIR）——运行其中的 C.deploy/install.sh 完成部署"
     elif [ "$CHANNEL" = "prerelease" ] || [ "$CHANNEL" = "beta" ]; then
-      # prerelease/beta 通道（2026-09-05 起纯 git，不走 npm）：拉 paimon-code-prerelease → 手动 install.sh
+      # prerelease/beta 通道（2026-09-05 起纯 git，不走 npm）：拉 teyvat-prerelease → 手动 install.sh
       # （install.sh 已支持 core/ 包结构：PKG_ROOT 检测到 core/ 即按 prerelease 布局部署）
       #
       # ⚠️ 2026-09-07 错误警示（LESSON 067）：wsl-compatibility-researcher-01 曾把本分支擅自改成
@@ -442,11 +442,11 @@ case "$NAME" in
       #   并物理迁移 C.deploy → A.core/deploy/。用户从未拍板此方案（仅授权"研究实现"），
       #   且 ISSUE 138（debug-01 实施）已验证合成仓库路线可用。已回滚复原，**不要改回 tag 方案、
       #   不要物理迁移目录结构**——发布通道改动前必须先经用户确认。详见 LESSON 067。
-      echo "  channel: $CHANNEL (paimon-code-prerelease, git)"
+      echo "  channel: $CHANNEL (teyvat-prerelease, git)"
       UP_DIR="$HOME/.local/lib/teyvat/update-prerelease"
       mkdir -p "$UP_DIR"
       if [ ! -d "$UP_DIR/.git" ]; then
-        if ! git clone https://github.com/ApolloZhangOnGithub/paimon-code-prerelease.git "$UP_DIR"; then
+        if ! git clone https://github.com/ApolloZhangOnGithub/teyvat-prerelease.git "$UP_DIR"; then
           echo -e "  \033[31mERROR\033[0m prerelease clone 失败（网络/代理问题？）"
           exit 1
         fi

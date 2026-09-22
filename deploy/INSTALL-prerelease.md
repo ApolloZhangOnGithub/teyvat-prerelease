@@ -18,7 +18,7 @@
 ## 1. 拉发布仓库
 
 ```bash
-git clone https://github.com/ApolloZhangOnGithub/paimon-code-prerelease.git ~/.local/lib/teyvat/update-prerelease
+git clone https://github.com/ApolloZhangOnGithub/teyvat-prerelease.git ~/.local/lib/teyvat/update-prerelease
 ```
 
 ## 2. 部署（install.sh 自动完成：runtime + 扩展 + launcher）

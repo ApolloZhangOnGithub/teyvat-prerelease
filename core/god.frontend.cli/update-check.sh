@@ -33,7 +33,7 @@ if [ "$CHANNEL" = "prerelease" ] || [ "$CHANNEL" = "beta" ]; then
     AVAILABLE=$(node -e "console.log(require('$UP/package.json').version||'')" 2>/dev/null || true)
   fi
   if [ -z "$AVAILABLE" ]; then
-    AVAILABLE=$(curl -sL --max-time 5 "https://raw.githubusercontent.com/ApolloZhangOnGithub/paimon-code-prerelease/main/package.json" 2>/dev/null | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{console.log(JSON.parse(d).version)}catch{}})" 2>/dev/null || true)
+    AVAILABLE=$(curl -sL --max-time 5 "https://raw.githubusercontent.com/ApolloZhangOnGithub/teyvat-prerelease/main/package.json" 2>/dev/null | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{console.log(JSON.parse(d).version)}catch{}})" 2>/dev/null || true)
   fi
 elif [ "$CHANNEL" = "release" ]; then
   UP="$HOME/.local/lib/teyvat/update-release"
