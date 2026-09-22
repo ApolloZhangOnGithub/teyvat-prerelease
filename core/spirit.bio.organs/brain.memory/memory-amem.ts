@@ -449,10 +449,10 @@ export function registerAmemTool(pi: ExtensionAPI, deps: AmemDeps): void {
       "  - fetch (review=3[, q='topic']) → randomly recall N archives — the reminiscence layer\n" +
       "  - Text anchors snap to whole JSONL rows (begin→row start, end→row end); the recent tail (10% of the window, min 20K; 100K on 1M) is protected from editing.\n" +
       "  - apply reuses the range locked by check (no re-search); types must match the check.",
-    promptSnippet: "amem: manage/archive(sweep)/fetch/revert with hash-lock, recent-zone protection, ts-range bulk archive",
+    promptSnippet: "amem: manage/archive(sweep)/fetch/revert/memory-reboot with hash-lock, recent-zone protection, ts-range bulk archive",
     renderCall(args: any, theme: any) {
       const a = args?.action || "";
-      const phase = args?.hash_key ? theme.fg("success", "apply") : a === "fetch" || a === "mark_enter" || a === "mark_exit" ? "" : theme.fg("warning", "check");
+      const phase = args?.hash_key ? theme.fg("success", "apply") : a === "fetch" || a === "mark_enter" || a === "mark_exit" || a === "memory-reboot" ? "" : theme.fg("warning", "check");
       // 调用行带归档名字：◦ Amem archive [apply] 上游同步与官方文档挖掘归档
       const title = args?.title || args?.summary || "";
       const phaseStr = phase ? `${a} [${phase}]` : a;
@@ -531,7 +531,7 @@ export function registerAmemTool(pi: ExtensionAPI, deps: AmemDeps): void {
       return c;
     },
     parameters: Type.Object({
-      action: Type.Union([Type.Literal("manage"), Type.Literal("sweep"), Type.Literal("archive"), Type.Literal("fetch"), Type.Literal("revert"), Type.Literal("mark_enter"), Type.Literal("mark_exit")]),
+      action: Type.Union([Type.Literal("manage"), Type.Literal("sweep"), Type.Literal("archive"), Type.Literal("fetch"), Type.Literal("revert"), Type.Literal("mark_enter"), Type.Literal("mark_exit"), Type.Literal("memory-reboot")]),
       anchor_begin: Type.Optional(Type.String({ messageDescription: "[manage/archive] Beginning anchor (text)" })),
       anchor_end: Type.Optional(Type.String({ messageDescription: "[manage/archive] Ending anchor (text)" })),
       anchor_ts: Type.Optional(Type.String({ messageDescription: "[manage/archive] Locate by record timestamp (e.g. '08-15T02:14:55' from check output). The row with matching ts becomes the anchored range. Preferred over text anchors — immune to think/text duplication & amem self-pollution." })),
@@ -572,6 +572,15 @@ export function registerAmemTool(pi: ExtensionAPI, deps: AmemDeps): void {
         const f = path.resolve(manageDir, `${clean}.json`);
         return f.startsWith(base) ? f : null;
       };
+
+      // ── memory-reboot（2026-09-22 用户定稿：只重载记忆/上下文，不退出进程、不改代码）──
+      // 重新读 context.md → 重建快照并设 _snapshotOverride + 裁剪活对话里的 toolResult/toolCall（复用 archive 的热实现）。
+      // 下一轮 LLM 调用就用刷新后的记忆快照，无需重启。直接允许、无需用户授权（与 full-reboot 不同）。
+      if (params.action === "memory-reboot") {
+        const ctx = readFile(contextPath);
+        deps.refreshGauge(ctx);
+        return { content: [{ type: "text", text: `amem memory-reboot: 记忆已重新载入（快照下轮替换 + 活对话工具产物已裁剪，不重启进程）。\n${_ctxStats(ctx)}` }] };
+      }
 
       // ── fetch (read-only, no hash) ─────────────────────────────────
       if (params.action === "fetch") {

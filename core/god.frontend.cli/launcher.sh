@@ -605,7 +605,7 @@ fi
 
 # -- bg: 直接以 [B] 后台 headless 启动（O→B；2026-09-13 用户：此前 [B] 只能"先进前台再 Ctrl+C"，离线 agent 没有直拉路径）--
 # 实现 = /h 守护链复刻：写 detached 标记 + PAIMON_HEADLESS_DAEMON=1 setsid 重启 launcher 快照（传正常启动参数）——
-# 守护实例首轮即走 headless 分支（while 循环 + self-reboot 拉起 + fifo 全套都有），本进程退出释放终端。
+# 守护实例首轮即走 headless 分支（while 循环 + full-reboot 拉起 + fifo 全套都有），本进程退出释放终端。
 if [ "$MODE" = "bg" ]; then
   if [ -z "$NAME" ]; then echo "$(_l "用法: genshin bg <名字|ID>  (把离线 [O] 的 agent 直接拉成后台 [B]，不进前台)" "Usage: genshin bg <name|ID>  (start an offline agent directly as background [B])")"; exit 1; fi
   ID=$(node --input-type=commonjs -e "
@@ -1328,7 +1328,7 @@ case "$MODE" in
     # 清屏到最上方，再启动 pi
     printf '\033[H\033[J'
     # 2026-09-22（ISSUE 151② 根治）：启动幂等——清掉**同 sid 的既有实例**（含 PPID=1 孤儿）。
-    # 为什么必须做：self-reboot / update 只起新进程，不回收同 sid 旧实例（孤儿 PPID=1 无人回收）；
+    # 为什么必须做：full-reboot / update 只起新进程，不回收同 sid 旧实例（孤儿 PPID=1 无人回收）；
     # 两个实例 watch 同一 triggers 目录 → 旧实例（旧代码）抢先 unlink + markInjected → 新实例读 ENOENT 静默跳过
     # → 跨设备 interrupt 打断丢失（cross-device-communication-testor-01 的 inode 铁证）。
     # 判据：进程标题就是 `genshin:<name>(main,<sid>,<session>)`（mac/linux 都可见），用 `(main,<sid>,` 精确匹配。
@@ -1388,7 +1388,7 @@ case "$MODE" in
         USE_BLACKBOX=1
       fi
       __sync_dsk
-      # ── self-reboot 渲染保留（2026-09-04，方案调整）：session 保持新建（用户定稿“就是要新的session”），
+      # ── full-reboot 渲染保留（2026-09-04，方案调整）：session 保持新建（用户定稿“就是要新的session”），
       # restart-session.json 由 interactive-mode.js 启动时读取，从旧 session 重放历史到新 session 的 TUI。
       # launcher 不再传 --session（旧方案已回滚）──
       # ── detach 模式（2026-08-20，PROPOSAL 034 阶段 4）：/detach 后 headless 重启 ──
@@ -1402,7 +1402,7 @@ case "$MODE" in
       SKIP_TUI=0
       if [ "$DETACHED" = "1" ]; then
         if [ "$PAIMON_HEADLESS_DAEMON" = "1" ]; then
-          # 后台守护实例：headless node（rpc + fifo + 日志），while 循环继续监控（self-reboot full 等）
+          # 后台守护实例：headless node（rpc + fifo + 日志），while 循环继续监控（full-reboot 等）
         FIFO="$PAIMON_HOME/AgentFileData/$ID/headless-in"
         mkdir -p "$PAIMON_HOME/AgentFileData/$ID" 2>/dev/null
         [ -p "$FIFO" ] || mkfifo "$FIFO" 2>/dev/null
@@ -1454,10 +1454,10 @@ case "$MODE" in
       NONCE=$(cat "$WAKEFILE" 2>/dev/null)
       if [ -n "$NONCE" ] && [ "$NONCE" != "$LAST_NONCE" ]; then
         LAST_NONCE="$NONCE"; WOKE=1
-        # ── 完整重启（2026-08-20，用户指示）：self-reboot full —— launcher 也刷新 ──
+        # ── 完整重启（2026-08-20，用户指示）：full-reboot —— launcher 也刷新 ──
         # agent 写 RuntimeCache/<id>/full-restart 标记 → 这里重新快照源码 + 清锁 + exec 自身（新 inode），
         # 这样 launcher.sh 的新改动（如 /h 的 headless 分支）在完整重启后生效；
-        # 普通 self-reboot（无标记）仍走旧逻辑（不换 launcher，快）。
+        # 无 full-restart 标记（如 /h detach 只写 wake-restart）仍走旧逻辑（不换 launcher，快）。
         if [ -f "$RUNTIME_DIR/full-restart" ]; then
           rm -f "$RUNTIME_DIR/full-restart"
           SRC="$PAIMON_CLI/launcher.sh"

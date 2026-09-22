@@ -21,7 +21,7 @@ import { runtimeCacheDir, memoryDir, memoryDataDir, logerr, writeFileAtomic, rea
 // 2026-09-13：读 growth.jsonl 改走 readGrowthLast（末行可能是别的事件行）；口径分两个数——
 //   api_ratio（上一轮真实 prompt）为主：那才是接近 API 上限的信号；
 //   ratio（记忆文件估算）决定 amem 帮不帮得上：文件也大 → 叫它 amem；文件不大、是活对话本身撑大的 → amem 归档不了，
-//   提示 /compact 或 self-reboot——别把它锁死在"必须先 amem"里（memory.ts 的 tool_call 门禁同一规则）。
+//   提示 amem 的 memory-reboot（只重载记忆）或 full-reboot（完整重启）——别把它锁死在"必须先 amem"里（memory.ts 的 tool_call 门禁同一规则）。
 function _urgentContextNote(): string {
   try {
     const pid: string = (globalThis as any).__genshinPersonId || "";
@@ -569,7 +569,7 @@ export default function (pi: ExtensionAPI) {
         if (ok && !isReload) {
           setTimeout(() => {
             // flag 必须在 setTimeout 回调里检查（不是注册时），因为 __genshinSelfRebooted 在 PI_ALIVE_WOKE 区块设置，时序上晚于 userback 注册
-            if ((globalThis as any).__genshinSelfRebooted) { dlog("userback: skipped (self-rebooted)"); return; }
+            if ((globalThis as any).__genshinSelfRebooted) { dlog("userback: skipped (full-rebooted)"); return; }
             // 2026-09-14（ISSUE 240 互搏修复）：attach 的 display-shown 已在 session_start 注入并消费 →
             // 这里跳过「用户回来了」（否则 attach 场景两条横幅左右脑互搏）
             if ((globalThis as any).__genshinAttachConsumed) { dlog("userback: skipped (attach shown)"); return; }
@@ -593,7 +593,7 @@ export default function (pi: ExtensionAPI) {
                 }
               } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
               const now = new Date().toLocaleString(dLocale, { timeZone: "Asia/Shanghai", hour12: false });
-              // self-reboot 检测已移到 PI_ALIVE_WOKE 区块（保证消息先于 userback 到达）
+              // full-reboot 检测已移到 PI_ALIVE_WOKE 区块（保证消息先于 userback 到达）
               const userBackMsg = i18n(`[系统] 用户回来了。当前时间：${now}，上次退出：${lastEnded}。请等待用户指令或和用户打个招呼。`, `[System] The user is back. Current time: ${now}, last exit: ${lastEnded}. Wait for the user's instructions or greet them.`);
               // 添加上次 session 回忆
               const elapsed = (globalThis as any).__genshinSessionElapsed;
@@ -718,14 +718,14 @@ export default function (pi: ExtensionAPI) {
     }
 
     if (process.env.PI_ALIVE_WOKE === "1") {
-      // self-reboot 检测：在这里做，不在 userback 里做，保证消息先于一切到达
+      // full-reboot 检测：在这里做，不在 userback 里做，保证消息先于一切到达
       let selfRebootMsg = "";
       let selfRebootElapsed = 0;
       try {
-        const reasonPath = join(runtimeCacheDir(sessionPersonId), "self-reboot-reason.json");
+        const reasonPath = join(runtimeCacheDir(sessionPersonId), "full-reboot-reason.json");
         if (existsSync(reasonPath)) {
           const rd = JSON.parse(readFileSync(reasonPath, "utf8"));
-          selfRebootMsg = rd.reason || "self-reboot";
+          selfRebootMsg = rd.reason || "full-reboot";
           selfRebootElapsed = rd.elapsed || 0;
           unlinkSync(reasonPath);
         }
@@ -734,10 +734,10 @@ export default function (pi: ExtensionAPI) {
       // 旧残留无害（launcher 用 nonce 比较，同 nonce 不重复重启）。
 
       dlog(`session_start: PI_ALIVE_WOKE → kick (selfReboot=${!!selfRebootMsg})`);
-      // self-reboot 时标记跳过 userback（防止两条消息同时触发）
+      // full-reboot 时标记跳过 userback（防止两条消息同时触发）
       if (selfRebootMsg) {
         (globalThis as any).__genshinSelfRebooted = true;
-        // 恢复 self-reboot 前的累积运行时长（连续计时，不重置）
+        // 恢复 full-reboot 前的累积运行时长（连续计时，不重置）
         // 0.3.3 修复：原代码在上面 unlink 后又 re-read 同一文件 → existsSync 永远 false → elapsed 永远不恢复。
         // 现在用首次读取时保存的 selfRebootElapsed。
         try {
@@ -754,12 +754,12 @@ export default function (pi: ExtensionAPI) {
           if (selfRebootMsg) {
             const now = new Date().toLocaleString(isEnglish() ? "en-US" : "zh-CN", { timeZone: "Asia/Shanghai", hour12: false });
             sendCustomMessage(pi, "continuous-resume",
-              i18n(`[系统] 你自己触发了重启（self-reboot）。当前时间：${now}，原因：${selfRebootMsg}。重启后记忆快照已重新冻结，代码变更已生效。继续你的工作。`, `[System] You triggered a self-reboot. Current time: ${now}, reason: ${selfRebootMsg}. After restart the memory snapshot is re-frozen and code changes have taken effect. Continue your work.`),
+              i18n(`[系统] 你自己触发了重启（full-reboot）。当前时间：${now}，原因：${selfRebootMsg}。重启后记忆快照已重新冻结，代码变更已生效。继续你的工作。`, `[System] You triggered a full-reboot. Current time: ${now}, reason: ${selfRebootMsg}. After restart the memory snapshot is re-frozen and code changes have taken effect. Continue your work.`),
               { resumeType: "restart", noTopSpacer: true }, { isTriggerNewTurn: true, deliverAs: "followUp", isDisplayedInTUI: true });
           } else {
-            // 2026-08-20：sleep-wake-resume 已废弃（sleep/cortex 机制禁用）——非 self-reboot 的唤醒重启（含
+            // 2026-08-20：sleep-wake-resume 已废弃（sleep/cortex 机制禁用）——非 full-reboot 的唤醒重启（含
             // Ctrl+C 转后台触发的重启）不再发"睡醒了"（残留误报，用户暴怒）。静默：等用户消息即可。
-            dlog("session_start: PI_ALIVE_WOKE 非 self-reboot → 静默（sleep-wake-resume 已废弃）");
+            dlog("session_start: PI_ALIVE_WOKE 非 full-reboot → 静默（sleep-wake-resume 已废弃）");
           }
         } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
       }, 800);
@@ -772,7 +772,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("agent_end", async (event, ctx) => {
     dlog(`agent_end: kind=${heartState()}`);
 
-    // ISSUE 140：self-reboot 即将退出，不续命（否则开新 turn 被 process.exit 打断 → abort → paused 循环）
+    // ISSUE 140：full-reboot 即将退出，不续命（否则开新 turn 被 process.exit 打断 → abort → paused 循环）
     if ((globalThis as any).__genshinRebootPending) {
       dlog("agent_end: reboot pending, skip auto-continue");
       return;

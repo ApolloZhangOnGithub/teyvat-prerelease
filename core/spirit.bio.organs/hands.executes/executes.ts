@@ -307,7 +307,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
       if (execId && createdInfo) {
         return renderExecuteResult(theme, { kind: "created", created: createdInfo.created, total: createdInfo.total, terminal: d.terminal === true, tname: d.tname, recId: d.recId || execId, endTs: createdInfo.ts });
       }
-      // 其余（@ 列表 / kill 结果 / 被拦 / self-reboot 提示等）：通用输出管线，三态同样生效（2026-09-13 用户：有 renderText 的结果也要遵守 hide/summary）
+      // 其余（@ 列表 / kill 结果 / 被拦 / full-reboot 提示等）：通用输出管线，三态同样生效（2026-09-13 用户：有 renderText 的结果也要遵守 hide/summary）
       const resultMode = (globalThis as any).__genshinExecuteResult ?? "full";
       if (resultMode === "hide") return renderMessage.silent();
       const rc0 = d.renderText != null ? [{ type: "text", text: d.renderText }] : resultContent(result);
@@ -382,38 +382,35 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
         return { content: [{ type: "text", text: results.join("\n") }] };
       }
 
-      // ── self-reboot 特殊命令 ──────────────────────────────────────
-      if (/^self[-_]?reboot\b/i.test(cmd.trim())) {
+      // ── full-reboot 特殊命令（原 self-reboot 改名，2026-09-22 用户定稿）────────────
+      if (/^full[-_]?reboot\b/i.test(cmd.trim())) {
         const pid = (globalThis as any).__genshinPersonId || process.env.PAIMON_AGENT_ID || "";
         if (!pid) return { content: [{ type: "text", text: "ERR: cannot determine agent ID." }], details: {}, isError: true };
         const { readFileSync, writeFileSync, unlinkSync, mkdirSync, existsSync } = await import("node:fs");
         const { join } = await import("node:path");
         const { homedir } = await import("node:os");
         const rcDir = join(homedir(), ".teyvat/RuntimeCache", pid);
-        const flagPath = join(rcDir, "self-reboot-auth");
+        const flagPath = join(rcDir, "full-reboot-auth");
         let authorized = false;
         try { authorized = !!JSON.parse(readFileSync(flagPath, "utf8")).authorized; } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
         if (!authorized) {
           return { content: [{ type: "text", text:
-            i18n("ERR: self-reboot 需要用户授权。\n请让用户执行: /a self-reboot\n授权后永久生效,不需要每次重新授权。",
-                 "ERR: self-reboot requires user authorization.\nAsk the user to run: /a self-reboot\nAuthorization is permanent; no need to re-authorize each time.") }],
+            i18n("ERR: full-reboot 需要用户授权。\n请让用户执行: /a full-reboot\n授权后永久生效,不需要每次重新授权。",
+                 "ERR: full-reboot requires user authorization.\nAsk the user to run: /a full-reboot\nAuthorization is permanent; no need to re-authorize each time.") }],
             details: {}, isError: true };
         }
         // 授权持久化,不删除 flag
-        // 2026-08-20 完整重启(用户指示):self-reboot full <reason> -- launcher 也重启(重新快照+exec),
-        // 这样 launcher.sh 的新改动(如 /h 的 headless 分支)在完整重启后生效;普通 self-reboot 不换 launcher。
-        const fullRestart = /\bfull\b/i.test(cmd);
-        const reason = cmd.replace(/^self[-_]?reboot\s*/i, "").replace(/^full\s*/i, "").trim() || "self-reboot";
-        if (fullRestart) {
-          try { writeFileAtomic(join(rcDir, "full-restart"), JSON.stringify({ ts: new Date().toISOString(), reason })); } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
-        }
+        // 2026-09-22（用户定稿）：full-reboot 恒为完整重启（launcher 也重启，重新快照+exec），
+        // 所以始终写 full-restart 标记；"只重载记忆"那件事单独是 amem 的 memory-reboot action，不在这里。
+        const reason = cmd.replace(/^full[-_]?reboot\s*/i, "").trim() || "full-reboot";
+        try { writeFileAtomic(join(rcDir, "full-restart"), JSON.stringify({ ts: new Date().toISOString(), reason })); } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
         // 保存当前累积运行时长,重启后接续(不重置计时器)
         const accumulated = (globalThis as any).__genshinSessionElapsed || 0;
         const statusBar = (globalThis as any).__genshinStatusBar;
         const seg = statusBar?._sessionAccumulated || 0;
         const segStart = statusBar?._segmentStartTime;
         const totalElapsed = seg + (segStart ? Date.now() - segStart : 0);
-        try { writeFileAtomic(join(rcDir, "self-reboot-reason.json"), JSON.stringify({ reason, ts: new Date().toISOString(), elapsed: totalElapsed })); } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
+        try { writeFileAtomic(join(rcDir, "full-reboot-reason.json"), JSON.stringify({ reason, ts: new Date().toISOString(), elapsed: totalElapsed })); } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
         // ISSUE 140:标记即将 reboot,阻止 heart agent_end 续命(否则框架开新 turn 被 process.exit 打断 → abort → paused 循环)
         (globalThis as any).__genshinRebootPending = true;
         const nonce = `reboot-${Date.now()}`;
@@ -457,26 +454,26 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
         // ISSUE 140 v2:缩短 exit 延迟(500→100ms)减少框架在 exit 前处理 tool result 开新 turn 的窗口
         // __genshinRebootPending 已阻止 agent_end 续命,100ms 够写完磁盘但不够开新 API 请求
         // 2026-09-13（用户拍板“自守护”）:【B】headless detached 进程不在 launcher 守护循环里——
-        // self-reboot exit 后无人拉起 = 死亡（21:27 support 自重启后掉线实证）。
+        // full-reboot exit 后无人拉起 = 死亡（21:27 support 自重启后掉线实证）。
         // headless 模式下先 spawn 接续者（同 session-dir/fifo/日志，detached——新进程加载新代码）再退出。
         if (process.env.PAIMON_HEADLESS_DAEMON === "1") {
           try {
             const spawnBg = (globalThis as any).__genshinSpawnHeadlessBg;
             if (typeof spawnBg === "function") {
-              spawnBg(pid, "self-reboot-continuity");
-              console.error("[self-reboot] headless 自守护：接续者已 spawn（" + pid + "）");
+              spawnBg(pid, "full-reboot-continuity");
+              console.error("[full-reboot] headless 自守护：接续者已 spawn（" + pid + "）");
               // headless 无 launcher，wake-restart nonce 无人消费——删掉避免下次前台启动误触发额外重启
               try { unlinkSync(join(rcDir, "wake-restart")); } catch { /* 不存在则跳过 */ }
             } else {
-              console.error("[self-reboot] headless 自守护失败：__genshinSpawnHeadlessBg 未挂载（detach.ts 未加载）——进程将退出且无人拉起");
+              console.error("[full-reboot] headless 自守护失败：__genshinSpawnHeadlessBg 未挂载（detach.ts 未加载）——进程将退出且无人拉起");
             }
-          } catch (e) { console.error("[self-reboot] headless 自守护 spawn 失败: " + ((e as any)?.message || e)); }
+          } catch (e) { console.error("[full-reboot] headless 自守护 spawn 失败: " + ((e as any)?.message || e)); }
         }
         setTimeout(() => { process.exit(0); }, 100);
         return { content: [{ type: "text", text:
-          i18n(`self-reboot: 进程将在 0.5s 后退出并由 launcher 自动重启。\nreason: ${reason}\n` +
+          i18n(`full-reboot: 进程将在 0.5s 后退出并由 launcher 自动重启。\nreason: ${reason}\n` +
                `重启后:记忆快照重新冻结、make 后的代码变更生效。`,
-               `self-reboot: process will exit in 0.5s and be restarted by the launcher.\nreason: ${reason}\n` +
+               `full-reboot: process will exit in 0.5s and be restarted by the launcher.\nreason: ${reason}\n` +
                `After restart: memory snapshot re-frozen, make-applied code changes take effect.`) }],
           details: { rebooting: true, nonce } };
       }

@@ -780,7 +780,7 @@ export default function registerMemory(pi: ExtensionAPI) {
     const usageRatio = memTokens / modelMax;
     const rawPct = Math.round(usageRatio * 100);
     // ratio = 记忆文件体量估算（est）；api_ratio = 上一轮 API 真实 prompt。2026-09-13 起门禁是 api 为主、est 决定文案：
-    // api≥95% 且 est≥60% 才拦其他工具叫 amem；api 高 est 低说明是活对话撑大的，改提示 self-reboot / compact（ISSUE 234：amem 后快照经 context 事件替换，api 下一轮才降）。
+    // api≥95% 且 est≥60% 才拦其他工具叫 amem；api 高 est 低说明是活对话撑大的，改提示 full-reboot / compact（ISSUE 234：amem 后快照经 context 事件替换，api 下一轮才降）。
     const _apiTokNow = _pondSess.prevPrompt ?? 0;
     monitorAppend("growth.jsonl",
       JSON.stringify({ ts: new Date().toISOString(), bytes: context.length, tokens: memTokens, ratio: +(usageRatio * 100).toFixed(1), api_tokens: _apiTokNow, api_ratio: _apiTokNow ? +((_apiTokNow / modelMax) * 100).toFixed(1) : null }) + "\n");
@@ -964,8 +964,8 @@ export default function registerMemory(pi: ExtensionAPI) {
   });
 
 
-  // [2026-08-15] self_reboot 已移入 execute 工具作为特殊命令（execute({command:"self-reboot 原因"})）
-  // 不再是独立工具。授权机制：/a self-reboot → RuntimeCache/self-reboot-auth → execute 拦截 → wake-restart → exit
+  // [2026-08-15] full_reboot 已移入 execute 工具作为特殊命令（execute({command:"full-reboot 原因"})）
+  // 不再是独立工具。授权机制：/a full-reboot → RuntimeCache/full-reboot-auth → execute 拦截 → wake-restart → exit
 
   /* [2026-08-15 DISABLED] nap 临时注释（用户指示：目前没用了），保留代码以便恢复
   // ── nap tool ─────────────────────────────────────────────────────

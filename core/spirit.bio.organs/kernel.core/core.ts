@@ -195,11 +195,11 @@ export default function kernelMain(pi: ExtensionAPI) {
         if (!pid) return;
         const logDir = `${homedir()}/.teyvat/LogData/${pid}`;
         mkdirSync(logDir, { recursive: true });
-        // self-reboot 命令写了 reason 文件 → 自行重启；否则用信号标记；默认正常退出
+        // full-reboot 命令写了 reason 文件 → 自行重启；否则用信号标记；默认正常退出
         let reason = "shutdown";
         try {
-          const rp = join(homedir(), ".teyvat/RuntimeCache", pid, "self-reboot-reason.json");
-          if (existsSync(rp)) reason = "self-reboot";
+          const rp = join(homedir(), ".teyvat/RuntimeCache", pid, "full-reboot-reason.json");
+          if (existsSync(rp)) reason = "full-reboot";
         } catch (e) { console.error("[spirit.bio.organs/kernel.core/core.ts] " + ((e as any)?.message || e)); }
         const sig = (globalThis as any).__genshinSessionEndReason;
         if (reason === "shutdown" && sig) reason = sig;
@@ -560,13 +560,13 @@ export default function kernelMain(pi: ExtensionAPI) {
         mkdirSync(logDir, { recursive: true });
         appendFileSync(join(logDir, "startup.log"), JSON.stringify({ ts: new Date().toISOString(), genshin: ver.genshin, pi: ver.pi, channel: ver.channel || "minutely", role }) + "\n");
         // session 生命周期 start 事件（sessions.log，与 status @history 配套）
-        // 启动原因：PI_ALIVE_WOKE=1（launcher self-reboot 拉起）或 reason 文件存在 = 自行重启；否则正常启动
+        // 启动原因：PI_ALIVE_WOKE=1（launcher full-reboot 拉起）或 reason 文件存在 = 自行重启；否则正常启动
         // （heart.ts 会消费并 unlink reason 文件，可能先于此处执行——所以环境变量才是可靠信号）
-        let startReason = process.env.PI_ALIVE_WOKE === "1" ? "self-reboot" : "startup";
+        let startReason = process.env.PI_ALIVE_WOKE === "1" ? "full-reboot" : "startup";
         if (startReason === "startup") {
           try {
-            const rp = join(homedir(), ".teyvat/RuntimeCache", id, "self-reboot-reason.json");
-            if (existsSync(rp)) startReason = "self-reboot";
+            const rp = join(homedir(), ".teyvat/RuntimeCache", id, "full-reboot-reason.json");
+            if (existsSync(rp)) startReason = "full-reboot";
           } catch (e) { console.error("[spirit.bio.organs/kernel.core/core.ts] " + ((e as any)?.message || e)); }
         }
         appendFileSync(join(logDir, "sessions.log"), JSON.stringify({ type: "start", ts: new Date().toISOString(), genshin: ver.genshin, channel: ver.channel || "minutely", role, reason: startReason }) + "\n");

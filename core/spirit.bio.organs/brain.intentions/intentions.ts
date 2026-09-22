@@ -143,13 +143,14 @@ export default function (_pi: ExtensionAPI) {
         const diff = renderDiff(generateDiffString(oldStr, newStr).diff);
         return renderMessage.output(theme, ctx, [{ type: "text", text: summary + "\n" + diff }]);
       }
-      // write（formed / rewritten）— 摘要 + 全新增 diff
-      if (text && result?.details?.action === "write") {
-        const newLines = text.split("\n").filter((l: string) => l.trim()).length;
+      // write（formed / rewritten）— 摘要 + 全新增 diff（全文读 details._full，content 已改「成功」）
+      if (result?.details?.action === "write") {
+        const fullText = (result?.details as any)?._full || "";
+        const newLines = fullText.split("\n").filter((l: string) => l.trim()).length;
         const verb = (result?.details as any)?._force ? "Rewrote" : "Formed";
         const num = (n: number) => theme.bold(theme.fg("text", String(n)));
         const summary = `${verb} ${num(newLines)} intention${newLines !== 1 ? "s" : ""}`;
-        const diff = renderDiff(generateDiffString("", text).diff);
+        const diff = renderDiff(generateDiffString("", fullText).diff);
         return renderMessage.output(theme, ctx, [{ type: "text", text: summary + "\n" + diff }]);
       }
       if (text) {
@@ -179,8 +180,8 @@ export default function (_pi: ExtensionAPI) {
       if (params.old_string === undefined && params.new_string !== undefined) {
         _buffer = params.new_string.slice(0, MAX_INTENTIONS_LEN);
         saveIntentions();
-        const truncated = params.new_string.length > MAX_INTENTIONS_LEN ? ` (截断, 原${params.new_string.length}字符)` : "";
-        return { content: [{ type: "text", text: (_buffer || "(cleared)") + truncated }], details: { action: "write", _force: params.force === true } };
+        // 2026-09-22（ISSUE 266）：成功只返回「成功」，不回显全文（计划正文已在 intentions.txt + 最新条目）；全文放 details._full 供 TUI diff，不进模型上下文
+        return { content: [{ type: "text", text: "成功" }], details: { action: "write", _force: params.force === true, _full: _buffer } };
       }
 
       // edit (find & replace)
@@ -196,7 +197,8 @@ export default function (_pi: ExtensionAPI) {
         if (_buffer.length > MAX_INTENTIONS_LEN) _buffer = _buffer.slice(0, MAX_INTENTIONS_LEN);
         _buffer = _buffer.trim();
         saveIntentions();
-        return { content: [{ type: "text", text: _buffer || "(cleared)" }], details: { action: "edit", _old: params.old_string, _new: params.new_string } };
+        // 2026-09-22（ISSUE 266）：成功只返回「成功」，不回显全文；全文放 details._full 供 TUI diff
+        return { content: [{ type: "text", text: "成功" }], details: { action: "edit", _old: params.old_string, _new: params.new_string, _full: _buffer } };
       }
 
       return { content: [{ type: "text", text: _buffer || "(empty)" }], details: {} };

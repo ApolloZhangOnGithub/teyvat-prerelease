@@ -183,7 +183,7 @@ function isCustomSessionEntry(item) {
     return "type" in item && item.type === "custom";
 }
 /**
- * genshin 2026-09-04：session entry 是否可渲染（用于 self-reboot 历史重放过滤）。
+ * genshin 2026-09-04：session entry 是否可渲染（用于 full-reboot 历史重放过滤）。
  * 可渲染：message（user/assistant/toolResult，toolResult 由管线匹配 toolCall）/
  * custom_message（display!==false，display=false 是内部通知不渲染）/compaction/branch_summary。
  * 不可渲染：session、model_change、thinking_level_change 等元数据 entry。
@@ -872,7 +872,7 @@ export class InteractiveMode {
         // _replaySessionHistory 是 ISSUE 114 时代"pi 原生不渲染历史"的补丁，0904 后成为重复渲染（attach/恢复 session 时
         // 每条消息渲染两遍 → 屏幕内容翻倍重复、CPU 双倍、滚动区内容翻倍）。renderSessionItems 不清空 chatContainer，
         // 两次调用直接叠加。保留 _replayPreviousSession()（读 restart-session.json 渲染旧 session 文件，新 session 场景专用）。
-        // genshin 2026-09-04：self-reboot 后渲染上一轮 session 历史（用户设计要求：session 保持新建，
+        // genshin 2026-09-04：full-reboot 后渲染上一轮 session 历史（用户设计要求：session 保持新建，
         // 但新 session TUI 要重放旧 session 的上文，否则感觉很难受）
         // 2026-09-17（用户："重启的通知总是不渲染在第一个" + "这些消息的渲染顺序总是错的"；ISSUE 259
         // 定稿"一类事件一条横幅，注入在会话边界，渲染位置=TUI 启动视图顶部"）：
@@ -2994,7 +2994,7 @@ export class InteractiveMode {
     }
     /**
      * ISSUE 114（2026-08-18 用户指示）：自重启保留输入框草稿。
-     * - 恢复：RuntimeCache/<pid>/wake-restart 存在（self-reboot 标记，executes.ts 写）且 draft 非空
+     * - 恢复：RuntimeCache/<pid>/wake-restart 存在（full-reboot 标记，executes.ts 写）且 draft 非空
      *   → editor.setText(draft)，输入框继续显示上次未发送的内容；
      * - 保存：轮询 editor.getText()（2s，内容变化才写；空则删 draft）；
      * - 历史消息由 _replaySessionHistory() 重放（run() 已无条件调用）。
@@ -3041,7 +3041,7 @@ export class InteractiveMode {
      * entries 只进模型 context，不会触发渲染事件 → 界面空白。这里重放历史。
      * 2026-09-04 渲染修复：改走 renderSessionEntries 完整管线——原用 addMessageToChat
      * 只渲染 text/thinking（AssistantMessageComponent 不渲染 toolCall 块），导致所有
-     * execute 的调用行/Result 行在重放中缺失（含 self-reboot 那条，用户报障）。
+     * execute 的调用行/Result 行在重放中缺失（含 full-reboot 那条，用户报障）。
      * renderSessionEntries 与 pi 原生 renderInitialMessages/rebuild 同路径：
      * assistant 的每个 toolCall 单独创建 ToolExecutionComponent，toolResult 匹配 updateResult。
      */
@@ -3058,9 +3058,9 @@ export class InteractiveMode {
         }
     }
     /**
-     * genshin 2026-09-04：self-reboot 后渲染上一轮 session 的历史消息（用户设计要求）。
-     * self-reboot 每次开新 pi session（entries 空 → _replaySessionHistory 无从渲染），
-     * 记忆连续靠 heart 快照，但 TUI 上文显示丢失。executes.ts self-reboot 时写下
+     * genshin 2026-09-04：full-reboot 后渲染上一轮 session 的历史消息（用户设计要求）。
+     * full-reboot 每次开新 pi session（entries 空 → _replaySessionHistory 无从渲染），
+     * 记忆连续靠 heart 快照，但 TUI 上文显示丢失。executes.ts full-reboot 时写下
      * restart-session.json（旧 session 文件路径），这里读它 → 解析旧 session 的 entries →
      * 重放最近一段到当前新 session 的 TUI，渲染完删除标记。session 语义不变，纯显示层恢复。
      */

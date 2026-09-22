@@ -46,7 +46,7 @@ export async function authdirCompletions(prefix: string) {
     }
     return items.length ? items : null;
   }
-  const subs: [string, string][] = [["all", T("全量白名单（系统黑名单仍生效）", "Full whitelist (system blacklist still applies)")], ["self-reboot", T("授权模型自主重启", "Authorize model self-reboot")], ["model ", T("授权模型切换（status switch-model，<id>|all）", "Authorize model switch (status switch-model, <id>|all)")], ["remove ", T("撤销授权", "Revoke authorization")], ["list", T("查看状态", "View status")]];
+  const subs: [string, string][] = [["all", T("全量白名单（系统黑名单仍生效）", "Full whitelist (system blacklist still applies)")], ["full-reboot", T("授权模型完整重启（full-reboot）", "Authorize model full-reboot")], ["model ", T("授权模型切换（status switch-model，<id>|all）", "Authorize model switch (status switch-model, <id>|all)")], ["remove ", T("撤销授权", "Revoke authorization")], ["list", T("查看状态", "View status")]];
   for (const [s, desc] of subs) {
     if (s.startsWith(prefix)) items.push({ value: s, label: s.trim(), description: desc });
   }
@@ -94,7 +94,7 @@ export async function authdirHandler(args: string, ctx: any, tools?: { getActive
     ctx.ui.notify(T("已开启 root 授权（~/.teyvat 全域可操作）", "Root authorization enabled (~/.teyvat fully accessible)"), "info");
     return;
   }
-  if (a === "self-reboot") {
+  if (a === "full-reboot") {
     const pid = (globalThis as any).__genshinPersonId || process.env.PAIMON_AGENT_ID || "";
     if (pid) {
       const { mkdirSync, writeFileSync } = await import("node:fs");
@@ -102,8 +102,8 @@ export async function authdirHandler(args: string, ctx: any, tools?: { getActive
       const { homedir } = await import("node:os");
       const flagDir = join(homedir(), ".teyvat/RuntimeCache", pid);
       mkdirSync(flagDir, { recursive: true });
-      writeFileSync(join(flagDir, "self-reboot-auth"), JSON.stringify({ authorized: true, ts: Date.now(), by: "user" }));
-      ctx.ui.notify(T("self-reboot 已授权（永久生效）。模型可通过 execute({command:\"self-reboot\"}) 重启进程。", "self-reboot authorized (permanent). The model can restart the process via execute({command:\"self-reboot\"})."), "info");
+      writeFileSync(join(flagDir, "full-reboot-auth"), JSON.stringify({ authorized: true, ts: Date.now(), by: "user" }));
+      ctx.ui.notify(T("full-reboot 已授权（永久生效）。模型可通过 execute({command:\"full-reboot\"}) 完整重启进程。", "full-reboot authorized (permanent). The model can fully restart the process via execute({command:\"full-reboot\"})."), "info");
     } else { ctx.ui.notify(T("无法确定 agent ID", "Cannot determine agent ID"), "warning"); }
     return;
   }
