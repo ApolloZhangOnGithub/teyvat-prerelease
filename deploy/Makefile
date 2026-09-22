@@ -13,7 +13,7 @@ CLI        := god.frontend.cli
 TUI        := god.frontend.tui
 TRANSPILER := spirit.bio.gene/polymerase.ts
 
-.PHONY: help setup bump dev-minutely dev-stable note prerelease-minutely release nightly wiki-deploy wiki-publish sync-deploy dev-restore _paths _ecosystem \
+.PHONY: help setup bump dev-minutely dev-stable note prerelease-minutely release nightly wiki-deploy wiki-publish sync-deploy doc-commit dev-restore _paths _ecosystem \
         _dev-minutely _dev-stable _note _prerelease-minutely _release
 
 # ── 构建串行化 ─────────────────────────────────────────────────────────────
@@ -57,6 +57,7 @@ help:
 	@echo "  wiki-deploy              部署 wiki 到服务器"
 	@echo "  wiki-publish             发布 .WIKI 文件到 wiki.paimon.beer"
 	@echo "  sync-deploy              部署 sync 服务到服务器"
+	@echo "  doc-commit               提交 B.docs（文档仓）——唯一合规通道（msg 必填 ≥10 字）"
 	@echo "  setup                    新电脑首次安装（不 commit、不 push）"
 	@echo ""
 
@@ -294,6 +295,15 @@ wiki-publish: _ecosystem
 
 sync-deploy: _ecosystem
 	@bash "$(ECOSYSTEM)/wiki.paimon.beer/sync-deploy.sh"
+
+# ── doc-commit：B.docs（文档仓）的唯一提交通道（2026-09-22 用户：阻止裸 git commit）──
+# 为什么需要：代码仓走 dev-minutely（committer/msg/detail + 全部门禁）；B.docs 此前没有 make 通道，
+# 只能裸 git commit（fileacts 现在拦裸提交）或靠停掉的 auto-checkpoint。收口到这里：msg 必填（≥10 字）。
+# 用法: make doc-commit msg='文档改动说明（≥10 字）'；PAIMON_VIA_MAKE=1 已在 L2 export，命令拦截据此放行。
+doc-commit:
+	@if [ -z "$${msg:-}" ]; then echo "  ERROR: msg required. Usage: make doc-commit msg='... (>=10 chars)'"; exit 1; fi; \
+	if [ $${#msg} -lt 10 ]; then echo "  ERROR: msg 标题不得少于10个字（当前$${#msg}字）"; exit 1; fi; \
+	cd "$(ROOT)/../B.docs" && git add -A && git commit -m "$${msg}" && echo "  B.docs committed: $${msg}"
 
 # ── CI nightly ──
 
