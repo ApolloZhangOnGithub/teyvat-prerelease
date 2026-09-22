@@ -12,6 +12,7 @@ import { registerPaimonTool } from "#kernel_backbone";
 import { renderToolCall, renderMessage } from "#tui_blockrender";
 import { i18n } from "#tui_localizations";
 import { readGrowthLast } from "#paths";
+import { renderAlignedTable } from "#tui_renderers";
 const T = (zh: string, en: string) => i18n(zh, en);
 
 // ── Codeforces 风格履历段位（CF 官方 rating 颜色，2015 "Second Revolution of Colors" 改革后至今）──
@@ -307,8 +308,6 @@ export function registerStatusTool(_pi: ExtensionAPI) {
             try { return JSON.parse(readFileSync(join(rcDir, f), "utf8")); } catch { return null; }
           };
           const on = T("开", "on"), off = T("关", "off"), yes = T("已授权", "authorized"), no = T("未授权", "not authorized");
-          const dspW = (s: string) => { let w = 0; for (const ch of s) w += ch.charCodeAt(0) > 0xff ? 2 : 1; return w; };
-          const padW = (s: string, w: number) => s + " ".repeat(Math.max(0, w - dspW(s)));
           const grReboot = T("重启", "reboot"), grModel = T("模型", "model"), grDir = T("目录", "dirs"), grTool = T("工具", "tools");
           const rows: [string, string, string, string][] = []; // [授权项, 组, 状态, 详情]
           const fr = readAuth("full-reboot-auth");
@@ -332,16 +331,10 @@ export function registerStatusTool(_pi: ExtensionAPI) {
           let ta: any = null;
           try { ta = JSON.parse(readFileSync(join(homedir(), ".teyvat/config/tools-auth", pid, "tools-auth.json"), "utf8")); } catch (err) { console.error("[spirit.abio.status/status.ts] " + ((err as any)?.message || err)); }
           rows.push([T("持久授权", "persistent"), grTool, "", ta ? `enable[${(ta.enabled || []).join(",") || T("无", "none")}] disable[${(ta.disabled || []).join(",") || T("无", "none")}]` : T("(无)", "(none)")]);
-          // 渲染对齐表格（CJK 宽度感知）
-          const hItem = T("授权项", "item"), hGrp = T("组", "group"), hSt = T("状态", "status"), hDet = T("详情", "detail");
-          const w1 = Math.max(...rows.map((r) => dspW(r[0])), dspW(hItem));
-          const w2 = Math.max(...rows.map((r) => dspW(r[1])), dspW(hGrp));
-          const w3 = Math.max(...rows.map((r) => dspW(r[2])), dspW(hSt));
-          const L: string[] = [T("授权状态（时间=授权时刻）", "Permissions (time = authorized at)") + ":"];
-          L.push("  " + padW(hItem, w1) + "  " + padW(hGrp, w2) + "  " + padW(hSt, w3) + "  " + hDet);
-          L.push("  " + "─".repeat(w1 + w2 + w3 + dspW(hDet) + 8));
-          for (const r of rows) L.push("  " + padW(r[0], w1) + "  " + padW(r[1], w2) + "  " + padW(r[2], w3) + "  " + r[3]);
-          return { content: [{ type: "text", text: L.join("\n") }] };
+          // 渲染对齐表格（复用 renderers.ts 的通用函数，2026-09-23）
+          const header = [T("授权项", "item"), T("组", "group"), T("状态", "status"), T("详情", "detail")];
+          const table = renderAlignedTable([header, ...rows], { indent: "  " });
+          return { content: [{ type: "text", text: [T("授权状态（时间=授权时刻）", "Permissions (time = authorized at)") + ":", ...table].join("\n") }] };
         } catch (e: any) {
           return { content: [{ type: "text", text: T(`读取权限失败: ${e?.message || e}`, `Failed to read permissions: ${e?.message || e}`) }], isError: true };
         }

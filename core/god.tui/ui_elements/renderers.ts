@@ -197,3 +197,53 @@ export function registerMessageRenderers(pi: ExtensionAPI) {
   (pi as any).registerMessageRenderer = _origRegister;
   for (const t of _actuallyRegistered) _registeredParts.add(t);
 }
+
+// ── 表格元素渲染（2026-09-23 用户：两种表格——对齐文本表 + markdown 风格表）──
+// 供 status / footer / 任意工具 renderResult 复用。列宽按 CJK 显示宽度对齐（中文=2，ASCII=1）。
+
+/** CJK 显示宽度（中文/全角=2，ASCII=1） */
+export function dispWidth(s: string): number {
+  let w = 0;
+  for (const ch of s) w += ch.charCodeAt(0) > 0xff ? 2 : 1;
+  return w;
+}
+
+/** 补空格到目标显示宽度 */
+export function padTo(s: string, w: number): string {
+  return s + " ".repeat(Math.max(0, w - dispWidth(s)));
+}
+
+/**
+ * 对齐文本表格（无竖线，用 ─ 分隔线）：表头 + ─ + 数据行，列按 CJK 宽度对齐。
+ * rows[0] = 表头。返回已拼好的行数组（供 .join("\n")）。
+ */
+export function renderAlignedTable(rows: string[][], opts?: { indent?: string }): string[] {
+  const indent = opts?.indent ?? "";
+  const cols = rows[0]?.length ?? 0;
+  const widths = new Array(cols).fill(0);
+  for (const r of rows) for (let i = 0; i < cols; i++) widths[i] = Math.max(widths[i], dispWidth(r[i] ?? ""));
+  const line = (r: string[]) => indent + r.map((c, i) => padTo(c ?? "", widths[i])).join("  ").trimEnd();
+  const out: string[] = [line(rows[0] ?? [])];
+  out.push(indent + "─".repeat(widths.reduce((a, b) => a + b, 0) + (cols - 1) * 2));
+  for (let i = 1; i < rows.length; i++) out.push(line(rows[i] ?? []));
+  return out;
+}
+
+/**
+ * Markdown 风格表格（| 竖线 + |---| 分隔行）：
+ *   | col1  | col2  |
+ *   |-------|-------|
+ *   | val   | val   |
+ * rows[0] = 表头。返回已拼好的行数组。
+ */
+export function renderMarkdownTable(rows: string[][], opts?: { indent?: string }): string[] {
+  const indent = opts?.indent ?? "";
+  const cols = rows[0]?.length ?? 0;
+  const widths = new Array(cols).fill(0);
+  for (const r of rows) for (let i = 0; i < cols; i++) widths[i] = Math.max(widths[i], dispWidth(r[i] ?? ""));
+  const line = (r: string[]) => indent + "| " + r.map((c, i) => padTo(c ?? "", widths[i])).join(" | ") + " |";
+  const out: string[] = [line(rows[0] ?? [])];
+  out.push(indent + "|" + widths.map((w) => "-".repeat(w + 2)).join("|") + "|");
+  for (let i = 1; i < rows.length; i++) out.push(line(rows[i] ?? []));
+  return out;
+}

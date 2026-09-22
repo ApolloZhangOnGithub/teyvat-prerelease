@@ -2471,8 +2471,11 @@ export class InteractiveMode {
                     const _fname = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`;
                     const _fp = path.join(_dir, _fname);
                     fs.writeFileSync(_fp, text, "utf8");
-                    const _preview = text.slice(0, 200);
-                    text = `[用户粘贴内容已存: ${_fp}]\n（${text.length} 字符，预览前 ${_preview.length} 字）\n${_preview}...\n\n请 read 上述路径取回完整内容。`;
+                    const _head = text.slice(0, 100);
+                    const _tail = text.slice(-100);
+                    const _folded = text.length - _head.length - _tail.length;
+                    const _preview = `${_head}\n…（中间 ${_folded} 字符已折叠）…\n${_tail}`;
+                    text = `[用户粘贴内容已存: ${_fp}]\n（共 ${text.length} 字符）\n${_preview}\n\n请 read 上述路径取回完整内容。`;
                 } catch (e) { console.error("[god.tui/overrides/modes/interactive/interactive-mode.js] paste 落盘失败: " + (e?.message || e)); }
             }
             // genshin: 原生命令全部禁用，所有 /command 走 extension registerCommand
