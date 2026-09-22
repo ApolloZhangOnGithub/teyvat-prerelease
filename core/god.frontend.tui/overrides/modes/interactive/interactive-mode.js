@@ -483,7 +483,10 @@ export class InteractiveMode {
         // 2026-09-13（用户）：footer 模型名/版本号可隐藏（默认显示）
         globalThis.__genshinFooterModel = this.settingsManager?.globalSettings?.footerModel ?? true;
         globalThis.__genshinFooterVersion = this.settingsManager?.globalSettings?.footerVersion ?? true;
-        globalThis.__genshinStatebarPosition = this.settingsManager?.globalSettings?.statebarPos ?? "messages"; // 2026-09-13（用户：其实修好了）默认回消息底部
+        // 2026-09-15（用户）：statebar 默认位置改为**底栏**；2026-09-22（用户：新装机器进去还是落在消息后面）
+        // ——本行是新装机器唯一的默认来源（settings 里没有 statebarPos 时用它），此前仍写 "messages"，与
+        // statebar.js 的 "footer" 默认不一致，导致新机器默认落在消息底部。现统一为 "footer"。
+        globalThis.__genshinStatebarPosition = this.settingsManager?.globalSettings?.statebarPos ?? "footer";
         // footerContexted 开关已废弃（2026-09-13 用户澄清：只去前缀字，百分比常显）——不再读设置
         // /u 持久化的行为偏好恢复
         if (this.settingsManager?.globalSettings?.ctrlCToBg !== undefined) globalThis.__genshinCtrlCToBg = this.settingsManager.globalSettings.ctrlCToBg;

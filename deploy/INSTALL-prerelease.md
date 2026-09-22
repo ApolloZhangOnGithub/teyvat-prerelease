@@ -13,6 +13,7 @@
 | tmux | 元意识/睡眠 | `brew install tmux` | `apt install tmux` |
 | ffmpeg | 语音输入/播放 | `brew install ffmpeg` | `apt install ffmpeg` |
 | python3 | OCR/文档解析 | `brew install python3` | `apt install python3 python3-pip` |
+| fd / ripgrep | pi 的 Find 与 @文件补全（**不装则 pi 会在进 agent 时自己下载**，很慢） | install 自动装，或 `brew install fd ripgrep` | install 自动装，或 `apt install fd-find ripgrep` |
 
 ## 1. 拉发布仓库
 
@@ -28,7 +29,7 @@ export PAIMON_VIA_MAKE=1 MAKELEVEL=1 PAIMON_CHANNEL=prerelease
 bash deploy/install.sh
 ```
 
-install.sh 会自动装功能依赖（Linux：wl-copy/xclip 剪贴板、rapidocr OCR 引擎；各平台：trafilatura 正文提取、office 文档读取 python-docx/pptx/openpyxl/PyMuPDF/xlrd）——装失败会提示手动命令。
+install.sh 会自动装功能依赖（各平台：**fd / ripgrep**（pi 的 Find / @文件补全——不预装就会在进 agent 时现下载）、trafilatura 正文提取、office 文档读取 python-docx/pptx/openpyxl/PyMuPDF/xlrd、全局 typescript；Linux：wl-copy/xclip 剪贴板、rapidocr OCR 引擎）——装失败会提示手动命令。
 
 ## 3. 验证 + 建 agent
 

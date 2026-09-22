@@ -96,6 +96,36 @@ if [ "$(uname)" != "Darwin" ]; then
   fi
 fi
 
+# ── fd / ripgrep 预装（2026-09-22 用户：新电脑一进 agent，pi 总要现下载 fd，很傻——install 里先装好）──
+# 谁要：pi 的 Find 工具（core/tools/find.js:157）与 @ 文件补全/搜索（modes/interactive/interactive-mode.js:742）
+# 都调 pi 的 ensureTool("fd")/("rg")（utils/tools-manager.js）：先查 <agentDir>/bin 再查 PATH（fd 也认 fdfind），
+# 都没有就在**启动时**从 GitHub 现下载（慢 + 要 GitHub 通路，新机器上就是"怎么又要装个东西"）。
+# teyvat 在这里先装好，把那次意外下载拿掉；装不上不致命（pi 仍会自己下，或 PI_OFFLINE=1 关掉）。
+_TM_MISS=""
+command -v fd >/dev/null 2>&1 || command -v fdfind >/dev/null 2>&1 || _TM_MISS="fd"
+command -v rg >/dev/null 2>&1 || _TM_MISS="${_TM_MISS:+$_TM_MISS }rg"
+if [ -n "$_TM_MISS" ]; then
+  warn "未找到 $_TM_MISS — pi 的 Find/@补全会用到，尝试自动安装（免得进 agent 时才现下载）..."
+  if [ "$(uname)" = "Darwin" ]; then
+    command -v brew >/dev/null 2>&1 && brew install fd ripgrep 2>&1 | tail -2
+  elif command -v apt-get >/dev/null 2>&1; then
+    # Debian 系包名是 fd-find（二进制 fdfind，pi 的 systemBinaryNames 认它）
+    if [ "$(id -u)" = "0" ]; then apt-get install -y fd-find ripgrep 2>&1 | tail -2; else sudo apt-get install -y fd-find ripgrep 2>&1 | tail -2; fi
+  elif command -v dnf >/dev/null 2>&1; then
+    if [ "$(id -u)" = "0" ]; then dnf install -y fd-find ripgrep 2>&1 | tail -2; else sudo dnf install -y fd-find ripgrep 2>&1 | tail -2; fi
+  elif command -v pacman >/dev/null 2>&1; then
+    if [ "$(id -u)" = "0" ]; then pacman -Sy --noconfirm fd ripgrep 2>&1 | tail -2; else sudo pacman -Sy --noconfirm fd ripgrep 2>&1 | tail -2; fi
+  elif command -v apk >/dev/null 2>&1; then
+    if [ "$(id -u)" = "0" ]; then apk add fd ripgrep 2>&1 | tail -2; else sudo apk add fd ripgrep 2>&1 | tail -2; fi
+  fi
+  # 复检（Debian 系装出来的是 fdfind）
+  if { command -v fd >/dev/null 2>&1 || command -v fdfind >/dev/null 2>&1; } && command -v rg >/dev/null 2>&1; then
+    ok "fd / ripgrep 已自动安装（pi 的 Find/@补全 不再在启动时现下载）"
+  else
+    warn "fd/ripgrep 未能自动安装 — 进 agent 时 pi 会自己下载（需 GitHub 通路）；手动: brew install fd ripgrep | apt install fd-find ripgrep"
+  fi
+fi
+
 # ── Linux OCR 引擎 rapidocr（2026-09-09 用户定稿：Linux 默认装 rapidocr + eyes ocr 用它——"先能用，慢就只能慢"）──
 # macOS 用 Vision 框架无需装；Linux 无 Vision → rapidocr（PP-OCRv3 onnxruntime）本地兜底（质量~90%、复杂图 2.4s/张）
 if [ "$(uname)" != "Darwin" ] && command -v python3 >/dev/null 2>&1; then

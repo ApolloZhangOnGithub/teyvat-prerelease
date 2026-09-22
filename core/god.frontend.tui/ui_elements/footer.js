@@ -464,7 +464,7 @@ export class FooterComponent {
 
         // line2: spinner / extension statuses
         // 2026-09-13（用户）：状态栏位置=消息底部时，footer 不再显示 spinner（spinner 移到 chatContainer 底部），只留 extension statuses
-        const sbInMessages = (globalThis.__genshinStatebarPosition ?? "messages") === "messages";
+        const sbInMessages = (globalThis.__genshinStatebarPosition ?? "footer") === "messages"; // 默认 footer（2026-09-22 统一）
         let line2 = " ".repeat(width);
         if (this._spinnerText && !sbInMessages) {
             line2 = truncateToWidth(this._spinnerText, width, theme.fg("dim", "..."));
