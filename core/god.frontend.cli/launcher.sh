@@ -359,6 +359,8 @@ case "$NAME" in
     echo -e "  \033[1mgenshin update\033[0m"
     echo "  ─────────────────────────────────"
     SOURCE_DIR="$HOME/.local/lib/teyvat/source"
+    FORCE=0
+    [ "$2" = "--force" ] || [ "$2" = "-f" ] && FORCE=1
     # ── update 动画：spinner（git pull/clone 阶段无输出时给转圈反馈——2026-09-15 用户要求，复用 install-prerelease 模式）──
     _tt_spinner() { # $1=pid $2=label——转圈直到进程结束
       local pid=$1 label="$2" chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠠' i=0
@@ -375,6 +377,32 @@ case "$NAME" in
       local pid=$!
       _tt_spinner "$pid" "$label"
       wait "$pid"
+    }
+    # 2026-09-22（#10 imac agent）：git pull 带 --force 出口——本地脏改动冲突时备份+丢弃+干净拉取，
+    # 非 force 则列冲突文件 + 友好两个出口（不再吐截断的原始 git 输出）。
+    _pull_update() { # $1=repo dir —— 返回 0 成功 / 1 失败
+      local dir="$1"
+      if [ "$FORCE" = "1" ]; then
+        if [ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]; then
+          local bak="$dir/.local-changes-$(date +%Y%m%d-%H%M%S).diff"
+          git -C "$dir" diff > "$bak" 2>/dev/null
+          echo -e "  \033[33m*\033[0m 本地改动已备份到 $bak"
+          git -C "$dir" checkout -- . 2>/dev/null
+          git -C "$dir" clean -fd 2>/dev/null
+        fi
+        _tt_run_bg "拉取更新中" git -C "$dir" pull --ff-only
+        return $?
+      fi
+      if _tt_run_bg "拉取更新中" git -C "$dir" pull --ff-only --autostash; then
+        return 0
+      fi
+      echo -e "  \033[31mERROR\033[0m 更新与本地改动冲突，autostash 无法自动合并。"
+      echo -e "  本地改动/冲突文件："
+      git -C "$dir" status --porcelain 2>/dev/null | head -20
+      echo -e "  两个出口："
+      echo -e "    \033[1mgenshin update --force\033[0m —— 备份本地改动到 .diff 后，放弃本地改动、用上游新版"
+      echo -e "    或：自行 git 处理后再 update（保留本地改动）"
+      return 1
     }
     VER_JSON="$HOME/.teyvat/agent/version.json"
     CHANNEL="minutely"
@@ -418,10 +446,7 @@ case "$NAME" in
           exit 1
         fi
       else
-      if ! _tt_run_bg "拉取更新中" git -C "$UP_DIR" pull --ff-only --autostash; then
-          echo -e "  \033[31mERROR\033[0m prerelease pull 失败（本地改动与更新冲突且 autostash 未解决——详见上方 git 输出；自动生成文件的脏改动可 git checkout -- 清理）"
-          exit 1
-      fi
+        _pull_update "$UP_DIR" || exit 1
       fi
       # 触发部署（postinstall 语义等价物）：显式跑包内 install.sh。install.sh 防裸跑要求 make 环境
       # （PAIMON_VIA_MAKE=1 + MAKELEVEL）——prerelease 消费方无 make，这里显式伪装
@@ -462,7 +487,7 @@ case "$NAME" in
     elif [ -d "$SOURCE_DIR/.git" ]; then
       echo "  channel: $CHANNEL (source: $SOURCE_DIR)"
       cd "$SOURCE_DIR" || { echo "  ERROR: 进不去 $SOURCE_DIR"; exit 1; }
-      _tt_run_bg "拉取源码更新中" git -C "$SOURCE_DIR" pull --ff-only --autostash || { echo "  ERROR: git pull 失败（本地改动冲突——autostash 未解决，详见上方输出）"; exit 1; }
+      _pull_update "$SOURCE_DIR" || exit 1
       # 2026-09-11（prime-agent）：原来是硬编码 `Codebase/deploy/install.sh` —— 那是 Continents 重构**之前**的布局，
       # 现在源码树是 A.core/ + C.deploy/（见 C.deploy/bootstrap.sh）；照旧路径必然 "No such file"，
       # 也就是 source 通道的 `genshin update` 一直是坏的。改为按候选探测 + 找不到就明确报错。
