@@ -212,11 +212,11 @@ export function initBlockrender(Text, Container, visibleWidth, wrapTextWithAnsi,
 
 // 自举：从 pi-tui 动态加载 helpers（install.sh 部署后可直接 import）
 (async () => {
-  if (_visibleWidth && _wrapTextWithAnsi) return;
   try {
     const m = await import("@earendil-works/pi-tui");
     if (!_visibleWidth) _visibleWidth = m.visibleWidth;
     if (!_wrapTextWithAnsi) _wrapTextWithAnsi = m.wrapTextWithAnsi;
+    if (!_Markdown) _Markdown = m.Markdown;
   } catch { /* not available in all deployment contexts */ }
 })();
 function T(text) { return new _Text(text, 0, 0); }
@@ -405,13 +405,31 @@ export const renderMessage = {
   },
 
   // markdown 渲染：内容走 Markdown 实例（渲染表格/列表/代码块等），供需要富文本的工具结果用
-  // 与 assistant 文字同款管线（new Markdown + markdownBullet）；未注入 Markdown 时退回 output（纯文本）
+  // 与 assistant 文字同款管线（new Markdown + markdownBullet）；markdownTheme 用调用方传入的 theme 现构造
+  // （不依赖 theme.js getMarkdownTheme——blocks_nongod 部署在两个位置，ui_elements 实例拿不到注入的 markdownTheme）
   // 2026-09-23 用户定稿：tool result 要能渲染 markdown 表格
   markdown(theme, ctx, content) {
     const text = stripResultTokenMark(content?.[0]?.text ?? "");
-    if (!text || !_Markdown || !_markdownTheme) return this.output(theme, ctx, content);
+    if (!text || !_Markdown) return this.output(theme, ctx, content);
     const err = isToolError(ctx?.toolName, text, ctx);
-    const md = new _Markdown(text, GUTTER, 0, _markdownTheme);
+    // 用 theme 现构造 markdownTheme（同 getMarkdownTheme 的映射；strikethrough/高亮降级，表格渲染不依赖它们）
+    const mdTheme = {
+      heading: (s) => theme.fg("mdHeading", s),
+      link: (s) => theme.fg("mdLink", s),
+      linkUrl: (s) => theme.fg("mdLinkUrl", s),
+      code: (s) => theme.fg("mdCode", s),
+      codeBlock: (s) => theme.fg("mdCodeBlock", s),
+      codeBlockBorder: (s) => theme.fg("mdCodeBlockBorder", s),
+      quote: (s) => theme.fg("mdQuote", s),
+      quoteBorder: (s) => theme.fg("mdQuoteBorder", s),
+      hr: (s) => theme.fg("mdHr", s),
+      listBullet: (s) => theme.fg("mdListBullet", s),
+      bold: (s) => theme.bold(s),
+      italic: (s) => theme.italic(s),
+      underline: (s) => theme.underline(s),
+      strikethrough: (s) => (theme.strikethrough ? theme.strikethrough(s) : s),
+    };
+    const md = new _Markdown(text, GUTTER, 0, mdTheme);
     const dotStr = (err ? theme.fg("error", SYM.result + " ") : theme.fg("dim", SYM.result + " "));
     return {
       render: (w) => markdownBullet(md, dotStr, w),
