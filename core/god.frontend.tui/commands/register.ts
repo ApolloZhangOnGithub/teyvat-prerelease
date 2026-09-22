@@ -52,7 +52,7 @@ export function registerGodCommands(pi: any) {
   });
   pi.registerCommand("a", {
     description: desc("authdir", "白名单授权目录 + 工具持久授权", "Whitelist dirs + persistent tool auth"),
-    messageDescription: i18n("白名单: /a <目录> [分钟] | /a all | /a root | /a remove <目录|all> | 工具授权: /a enable-<tool> 启用 | /a disable-<tool> 撤销（持久跨 session）", "Whitelist: /a <dir> [min] | /a all | /a remove <dir|all> | Tool auth: /a enable-<tool> | /a disable-<tool> (persistent)"),
+    messageDescription: i18n("白名单: /a <目录> [分钟] | /a all | /a root | /a remove <目录|all> | /a max-upload-size <MB>（单文件上传上限，默认 1、硬顶 30）| 工具授权: /a enable-<tool> 启用 | /a disable-<tool> 撤销（持久跨 session）", "Whitelist: /a <dir> [min] | /a all | /a remove <dir|all> | /a max-upload-size <MB> (max upload size, default 1, cap 30) | Tool auth: /a enable-<tool> | /a disable-<tool> (persistent)"),
     getArgumentCompletions: authdirCompletions,
     handler: (args: string, ctx: any) => authdirHandler(args, ctx, {
       getActive: () => pi.getActiveTools() ?? [],

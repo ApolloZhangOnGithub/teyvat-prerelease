@@ -8,7 +8,9 @@ import { resolveUser } from "./auth.ts";
 import { stmt } from "./db.ts";
 
 export const SHARE_DIR = process.env.SYNC_SHARE_DIR || "/opt/genshin-sync/share";
-export const MAX_SHARE_BYTES = 1024 * 1024; // 单文件上限 1MB（用户 01:27 定稿）
+// 2026-09-22（ISSUE 142）：服务端按**硬顶**放行（30MB）——具体每 agent 的上限由客户端的 /a max-upload-size 把关
+// （默认 1MB）。原来是 1MB 硬编码：客户端授权调到 30MB 也没用（服务端先 413）。
+export const MAX_SHARE_BYTES = 30 * 1024 * 1024; // 单文件硬顶 30MB（用户 2026-09-22 定稿）
 mkdirSync(SHARE_DIR, { recursive: true });
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");

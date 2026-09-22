@@ -103,7 +103,8 @@ function appendEdit(
 const AUTH_FILE = join(homedir(), ".teyvat/config/authorize.json");
 const AGENT_WORK_ROOT = join(homedir(), ".teyvat/AgentWorkDir/Individual");
 export interface TrustEntry { path: string; until?: number }
-export interface AgentTrust { all?: boolean; root?: boolean; trusted: TrustEntry[] }
+// 2026-09-22（用户定稿，ISSUE 142）：maxUploadMB —— 单文件上传上限（MB；默认 1、硬顶 30；`/a max-upload-size <MB>` 设置）
+export interface AgentTrust { all?: boolean; root?: boolean; trusted: TrustEntry[]; maxUploadMB?: number }
 let authDb: { agents: Record<string, AgentTrust> } = { agents: {} };
 let _trustReady: Promise<void> | null = null;
 

@@ -107,6 +107,19 @@ export async function authdirHandler(args: string, ctx: any, tools?: { getActive
     } else { ctx.ui.notify(T("无法确定 agent ID", "Cannot determine agent ID"), "warning"); }
     return;
   }
+  // 2026-09-22（用户定稿，ISSUE 142）：/a max-upload-size <MB> —— 授权单文件上传上限（默认 1MB、硬顶 30MB）。
+  // web(op=upload) 读它（webacts）；服务端 files.ts 的 MAX_SHARE_BYTES 同步放宽到 30MB（按硬顶放行，具体值由客户端把关）。
+  if (a === "max-upload-size" || a.startsWith("max-upload-size ")) {
+    const rest = a.slice("max-upload-size".length).trim();
+    const cur = e.maxUploadMB ?? 1;
+    if (!rest) { ctx.ui.notify(T(`单文件上传上限: ${cur} MB（默认 1，范围 1-30）。用法: /a max-upload-size <MB>`, `Max upload size: ${cur} MB (default 1, range 1-30). Usage: /a max-upload-size <MB>`), "info"); return; }
+    const n = parseInt(rest, 10);
+    if (!Number.isFinite(n) || n < 1) { ctx.ui.notify(T(`用法: /a max-upload-size <MB>（1-30；当前 ${cur}）`, `Usage: /a max-upload-size <MB> (1-30; current ${cur})`), "warning"); return; }
+    const clamped = Math.min(n, 30);
+    e.maxUploadMB = clamped; await saveTrust();
+    ctx.ui.notify(T(`单文件上传上限 = ${clamped} MB${n > 30 ? "（超过硬顶 30，按 30 处理）" : ""}`, `Max upload size = ${clamped} MB${n > 30 ? " (capped at 30)" : ""}`), "info");
+    return;
+  }
   if (a === "remove" || a.startsWith("remove ")) {
     const rest = unquote(a.slice(6));
     if (rest === "all") { e.all = false; await saveTrust(); ctx.ui.notify(T("已关闭全量白名单", "Full whitelist disabled"), "info"); return; }

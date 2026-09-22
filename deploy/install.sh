@@ -398,33 +398,48 @@ mkdir -p "$PAIMON_EXT"
 # dev-stable: 复制一份独立副本，不受后续 dev-minutely 影响
 if [ "$PAIMON_CHANNEL" = "dev-stable" ]; then
   STABLE_DIR="$HOME/.local/lib/teyvat/extensions-stable/teyvat"
-  rsync -a --delete --exclude='.DS_Store' "$IMPL/" "$STABLE_DIR/" 2>/dev/null
-  # dev-stable 副本需要 node_modules（@sinclair/typebox 等），复制
-  rm -rf "$STABLE_DIR/node_modules" 2>/dev/null
-  ln -sf "$IMPL/node_modules" "$STABLE_DIR/node_modules" 2>/dev/null
+  # 2026-09-22（用户问“这些删除有必要吗/有更好办法吗”）：加 --exclude=node_modules ——
+  # 它本来就要用符号链接指向 $IMPL/node_modules（下两行），先复制一份再删纯属白干（还多一次删除）。
+  rsync -a --delete --exclude='.DS_Store' --exclude='node_modules' "$IMPL/" "$STABLE_DIR/" 2>/dev/null
+  # dev-stable 副本用 $IMPL 的 node_modules（符号链接，不复制——单一来源）
+  # 2026-09-22（不删原则）：**实目录改名留档**（同盘 mv = 瞬间），符号链接则被 ln -sfn 原子替换。
+  if [ -e "$STABLE_DIR/node_modules" ] && [ ! -L "$STABLE_DIR/node_modules" ]; then
+    mv "$STABLE_DIR/node_modules" "$STABLE_DIR/node_modules.REMOVED-$(date +%s)" 2>/dev/null || true
+  fi
+  ln -sfn "$IMPL/node_modules" "$STABLE_DIR/node_modules" 2>/dev/null
   IMPL="$STABLE_DIR"
 fi
 # 软链 node_modules → runtime，扩展 import 能解析到 @earendil-works/pi-tui 等
-rm -rf "$PAIMON_AGENT/node_modules" 2>/dev/null || true
-ln -sf "$RUNTIME/node_modules" "$PAIMON_AGENT/node_modules" 2>/dev/null
+# 2026-09-22（不删原则）：实目录改名留档（不删）；ln -sfn 能原子替换同名符号链接。
+if [ -e "$PAIMON_AGENT/node_modules" ] && [ ! -L "$PAIMON_AGENT/node_modules" ]; then
+  mv "$PAIMON_AGENT/node_modules" "$PAIMON_AGENT/node_modules.REMOVED-$(date +%s)" 2>/dev/null || true
+fi
+ln -sfn "$RUNTIME/node_modules" "$PAIMON_AGENT/node_modules" 2>/dev/null
 # @mariozechner 别名 → @earendil-works（扩展 import 时 Node 需要找到这个包）
-rm -rf "$RUNTIME/node_modules/@mariozechner" 2>/dev/null
+# 2026-09-22（不删原则）：不再清空目录——目录在就直接（重）建里面的链接；
+# 旧做法（整个 scope 是符号链接）则改名留档后重建，避免 ln 写进链接目标里。
+if [ -L "$RUNTIME/node_modules/@mariozechner" ]; then
+  mv "$RUNTIME/node_modules/@mariozechner" "$RUNTIME/node_modules/@mariozechner.REMOVED-$(date +%s)" 2>/dev/null || true
+fi
 mkdir -p "$RUNTIME/node_modules/@mariozechner" 2>/dev/null
-ln -sf "$RUNTIME/node_modules/@earendil-works/pi-coding-agent" "$RUNTIME/node_modules/@mariozechner/pi-coding-agent" 2>/dev/null
+ln -sfn "$RUNTIME/node_modules/@earendil-works/pi-coding-agent" "$RUNTIME/node_modules/@mariozechner/pi-coding-agent" 2>/dev/null
 # 源码目录也需要（扩展从真实路径加载）
-rm -rf "$IMPL/node_modules/@mariozechner" 2>/dev/null
+if [ -L "$IMPL/node_modules/@mariozechner" ]; then
+  mv "$IMPL/node_modules/@mariozechner" "$IMPL/node_modules/@mariozechner.REMOVED-$(date +%s)" 2>/dev/null || true
+fi
 mkdir -p "$IMPL/node_modules/@mariozechner" 2>/dev/null
-ln -sf "$RUNTIME/node_modules/@earendil-works/pi-coding-agent" "$IMPL/node_modules/@mariozechner/pi-coding-agent" 2>/dev/null
-rm -rf "$IMPL/node_modules/@earendil-works" 2>/dev/null
+ln -sfn "$RUNTIME/node_modules/@earendil-works/pi-coding-agent" "$IMPL/node_modules/@mariozechner/pi-coding-agent" 2>/dev/null
+# 2026-09-22（不删原则）：@earendil-works 不再清空重建——mkdir -p + ln -sfn 逐包（重）建就是幂等的。
+# （残留的旧包链接极罕见且无害：它们指向 runtime，运行时不在就自然失效）
 mkdir -p "$IMPL/node_modules/@earendil-works"
 # 嵌套副本优先（pi 实际加载的那份），被 npm dedup 提升后回退顶层——保证扩展与 pi 核心用同一份
 PI_TUI_PKG="$PI_PKG/node_modules/@earendil-works/pi-tui"
 [ -d "$PI_TUI_PKG" ] || PI_TUI_PKG="$RUNTIME/node_modules/@earendil-works/pi-tui"
-ln -sf "$PI_TUI_PKG" "$IMPL/node_modules/@earendil-works/pi-tui"
+ln -sfn "$PI_TUI_PKG" "$IMPL/node_modules/@earendil-works/pi-tui"
 PI_AI_PKG="$PI_PKG/node_modules/@earendil-works/pi-ai"
 [ -d "$PI_AI_PKG" ] || PI_AI_PKG="$RUNTIME/node_modules/@earendil-works/pi-ai"
-ln -sf "$PI_AI_PKG" "$IMPL/node_modules/@earendil-works/pi-ai"
-ln -sf "$RUNTIME/node_modules/@earendil-works/pi-coding-agent" "$IMPL/node_modules/@earendil-works/pi-coding-agent"
+ln -sfn "$PI_AI_PKG" "$IMPL/node_modules/@earendil-works/pi-ai"
+ln -sfn "$RUNTIME/node_modules/@earendil-works/pi-coding-agent" "$IMPL/node_modules/@earendil-works/pi-coding-agent"
 
 for d in config agent RuntimeCache SessionData MemoryData IdentityData AgentFileData UserAccount MemoirData AgentWorkDir ProgramFiles sessions; do
   mkdir -p "$HOME/.teyvat/$d"
@@ -442,7 +457,7 @@ for f in auth.json models.json settings.json; do
     ok "回填 config/$f ← UserAccount/$f（迁移遗留；UserAccount 原文保留）"
   fi
   [ -e "$SRC" ] || touch "$SRC" 2>/dev/null
-  ln -sf "../config/$f" "$DEST" 2>/dev/null
+  ln -sfn "../config/$f" "$DEST" 2>/dev/null
 done
 
 # services.json — 第三方服务配置模板（不覆盖已有配置）
@@ -473,28 +488,43 @@ fi
 # extensions (symlink for cross-module imports)
 # dev-stable 只存实体副本到 extensions-stable/，不放 extensions/（避免工具冲突）
 EXT_NAME="teyvat"
-# 清理旧残留（曾用名 genshin-world.minutely / genshin-world / teyvat.minutely）
-rm -rf "$PAIMON_EXT/teyvat.minutely" 2>/dev/null
-rm -rf "$PAIMON_EXT/device" 2>/dev/null
-# ── 2026-09-22（ISSUE 148）：extensions 改成「版本目录 + symlink 原子换向」──
+# ── 2026-09-22（用户原则：不要 rm 这类危险命令，安全性第一）：extensions 用「双槽轮换 + symlink 原子换向」──
 # 之前：`rm -rf "$PAIMON_EXT/teyvat"` 再逐文件 rsync —— 整段窗口里固定路径**完全不存在**，
 # 期间跑任何 genshin CLI 命令都 Cannot find module（实测 2026-09-07 21:14:32 用户撞上，还一度以为代码被篡改）。
-# 现在：rsync 到**全新版本目录** → 最后 `ln -sfn` 一次换向（POSIX rename，原子）——
-# 读者要么看到完整旧目录、要么完整新目录，永无半成品；已打开的 fd 不受影响、新 open 原子
-# （launcher 快照 / #paths(import.meta.url) / rna.json 等按固定路径引用处都不用改）。
+# 现在：内容 rsync 到**另一个空闲槽**（.teyvat.slot-a / .teyvat.slot-b 两槽轮换），
+# 全部就绪（含 node_modules 链接与内容校验）后，用一次 `ln -sfn` 换向——POSIX rename 原子：
+#   · 读者要么看到完整旧目录、要么完整新目录，永无半成品；已打开的 fd 不受影响、新 open 原子；
+#   · **磁盘占用恒定 2 份**（不随部署次数增长）→ 因此**无需清理任何旧目录**（不删东西）；
+#   · 回滚 = 把链接指回另一个槽（上一版就在那里）；
+#   · 固定路径仍是 `extensions/teyvat`，launcher 快照 / #paths(import.meta.url) / rna.json 等引用处都不用改。
+# 旧名残留（曾用名 genshin-world.minutely / genshin-world / teyvat.minutely、以及 device）：**改名留档，不删**。
+for _legacy in teyvat.minutely device; do
+  if [ -e "$PAIMON_EXT/$_legacy" ]; then
+    mv "$PAIMON_EXT/$_legacy" "$PAIMON_EXT/$_legacy.REMOVED-$(date +%s)" 2>/dev/null || true
+  fi
+done
 _EXT_LINK="$PAIMON_EXT/teyvat"
-_EXT_VER="${PAIMON_VER:-manual}"
-_EXT_NEW="$PAIMON_EXT/.teyvat.$_EXT_VER"
-rm -rf "$_EXT_NEW" 2>/dev/null
+_EXT_A="$PAIMON_EXT/.teyvat.slot-a"
+_EXT_B="$PAIMON_EXT/.teyvat.slot-b"
+# 当前链接指向哪个槽 → 本次写**另一个**（全程不动在用那份）
+case "$(readlink "$_EXT_LINK" 2>/dev/null || true)" in
+  *slot-a) _EXT_NEW="$_EXT_B" ;;
+  *)       _EXT_NEW="$_EXT_A" ;;
+esac
 mkdir -p "$_EXT_NEW"
-# 首次迁移：固定路径若还是真目录 → 先挪开留档（否则 ln -sfn 会在目录*里面*建链接）；只发生一次。
+# 首次迁移：固定路径若还是真目录 → 改名留档（否则 ln -sfn 会在目录*里面*建链接），
+# **并立刻把符号链接接回旧目录**——“固定路径不存在”的窗口只有 mv→ln 的毫秒级，不会横跨整个 rsync。只发生一次。
 if [ -e "$_EXT_LINK" ] && [ ! -L "$_EXT_LINK" ]; then
-  mv "$_EXT_LINK" "$PAIMON_EXT/teyvat.pre148-$(date +%s)" 2>/dev/null || true
+  _EXT_PREV="$PAIMON_EXT/teyvat.pre-slot-$(date +%s)"
+  mv "$_EXT_LINK" "$_EXT_PREV" 2>/dev/null || true
+  ln -sfn "$(basename "$_EXT_PREV")" "$_EXT_LINK" 2>/dev/null || true
 fi
-# extensions 同步（三次重试防偶发竞态）→ 写入**版本目录**，全程不动固定路径
+# extensions 同步（三次重试防偶发竞态）→ 写进空闲槽
+# 注：--exclude=node_modules 既不用把源码的 node_modules 搬过来（下面自己建链接），
+# 也让 --delete 不会碰到本槽自己那份 node_modules（rsync 默认不删 excluded 项）。
 RSYNC_OK=0
 for attempt in 1 2 3; do
-  if rsync -rptgo --delete --exclude='.DS_Store' "$IMPL/" "$_EXT_NEW/" 2>/dev/null; then
+  if rsync -rptgo --delete --exclude='.DS_Store' --exclude='node_modules' "$IMPL/" "$_EXT_NEW/" 2>/dev/null; then
     RSYNC_OK=1; break
   fi
   sleep 0.3
@@ -538,11 +568,11 @@ fi
 # 顶层 runtime/node_modules 有 pi-coding-agent 本身和 @sinclair/typebox。
 # 合并两层到 extensions，避免 pi-tui 双实例（双实例 = kitty protocol 状态不共享 = 乱码）。
 [ -d "$RUNTIME/node_modules/@sinclair/typebox" ] || ( cd "$RUNTIME" && npm install @sinclair/typebox --silent 2>&1 | tail -1 )
-rm -rf "$_EXT_NEW/node_modules" 2>/dev/null
+# 2026-09-22（不删原则）：不再清空本目录——用 ln -sfn 就地（重）建链接即可（已有链接被原子替换）。
 mkdir -p "$_EXT_NEW/node_modules"
 # 先链顶层（pi-coding-agent, @sinclair/typebox, @mariozechner 等）
 for d in "$RUNTIME/node_modules/@earendil-works" "$RUNTIME/node_modules/@mariozechner" "$RUNTIME/node_modules/@sinclair"; do
-  [ -d "$d" ] && ln -s "$d" "$_EXT_NEW/node_modules/$(basename "$d")" 2>/dev/null
+  [ -d "$d" ] && ln -sfn "$d" "$_EXT_NEW/node_modules/$(basename "$d")" 2>/dev/null
 done
 # 再用嵌套的 pi-tui/pi-ai 覆盖顶层的（保证和 pi-coding-agent 用同一份）
 PI_NESTED="$PI_PKG/node_modules/@earendil-works"
@@ -551,15 +581,20 @@ if [ -d "$PI_NESTED/pi-tui" ]; then
 fi
 # ── 内容全部就绪（rsync + I.Ecosystems + node_modules + 校验都过了）→ 才原子换向 ──
 # 这一步之前的任何失败都不会碰固定路径：线上始终是完整的旧版本，不是半成品。
-ln -sfn ".teyvat.$_EXT_VER" "$_EXT_LINK" 2>/dev/null || err "extensions symlink 换向失败: $_EXT_LINK"
-ok "extensions 已原子换向 → .teyvat.$_EXT_VER（ISSUE 148）"
-# 旧版本目录保留最近 3 份（含当前，回滚用），其余清理
-ls -dt "$PAIMON_EXT"/.teyvat.* 2>/dev/null | tail -n +4 | while read -r _old; do rm -rf "$_old" 2>/dev/null; done
+ln -sfn "$(basename "$_EXT_NEW")" "$_EXT_LINK" 2>/dev/null || err "extensions symlink 换向失败: $_EXT_LINK"
+ok "extensions 已原子换向 → $(basename "$_EXT_NEW")（双槽轮换；回滚=把链接指回另一个槽）"
+# 不清理任何旧目录：两槽轮换天然把磁盘丁在 2 份（本次写入的槽，正是下一个部署要覆盖的那个）
 if [ -d "$PI_NESTED/pi-ai" ]; then
   ln -sfn "$PI_NESTED/pi-ai" "$PAIMON_EXT/teyvat/node_modules/@earendil-works/pi-ai" 2>/dev/null
 fi
 # 打构建标记：部署副本标记为 deployed（源码保持 dev 不动）
-sed -i.bak 's/BUILD_MODE: "dev" | "release" = "dev"/BUILD_MODE: "dev" | "release" = "release"/' "$PAIMON_EXT/teyvat/paths.ts" 2>/dev/null && rm -f "$PAIMON_EXT/teyvat/paths.ts.bak"
+# 2026-09-22（不删原则）：改成「写临时文件 + mv 覆盖」——跨平台（mac/GNU 的 sed -i 参数不同）、原子覆盖，
+# 且**不产生 .bak**（残留文件会让下次 _tree_sum 校验不一致）。临时文件放在 ext 树**之外**（定名覆盖，不入校验）。
+_paths_ts="$PAIMON_EXT/teyvat/paths.ts"
+_paths_tmp="$PAIMON_EXT/../.tmp-paths-ts"
+if sed 's/BUILD_MODE: "dev" | "release" = "dev"/BUILD_MODE: "dev" | "release" = "release"/' "$_paths_ts" > "$_paths_tmp" 2>/dev/null; then
+  [ -s "$_paths_tmp" ] && ! cmp -s "$_paths_tmp" "$_paths_ts" && mv "$_paths_tmp" "$_paths_ts"
+fi
 # view-mode 扩展已退役（2026-07-16）：功能内化到渲染组件（__piViewMode 默认 full），launcher 不再加载
 # 生成 mobile apps manifest（build + MD5）
 if [ -f "$IMPL/universe.infotech/local.mobile/apps.build.sh" ]; then
@@ -801,7 +836,9 @@ echo ""
   # read/write/edit TUI: silent() → 显示 ⎿ 摘要（末尾执行，确保不被覆盖）
 TE="$PI_DIST/modes/interactive/components/tool-execution.js"
 if [ -f "$TE" ]; then
-  _patch_read="$PI_DIST/modes/interactive/components/.patch-read.cjs"
+  # 2026-09-22（不删原则）：补丁脚本写进**固定暂存路径**（同名覆盖，不落 pi dist、不需要删除）
+  _SCRATCH="$HOME/.local/lib/teyvat/.install-scratch"; mkdir -p "$_SCRATCH"
+  _patch_read="$_SCRATCH/patch-read.cjs"
   cat > "$_patch_read" <<'ENDPATCH'
 const fs = require('fs');
 let src = fs.readFileSync(process.argv[2], 'utf8');
@@ -811,12 +848,12 @@ src = src.split(oldLine).join(newLine);
 fs.writeFileSync(process.argv[2], src);
 console.log('patch-ok');
 ENDPATCH
-  node "$_patch_read" "$TE" && rm -f "$_patch_read"
+  node "$_patch_read" "$TE"
 
   # patch tui.js: Container.render 容错无 render 方法的 child
   _tui_js="$PI_PKG/node_modules/@earendil-works/pi-tui/dist/tui.js"
   if [ -f "$_tui_js" ]; then
-    _patch_tui="$PI_DIST/modes/interactive/components/.patch-tui.cjs"
+    _patch_tui="$_SCRATCH/patch-tui.cjs"
     cat > "$_patch_tui" <<'ENDPATCH'
 const fs = require('fs');
 let src = fs.readFileSync(process.argv[2], 'utf8');
@@ -826,13 +863,13 @@ src = src.split(oldLine).join(newLine);
 fs.writeFileSync(process.argv[2], src);
 console.log('patch-tui-ok');
 ENDPATCH
-    node "$_patch_tui" "$_tui_js" && rm -f "$_patch_tui"
+    node "$_patch_tui" "$_tui_js"
   fi
 
   # patch read.js: getNonVisionImageNote 的 model.input.includes 缺 Array.isArray 防御（2026-09-07：models.dev 合成/第三方模型缺 input 字段 → Undefined reading 'includes'）。debug-01 只修了 pi-ai 5 处，漏了 pi-coding-agent read.js 这处。
   _read_js="$PI_DIST/core/tools/read.js"
   if [ -f "$_read_js" ]; then
-    _patch_readimg="$PI_DIST/core/tools/.patch-readimg.cjs"
+    _patch_readimg="$_SCRATCH/patch-readimg.cjs"
     cat > "$_patch_readimg" <<'ENDPATCH'
 const fs = require('fs');
 let src = fs.readFileSync(process.argv[2], 'utf8');
@@ -846,13 +883,13 @@ if (src.includes(oldLine)) {
   console.log('patch-read-image-input-skip (pattern not found, already patched or version drift)');
 }
 ENDPATCH
-    node "$_patch_readimg" "$_read_js" && rm -f "$_patch_readimg"
+    node "$_patch_readimg" "$_read_js"
   fi
 
   # patch model-resolver.js: deepseek provider 首次安装默认模型 pro → flash（2026-09-07 用户定稿：首次装 teyvat 默认 deepseek-v4-flash）
   _mr_js="$PI_DIST/core/model-resolver.js"
   if [ -f "$_mr_js" ]; then
-    _patch_mr="$PI_DIST/core/.patch-model-resolver.cjs"
+    _patch_mr="$_SCRATCH/patch-model-resolver.cjs"
     cat > "$_patch_mr" <<'ENDPATCH'
 const fs = require('fs');
 let src = fs.readFileSync(process.argv[2], 'utf8');
@@ -866,7 +903,7 @@ if (src.includes(oldLine)) {
   console.log('patch-model-resolver-skip (pattern not found, already patched or version drift)');
 }
 ENDPATCH
-    node "$_patch_mr" "$_mr_js" && rm -f "$_patch_mr"
+    node "$_patch_mr" "$_mr_js"
   fi
 
   # ── 已移除：patch model-registry.js（contextWindow/maxTokens 继承）2026-09-22 ──

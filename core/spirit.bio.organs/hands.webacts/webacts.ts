@@ -226,7 +226,17 @@ export default function (pi: ExtensionAPI) {
             return { content: [{ type: "text", text: i18n(`上传被拒: ${_verdict.reason}（路径 ${resolved}）`, `upload refused: ${_verdict.reason} (${resolved})`) }], details: { blocked: true }, isError: true };
           }
           const data = nfs.readFileSync(resolved);
-          const MAX = 1024 * 1024;
+          // 2026-09-22（ISSUE 142，用户定稿）：上限**可授权**——/a max-upload-size <MB>（默认 1MB，硬顶 30MB）。
+          // 从 authorize.json 读本 agent 的 maxUploadMB；服务端 files.ts 同步放宽到 30MB（按硬顶放行）。
+          const MAX = (() => {
+            try {
+              const auth = JSON.parse(nfs.readFileSync(join(homedir(), ".teyvat", "config", "authorize.json"), "utf8"));
+              const me = String((globalThis as any).__genshinPersonId || process.env.PAIMON_AGENT_ID || "");
+              const v = auth?.agents?.[me]?.maxUploadMB;
+              if (typeof v === "number" && v >= 1) return Math.min(v, 30) * 1024 * 1024;
+            } catch { /* 无 authorize.json → 默认 1MB */ }
+            return 1024 * 1024;
+          })();
           if (data.length > MAX) {
             // 2026-09-22（a_great_agent_on_imac_01 报的 #8）：原文案结尾写“或用户 /a 授权其他通道”——
             // 很容易被读成“不在白名单、要走 /a 授权”（实测就有 agent 这么误报）。1MB 是**服务端限制**，
