@@ -315,13 +315,13 @@ export function registerStatusTool(_pi: ExtensionAPI) {
           const msDesc = ms?.authorized ? (ms?.all ? T("任意", "any") : ((ms?.models || []).join(",") || "?")) : "";
           lines.push(`  model-switch: ${ms?.authorized ? T("已授权", "authorized") : T("未授权", "not authorized")}${ms?.authorized ? ` (${msDesc})` : ""}${ms?.ts ? ` (${fmtTs(ms.ts)})` : ""}`);
           try {
-            const trust = JSON.parse(readFileSync(join(homedir(), ".teyvat/trust.json"), "utf8"));
+            const trust = JSON.parse(readFileSync(join(homedir(), ".teyvat/config/authorize.json"), "utf8"));
             const e = trust?.agents?.[pid] || {};
             lines.push(`  ${T("全量白名单", "full whitelist")}(all): ${e.all ? T("开", "on") : T("关", "off")}`);
             lines.push(`  ${T("root 授权", "root auth")}:       ${e.root ? T("开", "on") : T("关", "off")}`);
             const dirs = (e.trusted || []).filter((t: any) => !t.until || t.until > Date.now());
             lines.push(`  ${T("信任目录", "trusted dirs")}:       ${dirs.length ? dirs.map((t: any) => t.path).join(", ") : T("(无)", "(none)")}`);
-          } catch { /* trust.json 不存在 */ }
+          } catch { /* authorize.json 不存在 */ }
           try {
             const ta = JSON.parse(readFileSync(join(homedir(), ".teyvat/config/tools-auth", pid, "tools-auth.json"), "utf8"));
             lines.push(`  ${T("工具持久授权", "persistent tool auth")}: enable[${(ta.enabled || []).join(",") || T("无", "none")}] disable[${(ta.disabled || []).join(",") || T("无", "none")}]`);
