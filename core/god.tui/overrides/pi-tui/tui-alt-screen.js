@@ -110,16 +110,13 @@ export class TuiAltScreen extends TuiBase {
         this.flashes.dispose();
         this.altScreenActive = true;
         this.uploadedKittyImages.clear();
-        // 2026-09-23：iTerm2 3.5+ 支持 kitty graphics（APC G，有 image ID 可管理），改走 kitty 而非禁用
-        // （iTerm2 自己的 inline image 协议无 ID，alt-screen 重绘下不可管理）。
-        // 直接读 process.env 判断 iTerm2——不依赖 detectCapabilities 的缓存（可能在启动早期被检测成 null 缓存）。
-        const _isIterm2 = Boolean(process.env.ITERM_SESSION_ID) || (process.env.TERM_PROGRAM || "").toLowerCase() === "iterm.app";
-        if (_isIterm2) {
-            const capabilities = getCapabilities();
-            this.savedCapabilities = capabilities;
-            setCapabilities({ ...capabilities, images: "kitty" });
-            this.invalidate();
-        }
+        // 2026-09-23 用户定稿：图片渲染暂不支持（先禁用）。完整调研见 EXPERIENCE 文档。
+        // 无条件禁用所有图片协议：iTerm2 inline image 无 ID 在 alt-screen 重绘下不可管理；
+        // kitty 协议虽可管理，但 iTerm2 的 kitty 实现有 cell 尺寸换算 artifacts + 图片顶格（encodeKitty 无 x 偏移）不美观。
+        const capabilities = getCapabilities();
+        this.savedCapabilities = capabilities;
+        setCapabilities({ ...capabilities, images: null });
+        this.invalidate();
         this.imageProtocol = getCapabilities().images;
         this.lastDocument = [];
         this.selectionAnchor = undefined;
