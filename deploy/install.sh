@@ -475,12 +475,26 @@ fi
 EXT_NAME="teyvat"
 # 清理旧残留（曾用名 genshin-world.minutely / genshin-world / teyvat.minutely）
 rm -rf "$PAIMON_EXT/teyvat.minutely" 2>/dev/null
-rm -rf "$PAIMON_EXT/teyvat" 2>/dev/null
 rm -rf "$PAIMON_EXT/device" 2>/dev/null
-# extensions 同步（三次重试防偶发竞态）
+# ── 2026-09-22（ISSUE 148）：extensions 改成「版本目录 + symlink 原子换向」──
+# 之前：`rm -rf "$PAIMON_EXT/teyvat"` 再逐文件 rsync —— 整段窗口里固定路径**完全不存在**，
+# 期间跑任何 genshin CLI 命令都 Cannot find module（实测 2026-09-07 21:14:32 用户撞上，还一度以为代码被篡改）。
+# 现在：rsync 到**全新版本目录** → 最后 `ln -sfn` 一次换向（POSIX rename，原子）——
+# 读者要么看到完整旧目录、要么完整新目录，永无半成品；已打开的 fd 不受影响、新 open 原子
+# （launcher 快照 / #paths(import.meta.url) / rna.json 等按固定路径引用处都不用改）。
+_EXT_LINK="$PAIMON_EXT/teyvat"
+_EXT_VER="${PAIMON_VER:-manual}"
+_EXT_NEW="$PAIMON_EXT/.teyvat.$_EXT_VER"
+rm -rf "$_EXT_NEW" 2>/dev/null
+mkdir -p "$_EXT_NEW"
+# 首次迁移：固定路径若还是真目录 → 先挪开留档（否则 ln -sfn 会在目录*里面*建链接）；只发生一次。
+if [ -e "$_EXT_LINK" ] && [ ! -L "$_EXT_LINK" ]; then
+  mv "$_EXT_LINK" "$PAIMON_EXT/teyvat.pre148-$(date +%s)" 2>/dev/null || true
+fi
+# extensions 同步（三次重试防偶发竞态）→ 写入**版本目录**，全程不动固定路径
 RSYNC_OK=0
 for attempt in 1 2 3; do
-  if rsync -rptgo --delete --exclude='.DS_Store' "$IMPL/" "$PAIMON_EXT/teyvat/" 2>/dev/null; then
+  if rsync -rptgo --delete --exclude='.DS_Store' "$IMPL/" "$_EXT_NEW/" 2>/dev/null; then
     RSYNC_OK=1; break
   fi
   sleep 0.3
@@ -494,7 +508,7 @@ fi
 if [ -d "$PKG_ROOT/I.Ecosystems" ]; then
   RSYNC_ECO=0
   for attempt in 1 2 3; do
-    if rsync -rptgo --delete --exclude='.DS_Store' "$PKG_ROOT/I.Ecosystems/" "$PAIMON_EXT/teyvat/I.Ecosystems/" 2>/dev/null; then
+    if rsync -rptgo --delete --exclude='.DS_Store' "$PKG_ROOT/I.Ecosystems/" "$_EXT_NEW/I.Ecosystems/" 2>/dev/null; then
       RSYNC_ECO=1; break
     fi
     sleep 0.3
@@ -508,14 +522,14 @@ fi
 # 不在 A.core 源码树内——主校验排除它，另在下方单独校验（2026-09-13 IM 迁移新增）。
 _tree_sum() { (cd "$1" && find . -type f -not -path '*/node_modules/*' -not -path './I.Ecosystems/*' -not -name '.DS_Store' -print0 | sort -z | xargs -0 shasum 2>/dev/null | shasum | cut -d' ' -f1); }
 SRC_SUM=$(_tree_sum "$IMPL")
-DST_SUM=$(_tree_sum "$PAIMON_EXT/teyvat")
+DST_SUM=$(_tree_sum "$_EXT_NEW")
 if [ -z "$SRC_SUM" ] || [ "$SRC_SUM" != "$DST_SUM" ]; then
   err "extensions 部署校验失败：线上副本与源码不一致（rsync 没落地）— 线上是旧代码"
 fi
 # I.Ecosystems 附加域单独校验
 if [ -d "$PKG_ROOT/I.Ecosystems" ]; then
   ECO_SRC=$(_tree_sum "$PKG_ROOT/I.Ecosystems")
-  ECO_DST=$(_tree_sum "$PAIMON_EXT/teyvat/I.Ecosystems")
+  ECO_DST=$(_tree_sum "$_EXT_NEW/I.Ecosystems")
   if [ -z "$ECO_SRC" ] || [ "$ECO_SRC" != "$ECO_DST" ]; then
     err "I.Ecosystems 部署校验失败：线上副本与源码不一致"
   fi
@@ -524,17 +538,23 @@ fi
 # 顶层 runtime/node_modules 有 pi-coding-agent 本身和 @sinclair/typebox。
 # 合并两层到 extensions，避免 pi-tui 双实例（双实例 = kitty protocol 状态不共享 = 乱码）。
 [ -d "$RUNTIME/node_modules/@sinclair/typebox" ] || ( cd "$RUNTIME" && npm install @sinclair/typebox --silent 2>&1 | tail -1 )
-rm -rf "$PAIMON_EXT/teyvat/node_modules" 2>/dev/null
-mkdir -p "$PAIMON_EXT/teyvat/node_modules"
+rm -rf "$_EXT_NEW/node_modules" 2>/dev/null
+mkdir -p "$_EXT_NEW/node_modules"
 # 先链顶层（pi-coding-agent, @sinclair/typebox, @mariozechner 等）
 for d in "$RUNTIME/node_modules/@earendil-works" "$RUNTIME/node_modules/@mariozechner" "$RUNTIME/node_modules/@sinclair"; do
-  [ -d "$d" ] && ln -s "$d" "$PAIMON_EXT/teyvat/node_modules/$(basename "$d")" 2>/dev/null
+  [ -d "$d" ] && ln -s "$d" "$_EXT_NEW/node_modules/$(basename "$d")" 2>/dev/null
 done
 # 再用嵌套的 pi-tui/pi-ai 覆盖顶层的（保证和 pi-coding-agent 用同一份）
 PI_NESTED="$PI_PKG/node_modules/@earendil-works"
 if [ -d "$PI_NESTED/pi-tui" ]; then
-  ln -sfn "$PI_NESTED/pi-tui" "$PAIMON_EXT/teyvat/node_modules/@earendil-works/pi-tui" 2>/dev/null
+  ln -sfn "$PI_NESTED/pi-tui" "$_EXT_NEW/node_modules/@earendil-works/pi-tui" 2>/dev/null
 fi
+# ── 内容全部就绪（rsync + I.Ecosystems + node_modules + 校验都过了）→ 才原子换向 ──
+# 这一步之前的任何失败都不会碰固定路径：线上始终是完整的旧版本，不是半成品。
+ln -sfn ".teyvat.$_EXT_VER" "$_EXT_LINK" 2>/dev/null || err "extensions symlink 换向失败: $_EXT_LINK"
+ok "extensions 已原子换向 → .teyvat.$_EXT_VER（ISSUE 148）"
+# 旧版本目录保留最近 3 份（含当前，回滚用），其余清理
+ls -dt "$PAIMON_EXT"/.teyvat.* 2>/dev/null | tail -n +4 | while read -r _old; do rm -rf "$_old" 2>/dev/null; done
 if [ -d "$PI_NESTED/pi-ai" ]; then
   ln -sfn "$PI_NESTED/pi-ai" "$PAIMON_EXT/teyvat/node_modules/@earendil-works/pi-ai" 2>/dev/null
 fi

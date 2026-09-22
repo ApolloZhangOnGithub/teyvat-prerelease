@@ -689,7 +689,9 @@ async function _pullRemoteMessagesImpl(): Promise<number> {
         try {
           mkdirSync(TRIGGERS_DIR, { recursive: true });
           const tf = join(TRIGGERS_DIR, `${sid}.json`);
-          writeFileSync(tf, JSON.stringify({ msgId: p.id, ts: p.ts }), "utf8");
+          // 2026-09-22（ISSUE 151① 防御）：带上**写入者 pid**——消费端据此只认“本进程写的 trigger”，
+          // 同 sid 的残留孤儿实例就抢不走（它看到 pid 不是自己、且写入者还活着 → 不碰）。
+          writeFileSync(tf, JSON.stringify({ msgId: p.id, ts: p.ts, pid: process.pid }), "utf8");
           console.error("[social-pull] trigger written " + tf + " for " + p.id);
         } catch (e2) { console.error("[social-pull] trigger write FAILED: " + ((e2 as any)?.message || e2) + " dir=" + TRIGGERS_DIR); /* trigger 写入失败 → 降级为 agent_end drain */ }
       } else {
@@ -733,7 +735,8 @@ async function sendOne(to: string, text: string, mode: SocialMode, atList: strin
   if (modeUsed === "interrupt" || modeUsed === "queue") {
     try {
       mkdirSync(TRIGGERS_DIR, { recursive: true });
-      writeFileSync(join(TRIGGERS_DIR, `${receiverSid}.json`), JSON.stringify({ msgId: msg.id, ts: msg.ts }), "utf8");
+      // 2026-09-22（ISSUE 151①）：写入端同样带 pid（跨设备直接投递路径）。
+      writeFileSync(join(TRIGGERS_DIR, `${receiverSid}.json`), JSON.stringify({ msgId: msg.id, ts: msg.ts, pid: process.pid }), "utf8");
     } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* 触发文件失败 → 降级为 agent_end 轮后注入 */ }
   }
   return { to: receiverSid, mode_used: modeUsed, status: modeUsed === "interrupt" ? "alert" : "queued" };
@@ -822,6 +825,16 @@ function watchInterruptTriggers(pi: ExtensionAPI): void {
       if (!/^[a-f0-9]{8}$/.test(mySid)) return;
       let trig: any = null;
       try { trig = JSON.parse(readFileSync(f, "utf8")); } catch (e: any) { if ((e as any)?.code !== "ENOENT") console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return; } // ENOENT=已被 watch/interval 另一方消费（竞态）——静默
+      // 2026-09-22（ISSUE 151①）：**实例所有权校验**——trigger 带写入者 pid，只有本进程写的才消费。
+      // 场景：换代残留的孤儿实例（同 sid）与我们 watch 同一 triggers 目录，谁先 unlink 谁消费；
+      // 孤儿抢走 → 我们读 ENOENT → 静默跳过 → 跨设备打断丢失（testor 的 inode 铁证）。
+      // 规则：pid 对不上、**且写入者还活着** → 不碰（留给它，不 unlink）；写入者已死（崩溃/被杀）→ 接管（不能把消息饿死）。
+      // 老格式（无 pid）→ 照旧消费（向后兼容）。
+      if (trig?.pid && trig.pid !== process.pid) {
+        let writerAlive = false;
+        try { process.kill(trig.pid, 0); writerAlive = true; } catch { writerAlive = false; }
+        if (writerAlive) return; // 别人（活的）的 trigger——不消费、不 unlink
+      }
       try { unlinkSync(f); } catch (e: any) { if ((e as any)?.code !== "ENOENT") console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return; } // 拿所有权失败 → 已由 watch/interval 另一方处理，放弃
       try {
         const msgs = readInbox(mySid, 50).filter((m: SocialMsg) => !m.injected);

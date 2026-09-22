@@ -1327,6 +1327,37 @@ case "$MODE" in
       # SYNC_LOOP_PID=$!
     # 清屏到最上方，再启动 pi
     printf '\033[H\033[J'
+    # 2026-09-22（ISSUE 151② 根治）：启动幂等——清掉**同 sid 的既有实例**（含 PPID=1 孤儿）。
+    # 为什么必须做：self-reboot / update 只起新进程，不回收同 sid 旧实例（孤儿 PPID=1 无人回收）；
+    # 两个实例 watch 同一 triggers 目录 → 旧实例（旧代码）抢先 unlink + markInjected → 新实例读 ENOENT 静默跳过
+    # → 跨设备 interrupt 打断丢失（cross-device-communication-testor-01 的 inode 铁证）。
+    # 判据：进程标题就是 `genshin:<name>(main,<sid>,<session>)`（mac/linux 都可见），用 `(main,<sid>,` 精确匹配。
+    # ——**不用 env 匹配**：环境变量会被子进程继承（实测 `node server.js` 就带着 PAIMON_AGENT_ID）→ 会误杀无辜子进程。
+    # ——限定 `main`：子会话（metaconsciousness/hippocampus）不抢 trigger（communicate.ts:1424），不必也不该杀。
+    # 保护：跳过自己 + 祖先进程（免得 agent 里跑 `genshin <自己名字>` 时把调用者杀掉）。
+    _kill_stale_same_sid() {
+      local id="$1"; [ -n "$id" ] || return 0
+      local keep=" $$ " p=$$ i=0
+      while [ "$p" != "1" ] && [ "$i" -lt 8 ]; do
+        p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')
+        [ -n "$p" ] || break
+        keep="$keep$p "; i=$((i+1))
+      done
+      local hits pid
+      hits=$(ps -Ao pid=,command= 2>/dev/null | grep -E "\(main,${id}," | grep -v grep | awk '{print $1}')
+      for pid in $hits; do
+        case "$keep" in *" $pid "*) continue;; esac
+        echo "  $(_l "启动幂等：清理同 sid 残留实例 PID $pid（ISSUE 151②）" "startup idempotency: killing stale instance PID $pid")"
+        kill -TERM "$pid" 2>/dev/null
+      done
+      sleep 0.3
+      for pid in $hits; do
+        case "$keep" in *" $pid "*) continue;; esac
+        kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null
+      done
+    }
+    _kill_stale_same_sid "$ID"
+
     # 迭代计数（2026-08-20）：第一次迭代 = 用户新启动（遇 detached → attach 转 TUI）；
     # 后续迭代 = agent /h 退出后 while 循环重启（遇 detached → headless 后台化）。
     LOOP_ITER=0
