@@ -392,9 +392,9 @@ export function validateExecute(cmd: string, selfId?: string, cwd?: string): { b
 }
 
 export default function (pi: ExtensionAPI) {
-  pi.registerMessageRenderer("syntax-error", (message: any, _opts: any, theme: any) => {
-    return renderMessage.notice(theme, "Syntax", (message.content ?? "").toString());
-  });
+  // 2026-09-22（用户怒批：syntax-error 还走绿色菱形块）——这里旧版重复注册了 syntax-error 渲染器
+  // （renderMessage.notice 默认绿色 ◆ Syntax），覆盖了 renderers.ts:160 的正确黄色 _sysMsg(...,"warning")。
+  // 已删：syntax-error 渲染只保留 renderers.ts 那一处（黄色 system 块，与 system-error 一致）。
   _trustReady = loadTrust();
 
   const editedThisTurn = new Set<string>();

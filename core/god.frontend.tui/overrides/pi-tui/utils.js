@@ -992,6 +992,13 @@ export function isWhitespaceChar(char) {
 export function isPunctuationChar(char) {
     return PUNCTUATION_REGEX.test(char);
 }
+/**
+ * 长 token 折行时，在这些字符「之后」断开比较自然（路径分隔符/标点），而不是逐字硬切。
+ * 2026-09-22（用户：URL/path/标识符被逐字硬切中间断）。
+ */
+function isBreakAfterChar(g) {
+    return g === "/" || g === "\\" || g === "." || g === "," || g === ";" || g === ":" || g === "=" || g === "|" || g === "&" || g === ")" || g === "]" || g === "}" || g === ">" || g === "-" || g === "_";
+}
 function breakLongWord(word, width, tracker) {
     const lines = [];
     let currentLine = tracker.getActiveCodes();
@@ -1024,6 +1031,10 @@ function breakLongWord(word, width, tracker) {
         }
     }
     // Now process segments
+    // 2026-09-22（用户：长 token 折行硬切词中间断——URL/path/标识符被逐字硬切）：
+    // 跟踪最近的可断点字符（/ \ . , ; : = | & ) ] } > - _），溢出时优先从可断点折，而不是硬切。
+    let lastBreakEnd = 0;   // currentLine 里最近可断点之后的字符下标（字符串索引）
+    let lastBreakWidth = 0; // 该断点处的可见宽度
     for (const seg of segments) {
         if (seg.type === "ansi") {
             currentLine += seg.value;
@@ -1036,17 +1047,34 @@ function breakLongWord(word, width, tracker) {
             continue;
         const graphemeWidth = visibleWidth(grapheme);
         if (currentWidth + graphemeWidth > width) {
-            // Add specific reset for underline only (preserves background)
-            const lineEndReset = tracker.getLineEndReset();
-            if (lineEndReset) {
-                currentLine += lineEndReset;
+            // 优先从最近的可断点折（断点至少占宽度 40%，避免碎行）
+            if (lastBreakEnd > 0 && lastBreakWidth >= Math.floor(width * 0.4)) {
+                const lineEndReset = tracker.getLineEndReset();
+                lines.push(currentLine.slice(0, lastBreakEnd) + (lineEndReset || ""));
+                currentLine = tracker.getActiveCodes() + currentLine.slice(lastBreakEnd);
+                currentWidth -= lastBreakWidth;
+                lastBreakEnd = 0;
+                lastBreakWidth = 0;
             }
-            lines.push(currentLine);
-            currentLine = tracker.getActiveCodes();
-            currentWidth = 0;
+            else {
+                // Add specific reset for underline only (preserves background)
+                const lineEndReset = tracker.getLineEndReset();
+                if (lineEndReset) {
+                    currentLine += lineEndReset;
+                }
+                lines.push(currentLine);
+                currentLine = tracker.getActiveCodes();
+                currentWidth = 0;
+                lastBreakEnd = 0;
+                lastBreakWidth = 0;
+            }
         }
         currentLine += grapheme;
         currentWidth += graphemeWidth;
+        if (isBreakAfterChar(grapheme)) {
+            lastBreakEnd = currentLine.length;
+            lastBreakWidth = currentWidth;
+        }
     }
     if (currentLine) {
         // No reset at end of final segment - caller handles continuation
