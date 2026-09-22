@@ -393,6 +393,16 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
         const flagPath = join(rcDir, "full-reboot-auth");
         let authorized = false;
         try { authorized = !!JSON.parse(readFileSync(flagPath, "utf8")).authorized; } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
+        // 2026-09-23 迁移：self-reboot → full-reboot 改名时旧授权标志 self-reboot-auth 未迁，这里自动认账并迁移
+        if (!authorized) {
+          const _oldFlag = join(rcDir, "self-reboot-auth");
+          try {
+            if (existsSync(_oldFlag) && JSON.parse(readFileSync(_oldFlag, "utf8")).authorized) {
+              authorized = true;
+              try { writeFileSync(flagPath, readFileSync(_oldFlag, "utf8")); } catch { /* 迁移写失败不致命 */ }
+            }
+          } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
+        }
         if (!authorized) {
           return { content: [{ type: "text", text:
             i18n("ERR: full-reboot 需要用户授权。\n请让用户执行: /a full-reboot\n授权后永久生效,不需要每次重新授权。",
