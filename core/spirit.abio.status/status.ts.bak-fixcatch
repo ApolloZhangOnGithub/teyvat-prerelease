@@ -319,7 +319,7 @@ export function registerStatusTool(_pi: ExtensionAPI) {
           const msDesc = ms?.authorized ? (ms?.all ? T("任意", "any") : ((ms?.models || []).join(",") || "?")) : "";
           rows.push(["model-switch", grModel, ms?.authorized ? yes : no, ms?.authorized ? (msDesc + (ms?.ts ? ` · ${fmtTs(ms.ts)}` : "")) : ""]);
           let e: any = {};
-          try { e = JSON.parse(readFileSync(join(homedir(), ".teyvat/config/authorize.json"), "utf8"))?.agents?.[pid] || {}; } catch (err) { console.error("[spirit.abio.status/status.ts] " + ((err as any)?.message || err)); }
+          try { e = JSON.parse(readFileSync(join(homedir(), ".teyvat/config/authorize.json"), "utf8"))?.agents?.[pid] || {}; } catch { }
           rows.push([T("全量白名单", "full whitelist") + "(all)", grDir, e.all ? on : off, ""]);
           rows.push([T("root 授权", "root auth"), grDir, e.root ? on : off, ""]);
           const dirs = (e.trusted || []).filter((t: any) => !t.until || t.until > Date.now());
@@ -330,7 +330,7 @@ export function registerStatusTool(_pi: ExtensionAPI) {
             rows.push([T("信任目录", "trusted dirs"), grDir, T("(无)", "(none)"), ""]);
           }
           let ta: any = null;
-          try { ta = JSON.parse(readFileSync(join(homedir(), ".teyvat/config/tools-auth", pid, "tools-auth.json"), "utf8")); } catch (err) { console.error("[spirit.abio.status/status.ts] " + ((err as any)?.message || err)); }
+          try { ta = JSON.parse(readFileSync(join(homedir(), ".teyvat/config/tools-auth", pid, "tools-auth.json"), "utf8")); } catch { }
           rows.push([T("持久授权", "persistent"), grTool, "", ta ? `enable[${(ta.enabled || []).join(",") || T("无", "none")}] disable[${(ta.disabled || []).join(",") || T("无", "none")}]` : T("(无)", "(none)")]);
           // 渲染对齐表格（CJK 宽度感知）
           const hItem = T("授权项", "item"), hGrp = T("组", "group"), hSt = T("状态", "status"), hDet = T("详情", "detail");
