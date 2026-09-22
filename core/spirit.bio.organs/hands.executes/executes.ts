@@ -401,9 +401,11 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
         }
         // 授权持久化,不删除 flag
         // 2026-09-22（用户定稿）：full-reboot 恒为完整重启（launcher 也重启，重新快照+exec），
-        // 所以始终写 full-restart 标记；"只重载记忆"那件事单独是 amem 的 memory-reboot action，不在这里。
+        // 2026-09-23（用户：full-reboot 写 full-restart 会导致 launcher re-exec 直接卡死）——
+        // full-reboot 只做 agent 重启（wake-restart nonce → launcher 重启 agent，重读代码+记忆+新会话）。
+        // 不再写 full-restart 标记（launcher 快照+exec 机制卡死，已弃用）。
         const reason = cmd.replace(/^full[-_]?reboot\s*/i, "").trim() || "full-reboot";
-        try { writeFileAtomic(join(rcDir, "full-restart"), JSON.stringify({ ts: new Date().toISOString(), reason })); } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
+        // try { writeFileAtomic(join(rcDir, "full-restart"), JSON.stringify({ ts: new Date().toISOString(), reason })); } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
         // 保存当前累积运行时长,重启后接续(不重置计时器)
         const accumulated = (globalThis as any).__genshinSessionElapsed || 0;
         const statusBar = (globalThis as any).__genshinStatusBar;
