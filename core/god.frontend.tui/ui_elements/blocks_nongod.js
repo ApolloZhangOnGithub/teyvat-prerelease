@@ -236,12 +236,14 @@ export function bulletText(dotStr, text, cont) {
             if (indentW <= 0 || indentW >= width) return hangWrapText(l, width, h);
             // 每行独立 hangWrapText：识别该行自己的前缀（行号、diff 标记等）
             const lineWrapped = hangWrapText(l, width - indentW, h);
-            // 该行已有竖线行号前缀（`1 │` 格式）→ 不再加 indentW（避免 execute/social 双重缩进）
-            // 其余（diff 行号 `\d+[+- ]`、bullet 前缀等）保持原行为不变
-            const ownStripped = l.replace(/\x1b\[[0-9;]*m/g, '');
-            const isLineNoBar = /^\s*\d+\s*│/.test(ownStripped);
-            const pad = isLineNoBar ? (ownStripped.match(/^\s*\d+\s*│\s*/)?.[0]?.length ?? 0) : indentW; // 2026-09-15（用户）：行号行的 wrap 续行对齐到内容列（不再顶格）——Read/Write 长行换行第 2 行与工具对齐
-            return lineWrapped.map((line, j) => {
+            // 2026-09-22（用户：result 里换行有时顶头/不跟序号后的文字对齐；要求统一函数与渲染管线）：
+            // 此前对「行号竖线行」（`1 │ …`）特判 pad = 行号前缀长（4），普通行 pad = indentW（6）
+            // → 同一个 Result 块里不同行的续行/首行左边界不一致（实测 6 vs 8），而且 hangWrapText
+            // 已经按「该行自己的前缀」补过续行缩进了，再加 pad 就是双重缩进。
+            // 现统一：**整块同一个左边界** = indentW（续行与“序号后的文字”同列），行号/diff 前缀由
+            // hangWrapText 自己在行内对齐（首行与续行仍然同列）。
+            const pad = indentW;
+            return lineWrapped.map((line) => {
               return ' '.repeat(pad) + ansiPrefix + line;
             });
           });
