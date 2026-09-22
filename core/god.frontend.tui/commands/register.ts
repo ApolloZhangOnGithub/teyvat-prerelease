@@ -11,6 +11,8 @@ import { pauseHandler } from "./pause.ts";
 import { settingsHandler, setToolsHandler } from "./settings.ts";
 import { copyHandler } from "./copy.ts";
 import { modelHandler } from "./model.ts";
+import { loginHandler, logoutHandler } from "./login.ts";
+import { configHandler } from "./config.ts";
 import { i18n } from "#tui_localizations";
 
 // ── 为什么用短名注册 ──────────────────────────────────────────────────────────
@@ -20,9 +22,12 @@ import { i18n } from "#tui_localizations";
 // 覆盖后的值当显示名和调用名。结论：**唯一能决定 /xxx 的就是 name 本身**。
 // 故这里直接用短名当 name，长名放进 description 作提示（见 desc）。
 //
-// 短名已核对不与 pi 内置命令冲突（changelog/clone/copy/export/fork/hotkeys/import/
-// login/logout/model/name/new/reload/resume/scoped-models/session/settings/share/
-// tree/trust）—— 撞名的扩展命令会被 interactive-mode.js 直接过滤掉，不是报错而是消失。
+// 短名策略（2026-09-22 / ISSUE 262 重写）：teyvat 用自己的短名（s/a/q/h/p/m…）。
+// **扩展命令与 pi 内置名撞名会被静默过滤**（autocomplete 剔除 + 不可达，不是报错而是消失——见 ISSUE 252 /copy 事故）。
+// 所以想复用某个内置名，必须把它从 `overrides/pi-dist/core/slash-commands.js` 的 BUILTIN_SLASH_COMMANDS 里删掉，
+// 并过 `check-command-conflict.cjs` 门禁。已复用的内置名：**copy**（2026-09-14）、**login / logout**（2026-09-22）。
+// 其余内置名（changelog/clone/export/fork/hotkeys/import/model/name/new/reload/resume/scoped-models/
+// session/settings/share/tree/trust）在 teyvat 全部不可达——teyvat 禁用了 pi 的内置命令分派（interactive-mode :2468）。
 
 // 长名列宽：取最长长名（changelog 类不算，只看我们自己的）+ 2 空格，保证描述列对齐。
 const LABEL_W = 10;
@@ -77,6 +82,22 @@ export function registerGodCommands(pi: any) {
     description: desc("model", "切换模型（搜索式选择器）", "Switch model (search selector)"),
     handler: modelHandler,
   });
+  // 2026-09-22（ISSUE 262）：①/login /logout 接回 pi 原生认证菜单——桥到 interactive-mode 的
+  // handleLoginCommand / showOAuthSelector("logout")（上游实现一直都在，只是分派块被禁后没人调）
+  // ②/c 补注册——它一直是「文档定稿的凭证入口」却漏注册，敲 /c 会被当普通消息发给 agent（静默失效）。
+  pi.registerCommand("login", {
+    description: desc("login", "Provider 认证（OAuth / API key 菜单）", "Provider auth (OAuth / API key)"),
+    messageDescription: i18n("用法: /login 打开菜单 | /login <provider> 直接登录", "Usage: /login opens the menu | /login <provider> to sign in"),
+    handler: loginHandler,
+  });
+  pi.registerCommand("logout", {
+    description: desc("logout", "移除已存凭证（authStorage）", "Remove stored credentials (authStorage)"),
+    handler: logoutHandler,
+  });
+  pi.registerCommand("c", {
+    description: desc("config", "服务与凭证（凭证入口）", "Services & credentials"),
+    handler: configHandler,
+  });
   // 2026-09-14：注册 trace——/copy 失效排查用，确认本函数真的执行+copy真的注册进 runner
-  try { console.error(`[cmd-reg] registerGodCommands done: s,a,q,h,p,copy,m (pi=${typeof pi?.registerCommand})`); } catch (e) { console.error("[god.frontend.tui/commands/register.ts] " + ((e as any)?.message || e)); }
+  try { console.error(`[cmd-reg] registerGodCommands done: s,a,q,h,p,copy,m,login,logout,c (pi=${typeof pi?.registerCommand})`); } catch (e) { console.error("[god.frontend.tui/commands/register.ts] " + ((e as any)?.message || e)); }
 }

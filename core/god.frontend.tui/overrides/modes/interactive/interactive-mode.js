@@ -2328,6 +2328,11 @@ export class InteractiveMode {
         globalThis.__genshinGetToolExpanded = () => this.toolOutputExpanded;
         globalThis.__genshinHandleModelCommand = (searchTerm) => this.handleModelCommand(searchTerm);
         globalThis.__genshinHandleCopyCommand = () => this.handleCopyCommand(); // 2026-09-14：/copy 命令桥（register.ts 的 copyHandler 经此调 TreeSelector）
+        // 2026-09-22（ISSUE 262）：/login /logout 命令桥——接回 pi 原生认证菜单。
+        // 上游 handleLoginCommand(:4800) / showOAuthSelector(:4900) 是 InteractiveMode 的**实例方法**，
+        // 扩展命令拿不到实例，只能经此桥回调；未暴露时 register.ts 的 handler 会 notify「未就绪」而不是静默失效。
+        globalThis.__genshinHandleLoginCommand = (providerRef) => this.handleLoginCommand(providerRef);
+        globalThis.__genshinHandleLogoutCommand = () => this.showOAuthSelector("logout");
         globalThis.__genshinChatContainer = this.chatContainer;
         globalThis.__genshinAgentSession = this.session;
         globalThis.__genshinShowSettingsList = (title, getItems, onChange) => {

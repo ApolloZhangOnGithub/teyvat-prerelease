@@ -17,8 +17,9 @@ export const BUILTIN_SLASH_COMMANDS = [
     { name: "clone", description: "Duplicate the current session at the current position" },
     { name: "tree", description: "Navigate session tree (switch branches)" },
     { name: "trust", description: "Save project trust decision for future sessions" },
-    { name: "login", description: "Configure provider authentication", argumentHint: "<provider>" },
-    { name: "logout", description: "Remove provider authentication" },
+    // 2026-09-22（ISSUE 262）：移除内置 login / logout 占坑——teyvat 已用 registerCommand 注册同名扩展命令
+    // （commands/login.ts 经 __genshinHandleLoginCommand/__genshinHandleLogoutCommand 桥回 pi 原生认证菜单）。
+    // 不摘会：a) autocomplete 把撞名扩展命令静默剔除 b) make 被 check-command-conflict.cjs 拦下。
     { name: "new", description: "Start a new session" },
     { name: "resume", description: "Resume a different session" },
     { name: "reload", description: "Reload keybindings, extensions, skills, prompts, themes, and context files" },

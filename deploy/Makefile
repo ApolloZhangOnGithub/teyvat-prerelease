@@ -125,7 +125,7 @@ _integrity: _paths ensure-dev-links
 	@echo "[$$(date +%H:%M:%S)] ESM require check..." && cd "$(CORE)" && \
 		node "$(DEPLOY)/check-esm-require.cjs" "$(CORE)" || { echo "  ESM require errors — add createRequire or remove require()"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] resolve check..." && node "$(DEPLOY)/check-resolve.cjs" "$(CORE)" || { echo "  resolve check FAILED — 存在解析不到真实文件的 import/require（镜像 jiti 运行时语义，LESSON 056），修复后再 make"; exit 1; }
-	@echo "[$$(date +%H:%M:%S)] copy/m command check..." && node "$(DEPLOY)/check-copy-command.cjs" "$(CORE)" || { echo "  copy/m 命令注册缺失（经典坑回归）— 见 check-copy-command.cjs.SPEC"; exit 1; }
+	@echo "[$$(date +%H:%M:%S)] command registration check..." && node "$(DEPLOY)/check-command-registered.cjs" "$(CORE)" || { echo "  命令注册缺失（经典坑回归，命令会静默失效）— 见 check-command-registered.cjs.SPEC + ISSUE 262"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] command conflict check..." && node "$(DEPLOY)/check-command-conflict.cjs" "$(CORE)" || { echo "  扩展命令与 pi 内置命令撞名（ISSUE 252）— 见 check-command-conflict.cjs.SPEC"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] symbol ascii check..." && node "$(DEPLOY)/check-symbol-ascii.cjs" "$(CORE)" || { echo "  SYM Windows 系分支含非 ASCII 符号（ambiguous/emoji 折行顶头根因）— 见 check-symbol-ascii.cjs.SPEC"; exit 1; }
 	@echo "[$$(date +%H:%M:%S)] launcher check..." && node "$(DEPLOY)/check-launcher.cjs" "$(CORE)/god.frontend.cli/launcher.sh" || { echo "  launcher check FAILED — 后台构造未做终端隔离（LESSON 037 / ISSUE 088），修复后再 make"; exit 1; }
