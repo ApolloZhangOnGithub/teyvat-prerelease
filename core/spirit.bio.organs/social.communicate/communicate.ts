@@ -994,6 +994,8 @@ function registerSocialTools(pi: ExtensionAPI): void {
       const text = result?.details?._content?.[0]?.text ?? result?.content?.[0]?.text ?? "";
       if (ctx?.isError) return renderMessage.summary(theme, { isError: true }, text || "error");
       if (d.social) {
+        // 2026-09-23：list 走 markdown 表格渲染（content 已是 markdown 文本，含表格）
+        if (d.action === "list" && d.markdown && text) return renderMessage.markdown(theme, ctx, [{ type: "text", text }]);
         // 借鉴 Execute：摘要行 ⎿  + 时间戳行尾(dim)，内容缩进（无 ⎿）
         const { Text, Container } = require("@earendil-works/pi-tui");
         const indent = " ".repeat(GUTTER);
@@ -1102,7 +1104,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
           const table = ["| 名称 | sid | focus | 状态 | 版本 | 模型 |", "|---|---|---|---|---|---|", ...rows]
             .concat(remoteLines.length ? ["", ...remoteLines.map(r => `- ${r}`)] : [])
             .join("\n");
-          return { content: [{ type: "text", text: `Agents (${allCount}):\n\n${table}` }], details: { social: true, action: "list", count: allCount, lines: rows } };
+          return { content: [{ type: "text", text: `Agents (${allCount}):\n\n${table}` }], details: { social: true, action: "list", count: allCount, markdown: true } };
         }
         case "global": {
           // 跨设备 agents 发现（2026-09-05 用户定稿）：拉 /auth/devices（设备+各设备上传的 genshin 结果）

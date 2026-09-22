@@ -93,6 +93,8 @@ export function registerStatusTool(_pi: ExtensionAPI) {
     renderResult(result: any, _opts: any, t: any, ctx: any) {
       if (ctx?.isError) return renderMessage.summary(t, { isError: true }, (result?.content || [])[0]?.text);
       const text = (result?.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("\n");
+      // 2026-09-23：@permissions/@model 等表格结果走 markdown 渲染（含表格），其余走 output（纯文本）
+      if (result?.details?.markdown) return renderMessage.markdown(t, ctx, [{ type: "text", text }]);
       return renderMessage.output(t, ctx, [{ type: "text", text }]);
     },
     async execute(_id: any, params: any) {
@@ -261,7 +263,7 @@ export function registerStatusTool(_pi: ExtensionAPI) {
             }
             // 2026-09-23 用户：直接用原生 markdown 表格
             const table = [`${T("可用模型", "Available models")} (${T("★=当前", "★=current")}, ✓=${T("视觉", "vision")}):`, "", "| 模型 | provider | 视觉 | 当前 |", "|---|---|---|---|", ...rows].join("\n");
-            return { content: [{ type: "text", text: table }] };
+            return { content: [{ type: "text", text: table }], details: { markdown: true } };
           } catch (e: any) {
             return { content: [{ type: "text", text: T(`读取模型失败: ${e?.message || e}`, `Failed to load models: ${e?.message || e}`) }], isError: true };
           }
@@ -336,7 +338,7 @@ export function registerStatusTool(_pi: ExtensionAPI) {
           const header = [T("授权项", "item"), T("组", "group"), T("状态", "status"), T("详情", "detail")];
           const md = [header, ...rows].map((r) => "| " + r.join(" | ") + " |");
           md.splice(1, 0, "|" + header.map(() => "---").join("|") + "|");
-          return { content: [{ type: "text", text: T("授权状态（时间=授权时刻）", "Permissions (time = authorized at)") + ":\n\n" + md.join("\n") }] };
+          return { content: [{ type: "text", text: T("授权状态（时间=授权时刻）", "Permissions (time = authorized at)") + ":\n\n" + md.join("\n") }], details: { markdown: true } };
         } catch (e: any) {
           return { content: [{ type: "text", text: T(`读取权限失败: ${e?.message || e}`, `Failed to read permissions: ${e?.message || e}`) }], isError: true };
         }
