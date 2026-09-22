@@ -35,8 +35,8 @@ run_bg() { # $1=label 其余=命令——后台跑 + spinner 等待，返回退�
 DIR="$HOME/.local/lib/teyvat/update-prerelease"
 mkdir -p "$(dirname "$DIR")"
 
-# ── 阶段 1：并行（拉仓库 + 装依赖 + 装 bun 三路同时）──
-step "1/3 并行准备（拉发布仓库 + 装依赖 + bun）"
+# ── 阶段 1：并行（拉仓库 + 装 git 两路同时）——node/bun/tmux 由 deploy/install.sh 自动装 ──
+step "1/3 并行准备（拉发布仓库 + 装 git）"
 
 # 路 A：拉 prerelease 仓库
 A_LABEL="拉 prerelease 仓库"
@@ -48,34 +48,30 @@ else
 fi
 A_PID=$!
 
-# 路 B：系统依赖（brew/apt 一次装全）+ 路 C：bun（多路）——合并后台
+# 路 B：只装 git（node/bun/tmux 由 install.sh 自动装，不在这里重复）
 MISSING=""
-for c in git node tmux ffmpeg python3; do command -v "$c" >/dev/null 2>&1 || MISSING="$MISSING $c"; done
+for c in git; do command -v "$c" >/dev/null 2>&1 || MISSING="$MISSING $c"; done
 ( if [ -n "$MISSING" ]; then
     if [ "$OS" = "Darwin" ]; then
       command -v brew >/dev/null 2>&1 || { /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" </dev/null >/dev/null 2>&1 || true; export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"; }
-      brew install git node tmux ffmpeg python3 >/dev/null 2>&1 || true
+      brew install git >/dev/null 2>&1 || true
     else
-      (${SUTO}apt-get update -qq >/dev/null 2>&1 && ${SUTO}apt-get install -y -qq git nodejs npm tmux ffmpeg python3 python3-pip >/dev/null 2>&1) || \
-      (${SUTO}dnf install -y -q git nodejs tmux ffmpeg python3 python3-pip >/dev/null 2>&1) || \
-      (${SUTO}yum install -y -q git nodejs tmux ffmpeg python3 python3-pip >/dev/null 2>&1) || true
+      (${SUTO}apt-get update -qq >/dev/null 2>&1 && ${SUTO}apt-get install -y -qq git >/dev/null 2>&1) || \
+      (${SUTO}dnf install -y -q git >/dev/null 2>&1) || \
+      (${SUTO}yum install -y -q git >/dev/null 2>&1) || true
     fi
   fi
-  command -v bun >/dev/null 2>&1 || { curl -fsSL https://bun.sh/install | bash >/dev/null 2>&1 || true; command -v bun >/dev/null 2>&1 || npm install -g bun >/dev/null 2>&1 || true; }
-  export PATH="$HOME/.bun/bin:$(npm config get prefix 2>/dev/null)/bin:$PATH"
 ) >/dev/null 2>&1 &
 B_PID=$!
 
 # 并行等待 + 转圈（先等仓库——快）
 spinner "$A_PID" "$A_LABEL"
 wait "$A_PID" || err "clone/pull prerelease 失败（网络/代理？）"
-spinner "$B_PID" "安装依赖 + bun（git/node/tmux/ffmpeg/python3/bun）"
+spinner "$B_PID" "安装 git"
 wait "$B_PID"
 
-# 复查必需
+# 复查必需（node/bun/tmux 由 install.sh 自动装，这里只查 git）
 command -v git  >/dev/null || err "git 装失败——手动: ${SUTO}brew install git / apt install git"
-command -v node >/dev/null || err "node 装失败——手动: brew install node / apt install nodejs"
-command -v bun  >/dev/null || err "bun 装失败——手动: curl -fsSL https://bun.sh/install | bash"
 
 # ── 阶段 2：部署（直接显示 install.sh 真实步骤——不屏蔽，用户要看在干嘛）──
 step "2/3 部署 genshin（runtime + 扩展 + launcher——见下方步骤）"

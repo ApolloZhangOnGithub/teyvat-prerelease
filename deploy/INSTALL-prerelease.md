@@ -5,15 +5,17 @@
 
 ## 0. 前置依赖
 
-| 依赖 | 用途 | 安装（macOS） | 安装（Linux） |
-|---|---|---|---|
-| git | 拉发布仓库 | `brew install git` | `apt install git` |
-| node ≥18 | 运行时 | `brew install node` | `apt install nodejs npm` |
-| bun | agent 运行时 | `curl -fsSL https://bun.sh/install \| bash` | 同左 |
-| tmux | 元意识/睡眠 | `brew install tmux` | `apt install tmux` |
-| ffmpeg | 语音输入/播放 | `brew install ffmpeg` | `apt install ffmpeg` |
-| python3 | OCR/文档解析 | `brew install python3` | `apt install python3 python3-pip` |
-| fd / ripgrep | pi 的 Find 与 @文件补全（**不装则 pi 会在进 agent 时自己下载**，很慢） | install 自动装，或 `brew install fd ripgrep` | install 自动装，或 `apt install fd-find ripgrep` |
+> **2026-09-23 起：node / bun / tmux 三个必需依赖由 install.sh 自动装**（缺了才装，不污染系统——node 官方 tarball → `~/.local/lib/teyvat/toolchain`、bun 官方脚本 → `~/.bun`、tmux 走 brew/apt/dnf）。手动只需装 **git**，以及可选的 ffmpeg/python3。
+
+| 依赖 | 用途 | 安装 |
+|---|---|---|
+| git | 拉发布仓库 | 手动：`brew install git` / `apt install git` |
+| node ≥22.19.0 | 运行时 | **install.sh 自动装**（官方 tarball → `~/.local/lib/teyvat/toolchain`，`NODE_VERSION` 可指定） |
+| bun | ear 语音 + bun build | **install.sh 自动装**（bun.sh 脚本 → `~/.bun`） |
+| tmux | execute terminal 模式 / 长驻任务 | **install.sh 自动装**（`brew install tmux` / `apt install tmux` / `dnf install tmux`） |
+| ffmpeg | 语音输入/播放 | 可选手动：`brew install ffmpeg` / `apt install ffmpeg` |
+| python3 | OCR/文档解析 | 可选手动：`brew install python3` / `apt install python3 python3-pip` |
+| fd / ripgrep | pi 的 Find 与 @文件补全（**不装则 pi 会在进 agent 时自己下载**，很慢） | install 自动装，或 `brew install fd ripgrep` / `apt install fd-find ripgrep` |
 
 ## 1. 拉发布仓库
 
