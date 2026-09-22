@@ -31,25 +31,101 @@ echo ""
 echo -e "  ${GRN}teyvat${R} installer"
 echo "  ─────────────────────────────────────"
 
-# ── 0. 系统依赖检查 ──
+# ── 0. 系统依赖检查 + 自动装 ──
 DEP_WARN=0
-# 必须有
-for cmd in node npm git rsync; do
-  command -v "$cmd" >/dev/null || err "缺少必需依赖: $cmd$([ "$cmd" = "rsync" ] && echo " — 安装: $([ "$(uname)" = "Darwin" ] && echo "brew install rsync" || echo "apt install rsync / dnf install rsync")" || true)"
-done
-ok "必需依赖: node npm git rsync"
 
-# 功能依赖（缺了不致命，但对应功能不可用）
+# 平台 / 架构（node 官方 tarball 用）
+_TV_OS=$(uname -s)
+_TV_ARCH=$(uname -m)
+case "$_TV_ARCH" in x86_64|amd64) _NODE_ARCH=x64 ;; arm64|aarch64) _NODE_ARCH=arm64 ;; *) _NODE_ARCH=x64 ;; esac
+_TV_NODE_VER="${NODE_VERSION:-24.21.0}"
+
+# teyvat 自有工具链目录（node/bun 缺了装这里，不污染系统）
+TOOLCHAIN="$HOME/.local/lib/teyvat/toolchain"
+mkdir -p "$TOOLCHAIN/bin"
+
+# 鲁棒查找命令：PATH → 常见位置 → env 目录（`${VAR:+...}` 防止空变量拼出 /node 这类路径）
+_find_cmd() {
+  command -v "$1" >/dev/null 2>&1 && { command -v "$1"; return 0; }
+  local p; for p in "${@:2}"; do [ -n "$p" ] && [ -x "$p" ] && { echo "$p"; return 0; }; done
+  return 1
+}
+_find_node() {
+  local p
+  p="$(_find_cmd node "$HOME/.local/bin/node" "$TOOLCHAIN/bin/node" /usr/local/bin/node /opt/homebrew/bin/node "${NVM_BIN:+$NVM_BIN/node}" "${VOLTA_HOME:+$VOLTA_HOME/bin/node}")" && { echo "$p"; return 0; }
+  p="$(command ls "$HOME"/.nvm/versions/node/*/bin/node 2>/dev/null | tail -1)"; [ -n "$p" ] && { echo "$p"; return 0; }
+  p="$(command ls "$HOME"/.fnm/node-versions/*/installation/bin/node 2>/dev/null | tail -1)"; [ -n "$p" ] && { echo "$p"; return 0; }
+  return 1
+}
+_find_bun() { _find_cmd bun "$HOME/.bun/bin/bun" "${BUN_INSTALL:+$BUN_INSTALL/bin/bun}"; }
+
+# 自动装 node（官方 tarball → toolchain，版本 NODE_VERSION 可覆盖）
+_install_node() {
+  local _os=""; case "$_TV_OS" in Darwin) _os=darwin ;; *) _os=linux ;; esac
+  local _dist="node-v${_TV_NODE_VER}-${_os}-${_NODE_ARCH}"
+  echo "  …安装 node ${_TV_NODE_VER}（官方 tarball → $TOOLCHAIN）"
+  curl -fsSL "https://nodejs.org/dist/v${_TV_NODE_VER}/${_dist}.tar.xz" | tar -xJ -C "$TOOLCHAIN" || { warn "node 下载/解压失败"; return 1; }
+  ln -sfn "$TOOLCHAIN/$_dist/bin/node" "$TOOLCHAIN/bin/node"
+  ln -sfn "$TOOLCHAIN/$_dist/bin/npm"  "$TOOLCHAIN/bin/npm"
+  ln -sfn "$TOOLCHAIN/$_dist/bin/npx"  "$TOOLCHAIN/bin/npx"
+  export PATH="$TOOLCHAIN/bin:$PATH"
+  ok "node ${_TV_NODE_VER} 已装到 $TOOLCHAIN/bin"
+}
+
+# 自动装 bun（bun.sh 官方脚本 → ~/.bun）
+_install_bun() {
+  echo "  …安装 bun（官方脚本 → ~/.bun）"
+  curl -fsSL https://bun.sh/install | bash >/dev/null 2>&1 || { warn "bun 安装失败（网络？）"; return 1; }
+  export PATH="$HOME/.bun/bin:$PATH"
+  ok "bun 已装到 ~/.bun/bin"
+}
+
+# curl 是下面 node/bun 安装器的前提
+command -v curl >/dev/null 2>&1 || warn "未找到 curl — node/bun 自动安装会失败（先装 curl：apt install curl / dnf install curl / brew install curl）"
+
+# node 必需（≥22.19.0）：缺失自动装
+if _NODE_BIN="$(_find_node)"; then
+  export PATH="$(dirname "$_NODE_BIN"):$PATH"
+  ok "node $($_NODE_BIN --version 2>/dev/null)"
+else
+  warn "未找到 node — 自动安装"
+  _install_node || err "node 安装失败，手动装（≥22.19.0）：curl -fsSL https://fnm.vercel.app/install | bash && fnm install --lts"
+fi
+
+# bun 必需（ear 语音 + bun build）：缺失自动装，失败仅 warn（不影响基本运行）
+if _BUN_BIN="$(_find_bun)"; then
+  export PATH="$(dirname "$_BUN_BIN"):$PATH"
+  ok "bun $($_BUN_BIN --version 2>/dev/null)"
+else
+  warn "未找到 bun — 自动安装"
+  _install_bun || warn "bun 自动装失败（ear 语音不可用）；手动：curl -fsSL https://bun.sh/install | bash"
+fi
+
+# tmux 必需（execute terminal 模式 / 长驻任务）：缺失自动装
+if command -v tmux >/dev/null 2>&1; then
+  ok "tmux 已就绪"
+else
+  warn "未找到 tmux — 自动安装"
+  if [ "$_TV_OS" = "Darwin" ]; then command -v brew >/dev/null 2>&1 && brew install tmux >/dev/null 2>&1
+  elif command -v apt-get >/dev/null 2>&1; then apt-get install -y tmux >/dev/null 2>&1
+  elif command -v dnf >/dev/null 2>&1; then dnf install -y tmux >/dev/null 2>&1; fi
+  command -v tmux >/dev/null 2>&1 && ok "tmux 已装" || err "tmux 安装失败，手动装（execute terminal 模式需要）"
+fi
+
+# git / rsync 必需（只报安装命令，不自动装）
+for cmd in git rsync; do
+  command -v "$cmd" >/dev/null 2>&1 || err "缺少必需依赖: $cmd（$([ "$_TV_OS" = "Darwin" ] && echo "brew install $cmd" || echo "apt install $cmd / dnf install $cmd")）"
+done
+
+# 功能依赖（缺了不致命，对应功能不可用）
 _check_opt() {
   if command -v "$1" >/dev/null 2>&1; then return 0; fi
   warn "未找到 $1 — $2"
   DEP_WARN=1; return 1
 }
-_check_opt bun       "语音输入 (ear) 需要 bun 运行时。安装: curl -fsSL https://bun.sh/install | bash"
-_check_opt tmux      "元意识 (metaconsciousness) 和睡眠整理 (sleep) 需要 tmux。$([ "$(uname)" = "Darwin" ] && echo "安装: brew install tmux" || echo "安装: apt install tmux / dnf install tmux")"
-_check_opt ffmpeg    "语音输入 (ear) 和音频播放 (iPod) 需要 ffmpeg。$([ "$(uname)" = "Darwin" ] && echo "安装: brew install ffmpeg" || echo "安装: apt install ffmpeg / dnf install ffmpeg")"
+_check_opt ffmpeg    "语音输入 (ear) 和音频播放 (iPod) 需要 ffmpeg。$([ "$_TV_OS" = "Darwin" ] && echo "安装: brew install ffmpeg" || echo "安装: apt install ffmpeg / dnf install ffmpeg")"
 _check_opt ffprobe   "iPod 播放器获取音频时长需要 ffprobe (随 ffmpeg 安装)"
-_check_opt python3   "元意识和睡眠的 session 初始化需要 python3"
+_check_opt python3   "OCR（rapidocr）和 office 文档解析需要 python3"
 _check_opt curl      "同步服务和隧道检测需要 curl"
 
 # typescript（2026-09-13 用户：全局 tsc 默认装——agent 编辑代码时的 npx tsc 语法检查依赖；缺了 npx 会拉到 npm 同名假包打“This is not the tsc command”）
