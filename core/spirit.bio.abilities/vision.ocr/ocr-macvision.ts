@@ -70,7 +70,9 @@ export class MacvisionOcrEngine implements OcrEngine {
   async readText(imagePath: string, options: OcrOptions = {}): Promise<{ text: string } | { error: string }> {
     if (!existsSync(imagePath)) return { error: `文件不存在: ${imagePath}` };
     if (!(await hasPyObjc())) {
-      return { error: "需要 PyObjC（macOS Vision 本地 OCR）：pip3 install pyobjc-framework-Quartz pyobjc-framework-Vision" };
+      // 2026-09-22（imac agent 报 #9）：原来只写 `pip3 install …`，在 Homebrew Python（PEP 668）上必被拒。
+      // 给出能直接跑的命令 + 说明 install.sh 已尽量自动装。
+      return { error: "需要 PyObjC（macOS Vision 本地 OCR）：python3 -m pip install --user pyobjc-framework-Quartz pyobjc-framework-Vision（Homebrew Python 受 PEP 668 保护时再加 --break-system-packages；install.sh 已尽量自动装）" };
     }
     const t0 = Date.now();
     try {
@@ -90,7 +92,8 @@ export class MacvisionOcrEngine implements OcrEngine {
   async readStructure(imagePath: string, options: OcrOptions = {}): Promise<OcrStructured | { error: string }> {
     if (!existsSync(imagePath)) return { error: `文件不存在: ${imagePath}` };
     if (!(await hasPyObjc())) {
-      return { error: "需要 PyObjC（macOS Vision 本地 OCR）：pip3 install pyobjc-framework-Quartz pyobjc-framework-Vision" };
+      // 同 readText：PEP 668 可用的命令（2026-09-22，imac agent #9）
+      return { error: "需要 PyObjC（macOS Vision 本地 OCR）：python3 -m pip install --user pyobjc-framework-Quartz pyobjc-framework-Vision（Homebrew Python 受 PEP 668 保护时再加 --break-system-packages；install.sh 已尽量自动装）" };
     }
     const t0 = Date.now();
     try {

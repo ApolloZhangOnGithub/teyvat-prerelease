@@ -126,6 +126,23 @@ if [ -n "$_TM_MISS" ]; then
   fi
 fi
 
+# ── macOS Vision OCR 依赖 pyobjc（2026-09-22，a_great_agent_on_imac_01 报的 #9）──
+# eyes(action=ocr) 在 macOS 走 Vision 框架（spirit.bio.abilities/vision.ocr/ocr-macvision.ts），需要
+# pyobjc-framework-Quartz + pyobjc-framework-Vision；原来 install 没装 → 开箱即报"需要 PyObjC"（Linux 那边 rapidocr 有自动装，mac 这份漏了）。
+# 注意 Homebrew Python 受 **PEP 668** 保护：普通 pip3 install 会被拒（要求 --break-system-packages）→ 按 pip 能力与身份选参数。
+if [ "$(uname)" = "Darwin" ] && command -v python3 >/dev/null 2>&1; then
+  if python3 -c "import Quartz, Vision" >/dev/null 2>&1; then
+    ok "pyobjc (macOS Vision OCR)"
+  else
+    warn "未找到 pyobjc — macOS OCR (eyes ocr) 不可用，尝试自动安装..."
+    _PIP_ARGS="--user"
+    python3 -m pip install --help 2>/dev/null | grep -q "break-system-packages" && _PIP_ARGS="--user --break-system-packages"
+    [ "$(id -u)" = "0" ] && _PIP_ARGS="--break-system-packages"
+    python3 -m pip install $_PIP_ARGS pyobjc-framework-Quartz pyobjc-framework-Vision 2>&1 | tail -2
+    if python3 -c "import Quartz, Vision" >/dev/null 2>&1; then ok "pyobjc 已自动安装 (macOS OCR)"; else warn "pyobjc 自动安装失败 — eyes ocr 在 macOS 不可用（手动: python3 -m pip install --user --break-system-packages pyobjc-framework-Quartz pyobjc-framework-Vision）"; DEP_WARN=1; fi
+  fi
+fi
+
 # ── Linux OCR 引擎 rapidocr（2026-09-09 用户定稿：Linux 默认装 rapidocr + eyes ocr 用它——"先能用，慢就只能慢"）──
 # macOS 用 Vision 框架无需装；Linux 无 Vision → rapidocr（PP-OCRv3 onnxruntime）本地兜底（质量~90%、复杂图 2.4s/张）
 if [ "$(uname)" != "Darwin" ] && command -v python3 >/dev/null 2>&1; then
