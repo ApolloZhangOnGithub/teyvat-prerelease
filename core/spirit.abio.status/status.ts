@@ -40,14 +40,52 @@ export function cfPaint(hex: string, text: string) {
   return `${cfAnsi(hex)}${text}\x1b[39m`;
 }
 
+// ── DeepSeek 余额查询（2026-09-23 用户：余额预警；footer + status @balance 共用）──
+async function checkDeepseekBalance(): Promise<any> {
+  const g = globalThis as any;
+  const model = g.__genshinGetModel?.();
+  const provider = model?.provider || "";
+  const modelId = model?.id || model?.model || "unknown";
+  if (provider !== "deepseek") {
+    return { unavailable: true, provider, model: modelId, last_updated: Date.now() };
+  }
+  try {
+    const reg = g.__genshinModelRegistry?.();
+    const auth = (await reg?.getApiKeyAndHeaders?.(model)) || {};
+    const key = (auth?.headers?.Authorization || "").replace(/^Bearer\s+/i, "") || auth?.apiKey || "";
+    if (!key) return { unavailable: true, provider, model: modelId, reason: "no key", last_updated: Date.now() };
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 8000);
+    const res = await fetch("https://api.deepseek.com/user/balance", { headers: { Authorization: `Bearer ${key}` }, signal: ctl.signal });
+    clearTimeout(t);
+    if (!res.ok) return { unavailable: true, provider, model: modelId, http: res.status, last_updated: Date.now() };
+    const data = (await res.json()) as any;
+    const info = data?.balance_infos?.[0] || {};
+    const r = {
+      provider, model: modelId,
+      is_available: !!data?.is_available,
+      currency: info.currency || "",
+      total_balance: info.total_balance || "0",
+      granted_balance: info.granted_balance || "0",
+      topped_up_balance: info.topped_up_balance || "0",
+      last_updated: Date.now(),
+    };
+    g.__genshinBalanceCache = r;
+    return r;
+  } catch (e: any) {
+    return { unavailable: true, provider, model: modelId, error: String(e?.message || e), last_updated: Date.now() };
+  }
+}
+(globalThis as any).__genshinCheckBalance = checkDeepseekBalance;
+
 export function registerStatusTool(_pi: ExtensionAPI) {
   registerPaimonTool({
     name: "status",
     label: "Status",
-    messageDescription: "Query yourself. Usage: status @identity | status @history [N] | status @nickname <name> | status @model | status switch-model <id>",
-    promptSnippet: "status @identity — query identity | status @history [N] — session 存续时期 | status @nickname <name> — set nickname | status @model — list models | status switch-model <id> — switch model (needs /a model auth)",
+    messageDescription: "Query yourself. Usage: status @identity | status @history [N] | status @nickname <name> | status @model | status @balance | status @permissions | status switch-model <id>",
+    promptSnippet: "status @identity — query identity | status @history [N] — session 存续时期 | status @nickname <name> — set nickname | status @model — list models | status @balance — 查余额（deepseek 实时/非 deepseek unavailable）| status @permissions — 授权状态 | status switch-model <id> — switch model (needs /a model auth)",
     parameters: Type.Object({
-      instruction: Type.String({ messageDescription: i18n("指令：@identity | @history [N 最近几个 session] | @nickname <名字> | @model（可用模型列表）| switch-model <模型id>（切换模型，需 /a model 授权）", "Instruction: @identity | @history [N recent sessions] | @nickname <name> | @model (available models) | switch-model <id> (switch model, needs /a model auth)") }),
+      instruction: Type.String({ messageDescription: i18n("指令：@identity | @history [N 最近几个 session] | @nickname <名字> | @model（可用模型列表）| @balance（查余额）| @permissions（授权状态）| switch-model <模型id>（切换模型，需 /a model 授权）", "Instruction: @identity | @history [N recent sessions] | @nickname <name> | @model (available models) | @balance (query balance) | @permissions (authorization status) | switch-model <id> (switch model, needs /a model auth)") }),
     }),
     renderCall(args: any, theme: any) {
       return renderToolCall.label(theme, "status", args?.instruction || "");
@@ -60,7 +98,21 @@ export function registerStatusTool(_pi: ExtensionAPI) {
     async execute(_id: any, params: any) {
       const pid = (globalThis as any).__genshinPersonId || process.env.PAIMON_AGENT_ID;
       if (!pid) return { content: [{ type: "text", text: T("无法确定 agent ID", "Cannot determine agent ID") }], isError: true };
-      if (!params?.instruction) return { content: [{ type: "text", text: T("用法: status @identity | status @nickname <名字>", "Usage: status @identity | status @nickname <name>") }], isError: true };
+      if (!params?.instruction) return { content: [{ type: "text", text: T("用法: status @identity | status @nickname <名字> | status @permissions", "Usage: status @identity | status @nickname <name> | status @permissions") }], isError: true };
+      // @balance：查询当前 provider 的余额（deepseek 走 /user/balance；非 deepseek → unavailable）
+      if (params.instruction === "@balance" || params.instruction.startsWith("@balance")) {
+        const r = await checkDeepseekBalance();
+        (globalThis as any).__genshinBalanceCache = r;
+        if (r.unavailable) {
+          return { content: [{ type: "text", text: T(
+            `余额查询: unavailable（provider=${r.provider}, model=${r.model}）${r.http ? " HTTP " + r.http : ""}${r.reason ? " (" + r.reason + ")" : ""}${r.error ? " " + r.error : ""}`,
+            `Balance: unavailable (provider=${r.provider}, model=${r.model})${r.http ? " HTTP " + r.http : ""}`) }] };
+        }
+        const dt = new Date(r.last_updated).toLocaleTimeString();
+        return { content: [{ type: "text", text: T(
+          `DeepSeek 余额: ${r.total_balance} ${r.currency}${r.is_available ? "" : "（不可用）"}\n  赠送 ${r.granted_balance} + 充值 ${r.topped_up_balance}\n  ${r.provider}:${r.model}\n  last updated: ${dt}`,
+          `DeepSeek balance: ${r.total_balance} ${r.currency}${r.is_available ? "" : " (unavailable)"}\n  granted ${r.granted_balance} + topped up ${r.topped_up_balance}\n  ${r.provider}:${r.model}\n  last updated: ${dt}`) }] };
+      }
       // @history：列出自己的所有存续时期（session 生命周期，来自 sessions.log：start/end 事件配对）
       // status @history → 全部；status @history N → 最近 N 个 session
       if (params.instruction.startsWith("@history")) {
@@ -240,6 +292,43 @@ export function registerStatusTool(_pi: ExtensionAPI) {
           return { content: [{ type: "text", text: T(`已切换模型: ${target}`, `Switched to model: ${target}`) }] };
         } catch (e: any) {
           return { content: [{ type: "text", text: T(`切换失败: ${e?.message || e}`, `Switch failed: ${e?.message || e}`) }], isError: true };
+        }
+      }
+      // 2026-09-23 用户：status @permissions — 列出所有授权 + 授权时间（时间读文件内 ts 字段，不靠 mtime）
+      if (params.instruction === "@permissions") {
+        try {
+          const rcDir = join(homedir(), ".teyvat/RuntimeCache", pid);
+          const fmtTs = (ms: number) => {
+            try { const d = new Date(ms); const p = (n: number) => String(n).padStart(2, "0");
+              return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; }
+            catch { return "?"; }
+          };
+          const readAuth = (f: string): any => {
+            try { return JSON.parse(readFileSync(join(rcDir, f), "utf8")); } catch { return null; }
+          };
+          const lines: string[] = [T("授权状态（时间=授权时刻）", "Permissions (time = authorized at)") + ":"];
+          const fr = readAuth("full-reboot-auth");
+          lines.push(`  full-reboot:  ${fr?.authorized ? T("已授权", "authorized") : T("未授权", "not authorized")}${fr?.ts ? ` (${fmtTs(fr.ts)})` : ""}`);
+          const sr = readAuth("self-reboot-auth");
+          lines.push(`  self-reboot:  ${sr?.authorized ? T("已授权", "authorized") : T("未授权", "not authorized")}${sr?.ts ? ` (${fmtTs(sr.ts)})` : ""}${sr?.authorized ? " [legacy]" : ""}`);
+          const ms = readAuth("model-switch-auth.json");
+          const msDesc = ms?.authorized ? (ms?.all ? T("任意", "any") : ((ms?.models || []).join(",") || "?")) : "";
+          lines.push(`  model-switch: ${ms?.authorized ? T("已授权", "authorized") : T("未授权", "not authorized")}${ms?.authorized ? ` (${msDesc})` : ""}${ms?.ts ? ` (${fmtTs(ms.ts)})` : ""}`);
+          try {
+            const trust = JSON.parse(readFileSync(join(homedir(), ".teyvat/trust.json"), "utf8"));
+            const e = trust?.agents?.[pid] || {};
+            lines.push(`  ${T("全量白名单", "full whitelist")}(all): ${e.all ? T("开", "on") : T("关", "off")}`);
+            lines.push(`  ${T("root 授权", "root auth")}:       ${e.root ? T("开", "on") : T("关", "off")}`);
+            const dirs = (e.trusted || []).filter((t: any) => !t.until || t.until > Date.now());
+            lines.push(`  ${T("信任目录", "trusted dirs")}:       ${dirs.length ? dirs.map((t: any) => t.path).join(", ") : T("(无)", "(none)")}`);
+          } catch { /* trust.json 不存在 */ }
+          try {
+            const ta = JSON.parse(readFileSync(join(homedir(), ".teyvat/config/tools-auth", pid, "tools-auth.json"), "utf8"));
+            lines.push(`  ${T("工具持久授权", "persistent tool auth")}: enable[${(ta.enabled || []).join(",") || T("无", "none")}] disable[${(ta.disabled || []).join(",") || T("无", "none")}]`);
+          } catch { /* 无持久授权 */ }
+          return { content: [{ type: "text", text: lines.join("\n") }] };
+        } catch (e: any) {
+          return { content: [{ type: "text", text: T(`读取权限失败: ${e?.message || e}`, `Failed to read permissions: ${e?.message || e}`) }], isError: true };
         }
       }
       if (params.instruction !== "@identity") return { content: [{ type: "text", text: T(`未知指令: ${params.instruction}`, `Unknown instruction: ${params.instruction}`) }], isError: true };

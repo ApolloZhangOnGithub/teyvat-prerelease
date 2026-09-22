@@ -97,12 +97,22 @@ export async function authdirHandler(args: string, ctx: any, tools?: { getActive
   if (a === "full-reboot") {
     const pid = (globalThis as any).__genshinPersonId || process.env.PAIMON_AGENT_ID || "";
     if (pid) {
-      const { mkdirSync, writeFileSync } = await import("node:fs");
+      const { mkdirSync, writeFileSync, readFileSync } = await import("node:fs");
       const { join } = await import("node:path");
       const { homedir } = await import("node:os");
       const flagDir = join(homedir(), ".teyvat/RuntimeCache", pid);
+      const flagPath = join(flagDir, "full-reboot-auth");
+      // 2026-09-23 用户：幂等——已授权则提示「已授权于 <时间>」，不重复写（时间读文件内 ts，不靠 mtime）
+      try {
+        const prev = JSON.parse(readFileSync(flagPath, "utf8"));
+        if (prev?.authorized) {
+          const t = prev.ts ? new Date(prev.ts).toLocaleString() : "?";
+          ctx.ui.notify(T(`full-reboot 已授权过（${t}），无需重复授权。`, `full-reboot already authorized (${t}), no need to re-authorize.`), "info");
+          return;
+        }
+      } catch { /* 无已授权记录，正常写 */ }
       mkdirSync(flagDir, { recursive: true });
-      writeFileSync(join(flagDir, "full-reboot-auth"), JSON.stringify({ authorized: true, ts: Date.now(), by: "user" }));
+      writeFileSync(flagPath, JSON.stringify({ authorized: true, ts: Date.now(), by: "user" }));
       ctx.ui.notify(T("full-reboot 已授权（永久生效）。模型可通过 execute({command:\"full-reboot\"}) 完整重启进程。", "full-reboot authorized (permanent). The model can fully restart the process via execute({command:\"full-reboot\"})."), "info");
     } else { ctx.ui.notify(T("无法确定 agent ID", "Cannot determine agent ID"), "warning"); }
     return;
@@ -135,14 +145,25 @@ export async function authdirHandler(args: string, ctx: any, tools?: { getActive
     const rest = unquote(a.replace(/^(m|model)\s*/, "").trim());
     const pid = (globalThis as any).__genshinPersonId || process.env.PAIMON_AGENT_ID || "";
     if (!pid) { ctx.ui.notify(T("无法确定 agent ID", "Cannot determine agent ID"), "warning"); return; }
-    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const { mkdirSync, writeFileSync, readFileSync } = await import("node:fs");
     const { join } = await import("node:path");
     const { homedir: home2 } = await import("node:os");
     const flagDir = join(home2(), ".teyvat/RuntimeCache", pid);
-    mkdirSync(flagDir, { recursive: true });
+    const flagPath = join(flagDir, "model-switch-auth.json");
     const all = rest === "all";
+    // 2026-09-23 用户：幂等——同样授权已存在则提示「已授权于 <时间>」，不重复写（时间读文件内 ts）
+    try {
+      const prev = JSON.parse(readFileSync(flagPath, "utf8"));
+      const same = prev?.authorized && prev?.all === all && (all || (rest && (prev?.models || []).includes(rest)));
+      if (same) {
+        const t = prev.ts ? new Date(prev.ts).toLocaleString() : "?";
+        ctx.ui.notify(T(`已授权过切换模型（${t}），无需重复授权。`, `Model switch already authorized (${t}), no need to re-authorize.`), "info");
+        return;
+      }
+    } catch { /* 无已授权记录 */ }
+    mkdirSync(flagDir, { recursive: true });
     const auth = { authorized: true, all, models: all ? [] : (rest ? [rest] : []), ts: Date.now(), by: "user" };
-    writeFileSync(join(flagDir, "model-switch-auth.json"), JSON.stringify(auth));
+    writeFileSync(flagPath, JSON.stringify(auth));
     ctx.ui.notify(T(
       all ? `已授权 ${pid} 切换任意模型（/a model all 全量）。agent 可 Status switch-model。` :
         `已授权 ${pid} 切换到模型 ${rest}。agent 可 Status switch-model。`,

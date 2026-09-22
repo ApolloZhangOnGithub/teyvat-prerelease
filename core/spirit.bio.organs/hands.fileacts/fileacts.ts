@@ -768,16 +768,24 @@ export default function (pi: ExtensionAPI) {
             // 检查器本身不可用（未装 bun/python3 等，shell 返回 127）不算「语法错误」，静默跳过——
             // 避免环境差异把每次编辑都刷成误报（原 TS5112 即此类误报）。
             if (st.code === 127 || /command not found/.test(err)) return;
+            // 2026-09-23（用户：bun "already declared" 等错误末尾会重复列一次出错源码行）——剥掉末尾重复的源码帧
+            let _errClean = err;
+            const _errLines = err.split("\n");
+            while (_errLines.length && _errLines[_errLines.length - 1].trim() === "") _errLines.pop();
+            if (_errLines.length && /^\s*\d+\s*\|/.test(_errLines[_errLines.length - 1])) {
+              const _last = _errLines[_errLines.length - 1].trim();
+              if (_errLines.slice(0, -1).some((l) => l.trim() === _last)) _errClean = _errLines.join("\n").trimEnd();
+            }
             // 2026-09-22（用户怒批：syntax-error 跟着用户消息乱出来，而不是在检查时直接注入）：
             // 旧 result.content.push 推到错误对象（result=event，但真正的内容在 event.result.content）→ 结果里看不到；
             // 只剩 sendCustomMessage 发的独立 notice（绿色、延迟、跟着别的消息后面出现）。
             // 改：unshift 进 event.result.content（同 DNA 装配反馈，模型/用户立即可见），不再发独立消息。
             const _resContent = (result as any)?.result?.content;
             if (Array.isArray(_resContent)) {
-              _resContent.unshift({ type: "text", text: i18n(`WARN: 语法错误:\n${err}\n请立即修复。`, `WARN: Syntax error:\n${err}\nPlease fix immediately.`) });
+              _resContent.unshift({ type: "text", text: i18n(`WARN: 语法错误:\n${_errClean}\n请立即修复。`, `WARN: Syntax error:\n${_errClean}\nPlease fix immediately.`) });
             } else {
               // 兑底：拿不到 result.content 时仍然发一条 system 提示（不触发新 turn）
-              try { sendCustomMessage(pi, "syntax-error", i18n(`WARN: 语法错误 ${basename(filePath)}:\n${err}`, `WARN: Syntax error in ${basename(filePath)}:\n${err}`)); } catch (e) { console.error("[spirit.bio.organs/hands.fileacts/fileacts.ts] " + ((e as any)?.message || e)); }
+              try { sendCustomMessage(pi, "syntax-error", i18n(`WARN: 语法错误 ${basename(filePath)}:\n${_errClean}`, `WARN: Syntax error in ${basename(filePath)}:\n${_errClean}`)); } catch (e) { console.error("[spirit.bio.organs/hands.fileacts/fileacts.ts] " + ((e as any)?.message || e)); }
             }
           }
         } catch (e: any) { console.error("[spirit.bio.organs/hands.fileacts/fileacts.ts] syntaxCheck execFile: " + ((e as any)?.message || e)); }
