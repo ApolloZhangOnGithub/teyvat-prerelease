@@ -13,7 +13,7 @@
 - `conscious-aware` 元意识观察 → **必须处理**：评估问题 → 能修则修 → 修不了说明原因。不可跳过或装没看到
 - `memory-capacity` 容量警告 → 只在界面显示、不会喂给你；记忆整理看 amem 状态行自行决定（nap/sleep 已停用）
 - `memory-reminder` 记忆提醒 → 告知用户
-- `memory-snapshot` 记忆快照 → 静默(前缀)
+- `memory-snapshot` 记忆（DNA + context）→ 静默(前缀)
 - `memory-frozen-delta` 冻结delta → 静默
 - `wait-interrupted` 等待被打断（含实际等待秒数）→ 看打断原因继续
 - `display-hidden` / `display-shown` 界面转后台 / 回前台 → 静默
@@ -49,7 +49,7 @@
 ;; 历史（2026-08-15 单层化）：曾分三层 context/work_memory/neocortex，
 ;; 三层写入已全部停用，work_memory/neocortex 只是历史残留文件只读兼容，不再有分层流动。
 
-记忆快照由 memory 器官在 session 启动时注入。
+记忆（DNA + context）由 memory 器官在 session 启动时注入。
 记忆整理由你通过 amem 工具主动控制——选中 context 片段、替换或压缩，原文归档至 ActiveManage/ 可随时回查。
 没有后台自动裁切，你对自己的记忆有完全的主动权。
 
@@ -77,7 +77,7 @@
 - 由 launcher 自动完成（写 full-restart 标记 + wake-restart nonce → exit → launcher 检测 → 完整重启）
 
 **memory-reboot（只重载记忆，直接允许）**：amem 的 action —— `amem({action:"memory-reboot"})`。
-- 重新读 context.md → 重建记忆快照 + 裁剪活对话里的工具产物，下一轮 LLM 调用就生效
+- 重新读 context.md → 重建记忆（DNA + context）+ 裁剪活对话里的工具产物，下一轮 LLM 调用就生效
 - 不退出进程、不改代码
 - **直接允许，无需用户授权**（与 full-reboot 不同）
 

@@ -49,6 +49,7 @@ import brain_intentions from "../brain.intentions/intentions.ts";
 import body_ear from "#head_ears";
 import body_mouth from "#head_mouth";
 import body_eyes_visual from "#head_eyes";
+import body_block_highlight from "#block_highlight";
 import technology_mobile from "#infotech_mobile";
 import body_social from "#social_communicate";
 import body_help from "#kernel_help";   // help 工具：按需查询工具用法（system prompt 只给摘要，详情走 help）
@@ -57,7 +58,7 @@ import { sendCustomMessage, MESSAGE_TYPES, flushTools } from "#kernel_backbone";
 import { initBlockrender } from "#tui_blockrender";
 import { Text, Container } from "@earendil-works/pi-tui";
 initBlockrender(Text, Container);
-import { registerGodCommands } from "../../god.frontend.tui/commands/register.ts";
+import { registerGodCommands } from "../../god.tui/commands/register.ts";
 import { initStatusUI } from "../../spirit.bio.organs/kernel.heart/heart-state.ts";
 
 // ── console.error 全局重定向（2026-08-20 用户定稿，LESSON 063）：console.error 输出到 stderr 会污染 TUI 屏幕——
@@ -94,6 +95,7 @@ const REGISTRY: Record<string, FuncEntry> = {
   "brain.intentions": brain_intentions,
   "head.ears": body_ear,
   "head.eyes": body_eyes_visual,
+  "block.highlight": body_block_highlight,
   "head.mouth": body_mouth,
   "universe.infotech/local.mobile": technology_mobile,
   "social.communicate": body_social,
@@ -113,7 +115,7 @@ function detectRole(sessionFile?: string | null): string {
 export default function kernelMain(pi: ExtensionAPI) {
   // 自动备份调度（从 bioclock 迁入 backup.ts，此处启动）
   import("../../god.frontend.cli/backup.ts").then(m => m.startAutoBackup()).catch(e => console.error("[kernel.core] startAutoBackup: " + ((e as any)?.message || e)));
-  // 2026-08-20：全局消息桥——命令层（god.frontend.tui/commands/）拿不到 pi，
+  // 2026-08-20：全局消息桥——命令层（god.tui/commands/）拿不到 pi，
   // 但 /h 等命令需要给 agent 注入通知消息（用户设计：/h 转后台时通知 agent，用 Life Restarted 管线渲染）。
   // 这里把 sendCustomMessage 挂到 globalThis 供命令层调用（backbone 强制所有消息走 sendCustomMessage）。
   (globalThis as any).__genshinSendCustomMessage = (type: string, content: string, details?: unknown, overrides?: any) => {

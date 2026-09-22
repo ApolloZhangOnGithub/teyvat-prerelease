@@ -14,6 +14,7 @@ import { logerr } from "#paths";
 import { appendAsync } from "#kernel_nerves";
 import { i18n } from "#tui_localizations";
 import { registerAmemTool, _fmtLocalTs } from "./memory-amem.ts";
+import { trackBlock } from "#blocktrace";
 
 function getPersonDir(sessionFile: string | undefined): string | null {
   const envDir = process.env.PI_PERSON_DIR;
@@ -278,39 +279,13 @@ export default function registerMemory(pi: ExtensionAPI) {
       } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
     }
 
-    // ── 工作期【冻结快照】= spec 的增量式：逐字不变的前缀 → 几小时的 deepseek 缓存全程命中。
-    // 绝不每次 session 重 build（重 build = 前缀每次都变 = 整份冷 miss = 烧钱根因）。
-    // 冻结一份快照存盘，之后每次醒来注入【同一份】(命中)，只把冻结后新增的 work/context 作为尾部增量(小 miss)。
-    // 仅在 [首次 / context 增量过大 / 文件被睡眠 consolidate 变短] 时重新冻结。
-    const REFREEZE_DELTA = 100000; // 增量超 ~10万字(≈5万 token) 才重冻结，封顶每次增量 miss
-    // 不依赖 global.__genshinChannelDir（session_start 时 kernel 可能还没设置），自己推导
-    const runtimeCacheDir = global.__genshinChannelDir || (personDir ? path.join(path.dirname(personDir), "..", "RuntimeCache", path.basename(personDir)) : "");
-    const frozenPath = runtimeCacheDir + "/snapshot.frozen.txt";
-    const metaPath = runtimeCacheDir + "/snapshot.frozen.meta.json";
-    const ctxNow = readFile(path.join(personDir, "context.md"));
-    const wmNow = readFile(path.join(personDir, "work_memory.md"));
-    let frozen = readFile(frozenPath);
-    let meta = { ctxLen: 0, wmLen: 0 };
-    try { meta = { ...meta, ...JSON.parse(readFile(metaPath) || "{}") }; } catch {  /* 冻结 meta 竞态截断：默认值不刷（同 .54 快照截断行处理，数据损坏暂时性）*/ }
-    const dCtx = ctxNow.length - meta.ctxLen;
-    const dWm = wmNow.length - meta.wmLen;
-    if (!frozen || dCtx > REFREEZE_DELTA || dCtx < 0 || dWm < 0) {
-      frozen = buildSnapshot(); // ← 唯一重 build 的地方（首次/增量超限/睡眠后）
-      writeFile(frozenPath, frozen);
-      writeFile(metaPath, JSON.stringify({ ctxLen: ctxNow.length, wmLen: wmNow.length }));
-      meta = { ctxLen: ctxNow.length, wmLen: wmNow.length };
-    }
-    if (frozen) {
-      sendCustomMessage(pi, "memory-snapshot", frozen);
+    // 2026-09-23（用户：砍掉 frozen 增量冻结机制——snapshot.frozen.txt/meta.json/memory-frozen-delta 全是过度设计）
+    // 每次醒来直接 buildSnapshot() 注入一次；后续新内容往后面 append（见 message_end），前缀不变。
+    const fresh = buildSnapshot();
+    if (fresh) {
+      sendCustomMessage(pi, "memory-snapshot", fresh);
       _snapshotInjected = true;
     }
-    // 冻结后新增的 work_memory / context → 尾部增量（小 miss，不破前缀）
-    const tail = [
-      wmNow.slice(meta.wmLen).trim() || "",
-      ctxNow.slice(meta.ctxLen).trim() || ""
-    ].filter(Boolean).join("\n\n");
-    if (tail) sendCustomMessage(pi, "memory-frozen-delta", tail);
-    injectedWorkMemLen = wmNow.length;
   });
 
   // ── message_end: incremental append to context + file index ─────
@@ -331,7 +306,7 @@ export default function registerMemory(pi: ExtensionAPI) {
     const ct = msg.customType ?? msg.messageType;
     if (typeof ct === "string" && ct.startsWith("memory-")) return;
 
-    const entries: { role: string; type: string; content?: string; text?: string; think?: string; tool?: any; toolName?: string; toolCallId?: string; ts_start: number; ts_end: number }[] = [];
+    const entries: { role: string; type: string; content?: string; text?: string; think?: string; tool?: any; toolName?: string; toolCallId?: string; blockId?: string; ts_start: number; ts_end: number }[] = [];
     const now = Date.now();
     if (typeof msg.content === "string") {
       const msgType = msg.customType ?? msg.messageType;
@@ -446,6 +421,17 @@ export default function registerMemory(pi: ExtensionAPI) {
         if (changed) (e as any).tool = { ...(e as any).tool, args };
       }
 
+      // 2026-09-23（blocktrace）：给每条 entry 打统一块 id——工具块复用 toolCallId，消息块自生成
+      {
+        const btKind: any = e.type === "toolCall" ? "toolCall"
+          : (e.role === "toolResult" || e.role === "tool") ? "toolResult"
+          : e.type === "think" ? "think"
+          : e.role === "user" ? "user"
+          : "assistant";
+        const btTool = e.type === "toolCall" ? (e as any).tool?.name : (e.role === "toolResult" || e.role === "tool") ? (e as any).toolName : undefined;
+        const tr = trackBlock({ kind: btKind, tool: btTool, toolCallId: (e as any).toolCallId, ts: (e as any).ts_start });
+        (e as any).blockId = tr.id;
+      }
       const jsonl = JSON.stringify(e) + "\n";
       // 连续去重：与上一条签名相同则跳过（防自噬膨胀）
       // toolCall 的内容在 tool 子对象里（tool.name + tool.args），不在 content/text/think 字段，
@@ -479,7 +465,7 @@ export default function registerMemory(pi: ExtensionAPI) {
   });
 
   // ── tool_call: context 95%+ 强制 amem + 禁止直接写记忆文件 ─────
-  const MEMORY_FILES = ["work_memory.md", "context.md", "neocortex.md", "deep_cortex.md"];
+  const MEMORY_FILES = ["context.md"]; // 2026-09-23（用户：work_memory/neocortex/deep_cortex 已禁用）
   const AMEM_EXEMPT_TOOLS = new Set(["amem", "status", "wait", "hibernate", "intentions", "help"]); // 2026-09-13：core.CHR 教模型先 help amem 再用——95% 门禁里 help 也得放行
   pi.on("tool_call", async (event) => {
     if (getSessionRole() !== "main") return;
@@ -667,9 +653,10 @@ export default function registerMemory(pi: ExtensionAPI) {
       } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
       dnaIndex = `# ${personName}\n\n你是 ${personName}，跑在 teyvat 持续运行框架里。\n你的记忆在 ${personDir}/，由系统自动注入上下文，不要手动去找或读这些文件。\n~/.pi_memory/ 是旧项目遗留，跟你无关，不要碰。`;
     }
-    const stateDlc = readFile(path.join(personDir, `dna/${dnaState}.dlc`));
-    const cortex = readFile(path.join(personDir, "neocortex.md"));
-    const workMem = readFile(path.join(personDir, "work_memory.md"));
+    // 2026-09-23（用户：禁用垃圾——cortex/work_memory/dlc 文件不存在，全是空读；注入只认 DNA + context）
+    // const stateDlc = readFile(path.join(personDir, `dna/${dnaState}.dlc`));
+    // const cortex = readFile(path.join(personDir, "neocortex.md"));
+    // const workMem = readFile(path.join(personDir, "work_memory.md"));
     let context = readFile(path.join(personDir, "context.md"));
     // 旧污染兜底：历史里若残留 DSML 乱码行，注入前整段滤掉——不把旧垃圾再喂回模型(否则鬼打墙不停)。
     // 只按 ｜DSML｜ 这个特殊 token 滤（精确，不误伤含 "invoke name=" 之类的正常代码/文档行）。
@@ -697,9 +684,11 @@ export default function registerMemory(pi: ExtensionAPI) {
         }
         // 2026-09-22（trajectory 元数据）：非 toolResult 的 JSON 行（如 toolCall）剥掉元数据字段再进快照——
         // 元数据（toolCallId）只存在于 context.md，不进模型上下文（正是「session context 外加 metadata」）
-        if (obj && typeof obj === "object" && obj.toolCallId !== undefined) {
-          delete obj.toolCallId;
-          return JSON.stringify(obj);
+        if (obj && typeof obj === "object") {
+          let _ch = false;
+          if (obj.toolCallId !== undefined) { delete obj.toolCallId; _ch = true; }
+          if (obj.blockId !== undefined) { delete obj.blockId; _ch = true; }
+          if (_ch) return JSON.stringify(obj);
         }
       } catch { /* context.md 坏行（截断/历史格式）：保留原文不压缩、不刷日志（2026-08-20 定稿；2026-09-13 复原——曾被 fix-empty-catch 自动回填成 console.error，每次快照构建刷 Unexpected end of JSON input）*/ }
       return line;
@@ -726,12 +715,12 @@ export default function registerMemory(pi: ExtensionAPI) {
     // }
     const parts: string[] = [];
     if (dnaIndex) parts.push(dnaIndex);
-    if (stateDlc) parts.push(stateDlc);
+    // if (stateDlc) parts.push(stateDlc);
     // 注入消息类型参考表（从 prompts.json 的 dnA.core.typeRef 读取）
     const typeRef = getPrompt("core.typeRef");
     if (typeRef) parts.push(typeRef);
-    if (cortex) parts.push(`[MEMORY — Cortex (long-term)]\n${cortex}`);
-    if (workMem) parts.push(`[MEMORY — Work Memory]\n${workMem}`);
+    // if (cortex) parts.push(`[MEMORY — Cortex (long-term)]\n${cortex}`);
+    // if (workMem) parts.push(`[MEMORY — Work Memory]\n${workMem}`);
     if (context) parts.push(`[MEMORY — Context]\n${context}`);
     return parts.join("\n\n");
   }
@@ -742,41 +731,37 @@ export default function registerMemory(pi: ExtensionAPI) {
     if (!personDir) return;
     _refreshModelMax(); // 2026-09-13：扩展加载时 __genshinGetModel 尚未注册，modelMax 是 1M 兜底——首轮/切模型后不刷新会把 200k 模型按 1M 算（ratio 偏小 5 倍）
     const context = readFile(path.join(personDir, "context.md"));
-    const workMem = readFile(path.join(personDir, "work_memory.md"));
-    const cortex = readFile(path.join(personDir, "neocortex.md"));
+    // const workMem = readFile(path.join(personDir, "work_memory.md"));
+    // const cortex = readFile(path.join(personDir, "neocortex.md"));
 
-    // 0) 漏意识修复：sleep done后 context 变短 → 重建快照（否则主意识看不到新空间）。
-    //    session_start 只在进程启动时执行，sleep-done 不会触发它，所以这里补一刀。
-    const ctxNow2 = readFile(path.join(personDir, "context.md"));
-    const wmNow2 = readFile(path.join(personDir, "work_memory.md"));
-    const metaPath2 = (global.__genshinChannelDir || personDir.replace("MemoryData", "RuntimeCache")) + "/snapshot.frozen.meta.json";
-    let meta2 = { ctxLen: 0, wmLen: 0 };
-    try { meta2 = { ...meta2, ...JSON.parse(readFile(metaPath2) || "{}") }; } catch { /* meta2 竞态截断：默认值静默（须留注释，空 catch 触 LESSON 024 门禁）*/ }
-    if (ctxNow2.length < meta2.ctxLen || wmNow2.length < meta2.wmLen) {
-      const frozenPath = (global.__genshinChannelDir || personDir.replace("MemoryData", "RuntimeCache")) + "/snapshot.frozen.txt";
-      const fresh = buildSnapshot();
-      writeFile(frozenPath, fresh);
-      writeFile(metaPath2, JSON.stringify({ ctxLen: ctxNow2.length, wmLen: wmNow2.length }));
-      injectedWorkMemLen = wmNow2.length;
-      // 2026-09-13（ISSUE 204）：活窗口里的旧快照要换掉——交给 context 事件在下次 LLM 调用前替换（见 _snapshotOverride）。
-      // 之前这里只重写磁盘文件；下面原来的 2.5 段因为本段已把 meta 更新而永远不触发，模型一直看旧快照、窗口不降。
-      if (getSessionRole() === "main") {
-        if (_snapshotInjected) _snapshotOverride = buildSnapshot({ excludeRowsSince: _sessionStartTs });
-        else { sendCustomMessage(pi, "memory-snapshot", fresh); _snapshotInjected = true; _snapshotOverride = null; }
-      }
-    }
+    // 0) 漏意识修复 —— 2026-09-23 禁用（sleep 机制已废 + frozen 机制已砍，整段死代码）
+    // const ctxNow2 = readFile(path.join(personDir, "context.md"));
+    // const metaPath2 = (global.__genshinChannelDir || personDir.replace("MemoryData", "RuntimeCache")) + "/snapshot.frozen.meta.json";
+    // let meta2 = { ctxLen: 0, wmLen: 0 };
+    // try { meta2 = { ...meta2, ...JSON.parse(readFile(metaPath2) || "{}") }; } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + (e?.message || e)); }
+    // if (ctxNow2.length < meta2.ctxLen) {
+    //   const frozenPath = (global.__genshinChannelDir || personDir.replace("MemoryData", "RuntimeCache")) + "/snapshot.frozen.txt";
+    //   const fresh = buildSnapshot();
+    //   writeFile(frozenPath, fresh);
+    //   writeFile(metaPath2, JSON.stringify({ ctxLen: ctxNow2.length, wmLen: 0 }));
+    //   if (getSessionRole() === "main") {
+    //     if (_snapshotInjected) _snapshotOverride = buildSnapshot({ excludeRowsSince: _sessionStartTs });
+    //     else { sendCustomMessage(pi, "memory-snapshot", fresh); _snapshotInjected = true; _snapshotOverride = null; }
+    //   }
+    // }
 
     // 1) work_memory 增量 — 只跟踪长度用于 snapshot 重冻结判断，不注入 context。
     //    海马体编码已在 context.md 中，sleep 时自然done；实时注入会造成污染。
-    if (workMem.length > injectedWorkMemLen) {
-      injectedWorkMemLen = workMem.length;
-    }
+    // 1) work_memory 增量 —— 2026-09-23 禁用（work_memory.md 不存在，空文件）
+    // if (workMem.length > injectedWorkMemLen) {
+    //   injectedWorkMemLen = workMem.length;
+    // }
 
     // 2) 容量提醒。默认整份注入；超窗口时 buildSnapshot 会兜底切最旧 context（不崩）。
     //    所以高占用 = "最旧记忆正在被丢"，该 sleep 把它编码走（不是会崩，是会丢）。
     const dna = readFile(path.join(personDir, "dna/index.md"));
-    const dlc = readFile(path.join(personDir, `dna/${dnaState}.dlc`));
-    const memTokens = estimateTokens(dna) + estimateTokens(dlc) + estimateTokens(context) + estimateTokens(workMem) + estimateTokens(cortex);
+    // const dlc = readFile(path.join(personDir, `dna/${dnaState}.dlc`));
+    const memTokens = estimateTokens(dna) + estimateTokens(context);
     const usageRatio = memTokens / modelMax;
     const rawPct = Math.round(usageRatio * 100);
     // ratio = 记忆文件体量估算（est）；api_ratio = 上一轮 API 真实 prompt。2026-09-13 起门禁是 api 为主、est 决定文案：
@@ -852,7 +837,7 @@ export default function registerMemory(pi: ExtensionAPI) {
     // 没有 return → 不碰 systemPrompt → 前缀稳定 → KV 缓存每轮命中。
   });
 
-  // /context command 已迁移到 god.frontend.tui/commands/context.ts
+  // /context command 已迁移到 god.tui/commands/context.ts
 
   /* [2026-08-15 DISABLED] editcontext 临时注释（用户指示：先不用了），保留代码以便恢复
   // ── editcontext tool (dev only) ──────────────────────────

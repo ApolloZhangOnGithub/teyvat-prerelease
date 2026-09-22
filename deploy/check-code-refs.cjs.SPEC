@@ -20,7 +20,7 @@
    - `new URL("相对字面量", import.meta.url)`
    - `import("相对字面量")` / `require("相对字面量")`
 2. 只看相对路径（`./` / `../` 开头）；解析后必须存在
-3. 例外：**部署进 pi dist 的覆盖层**（`god.frontend.tui/ui_elements/*`、`overrides/*`）—— 它们运行时被拷进 pi 的目录树，
+3. 例外：**部署进 pi dist 的覆盖层**（`god.tui/ui_elements/*`、`overrides/*`）—— 它们运行时被拷进 pi 的目录树，
    相对路径在那棵树里有效 → 用"同名后缀在线上 runtime 里存在"放行；该行有 `// ref-ok:` 注释也放行
 4. 一个引用都没扫到 → **FAIL**（fail-closed：规则失效不许静默通过）
 

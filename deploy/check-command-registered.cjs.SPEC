@@ -3,8 +3,8 @@
 # 2026-09-22 dev-01（ISSUE 262）：由 check-copy-command.cjs 泛化而来（改名 + 覆盖全部命令面）。
 
 # 背景（为什么存在）：teyvat 禁用了 pi 的原生命令分派
-#   （god.frontend.tui/overrides/modes/interactive/interactive-mode.js:2468 把内置命令分派块整块换成注释），
-#   所有 /command 必须经 god.frontend.tui/commands/register.ts 的 pi.registerCommand 注册。
+#   （god.tui/overrides/modes/interactive/interactive-mode.js:2468 把内置命令分派块整块换成注释），
+#   所有 /command 必须经 god.tui/commands/register.ts 的 pi.registerCommand 注册。
 #   未注册的 /xxx **不报错**，而是被 onSubmit 当普通用户消息发给 agent —— 静默失效。
 #   历史事故：/copy、/m 曾漏注册（ISSUE 252）；`/c` 漏注册很久才被发现（ISSUE 262）。
 

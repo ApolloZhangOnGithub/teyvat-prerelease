@@ -11,7 +11,7 @@ const path = require("path");
 const core = process.argv[2];
 if (!core) { console.error("usage: check-symbol-ascii.cjs <A.core>"); process.exit(1); }
 
-const file = path.join(core, "god.frontend.tui/ui_elements/blocks_nongod.js");
+const file = path.join(core, "god.tui/ui_elements/blocks_nongod.js");
 const content = fs.readFileSync(file, "utf8");
 
 // 提取 SYM 定义的 Windows 系分支（不绑定变量名，按结构 export const SYM = <cond> ? { ... } : {...} 定位，跨行）

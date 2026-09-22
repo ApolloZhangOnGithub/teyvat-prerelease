@@ -9,7 +9,7 @@ const path = require("path");
 
 const core = path.resolve(process.argv[2] || ".");
 const dirs = [
-  "spirit.bio.organs", "god.frontend.tui/overrides", "god.frontend.tui/ui_elements",
+  "spirit.bio.organs", "god.tui/overrides", "god.tui/ui_elements",
   "universe.infotech", "spirit.abio.roles", "spirit.abio.status", "spirit.abio.techniques",
 ];
 // 只拦"裸根引用"（require("...pi-coding-agent") 或 from "...pi-coding-agent"）；

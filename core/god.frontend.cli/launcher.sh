@@ -362,14 +362,16 @@ case "$NAME" in
     FORCE=0
     [ "$2" = "--force" ] || [ "$2" = "-f" ] && FORCE=1
     # ── update 动画：spinner（git pull/clone 阶段无输出时给转圈反馈——2026-09-15 用户要求，复用 install-prerelease 模式）──
-    _tt_spinner() { # $1=pid $2=label——转圈直到进程结束
-      local pid=$1 label="$2" chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠠' i=0
+    _tt_spinner() { # $1=pid $2=label——转圈直到进程结束（带计秒，用户 2026-09-23 要求）
+      local pid=$1 label="$2" chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠠' i=0 _t0=$(date +%s)
       printf "  \033[2m%s  " "$label"
       while kill -0 "$pid" 2>/dev/null; do
-        printf "\r  \033[36m%s\033[2m %s\033[0m" "${chars:i%10:1}" "$label"
+        local _el=$(( $(date +%s) - _t0 )) _ts="${_el}s"
+        [ "$_el" -ge 60 ] && _ts="$((_el/60))m$((_el%60))s"
+        printf "\r  \033[36m%s\033[2m %s (%s)\033[0m" "${chars:i%10:1}" "$label" "$_ts"
         i=$((i+1)); sleep 0.08
       done
-      printf "\r                                        \r"
+      printf "\r                                                     \r"
     }
     _tt_run_bg() { # $1=label 其余=命令——后台跑 + spinner，吞输出（成功/失败由退出码）
       local label="$1"; shift

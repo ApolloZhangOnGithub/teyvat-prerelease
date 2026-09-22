@@ -13,7 +13,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const core = path.resolve(process.argv[2] || path.join(__dirname, "..", "A.core"));
-const OWNER = path.join("god.frontend.tui", "ui_elements", "blocks_nongod.js");
+const OWNER = path.join("god.tui", "ui_elements", "blocks_nongod.js");
 const problems = [];
 const ok = (msg) => console.log(`  OK    ${msg}`);
 const fail = (msg) => { problems.push(msg); console.log(`  FAIL  ${msg}`); };
@@ -59,7 +59,7 @@ const stripComment = (line) => line.replace(/^\s*\/\/.*$/, "").replace(/\s\/\/(?
 {
   const targets = [
     { file: path.join("spirit.bio.organs", "hands.executes", "executes.ts"), start: /^\s*renderResult\(/m },
-    { file: path.join("god.frontend.tui", "ui_elements", "renderers.ts"), start: /registerMessageRenderer\("continuous-cmd-done"/ },  // 2026-09-13：renderers.ts 搬入 ui_elements（用户），路径同步
+    { file: path.join("god.tui", "ui_elements", "renderers.ts"), start: /registerMessageRenderer\("continuous-cmd-done"/ },  // 2026-09-13：renderers.ts 搬入 ui_elements（用户），路径同步
     { file: OWNER, start: /^export function renderExecuteResult/m },
   ];
   let checked = 0;

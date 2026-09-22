@@ -6,8 +6,8 @@
 - `Doctor WIKI` 写了 8 个不存在的检查（已由 `check-doctor-docs.cjs` 单独看守）
 - 本篇管的：**文档说"代码在 X"，而 X 已被改名/搬家/删掉**，实测抓到并修正 15 篇文档：
   `universe.society/organization/organization.ts`（实际 `spirit.abio.status/organization.ts`）、
-  `god.cli/*` → `god.frontend.cli/*`、`mods.cli/*` → `god.frontend.cli/*`、`commands.X/X.ts` → `god.frontend.tui/commands/X.ts`、
-  `god.tui/*` → `god.frontend.tui/*`、`spirit.bio.gene/tools.manifest.js`/`rna.js` → `.json`、
+  `god.cli/*` → `god.frontend.cli/*`、`mods.cli/*` → `god.frontend.cli/*`、`commands.X/X.ts` → `god.tui/commands/X.ts`、
+  `god.tui/*` → `god.tui/*`、`spirit.bio.gene/tools.manifest.js`/`rna.js` → `.json`、
   `god.cli/completion.zsh` → `god.frontend.cli/genshin-completion.zsh`（该文件本就丢了，见 ISSUE 196）
 
 判定（只报高置信两类，避免散文误伤）:

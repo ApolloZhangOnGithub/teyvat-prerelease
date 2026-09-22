@@ -10,7 +10,7 @@ const path = require("path");
 const ROOT = path.join(__dirname, "..", "A.core");
 const APPLY = process.argv.includes("--apply");
 
-const DIRS = ["god.frontend.tui", "spirit.bio.organs", "god.frontend.cli"];
+const DIRS = ["god.tui", "spirit.bio.organs", "god.frontend.cli"];
 const EXCLUDE = ["node_modules", ".bak", ".REMOVED"];
 
 function* walk(dir) {

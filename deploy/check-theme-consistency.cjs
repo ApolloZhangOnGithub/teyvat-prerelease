@@ -13,7 +13,7 @@ const { readFileSync } = require("node:fs");
 const { join, resolve } = require("node:path");
 
 const core = resolve(process.argv[2] || ".");
-const themeDir = join(core, "god.frontend.tui/overrides/modes/interactive/theme");
+const themeDir = join(core, "god.tui/overrides/modes/interactive/theme");
 const darkPath = join(themeDir, "dark.json");
 const lightPath = join(themeDir, "light.json");
 

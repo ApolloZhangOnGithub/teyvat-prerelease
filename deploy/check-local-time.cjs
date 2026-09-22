@@ -22,9 +22,9 @@ const core = path.resolve(process.argv[2] || path.join(__dirname, "..", "A.core"
 
 // 面向用户的文件——这些文件里的 toISOString 需要审查
 const USER_FACING = [
-  "god.frontend.tui/ui_elements/renderers.ts", // 2026-09-13 搬入 ui_elements
-  "god.frontend.tui/commands/",
-  "god.frontend.tui/overrides/modes/interactive/components/tool-execution.js",
+  "god.tui/ui_elements/renderers.ts", // 2026-09-13 搬入 ui_elements
+  "god.tui/commands/",
+  "god.tui/overrides/modes/interactive/components/tool-execution.js",
   "god.frontend.cli/backup.ts",
   "god.frontend.cli/list.cjs",
   "god.frontend.cli/launcher.sh",

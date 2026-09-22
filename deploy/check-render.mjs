@@ -18,7 +18,7 @@ const fail = (msg) => {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const core = resolve(process.argv[2] ?? ".");
-const srcPiTui = join(core, "god.frontend.tui", "overrides", "pi-tui");
+const srcPiTui = join(core, "god.tui", "overrides", "pi-tui");
 const testSrc = join(here, "check-render-test.mjs");
 if (!existsSync(join(srcPiTui, "components", "markdown.js"))) fail(`override 缺失: ${srcPiTui}`);
 if (!existsSync(testSrc)) fail(`测试脚本缺失: ${testSrc}`);
@@ -51,11 +51,11 @@ try {
   cpSync(join(srcPiTui, "components", "markdown.js"), join(pkg, "components", "markdown.js"));
   cpSync(join(srcPiTui, "components", "text.js"), join(pkg, "components", "text.js"));
   for (const f of ["latex.js", "terminal-image.js", "utils.js"]) cpSync(join(srcPiTui, f), join(pkg, f));
-  const blocksSrc = join(core, "god.frontend.tui", "ui_elements", "blocks_nongod.js");
+  const blocksSrc = join(core, "god.tui", "ui_elements", "blocks_nongod.js");
   if (!existsSync(blocksSrc)) fail(`blocks_nongod.js 缺失: ${blocksSrc}`);
   cpSync(blocksSrc, join(pkg, "blocks_nongod.js"));
   // blocks_nongod.js 依赖 env.js（统一环境标识符，同目录相对 import）
-  const envSrc = join(core, "god.frontend.tui", "ui_elements", "env.js");
+  const envSrc = join(core, "god.tui", "ui_elements", "env.js");
   if (existsSync(envSrc)) cpSync(envSrc, join(pkg, "env.js"));
   cpSync(join(srcPiTui, "keybindings.js"), join(pkg, "keybindings.js"));
   cpSync(join(srcPiTui, "keys.js"), join(pkg, "keys.js"));

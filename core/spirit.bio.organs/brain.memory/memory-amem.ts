@@ -21,6 +21,7 @@ import { logerr } from "#paths";
 import { appendAsync } from "#kernel_nerves";
 import { i18n } from "#tui_localizations";
 import { readFile, writeFile } from "./memory.ts";
+import { fetchBlockById, formatBlockSummary, formatBlockFull } from "./memory-history-fetch-by-block.ts";
 
 export interface AmemDeps {
   personDir: () => string | null;
@@ -551,6 +552,7 @@ export function registerAmemTool(pi: ExtensionAPI, deps: AmemDeps): void {
       from: Type.Optional(Type.String({ messageDescription: "[fetch] list filter: only archives with time_span >= this date (YYYY-MM-DD). keeps the index response small" })),
       to: Type.Optional(Type.String({ messageDescription: "[fetch] list filter: only archives with time_span <= this date (YYYY-MM-DD)" })),
       limit: Type.Optional(Type.Number({ messageDescription: "[fetch] list cap: only show the most recent N entries (default 30). prevents index bloat" })),
+      get: Type.Optional(Type.Boolean({ messageDescription: "[fetch] with id=<blocktrace id>: return full content (default = summary)" })),
       hash_key: Type.Optional(Type.String({ messageDescription: "From check step. Required for manage/archive/revert mutations." })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
@@ -584,6 +586,14 @@ export function registerAmemTool(pi: ExtensionAPI, deps: AmemDeps): void {
 
       // ── fetch (read-only, no hash) ─────────────────────────────────
       if (params.action === "fetch") {
+        // 2026-09-23（blocktrace）：id 为 blocktrace 块 id（bt-*/tc-*）时，按 id 从 context.md 取块（summary/get）
+        if (params.id && /^(bt-|tc-)/.test(params.id)) {
+          const ctxPath = path.join(deps.personDir()!, "context.md");
+          const { hits, error } = fetchBlockById(ctxPath, params.id);
+          if (error) return { content: [{ type: "text", text: `amem id: ${error}` }], details: {}, isError: true };
+          const text = params.get ? formatBlockFull(params.id, hits) : formatBlockSummary(params.id, hits);
+          return { content: [{ type: "text", text }], details: { id: params.id, found: hits.length, get: params.get === true } };
+        }
         let idx: any = { total_entries: 0, total_excised_chars: 0, entries: [] };
         try { idx = JSON.parse(readFile(indexPath) || "{}"); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
         const entries: any[] = idx.entries || [];

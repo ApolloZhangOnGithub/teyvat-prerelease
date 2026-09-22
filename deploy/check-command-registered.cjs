@@ -3,7 +3,7 @@
 // 2026-09-22 dev-01（ISSUE 262）：由 check-copy-command.cjs 泛化——不再只盯 copy/m，而是守住**整个用户命令面**。
 //
 // 为什么需要：teyvat 禁用了 pi 的原生命令分派（overrides/modes/interactive/interactive-mode.js:2468），
-// 所有 /command 必须经 god.frontend.tui/commands/register.ts 的 pi.registerCommand 注册。
+// 所有 /command 必须经 god.tui/commands/register.ts 的 pi.registerCommand 注册。
 // 未注册的 /xxx 不会被报错，而是被 onSubmit 当**普通用户消息发给 agent** —— 静默失效（ISSUE 252 的 /copy、
 // ISSUE 262 的 /login；`/c` 更是漏注册了很久没人发现）。
 //
@@ -20,8 +20,8 @@ const core = process.argv[2];
 if (!core) { console.error("usage: check-command-registered.cjs <A.core>"); process.exit(1); }
 
 const read = (rel) => fs.readFileSync(path.join(core, rel), "utf8");
-const register = read("god.frontend.tui/commands/register.ts");
-const imode = read("god.frontend.tui/overrides/modes/interactive/interactive-mode.js");
+const register = read("god.tui/commands/register.ts");
+const imode = read("god.tui/overrides/modes/interactive/interactive-mode.js");
 
 // ① 必须注册的命令（用户可见命令面 = register.ts 的 registerCommand 调用）
 const REQUIRED = ["s", "a", "q", "h", "p", "copy", "m", "login", "logout", "c"];
@@ -34,10 +34,10 @@ const IMPORTS = {
 };
 // ③ 需要 globalThis 桥的命令（上游 handler 是 InteractiveMode 实例方法，扩展命令拿不到实例）
 const BRIDGES = [
-  { cmd: "copy", bridge: "__genshinHandleCopyCommand", file: "god.frontend.tui/commands/copy.ts" },
-  { cmd: "m", bridge: "__genshinHandleModelCommand", file: "god.frontend.tui/commands/model.ts" },
-  { cmd: "login", bridge: "__genshinHandleLoginCommand", file: "god.frontend.tui/commands/login.ts" },
-  { cmd: "logout", bridge: "__genshinHandleLogoutCommand", file: "god.frontend.tui/commands/login.ts" },
+  { cmd: "copy", bridge: "__genshinHandleCopyCommand", file: "god.tui/commands/copy.ts" },
+  { cmd: "m", bridge: "__genshinHandleModelCommand", file: "god.tui/commands/model.ts" },
+  { cmd: "login", bridge: "__genshinHandleLoginCommand", file: "god.tui/commands/login.ts" },
+  { cmd: "logout", bridge: "__genshinHandleLogoutCommand", file: "god.tui/commands/login.ts" },
 ];
 
 const missing = [];

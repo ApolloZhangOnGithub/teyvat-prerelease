@@ -11,7 +11,7 @@
 //
 // 判定：扫 `join|resolve(... import.meta.dirname|__dirname ..., "相对字面量")` 与 `new URL("相对字面量", import.meta.url)`；
 //   解析后的路径必须存在。允许两种例外：
-//     - 文件属于"部署进 pi dist"的覆盖层（god.frontend.tui/ui_elements/*、overrides/*）：它们运行时被拷进 pi 的 tree，
+//     - 文件属于"部署进 pi dist"的覆盖层（god.tui/ui_elements/*、overrides/*）：它们运行时被拷进 pi 的 tree，
 //       相对路径在那里有效 → 用"同名后缀在线上 runtime 里存在"放行
 //     - 该行有 `// ref-ok:` 注释（写明理由）
 //   fail-closed：一个引用都没扫到 → FAIL（规则失效）。

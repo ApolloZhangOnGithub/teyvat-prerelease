@@ -7,7 +7,7 @@
 `"⎿  "` 硬编码 5 处绕过 WSL 的 ASCII 回退、耗时格式器 6 个实现、cmd-done 把手里的 recId/exitCode/耗时格式化成文本再让
 渲染器用 3 条正则反解析、渲染时取 `Date.now()` 让历史行随心跳重渲染漂移、`replaceDot` 三份其中一份漏改。
 
-收口后的唯一入口都在 `god.frontend.tui/ui_elements/blocks_nongod.js`：
+收口后的唯一入口都在 `god.tui/ui_elements/blocks_nongod.js`：
 `stripResultTokenMark` / `stripInlineBgTag` / `extractBioclockTag`（尾标签）、`fmtElapsedMs` / `fmtElapsedCoarse` / `fmtClock`（时间）、
 `renderExecuteResult(theme, state)`（快命令 / Created / cmd-done 三种样式）、`parseLegacyCmdDone`（旧格式历史消息兜底）、`SYM`（符号，只定义一次）。
 

@@ -24,7 +24,7 @@ still alive after 200ms   exit=0         ← 活着
 - **`brain.bioclock/bioclock.ts:183`** `spawn("bun", …)`：每日云备份。**每次 agent 启动**就会跑一次（L193）→
   没装 bun 的机器**一启动就闪退**；而且"先落状态后动作"的设计会让备份整天不再重试（静默跳过）。
 - **`head.ears/ears.ts:79`** `spawn(BUN, …)`：录音。`BUN` 在 `which bun` 失败时**回落成字面量 `"bun"`**（L23）→ 同 ENOENT。
-- `god.frontend.tui/commands/detach.ts:71`、`universe.infotech/local.mobile/apps/safari/safari.ts:101`：风险低（node 一定在），
+- `god.tui/commands/detach.ts:71`、`universe.infotech/local.mobile/apps/safari/safari.ts:101`：风险低（node 一定在），
   但失败时用户会以为"已转后台/浏览器服务在起"，实际什么都没起。
 
 ## 修法

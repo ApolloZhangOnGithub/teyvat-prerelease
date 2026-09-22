@@ -185,7 +185,7 @@ export function registerHibernateTool(_pi: ExtensionAPI) {
         const tag = role === "main" ? "main-hibernate" : role === "metaconsciousness" ? "mc-hibernate" : null;
         if (pid && tag) writeFileSync(join(runtimeCacheDir(pid), tag), String(Date.now()), "utf8");
       } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart-hibernate.ts] " + ((e as any)?.message || e)); }
-      // terminate:true is handled by the agent-session.js override (god.frontend.tui/overrides).
+      // terminate:true is handled by the agent-session.js override (god.tui/overrides).
       // It calls runner.abortFn() which stops the agent loop before the next turn.
       return { content: [], details: { hibernate: params.summary }, terminate: true };
     },

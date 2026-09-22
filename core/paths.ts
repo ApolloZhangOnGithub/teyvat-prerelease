@@ -26,9 +26,9 @@ export const DIRS = {
   geneTranspiler: resolve(CORE, "spirit.bio.gene/transpiler.ts"),
   geneRna: resolve(CORE, "spirit.bio.gene/_built-rna.json"),
 
-  tuiCommands: resolve(CORE, "god.frontend.tui/commands"),
-  tuiUi: resolve(CORE, "god.frontend.tui/ui"),
-  tuiOverrides: resolve(CORE, "god.frontend.tui/overrides"),
+  tuiCommands: resolve(CORE, "god.tui/commands"),
+  tuiUi: resolve(CORE, "god.tui/ui"),
+  tuiOverrides: resolve(CORE, "god.tui/overrides"),
   cli: resolve(CORE, "god.frontend.cli"),
 
   // dev-only 路径（release 模式下不存在，用 IS_DEV 门控访问）

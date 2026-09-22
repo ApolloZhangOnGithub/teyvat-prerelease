@@ -8,8 +8,8 @@ const path = require("path");
 const core = process.argv[2];
 if (!core) { console.error("usage: check-command-conflict.cjs <A.core>"); process.exit(1); }
 
-const cmdsDir = path.join(core, "god.frontend.tui/commands");
-const manifest = path.join(core, "god.frontend.tui/overrides/pi-dist/core/slash-commands.js");
+const cmdsDir = path.join(core, "god.tui/commands");
+const manifest = path.join(core, "god.tui/overrides/pi-dist/core/slash-commands.js");
 
 // 1. 内置命令名清单（override 版 slash-commands.js 的 { name: "xxx" ... }）
 const manifestSrc = fs.readFileSync(manifest, "utf8");
@@ -35,7 +35,7 @@ if (conflicts.length > 0) {
   }
   console.error("  解法二选一：");
   console.error("    a) 改用不撞名的短名（如 model→m）");
-  console.error("    b) 从 god.frontend.tui/overrides/pi-dist/core/slash-commands.js 移除该内置项（teyvat 已禁用 pi 原生命令，占坑无意义），并同步部署");
+  console.error("    b) 从 god.tui/overrides/pi-dist/core/slash-commands.js 移除该内置项（teyvat 已禁用 pi 原生命令，占坑无意义），并同步部署");
   process.exit(1);
 }
 console.log(`  ✓ slash 命令无内置冲突（${extensionNames.length} 个扩展命令 vs ${builtinNames.size} 个内置名）`);

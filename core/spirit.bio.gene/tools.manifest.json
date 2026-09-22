@@ -97,6 +97,12 @@
       "group": "感官",
       "desc": "视觉：VL 看图 + 本地 OCR + native 注入当前模型"
     },
+    "highlight": {
+      "default": true,
+      "locked": false,
+      "group": "核心",
+      "desc": "块高亮：给某个块染色（blocktrace）"
+    },
     "mobile": {
       "default": false,
       "locked": false,

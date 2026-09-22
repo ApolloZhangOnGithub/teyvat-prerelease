@@ -183,7 +183,7 @@ export function registerWaitTool(pi: ExtensionAPI) {
       // 注意：不再调 setWorkingMessage——倒计时由 statebar._restingTick 通过 __genshinWaitLabel 统一拼装，
       // 旧残留的 setWorkingMessage(label()) 会覆盖 footer 闪现裸 "0/50s"（issue 071 修复残留）
       dlog(`wait:${secs}s`);
-      // terminate:true is handled by the agent-session.js override (god.frontend.tui/overrides).
+      // terminate:true is handled by the agent-session.js override (god.tui/overrides).
       // It calls runner.abortFn() which stops the agent loop before the next turn.
       // renderResult 已改为 spinner(.75)，content 不再显示，保留 details 供状态机使用
       return { content: [{ type: "text", text: "" }], details: { wait: secs, waiting }, terminate: true };

@@ -5,10 +5,10 @@ const fs = require("fs");
 const path = require("path");
 
 const files = [
-  "A.core/god.frontend.tui/overrides/modes/interactive/interactive-mode.js",
-  "A.core/god.frontend.tui/overrides/pi-dist/core/package-manager.js",
-  "A.core/god.frontend.tui/overrides/pi-dist/core/extensions/loader.js",
-  "A.core/god.frontend.tui/ui_elements/footer.js",
+  "A.core/god.tui/overrides/modes/interactive/interactive-mode.js",
+  "A.core/god.tui/overrides/pi-dist/core/package-manager.js",
+  "A.core/god.tui/overrides/pi-dist/core/extensions/loader.js",
+  "A.core/god.tui/ui_elements/footer.js",
   "A.core/universe.infotech/cloud.servers/playleft.cjs",
   "A.core/universe.infotech/cloud.servers/browser_service.cjs",
 ];

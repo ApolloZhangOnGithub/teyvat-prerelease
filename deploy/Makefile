@@ -10,7 +10,7 @@ ECOSYSTEM  := $(ROOT)/../../teyvat-sides/R.release/website
 
 # ── 路径变量（目录改名只改这里）──
 CLI        := god.frontend.cli
-TUI        := god.frontend.tui
+TUI        := god.tui
 TRANSPILER := spirit.bio.gene/polymerase.ts
 
 .PHONY: help setup bump dev-minutely dev-stable note prerelease-minutely release nightly wiki-deploy wiki-publish sync-deploy doc-commit dev-restore _paths _ecosystem \

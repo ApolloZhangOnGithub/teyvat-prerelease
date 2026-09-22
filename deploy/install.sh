@@ -281,7 +281,7 @@ if [ -f "$MANIFEST" ] && [ -z "$PAIMON_VER" ]; then
     echo -e "  ${RED}DRIFT DETECTED${R} — runtime was modified outside make:${DRIFT}"
     echo -e "  ${YLW}修复方法:${R}"
     echo -e "    1. 检查上面的 MODIFIED 文件是否有需要保存的改动"
-    echo -e "    2. 如有，先把改动合并回 god.frontend.tui/overrides/ 源码"
+    echo -e "    2. 如有，先把改动合并回 god.tui/overrides/ 源码"
     echo -e "    3. trash ~/.local/lib/teyvat/runtime/node_modules/@earendil-works/ 然后重新 make"
     exit 1
   fi
@@ -315,7 +315,7 @@ if [ -d "$STOCK_BACKUP/pi-tui" ]; then
 fi
 
 # ── 3. runtime overrides ──
-OVERRIDES="$IMPL/god.frontend.tui/overrides"
+OVERRIDES="$IMPL/god.tui/overrides"
 PI_TUI_DIST="$PI_PKG/node_modules/@earendil-works/pi-tui/dist"
 if [ ! -d "$PI_TUI_DIST" ]; then PI_TUI_DIST="$RUNTIME/node_modules/@earendil-works/pi-tui/dist"; fi
 
@@ -324,7 +324,7 @@ GATE_BAD=0
 while IFS= read -r -d '' js; do
   node --check "$js" 2>/dev/null || { err "syntax error: ${js##*/}"; GATE_BAD=1; }
 done < <(find "$OVERRIDES" -name "*.js" ! -name "*.bak" -print0 2>/dev/null)
-node --check "$IMPL/god.frontend.tui/ui_elements/blocks_nongod.js" 2>/dev/null || { err "syntax error: blocks_nongod.js"; }
+node --check "$IMPL/god.tui/ui_elements/blocks_nongod.js" 2>/dev/null || { err "syntax error: blocks_nongod.js"; }
 
 # overrides 实体拷贝进 pi dist（cp -f，不是 symlink——symlink 会让 Node 按真实路径解析
 # relative import，从 source 树找依赖，路径就断了）
@@ -332,17 +332,17 @@ LINK_FAIL=0
 _override() {
   cp -f "$1" "$2" 2>/dev/null || { echo -e "  ${RED}COPY FAIL${R}  $1 → $2"; LINK_FAIL=1; }
 }
-_override "$IMPL/god.frontend.tui/ui_elements/blocks_nongod.js" "$PI_DIST/modes/interactive/components/blocks_nongod.js"
-_override "$IMPL/god.frontend.tui/ui_elements/env.js" "$PI_DIST/modes/interactive/components/env.js"
-_override "$IMPL/god.frontend.tui/overrides/pi-tui/components/custom-message.js" "$PI_DIST/modes/interactive/components/custom-message.js"
+_override "$IMPL/god.tui/ui_elements/blocks_nongod.js" "$PI_DIST/modes/interactive/components/blocks_nongod.js"
+_override "$IMPL/god.tui/ui_elements/env.js" "$PI_DIST/modes/interactive/components/env.js"
+_override "$IMPL/god.tui/overrides/pi-tui/components/custom-message.js" "$PI_DIST/modes/interactive/components/custom-message.js"
 
 # （2026-08-14 移除）tool-execution.js 的 visibleWidth/wrapTextWithAnsi 注入 sed：
 # 源码 overrides 里已自带这两个 import 与 initBlockrender 带参调用，sed 长期 no-op
 
-_override "$IMPL/god.frontend.tui/ui_elements/footer.js" "$PI_DIST/modes/interactive/components/footer.js"
+_override "$IMPL/god.tui/ui_elements/footer.js" "$PI_DIST/modes/interactive/components/footer.js"
 # spinner.js 覆盖已移除：源文件在 73029b86 (2026-07-28) 随重构删除，无继任者，改用 pi 原生 spinner
-_override "$IMPL/god.frontend.tui/ui_elements/statebar.js" "$PI_DIST/modes/interactive/components/statebar.js"
-_override "$IMPL/god.frontend.tui/ui_elements/blocks_god.js" "$PI_DIST/modes/interactive/components/blocks_god.js"
+_override "$IMPL/god.tui/ui_elements/statebar.js" "$PI_DIST/modes/interactive/components/statebar.js"
+_override "$IMPL/god.tui/ui_elements/blocks_god.js" "$PI_DIST/modes/interactive/components/blocks_god.js"
 for f in $(cd "$OVERRIDES/modes" && find . -name '*.js' -o -name '*.json'); do
   _override "$OVERRIDES/modes/$f" "$PI_DIST/modes/$f"
 done
@@ -375,8 +375,8 @@ if [ -d "$OVERRIDES/utils" ]; then
   done
 fi
 if [ -d "$PI_TUI_DIST" ]; then
-  _override "$IMPL/god.frontend.tui/ui_elements/blocks_nongod.js" "$PI_TUI_DIST/blocks_nongod.js"
-  _override "$IMPL/god.frontend.tui/ui_elements/env.js" "$PI_TUI_DIST/env.js"
+  _override "$IMPL/god.tui/ui_elements/blocks_nongod.js" "$PI_TUI_DIST/blocks_nongod.js"
+  _override "$IMPL/god.tui/ui_elements/env.js" "$PI_TUI_DIST/env.js"
   for f in $(cd "$OVERRIDES/pi-tui" && find . -name '*.js'); do
     mkdir -p "$(dirname "$PI_TUI_DIST/$f")"
     _override "$OVERRIDES/pi-tui/$f" "$PI_TUI_DIST/$f"
@@ -925,7 +925,7 @@ ENDPATCH
 
   # ── 已移除：patch model-registry.js（contextWindow/maxTokens 继承）2026-09-22 ──
   # 原因（a_great_agent_on_imac_01 报的 #4：长期 `patch-model-registry:0 (期望 3)` 静默失配）：
-  #   `model-registry.js` 现在是 teyvat 的**整文件 override**（god.frontend.tui/overrides/pi-dist/core/model-registry.js），
+  #   `model-registry.js` 现在是 teyvat 的**整文件 override**（god.tui/overrides/pi-dist/core/model-registry.js），
   #   而 ISSUE 143/144 的三条修复早已落在 override 里（L671-676 的 defaults 自带 contextWindow/maxTokens；
   #   且全文已无 `?? 128000` / `?? 16384`）——针对 stock 文件的字符串补丁再也匹配不到，永远 0/3。
   #   留着它=每次安装打一条唬人的 `0 (期望 3)`（静默 no-op 管线）。所以直接删。

@@ -20,5 +20,5 @@
   `Unknown theme color: default` 5 次（2026-09-08）。
 - 现有 check-theme-consistency.cjs 只查 dark/light 的 vars 键对应与 colors 引用完整，
   查不出"代码里写的名字根本不在 colors 里"。
-- 首次运行即抓到真违规：`god.frontend.tui/renderers.ts:126 fg("yellow")`（memory-reminder 渲染器）。
+- 首次运行即抓到真违规：`god.tui/renderers.ts:126 fg("yellow")`（memory-reminder 渲染器）。
   已改为 `fg("warning")`（`colors.warning` → `vars.yellow` #FFC107，同色），改后本检查 PASS。

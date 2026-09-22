@@ -159,7 +159,7 @@ fi
 # 残留不可能存在；pi-ai 没有原版基线（版本号不变时不复位），补丁会叠加在上一次的产物上——
 # 删掉/改写某个 overrides/pi-ai/<f>.js 后，旧补丁仍留在 dist 里继续生效（"改了源码但行为不变"）。
 AI_DIST="$HOME/.local/lib/teyvat/runtime/node_modules/@earendil-works/pi-ai/dist/api"
-OVR_AI="$IMPL/god.frontend.tui/overrides/pi-ai"
+OVR_AI="$IMPL/god.tui/overrides/pi-ai"
 if [ -d "$AI_DIST" ]; then
   RESIDUE=""
   for f in "$AI_DIST"/*.js; do

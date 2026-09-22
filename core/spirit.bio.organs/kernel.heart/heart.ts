@@ -78,7 +78,7 @@ export default function (pi: ExtensionAPI) {
   registerHibernateTool(pi);
   registerStatusTool(pi);
 
-  // 消息渲染器统一在 god.frontend.tui/renderers.ts 注册（解耦 PROPOSAL 034 阶段 1，2026-08-18）
+  // 消息渲染器统一在 god.tui/renderers.ts 注册（解耦 PROPOSAL 034 阶段 1，2026-08-18）
   // 渲染是视图职责，heart 只保留运行逻辑。找"消息怎么渲染"→ renderers.ts。
   registerMessageRenderers(pi);
 
