@@ -331,7 +331,7 @@ export default function registerMemory(pi: ExtensionAPI) {
     const ct = msg.customType ?? msg.messageType;
     if (typeof ct === "string" && ct.startsWith("memory-")) return;
 
-    const entries: { role: string; type: string; content?: string; text?: string; think?: string; tool?: any; ts_start: number; ts_end: number }[] = [];
+    const entries: { role: string; type: string; content?: string; text?: string; think?: string; tool?: any; toolName?: string; toolCallId?: string; ts_start: number; ts_end: number }[] = [];
     const now = Date.now();
     if (typeof msg.content === "string") {
       const msgType = msg.customType ?? msg.messageType;
@@ -349,8 +349,20 @@ export default function registerMemory(pi: ExtensionAPI) {
             appendFile(thinkStream, `\n[${ts}]\n${c.thinking}\n`);
           }
         } else if (c.type === "toolCall") {
-          entries.push({ role: "assistant", type: "toolCall", tool: { name: c.name, args: c.arguments }, ts_start: c.ts_start ?? now, ts_end: c.ts_end ?? now });
+          // 2026-09-22（trajectory 元数据）：toolCall 写时就带上 toolCallId，供 amem 把调用与其结果配对
+          const tc: any = { role: "assistant", type: "toolCall", tool: { name: c.name, args: c.arguments }, ts_start: c.ts_start ?? now, ts_end: c.ts_end ?? now };
+          if ((c as any).id) tc.toolCallId = (c as any).id;
+          entries.push(tc);
         }
+      }
+    }
+
+    // 2026-09-22（trajectory 元数据）：tool 结果条目统一补 toolName/toolCallId——不管内容走 string 还是 array 分支
+    // （实测 toolResult 实际走 array 分支：content 是 block 数组；字符串分支只在旧格式命中）
+    if (role === "toolResult" || role === "tool") {
+      for (const e of entries) {
+        if ((msg as any).toolName) e.toolName = (msg as any).toolName;
+        if ((msg as any).toolCallId) e.toolCallId = (msg as any).toolCallId;
       }
     }
 
@@ -682,6 +694,12 @@ export default function registerMemory(pi: ExtensionAPI) {
           if (Array.isArray(text)) text = text.map((b: any) => (b && typeof b.text === "string" ? b.text : "")).join(" ");
           text = String(text).trim();
           return text ? `[tool: ${text.slice(0, 500).replace(/\n/g, " ")}]` : null;
+        }
+        // 2026-09-22（trajectory 元数据）：非 toolResult 的 JSON 行（如 toolCall）剥掉元数据字段再进快照——
+        // 元数据（toolCallId）只存在于 context.md，不进模型上下文（正是「session context 外加 metadata」）
+        if (obj && typeof obj === "object" && obj.toolCallId !== undefined) {
+          delete obj.toolCallId;
+          return JSON.stringify(obj);
         }
       } catch { /* context.md 坏行（截断/历史格式）：保留原文不压缩、不刷日志（2026-08-20 定稿；2026-09-13 复原——曾被 fix-empty-catch 自动回填成 console.error，每次快照构建刷 Unexpected end of JSON input）*/ }
       return line;

@@ -71,38 +71,6 @@ const HEARTBEAT_PROMPT = [
   getPrompt("core.typeRef"),
 ].join("\n\n");
 
-// 2026-09-22（PROPOSAL 042）：意图栈注入瘦身。
-// 背景：agent_end 每次续命都把意图栈**原文**注入一条新消息，而该消息会永久留在 session 历史里——
-// 成本 = 栈大小 × 续命次数（实测多台 agent 的栈逼近工具侧上限 3000 字符）。注入侧做三件事：
-//   1) 已完成项（✓/✅/☑ 开头）不注入——不可执行，纯噪音（要看全文用 intentions()）
-//   2) 注入长度压进预算，超出截断并提示
-//   3) 过滤后为空（栈里只剩 done）时给可操作提示，不发空计划
-const INTENTIONS_INJECT_BUDGET = 800;
-const DONE_LINE_RE = /^[✓✅☑]\s*/;
-
-function compactIntentionsForInject(raw: string): string {
-  const lines = raw.split("\n").filter((l) => l.trim());
-  const kept = lines.filter((l) => !DONE_LINE_RE.test(l.trim()));
-  const doneCount = lines.length - kept.length;
-  if (kept.length === 0) {
-    return i18n(
-      `（意图栈里只剩 ${doneCount} 条已完成项，没有待办）——请写新计划，或调 wait/hibernate。`,
-      `(intention stack holds only ${doneCount} finished item(s), nothing pending) — write a new plan, or call wait/hibernate.`);
-  }
-  let text = kept.join("\n").trim();
-  let note = "";
-  if (text.length > INTENTIONS_INJECT_BUDGET) {
-    note += i18n(`\n…（已省略 ${text.length - INTENTIONS_INJECT_BUDGET} 字符，用 intentions() 读全文）`,
-                 `\n…(${text.length - INTENTIONS_INJECT_BUDGET} chars omitted; read the full text with intentions())`);
-    text = text.slice(0, INTENTIONS_INJECT_BUDGET);
-  }
-  if (doneCount > 0) {
-    note += i18n(`\n（另有 ${doneCount} 条已完成项未注入——建议删掉）`,
-                 `\n(${doneCount} finished item(s) not injected — consider removing them)`);
-  }
-  return text + note;
-}
-
 export default function (pi: ExtensionAPI) {
   // ── tools ──
   registerPauseHandler(pi);
@@ -982,13 +950,11 @@ export default function (pi: ExtensionAPI) {
       }
     }
     if (intentions) {
-      dlog(`agent_end: intentions non-empty → auto-continue (count=${limits().count}, ${intentions.length} chars)`);
-      // 2026-09-22（PROPOSAL 042）：注入瘦身——过滤已完成项 + 长度预算（见 compactIntentionsForInject）
-      const plan = compactIntentionsForInject(intentions);
+      dlog(`agent_end: intentions non-empty → auto-continue (count=${limits().count})`);
       setTimeout(() => {
         sendCustomMessage(pi, "continuous-next",
-          i18n(`【系统自动】继续工作（非用户指令，意图栈非空自动续命）。你的计划：\n${plan}\n\n计划保持精简（≤5 行，只写接下来要做的）；已完成项删掉（intentions({old_string:'done item', new_string:''})）；细节写 ISSUE/PROPOSAL，不写这里。没事做了就调 wait 或 hibernate。`,
-               `[auto] Continue working (system auto-continue, not a user instruction). Your plan:\n${plan}\n\nKeep the plan short (<=5 lines, only what's next); delete finished items (intentions({old_string:'done item', new_string:''})); details belong in ISSUE/PROPOSAL, not here. If nothing left to do, call wait or hibernate.`));
+          i18n(`【系统自动】继续工作（非用户指令，意图栈非空自动续命）。你的计划：\n${intentions}\n\n做完的删掉（intentions({old_string:'done item', new_string:''})），有新的加上。没事做了就调 wait 或 hibernate。`,
+               `[auto] Continue working (system auto-continue, not a user instruction). Your plan:\n${intentions}\n\nRemove finished items (intentions({old_string:'done item', new_string:''})), add new ones. If nothing left to do, call wait or hibernate.`));
       }, 0);
     } else {
       dlog(`agent_end: intentions empty → prompt to plan (count=${limits().count})`);
