@@ -481,7 +481,27 @@ export function registerAmemTool(pi: ExtensionAPI, deps: AmemDeps): void {
       const c = new C();
       const lines = raw.split("\n").filter((l: string) => l.trim());
       const firstLine = lines[0] || "";
-      const summary = firstLine
+      // 2026-09-22（用户：结果行要 "Archived 38.0K tokens" 而不是 "removed 94 entries"）：
+      // 这条 9/17 定稿过，但在 amem 分离（memory.ts → memory-amem.ts）时**丢了** → 这里重新收口。
+      // 规则：①动词跟命令走（archive/sweep→Archived、manage→Managed、revert→Reverted、fetch→Fetched、mark_*→Marked）
+      //       ②体量用 **token**（从原始输出的 `~N tok` 取，≥1000 转成 X.XK tokens），不用字符数/条目数。
+      //       ③拿不到 tok（fetch/mark 这类）→ 回退原有摘要，不动。
+      const _verb = (() => {
+        const a = (firstLine.match(/^amem\s+([a-z_]+)/i)?.[1] || "").toLowerCase();
+        if (a === "archive" || a === "sweep") return "Archived";
+        if (a === "manage") return "Managed";
+        if (a === "revert") return "Reverted";
+        if (a === "fetch") return "Fetched";
+        if (a === "mark_enter" || a === "mark_exit") return "Marked";
+        return "";
+      })();
+      const _tok = (() => {
+        const m = raw.match(/~\s*(\d+)\s*tok/);
+        const n = m ? Number(m[1]) : 0;
+        if (!Number.isFinite(n) || n <= 0) return "";
+        return n >= 1000 ? `${(n / 1000).toFixed(1)}K tokens` : `${n} tokens`;
+      })();
+      const summary = (_verb && _tok) ? `${_verb} ${_tok}` : firstLine
         .replace(/^amem\s+\w+\s*/, "")
         .replace(/^"[^"]*"\s*→\s*/, "")
         .replace(/\s*\([^)]*\)/, "")
@@ -823,7 +843,7 @@ export function registerAmemTool(pi: ExtensionAPI, deps: AmemDeps): void {
 
         const rel = `MemoryData/${path.basename(deps.personDir()!)}/ActiveManage/${amId}.json`;
         return { content: [{ type: "text", text:
-          `amem manage ${JSON.stringify(params.title)} → revision(${block.length}c), archived ${amId}\n` +
+          `amem manage ${JSON.stringify(params.title)} → replaced ~${entry.excised_tokens} tok (revision ${block.length}c), archived ${amId}\n` +
           `replaced: begin_index=${m.begin_index}, end_index=${m.end_index}, length=${m.length}, context_length_before=${ctx.length}\n` +
           `after: begin_index=${m.begin_index}, end_index=${m.begin_index + block.length}, length=${block.length}, context_length_after=${newCtx.length}\n` +
           (ts.earliest ? `time_span: ${ts.earliest} ~ ${ts.latest}\n` : "") + `archived: ${rel}` }],
