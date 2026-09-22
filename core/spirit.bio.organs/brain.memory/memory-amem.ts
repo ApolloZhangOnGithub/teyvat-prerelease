@@ -470,7 +470,7 @@ export function registerAmemTool(pi: ExtensionAPI, deps: AmemDeps): void {
         return renderMessage.summary(theme, { ...ctx, isError: true }, cleaned);
       }
       // 2026-09-13（用户）：Amem 输出三态——隐藏 / 折叠（默认，只显一行摘要）/ 显示（完整含参数表格）
-      const amemDisplay = (globalThis as any).__genshinAmemDisplay ?? "fold";
+      const amemDisplay = (globalThis as any).__genshinAmemDisplay ?? "show";
       if (amemDisplay === "hide") return renderMessage.silent();
       // 2026-09-13（修复）：这里之前用裸 require——memory.ts 是 ESM（顶部无 createRequire），require 未定义
       // → renderResult 抛 ReferenceError 被 pi 的 catch 静默吞掉 → 走通用 fallback（⎿+原文）——amem 三态从未生效的根因。
