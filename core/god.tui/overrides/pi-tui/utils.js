@@ -61,6 +61,9 @@ const markCharRegex = /^\p{Mark}$/v;
 // This includes Unicode spacing marks and non-spacing exceptions in legacy wcwidth tables.
 const terminalSpacingMarkRegex = /^(?:[\p{Spacing_Mark}--[\u1734\u302E\u302F]]|[\u065F\u0F7F\u102B\u102C\u1031\u1033-\u1035\u1038\u103A-\u103E])+$/v;
 const rgiEmojiRegex = /^\p{RGI_Emoji}$/v;
+// 2026-09-23（ISSUE 270 追加）：文本呈现 emoji（⚠ ❤ 等：emoji 区块里、\p{Emoji} 但默认文本、不带 VS16）。
+// rgiEmojiRegex 只认带 VS16 的 RGI 形态，漏了这类 → EAW 表判窄(1 格)、终端画宽(2 格) → 叠字。
+const textEmojiRegex = /^\p{Emoji}$/v;
 // Cache for non-ASCII strings
 const WIDTH_CACHE_SIZE = 8192; // teyvat: 0.80.7 时代定制（原 512），长会话减少宽度缓存抖动
 const widthCache = new Map();
@@ -183,8 +186,9 @@ function graphemeWidth(segment) {
     // Emoji check with pre-filter（2026-09-11 验证：⚠️/✅/🔄/🟢 等常见 emoji 在 Intl.Segmenter
     // 下保持为单个 grapheme，couldBeEmoji 通过 0x2600..0x27bf 范围 + VS16 检测正确识别，
     // rgiEmojiRegex 匹配成功返回 2。圈数字 ①②③ 在下方 0x2460-0x24ff 单独处理。
+    // 2026-09-23：textEmojiRegex 补上「不带 VS16 但终端画宽」的 emoji（⚠ ❤），仍是 2 格。
     // 如果有终端下 emoji 对齐问题，原因更可能在字体渲染侧而非宽度计算。）
-    if (couldBeEmoji(segment) && rgiEmojiRegex.test(segment)) {
+    if (couldBeEmoji(segment) && (rgiEmojiRegex.test(segment) || textEmojiRegex.test(segment))) {
         return 2;
     }
     // Get base visible codepoint
