@@ -412,22 +412,24 @@ export const renderMessage = {
     const text = stripResultTokenMark(content?.[0]?.text ?? "");
     if (!text || !_Markdown) return this.output(theme, ctx, content);
     const err = isToolError(ctx?.toolName, text, ctx);
-    // 用 theme 现构造 markdownTheme（同 getMarkdownTheme 的映射；strikethrough/高亮降级，表格渲染不依赖它们）
+    // 用 theme 现构造 markdownTheme（同 getMarkdownTheme 的映射）；strikethrough/高亮降级，表格渲染不依赖它们
+    // 2026-09-23：tool result 的 markdown 统一用 toolOutput 色（偏灰），与 assistant 正文的富文本色区分——保持「工具结果」辨识度
+    const dim = (s) => theme.fg("toolOutput", s);
     const mdTheme = {
-      heading: (s) => theme.fg("mdHeading", s),
-      link: (s) => theme.fg("mdLink", s),
-      linkUrl: (s) => theme.fg("mdLinkUrl", s),
-      code: (s) => theme.fg("mdCode", s),
-      codeBlock: (s) => theme.fg("mdCodeBlock", s),
-      codeBlockBorder: (s) => theme.fg("mdCodeBlockBorder", s),
-      quote: (s) => theme.fg("mdQuote", s),
-      quoteBorder: (s) => theme.fg("mdQuoteBorder", s),
-      hr: (s) => theme.fg("mdHr", s),
-      listBullet: (s) => theme.fg("mdListBullet", s),
-      bold: (s) => theme.bold(s),
-      italic: (s) => theme.italic(s),
-      underline: (s) => theme.underline(s),
-      strikethrough: (s) => (theme.strikethrough ? theme.strikethrough(s) : s),
+      heading: dim,
+      link: dim,
+      linkUrl: dim,
+      code: dim,
+      codeBlock: dim,
+      codeBlockBorder: dim,
+      quote: dim,
+      quoteBorder: dim,
+      hr: dim,
+      listBullet: dim,
+      bold: dim,
+      italic: dim,
+      underline: dim,
+      strikethrough: dim,
     };
     const md = new _Markdown(text, GUTTER, 0, mdTheme);
     const dotStr = (err ? theme.fg("error", SYM.result + " ") : theme.fg("dim", SYM.result + " "));
