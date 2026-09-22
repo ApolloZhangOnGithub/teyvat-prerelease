@@ -97,7 +97,7 @@ export function registerStatusTool(_pi: ExtensionAPI) {
           const fmt = (ts: string) => { const d = new Date(ts); if (isNaN(d.getTime())) return "?"; const p = (n: number) => String(n).padStart(2, "0"); return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
           const dur = (a: number, b: number) => { const s = Math.round(Math.max(0, b - a) / 1000); return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`; };
           const reasonLabel: Record<string, string> = {
-            "startup": T("正常启动", "normal start"), "self-reboot": T("自重启", "self-reboot"), "user-ctrl-c": T("Ctrl+C 退出", "Ctrl+C exit"),
+            "startup": T("正常启动", "normal start"), "full-reboot": T("自重启", "full-reboot"), "user-ctrl-c": T("Ctrl+C 退出", "Ctrl+C exit"),
             "crash": T("错误闪退", "crash"), "shutdown": T("正常退出", "normal exit"), "hibernate": T("休眠", "hibernate"), "unknown": T("未知", "unknown"),
           };
           // 历史段：startup.log 中早于 sessions.log 第一条 start 的启动（管线启用前，无真实结束/原因）

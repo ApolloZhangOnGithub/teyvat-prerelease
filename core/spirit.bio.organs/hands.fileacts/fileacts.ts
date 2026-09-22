@@ -325,7 +325,7 @@ function _stripQuoted(cmd: string): string {
 //   ③ cwd 参数原来不参与校验——`execute({command:"cat context.md", cwd:"~/.teyvat/MemoryData/<other>"})` 绕过他人目录守卫。现在拼成 `cd <cwd> && cmd` 后再做路径匹配。
 //   ④ 内联代码禁令原来锚定行首且只认 python/bash——`cd . && python3 -c`、`sh -c`、`node -e`、`perl -e` 全放行。
 //   ⑤ 凭据文件（~/.ssh、UserAccount、authorize/auth/models.json 等）在 execute 里毫无限制，与 read/upload 的保护不一致——补上。
-//   ⑥ 自授权：RuntimeCache/<self>/*-auth* 是 self-reboot/switch-model 的授权标志，自己目录放行规则让 agent 能 `echo > …-auth.json` 自授权——写操作拦下。
+//   ⑥ 自授权：RuntimeCache/<self>/*-auth* 是 full-reboot/switch-model 的授权标志，自己目录放行规则让 agent 能 `echo > …-auth.json` 自授权——写操作拦下。
 export function validateExecute(cmd: string, selfId?: string, cwd?: string): { blocked: boolean; message?: string } {
   const stripped = _stripQuoted(cmd);
   const SINGLE_CMD_TAIL = "[^;&|\\n<>`$]*$";
