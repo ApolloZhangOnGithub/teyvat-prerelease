@@ -404,6 +404,15 @@ export class FooterComponent {
         if (globalThis.__genshinFooterVersion !== false && _cachedDevVer) {
           modelDisplay = `${modelDisplay}  ${theme.fg("muted", _cachedDevVer)}`;
         }
+        // 2026-09-23（用户：余额预警）——footer 显示余额（默认关，__genshinFooterBalance === true 时显示）
+        if (globalThis.__genshinFooterBalance === true) {
+          const bal = globalThis.__genshinBalanceCache;
+          if (bal && !bal.unavailable && bal.total_balance) {
+            modelDisplay = `${modelDisplay}  ${theme.fg("muted", `¥${bal.total_balance}${bal.is_available ? "" : " ⚠"}`)}`;
+          } else if (bal?.unavailable) {
+            modelDisplay = `${modelDisplay}  ${theme.fg("muted", "bal n/a")}`;
+          }
+        }
         const modelDisplayW = visibleWidth(modelDisplay);
         // 2026-09-13（用户）：footer 模型名可隐藏（/u 开关，默认显示）
         const showModel = globalThis.__genshinFooterModel !== false;

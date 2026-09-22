@@ -730,6 +730,14 @@ export default function registerMemory(pi: ExtensionAPI) {
   pi.on("before_agent_start", async (_event, _ctx) => {
     if (!personDir) return;
     _refreshModelMax(); // 2026-09-13：扩展加载时 __genshinGetModel 尚未注册，modelMax 是 1M 兜底——首轮/切模型后不刷新会把 200k 模型按 1M 算（ratio 偏小 5 倍）
+    // 2026-09-23（用户：余额预警）——60s 节流查一次 DeepSeek 余额（provider 是 deepseek 时，fire-and-forget）
+    const _nowB = Date.now();
+    if (_nowB - ((globalThis as any).__genshinLastBalanceCheck || 0) > 60000) {
+      (globalThis as any).__genshinLastBalanceCheck = _nowB;
+      if ((globalThis as any).__genshinGetModel?.()?.provider === "deepseek") {
+        void (globalThis as any).__genshinCheckBalance?.().catch(() => {});
+      }
+    }
     const context = readFile(path.join(personDir, "context.md"));
     // const workMem = readFile(path.join(personDir, "work_memory.md"));
     // const cortex = readFile(path.join(personDir, "neocortex.md"));
