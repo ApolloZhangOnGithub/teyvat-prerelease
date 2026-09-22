@@ -28,6 +28,18 @@ export const SYM = _needsAsciiSym
   : { dot: "⏺", diamond: "◆", diamondOpen: "◇", result: "⎿", star: "✤", snow: "❄", prompt: "❯", arrow: "▸" };
 globalThis.__genshinSYM = SYM;
 
+// 2026-09-22（用户：result/social 折行有时顶头、不跟“序号后的文字”对齐；要求**统一函数和渲染管线**）：
+// 前缀识别原来在**三处各写一份**（hangWrapText / 挂起折行 helper / bulletText），改一处漏两处；
+// 且三份都**不认**「数字 + 两个以上空格」这种形态（Read/Write/social 行号栏就是 `  1  code`）→
+// indW=0 → 续行只拿到块缩进 → 对不上序号后的文字（表现为顶头）。现在收口到这一处，三处共用。
+// 形态：bullet 符号类 / `1 │ ` / `1+ ` / `1\t` /「数字 + 两个以上空格」
+const PREFIX_RE = /^(\s*(?:(?:[•◦●○$⎿⏺∴▸→◆◇*>]|\d+\s*│)\s+|\d+\s*[+\-]\s|\s*\d+\t|\s*\d+ {2,})?)/;
+export function prefixWidthOf(line, visibleWidth) {
+  const stripped = String(line).replace(/\x1b\[[0-9;]*m/g, "");
+  const m = stripped.match(PREFIX_RE);
+  return m && m[1] ? visibleWidth(m[1]) : 0;
+}
+
 // 状态点（工具用）：进行=◦(accent) / 错=•(error) / 成功=•(success)。统一在这里，别各处各写。
 // 2026-08-14 用户定稿：进行中/等待中（partial）本身是空心黄 ◦，为美观统一用实心黄 •。
 // 空心语义保留在此注释：未完成=空心，完成/出错=实心。
@@ -122,9 +134,8 @@ export function markdownBullet(md, dotStr, width) {
 // 续行和「前缀后面的字」同列。无前缀则退回普通 wrapTextWithAnsi，行为不变（不影响别的 Text 用途）。
 export function hangWrapText(text, width, h) {
   const { visibleWidth, wrapTextWithAnsi } = h;
-  const stripped = String(text).replace(new RegExp(String.fromCharCode(27) + "\\[[0-9;]*m", "g"), "");
-  const pm = stripped.match(/^(\s*(?:(?:[•◦●○$⎿⏺∴▸→◆◇*>]|\d+\s*│)\s+|\d+\s*[+\-]\s|\s*\d+\t)?)/);
-  const indW = (pm && pm[1]) ? visibleWidth(pm[1]) : 0;
+  const stripped = String(text).replace(new RegExp(String.fromCharCode(27) + "\\[[0-9;]*m", "g"), ""); // 下游还要用（长 token 断点判断）
+  const indW = prefixWidthOf(text, visibleWidth); // 2026-09-22：前缀识别收口到 prefixWidthOf（此前三处各写一份）
   if (indW <= 0 || indW >= width) return wrapTextWithAnsi(text, width);
   if (visibleWidth(text) <= width) return wrapTextWithAnsi(text, width);
   // 预处理：长 token 含 / 时插入断点（空格后复原），避免 breakLongWord 逐字硬切路径
@@ -162,8 +173,7 @@ export function wrapHanging(lines, width, h) {
   for (const line of lines) {
     if (typeof line !== "string" || isImageLine(line) || visibleWidth(line) <= width) { out.push(line); continue; }
     const stripped = line.replace(new RegExp(String.fromCharCode(27) + "\\[[0-9;]*m", "g"), "");
-    const pm = stripped.match(/^(\s*(?:(?:[•◦●○$⎿⏺∴▸→◆◇*>]|\d+\s*│)\s+|\d+\s*[+\-]\s|\s*\d+\t)?)/);
-    const indW = pm && pm[1] ? visibleWidth(pm[1]) : 0;
+    const indW = prefixWidthOf(line, visibleWidth); // 2026-09-22：收口（同 hangWrapText 一份）
     const indent = (indW > 0 && indW < width) ? " ".repeat(indW) : "";
     let col = 0; const total = visibleWidth(line); let first = true;
     while (col < total) {
@@ -224,8 +234,8 @@ export function bulletText(dotStr, text, cont) {
       const h = { visibleWidth: _visibleWidth, wrapTextWithAnsi: _wrapTextWithAnsi };
       // 先按 \n 拆行，每行独立折行
       const rawLines = this.text.split('\n');
-      const firstPrefix = rawLines[0].replace(/\x1b\[[0-9;]*m/g, '').match(/^(\s*(?:(?:[•◦●○$⎿⏺∴▸→*>]|\d+\s*│)\s+|\d+\s*[+\-]\s|\s*\d+\t)?)/)?.[0] || '';
-      const indentW = firstPrefix ? _visibleWidth(firstPrefix) : 0;
+      // 2026-09-22：前缀识别收口到 prefixWidthOf（此前三处各写一份，且都不认「数字 + 两个空格」）
+      const indentW = prefixWidthOf(rawLines[0], _visibleWidth);
       // 提取第一行的 ANSI SGR 码注入后续行，避免 \n 后丢失颜色
       const ansiCodes = rawLines[0].match(/\x1b\[[0-9;]*m/g) || [];
       const ansiPrefix = ansiCodes.filter(c => c !== '\x1b[0m').join('');
