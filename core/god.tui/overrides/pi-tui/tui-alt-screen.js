@@ -110,13 +110,15 @@ export class TuiAltScreen extends TuiBase {
         this.flashes.dispose();
         this.altScreenActive = true;
         const capabilities = getCapabilities();
-        this.imageProtocol = capabilities.images;
         this.uploadedKittyImages.clear();
+        // 2026-09-23：iTerm2 3.5+ 支持 kitty graphics 协议（APC G，有 image ID 可管理），
+        // 改走 kitty 而非禁用（iTerm2 自己的 inline image 协议无 ID，alt-screen 重绘下不可管理）
         if (capabilities.images === "iterm2") {
             this.savedCapabilities = capabilities;
-            setCapabilities({ ...capabilities, images: null });
+            setCapabilities({ ...capabilities, images: "kitty" });
             this.invalidate();
         }
+        this.imageProtocol = getCapabilities().images;
         this.lastDocument = [];
         this.selectionAnchor = undefined;
         this.selectionFocus = undefined;
