@@ -175,6 +175,11 @@ function graphemeWidth(segment) {
     if (zeroWidthRegex.test(segment)) {
         return 0;
     }
+    // keycap emoji（1️⃣ 2️⃣ … #️⃣ *️⃣）：digit/#/* + U+20E3（combining enclosing keycap）。
+    // 带不带 VS16 终端都按 2 格宽渲染；EAW 表把 base 判窄、U+20E3 当 mark → 只算 1 格 → 叠字/光标错位（用户报"4️⃣ 和字重叠"）。
+    if (segment.includes("\u20E3")) {
+        return 2;
+    }
     // Emoji check with pre-filter（2026-09-11 验证：⚠️/✅/🔄/🟢 等常见 emoji 在 Intl.Segmenter
     // 下保持为单个 grapheme，couldBeEmoji 通过 0x2600..0x27bf 范围 + VS16 检测正确识别，
     // rgiEmojiRegex 匹配成功返回 2。圈数字 ①②③ 在下方 0x2460-0x24ff 单独处理。
