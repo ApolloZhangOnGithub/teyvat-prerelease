@@ -9,6 +9,29 @@ function wsKey(githubId: number, personId: string): string {
   return `${githubId}:${personId}`;
 }
 
+// 2026-09-22（ISSUE 150 剩余项：WS 假活连接治理）：
+// `routeMessage` 对**死连接**调 `ws.send()` 不会立刻报错（TCP 要等到超时才暴露）→ 连接表里会积累"假活"条目：
+// 既占内存，又让 routeMessage 误判"已即时推送"（150 的主修复已改成**总是落库**，所以不影响送达——这里是治本）。
+//
+// 做法（**保守**）：每 30s 扫一遍——readyState 已非 OPEN 的直接摘掉；同时发一个 ping 促使死链路尽快"爆"而触发 close 回调。
+// **不因"没收到 pong"就 terminate**：Bun 的 ServerWebSocket 与 Node 的 ws 对 pong 事件支持不一致，
+// 误判会一口气踢掉所有正常连接（比假活更糟）。宁可不治也不误伤。
+const WS_HEARTBEAT_MS = 30_000;
+let _wsHeartbeat: any = null;
+function _ensureWsHeartbeat() {
+  if (_wsHeartbeat) return;
+  _wsHeartbeat = setInterval(() => {
+    for (const [k, conns] of wsConnections) {
+      for (const ws of conns) {
+        if (ws?.readyState !== undefined && ws.readyState !== 1) { conns.delete(ws); continue; }
+        try { ws.ping?.(); } catch { conns.delete(ws); }
+      }
+      if (conns.size === 0) wsConnections.delete(k);
+    }
+  }, WS_HEARTBEAT_MS);
+  _wsHeartbeat.unref?.(); // 不阻止进程退出（服务/测试均可）
+}
+
 export function broadcastToUser(githubId: number, msg: any) {
   const payload = JSON.stringify(msg);
   for (const [key, conns] of wsConnections) {
@@ -37,6 +60,7 @@ export function registerWs(githubId: number, personId: string, ws: any) {
   const key = wsKey(githubId, personId);
   if (!wsConnections.has(key)) wsConnections.set(key, new Set());
   wsConnections.get(key)!.add(ws);
+  _ensureWsHeartbeat(); // 2026-09-22（ISSUE 150）：惰性启动心跳（首个连接注册时起，unref 不阻进程退出）
   return () => {
     wsConnections.get(key)?.delete(ws);
     if (wsConnections.get(key)?.size === 0) wsConnections.delete(key);

@@ -202,7 +202,11 @@ function isSystemProtected(path: string): boolean {
     p.includes("/fileacts.ts") ||
     p.includes("/pi-coding-agent/dist/") ||
     p.includes("/.teyvat/") ||
-    p.includes("/r.release/") ||
+    // 2026-09-22（用户指出：本意**不是**拦整个 R 区——R.release/website 是生态**工作仓**，
+    // 部署脚本、nginx 配置就在那儿，拦了反而做不了运维）：只把**已发布产物 / 历史版本**当系统保护，
+    // 其余（website/ dev/ prerelease/ 等）放行 → 它们会继续走下面的 /a 白名单（checkAuth），安全性不降。
+    p.includes("/r.release/build-artifacts/") ||
+    p.includes("/r.release/historical/") ||
     p.includes("/.local/bin/pi") || p.includes("/.local/bin/genshin") ||
     p.includes("/.local/lib/teyvat/") ||
     isWalletProtected(path);
@@ -510,8 +514,9 @@ export default function (pi: ExtensionAPI) {
           return { block: true, reason: i18n(`请不要读 ~/.teyvat/agent/。请阅读 ~/Documents/Agent Intelligence/MODERN/TEYVAT/teyvat-main/A.core/ 开发目录中的源文件。`, `Do not read ~/.teyvat/agent/. Read the source files in ~/Documents/Agent Intelligence/MODERN/TEYVAT/teyvat-main/A.core/.`) };
         }
       }
-      if (apl.includes("/r.release/") && !isRead) {
-        return { block: true, reason: i18n(`RELEASE 保护 — 不要改已经发布的版本。`, `RELEASE protected — do not modify released versions.`) };
+      // 2026-09-22：同上——只拦真正的发布产物/历史版本（构建 tarball、历史归档）。
+      if ((apl.includes("/r.release/build-artifacts/") || apl.includes("/r.release/historical/")) && !isRead) {
+        return { block: true, reason: i18n(`RELEASE 保护 — 构建产物/历史版本不可改（要改请改源码走 make）。`, `RELEASE protected — build artifacts / historical releases are immutable (change the source and use make).`) };
       }
       if (!isRead) {
         return { block: true, reason: i18n(`系统保护 — ${authPath.split("/").pop()} 由系统管理，agent 不可修改。`, `System protected — ${authPath.split("/").pop()} is managed by the system; agents cannot modify it.`) };
