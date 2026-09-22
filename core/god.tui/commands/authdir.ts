@@ -215,6 +215,12 @@ export async function authdirHandler(args: string, ctx: any, tools?: { getActive
   const min = mm[2] ? parseInt(mm[2], 10) : NaN;
   if (!rawPath) { ctx.ui.notify(T("/authdir <目录> [分钟] | /a all | /authdir remove <目录|all>", "/authdir <dir> [minutes] | /a all | /authdir remove <dir|all>"), "warning"); return; }
   const p = resolve(rawPath.replace(/^~(?=\/|$)/, homedir()));
+  // 2026-09-23 用户：授权必须验证目录存在（不能授一个不存在的路径）
+  const { existsSync } = await import("node:fs");
+  if (!existsSync(p)) {
+    ctx.ui.notify(T(`目录不存在，无法授权: ${p}`, `Directory does not exist, cannot authorize: ${p}`), "warning");
+    return;
+  }
   e.trusted = e.trusted.filter(t => t.path !== p);
   e.trusted.push({ path: p, until: Number.isFinite(min) && min > 0 ? Date.now() + min * 60000 : undefined });
   await saveTrust();

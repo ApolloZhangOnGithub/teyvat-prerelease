@@ -306,27 +306,41 @@ export function registerStatusTool(_pi: ExtensionAPI) {
           const readAuth = (f: string): any => {
             try { return JSON.parse(readFileSync(join(rcDir, f), "utf8")); } catch { return null; }
           };
-          const lines: string[] = [T("授权状态（时间=授权时刻）", "Permissions (time = authorized at)") + ":"];
+          const on = T("开", "on"), off = T("关", "off"), yes = T("已授权", "authorized"), no = T("未授权", "not authorized");
+          const L: string[] = [T("授权状态（时间=授权时刻）", "Permissions (time = authorized at)") + ":"];
+          // 【重启】
+          L.push("  " + T("【重启】", "[reboot]"));
           const fr = readAuth("full-reboot-auth");
-          lines.push(`  full-reboot:  ${fr?.authorized ? T("已授权", "authorized") : T("未授权", "not authorized")}${fr?.ts ? ` (${fmtTs(fr.ts)})` : ""}`);
+          L.push(`    full-reboot: ${fr?.authorized ? yes : no}${fr?.ts ? ` (${fmtTs(fr.ts)})` : ""}`);
           const sr = readAuth("self-reboot-auth");
-          lines.push(`  self-reboot:  ${sr?.authorized ? T("已授权", "authorized") : T("未授权", "not authorized")}${sr?.ts ? ` (${fmtTs(sr.ts)})` : ""}${sr?.authorized ? " [legacy]" : ""}`);
+          if (sr?.authorized) L.push(`    self-reboot: ${yes} (${fmtTs(sr.ts)}) [legacy]`); // 未授权不显示（legacy，2026-09-23）
+          // 【模型】
+          L.push("  " + T("【模型】", "[model]"));
           const ms = readAuth("model-switch-auth.json");
           const msDesc = ms?.authorized ? (ms?.all ? T("任意", "any") : ((ms?.models || []).join(",") || "?")) : "";
-          lines.push(`  model-switch: ${ms?.authorized ? T("已授权", "authorized") : T("未授权", "not authorized")}${ms?.authorized ? ` (${msDesc})` : ""}${ms?.ts ? ` (${fmtTs(ms.ts)})` : ""}`);
+          L.push(`    model-switch: ${ms?.authorized ? yes : no}${ms?.authorized ? ` (${msDesc})` : ""}${ms?.ts ? ` (${fmtTs(ms.ts)})` : ""}`);
+          // 【目录/文件】
+          L.push("  " + T("【目录/文件】", "[dirs/files]"));
           try {
             const trust = JSON.parse(readFileSync(join(homedir(), ".teyvat/config/authorize.json"), "utf8"));
             const e = trust?.agents?.[pid] || {};
-            lines.push(`  ${T("全量白名单", "full whitelist")}(all): ${e.all ? T("开", "on") : T("关", "off")}`);
-            lines.push(`  ${T("root 授权", "root auth")}:       ${e.root ? T("开", "on") : T("关", "off")}`);
+            L.push(`    ${T("全量白名单", "full whitelist")}(all): ${e.all ? on : off}`);
+            L.push(`    ${T("root 授权", "root auth")}: ${e.root ? on : off}`);
             const dirs = (e.trusted || []).filter((t: any) => !t.until || t.until > Date.now());
-            lines.push(`  ${T("信任目录", "trusted dirs")}:       ${dirs.length ? dirs.map((t: any) => t.path).join(", ") : T("(无)", "(none)")}`);
+            if (dirs.length) {
+              L.push(`    ${T("信任目录", "trusted dirs")} (${dirs.length}):`);
+              for (const t of dirs) L.push(`      - ${t.path}${t.until ? ` ${T("(剩", "(left")} ${Math.ceil((t.until - Date.now()) / 60000)}${T("分钟)", "min)")}` : ""}`);
+            } else {
+              L.push(`    ${T("信任目录", "trusted dirs")}: ${T("(无)", "(none)")}`);
+            }
           } catch { /* authorize.json 不存在 */ }
+          // 【工具】
+          L.push("  " + T("【工具】", "[tools]"));
           try {
             const ta = JSON.parse(readFileSync(join(homedir(), ".teyvat/config/tools-auth", pid, "tools-auth.json"), "utf8"));
-            lines.push(`  ${T("工具持久授权", "persistent tool auth")}: enable[${(ta.enabled || []).join(",") || T("无", "none")}] disable[${(ta.disabled || []).join(",") || T("无", "none")}]`);
-          } catch { /* 无持久授权 */ }
-          return { content: [{ type: "text", text: lines.join("\n") }] };
+            L.push(`    ${T("持久授权", "persistent")}: enable[${(ta.enabled || []).join(",") || T("无", "none")}] disable[${(ta.disabled || []).join(",") || T("无", "none")}]`);
+          } catch { L.push(`    ${T("持久授权", "persistent")}: ${T("(无)", "(none)")}`); }
+          return { content: [{ type: "text", text: L.join("\n") }] };
         } catch (e: any) {
           return { content: [{ type: "text", text: T(`读取权限失败: ${e?.message || e}`, `Failed to read permissions: ${e?.message || e}`) }], isError: true };
         }

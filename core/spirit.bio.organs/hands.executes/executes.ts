@@ -492,6 +492,13 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
 
       // grep auto-color
       const cmdFinal = /^grep/.test(cmd) && !/--color/.test(cmd) ? cmd.replace(/^grep/, 'grep --color=always') : cmd;
+      // 2026-09-23（#11 imac agent：nohup xxx & 会让进程脱离 execute 托管、收不到 cmd-done）——
+      // 剥离 nohup 前缀 + 尾部 &，让命令走正常执行（慢命令自动后台托管 + 完成自动返回），无需手动 nohup。
+      let cmdRun = cmdFinal;
+      let strippedBg = false;
+      if (/^\s*nohup\b/i.test(cmdRun)) { cmdRun = cmdRun.replace(/^\s*nohup\b\s*/i, ""); strippedBg = true; }
+      if (/\s&\s*$/.test(cmdRun) && !/&&\s*$/.test(cmdRun)) { cmdRun = cmdRun.replace(/\s*&\s*$/, ""); strippedBg = true; }
+      const strippedNote = strippedBg ? i18n(`\n[nohup/& 已自动剥离：慢命令会自动后台托管 + 完成推送，无需手动 nohup/&]`, `\n[nohup/& auto-stripped: slow commands auto-background + notify, no manual nohup/& needed]`) : "";
       // @ 前缀 = 查询/管理后台任务
       // @        列出所有后台任务
       // @N       查看第 N 个任务详情(支持多个:@3 @4 或 @3; @4)
@@ -675,7 +682,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
       const startTime = Date.now();
       const wantStream = params.stream === true;
       const ac = new AbortController();
-      const execPromise = pi.exec("bash", ["-c", cmdFinal], { signal: ac.signal, cwd: (params as any).cwd || undefined });
+      const execPromise = pi.exec("bash", ["-c", cmdRun], { signal: ac.signal, cwd: (params as any).cwd || undefined });
 
       const race = await Promise.race([
         execPromise.then(r => ({ done: true as const, result: r })),
@@ -697,7 +704,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
         const bgInfo = running.size > 0 ? i18n(`\n[background: ${running.size} running - 用 @ 查看, @N kill]`, `\n[background: ${running.size} running - use @ to view, @N kill]`) : "";
         const recInfo = recFile ? `\n[id: ${recId}]` : "";
         return {
-          content: [{ type: "text", text: `${output || "(no output)"}${exitInfo}${bgInfo}${recInfo}` }],
+          content: [{ type: "text", text: `${output || "(no output)"}${exitInfo}${strippedNote}${bgInfo}${recInfo}` }],
           // 快命令同步执行:execId 用于渲染 Process <id> done in X sec 摘要行;
           // 无 createdInfo(未创建后台进程)
           // 2026-09-08(用户:别用 replace 剥垃圾--信息源头分开):renderText = 用户显示的干净文本(无 bgInfo/recInfo 元信息行)--
