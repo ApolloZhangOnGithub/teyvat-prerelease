@@ -1241,8 +1241,8 @@ function registerSocialTools(pi: ExtensionAPI): void {
         }
         else if (a === "check-message") summary = `${d.unread !== undefined ? `${theme.bold(String(d.unread))} new / ` : ""}${theme.bold(String(d.count ?? 0))} msg`;
         c.addChild(new Text(indent + theme.fg("dim", SYM.result + "  ") + summary + "  " + theme.fg("dim", `[${tsStr}]`), 0, 0));
-        // send 显示发送的具体内容（用户要求）；单发时 summary 已含接收方+mode，不再重复 receipt 行
-        if (a === "send" && d.text) {
+        // send / public send 都要显示消息正文（用户 2026-09-24：public 发出去根本看不到消息）；单发时 summary 已含接收方+mode，不再重复 receipt 行
+        if ((a === "send" || (a === "public" && d.gop === "send")) && d.text) {
           c.addChild(new Text(indent + "  " + d.text, 0, 0));
         }
         const skipLines = a === "send" && d.count === 1;
@@ -1657,7 +1657,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
               const out = await sendMessage({ to: `public:${rid}`, text, mode: "interrupt", at });
               const receipts = out.receipts as any[];
               const lines = receipts.map(r => `${displayName(r.to)}: ${r.status} (mode: ${r.mode_used})`);
-              return { content: [{ type: "text", text: `Public "${rid}" seq ${out.seq} (${receipts.length} receivers):\n${lines.map(l => "  " + l).join("\n")}` }], details: { social: true, action: "public", gop: "send", roomId: rid, roomName: (loadPublic(rid)?.name ?? rid), count: receipts.length, seq: out.seq, lines } };
+              return { content: [{ type: "text", text: `Public "${rid}" seq ${out.seq} (${receipts.length} receivers):\n${lines.map(l => "  " + l).join("\n")}` }], details: { social: true, action: "public", gop: "send", roomId: rid, roomName: (loadPublic(rid)?.name ?? rid), count: receipts.length, seq: out.seq, text, lines } };
             }
             case "history": {
               const rid = String(p.gid ?? "").trim();
