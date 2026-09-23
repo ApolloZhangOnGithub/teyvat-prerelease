@@ -201,16 +201,28 @@ export default function registerMemory(pi: ExtensionAPI) {
     const _sess = (globalThis as any).__genshinGetSession?.();
     const _msgs = _sess?.agent?.state?.messages;
     if (Array.isArray(_msgs)) {
-      const _kept: any[] = [];
+      // 先删 toolResult + 清 assistant 的 tool_calls（现有逻辑，避免 OpenAI 兼容 API 缺 tool_result 400）
+      const _noTool: any[] = [];
       for (const _m of _msgs) {
         if (!_m || _m.role === "toolResult") continue; // 删工具结果（api 大头）
         if (_m.role === "assistant" && Array.isArray(_m.tool_calls) && _m.tool_calls.length) {
           const _textOnly = (_m.content || []).filter((_c: any) => _c?.type === "text" || _c?.type === "thinking");
-          _kept.push({ ..._m, tool_calls: undefined, content: _textOnly.length ? _textOnly : [{ type: "text", text: "" }] });
+          _noTool.push({ ..._m, tool_calls: undefined, content: _textOnly.length ? _textOnly : [{ type: "text", text: "" }] });
           continue;
         }
-        _kept.push(_m);
+        _noTool.push(_m);
       }
+      // 正文热加载（2026-09-24 用户：正文也裁剪，不用 full-reboot）——
+      // 保留最近 _KEEP_TAIL 条，更旧的 assistant 正文替换成占位符（旧对话已由 amem manage 归档进 context.md / ActiveManage，可回查）。
+      // user 消息不裁（用户输入是最高优先级）。
+      const _KEEP_TAIL = 30;
+      const _cutoff = _noTool.length - _KEEP_TAIL;
+      const _kept = _noTool.map((_m: any, _idx: number) => {
+        if (_idx < _cutoff && _m?.role === "assistant") {
+          return { ..._m, content: [{ type: "text", text: "[更早的对话正文已由 amem 归档压缩，见 ActiveManage 可回查]" }] };
+        }
+        return _m;
+      });
       _sess.agent.state.messages = _kept;
     }
   }

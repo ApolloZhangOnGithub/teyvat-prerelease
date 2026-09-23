@@ -1497,11 +1497,16 @@ function registerSocialTools(pi: ExtensionAPI): void {
           const lines = receipts.map(r => `${displayName(r.to)}: ${r.status} (mode: ${r.mode_used})`);
           const toSid = receipts[0]?.to ?? "";
           const modeUsed = receipts[0]?.mode_used ?? p.mode ?? "interrupt";
-          const sendChan = channelOf(String(p.to ?? ""));
+          // 注意用**解析后**的 target（send + in:"<房间>" 时 p.to 为空 —— 用 p.to 会取不到房间，导致渲染/回执退化成通用式：2026-09-24 实测）
+          const sendChan = channelOf(target);
           // 2026-09-24（tester 指出边界）：结果行的名字解析必须与摘要行同源——
           // localNameOf 只查本地 registry（无远程回退），跨机 agent / 直用 sid 发送时会退化成「sid (sid)」；
           // 改用 displayNameShort（含 remoteNameCache 回退，且不含 sid），与摘要行 :1310 一致。
-          return { content: [{ type: "text", text: receipts.length === 1 ? `Sent and ${modeUsed} ${toSid ? displayNameShort(toSid) : p.to}${toSid ? ` (${toSid})` : ""}\n${p.text}` : `Sent and ${modeUsed} to ${receipts.length} receiver(s):\n${lines.map(l => "  " + l).join("\n")}\n\n${p.text}` }], details: { social: true, action: "send", count: receipts.length, target: p.to, targetDisplay: toSid ? displayName(toSid) : p.to, targetName: toSid ? displayNameShort(toSid) : p.to, targetSid: toSid, chanId: sendChan?.id, chanName: sendChan?.name, modeUsed, text: p.text, ts: Date.now(), lines } };
+          // 房间目标（send + in:"<房间id>"）：content 也用**房间式**说法（与摘要/渲染一致；2026-09-24 实测：send 走房间时 content 仍是通用式 ✗）
+          const contentText = sendChan
+            ? `Sent a message in ${sendChan.name || sendChan.id} (${sendChan.id})${p.text ? `\n${p.text}` : ""}`
+            : (receipts.length === 1 ? `Sent and ${modeUsed} ${toSid ? displayNameShort(toSid) : p.to}${toSid ? ` (${toSid})` : ""}\n${p.text}` : `Sent and ${modeUsed} to ${receipts.length} receiver(s):\n${lines.map(l => "  " + l).join("\n")}\n\n${p.text}`);
+          return { content: [{ type: "text", text: contentText }], details: { social: true, action: "send", count: receipts.length, target, targetDisplay: toSid ? displayName(toSid) : target, targetName: toSid ? displayNameShort(toSid) : target, targetSid: toSid, chanId: sendChan?.id, chanName: sendChan?.name, modeUsed, text: p.text, ts: Date.now(), lines } };
         }
         case "list": {
           // 2026-09-08（用户：list/global 冗余——组合参数）：list scope: 'local'(默认) | 'remote' | 'global'——scope=global 或带 view/device 参数时走跨设备视图（复用 socialGlobal；老 action:'global' 兼容别名同效果）；scope='remote' 走下方 remote 分支（等效旧 list remote:true）
