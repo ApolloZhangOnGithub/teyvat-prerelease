@@ -474,16 +474,22 @@ function savePublic(r: PublicRoom): void {
   writeJson(join(PUBLIC_DIR, `${r.id}.json`), r);
 }
 // 观察期埋点（2026-09-24，tester-01 建议）：**只计数、不干预、不改行为**。
-// 目的：让「参数误填」的观察期产出**数字**而非印象（尤其 send_missing_to_with_at = champion 实测 8/8 的形态）；
-// 到点即可用「过去 N 小时：send_missing_to_with_at = X 次」把提案带数据摆上桌。
-// 查看：cat ~/.teyvat/SocialData/metrics.json
+// 目的：让「参数误填」的观察期产出**数字**而非印象（尤其 send_missing_target_with_at = champion 实测 8/8 的形态）；
+// 到点即可用「过去 N 小时：send_missing_target_with_at = X 次」把提案带数据摆上桌。
+// **按调用者 sid 分桶**（tester-01 建议的第二重保险）：① 看得出来是"谁的习惯"而非一团总数；
+//   ② 期末其他 agent 的桶恒为 0 ⇒ **机器可验证的"零干预"**（比口头承诺硬）；③ 将来多 agent 用同一工具时可区分"个体习惯 vs 工具设计"。
+// 查看：cat ~/.teyvat/SocialData/metrics.json （期末按**窗口增量**算）
 function bumpMetric(key: string): void {
   try {
     const f = join(SOCIAL_DIR, "metrics.json");
-    const m = readJson<Record<string, number>>(f, {});
-    m[key] = (m[key] ?? 0) + 1;
-    m[`${key}__last`] = Date.now();
-    writeJson(f, m);
+    const all = readJson<Record<string, any>>(f, {});
+    const sid = getMySid() || "unknown";
+    const bucket: Record<string, number> = (all[sid] && typeof all[sid] === "object") ? all[sid] : {};
+    bucket[key] = (bucket[key] ?? 0) + 1;
+    bucket[`${key}__last`] = Date.now();
+    all[sid] = bucket;
+    all._updated = Date.now();
+    writeJson(f, all);
   } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] bumpMetric " + ((e as any)?.message || e)); }
 }
 function listPublics(): PublicRoom[] {
