@@ -286,7 +286,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
     parameters: Type.Object({
       command: Type.String({ messageDescription: "Shell command to execute" }),
       title: Type.String({ messageDescription: i18n("REQUIRED. Purpose of this command (why you run it), e.g. '确认权重已下载' - same command can have different intents; title captures the intent. Shows in @ list / /b / cmd-done instead of raw command", "REQUIRED. Purpose of this command (why you run it), e.g. 'verify weights downloaded' - same command can have different intents; title captures the intent. Shows in @ list / /b / cmd-done instead of raw command") }),
-      stream: Type.Optional(Type.Boolean({ messageDescription: "Stream output as command runs (long commands only)" })),
+      streamingRender: Type.Optional(Type.Boolean({ messageDescription: "@ABANDONED（2026-09-24 废弃：慢命令转后台后 _onUpdate 失效、快命令无机会流式，从未真正生效）。原 stream 参数——流式渲染慢命令后台输出" })),
       terminal: Type.Optional(Type.Boolean({ messageDescription: "Run in tmux TTY (for progress bars, interactive commands, long training)" })),
       name: Type.Optional(Type.String({ messageDescription: "Display label for a terminal task (e.g. train); manage it with action:'show'/'kill' + id" })),
       cwd: Type.Optional(Type.String({ messageDescription: "Working directory for this command (all modes; avoids hand-writing cd prefixes - explicit per-call, no state kept)" })),
@@ -712,7 +712,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
       }
 
       const startTime = Date.now();
-      const wantStream = params.stream === true;
+      const wantStream = params.streamingRender === true;
       const ac = new AbortController();
       const execPromise = pi.exec("bash", ["-c", cmdRun], { signal: ac.signal, cwd: (params as any).cwd || undefined });
 
