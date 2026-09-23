@@ -767,6 +767,25 @@ export default function registerMemory(pi: ExtensionAPI) {
         }).catch(() => {});
       }
     }
+    // 2026-09-24（用户：电量预警 <10%，只支持 macbook/win）——60s 节流探测，< 阈值且不充电 → 预警（只对 working）。
+    if (_nowB - ((globalThis as any).__genshinLastBatteryCheck || 0) > 60000) {
+      (globalThis as any).__genshinLastBatteryCheck = _nowB;
+      void (globalThis as any).__genshinCheckBattery?.().then((b: any) => {
+        try {
+          if (!b?.available || b.percent == null) return;
+          const warnPct = Number(process.env.GENSHIN_BATTERY_WARN_PCT || 10);
+          const low = b.percent < warnPct && !b.charging;
+          const wasLow = !!(globalThis as any).__genshinBatteryLow;
+          (globalThis as any).__genshinBatteryLow = low;
+          if ((globalThis as any).__genshinHeartState !== "working") return;
+          if (low && !wasLow) {
+            sendCustomMessage(pi, "memory-reminder", i18n(`⚠️ 电量不足：${b.percent}%（< ${warnPct}%），建议充电。`, `⚠️ Low battery: ${b.percent}% (< ${warnPct}%), suggest charging.`));
+          } else if (!low && wasLow) {
+            sendCustomMessage(pi, "memory-reminder", i18n(`✅ 电量已恢复：${b.percent}%，继续。`, `✅ Battery restored: ${b.percent}%, continuing.`));
+          }
+        } catch (e) { /* 预警失败静默 */ }
+      }).catch(() => {});
+    }
     const context = readFile(path.join(personDir, "context.md"));
     // const workMem = readFile(path.join(personDir, "work_memory.md"));
     // const cortex = readFile(path.join(personDir, "neocortex.md"));

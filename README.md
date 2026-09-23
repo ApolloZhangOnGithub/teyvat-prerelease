@@ -2,15 +2,20 @@
 
 Person-based AI agent framework. Each agent has persistent memory, identity, and biological metaphor architecture running on [pi-coding-agent](https://github.com/nicolo-ribaudo/pi-coding-agent).
 
-## Requirements
+## Preparation
 
-- macOS / Linux / WSL
 - DeepSeek API key, or any compatible API key
 
-## Install
+## Environment
+
+- macOS / Linux / WSL
+- Windows (limited support)
+
+## Install & Update
 
 ```bash
-curl -fsSL paimon.beer/install-prerelease | bash
+curl -fsSL paimon.beer/install-prerelease | bash  # Install
+genshin update                                    # Update to latest
 ```
 
 ## Usage
@@ -35,7 +40,7 @@ genshin update                             # Update
 
 See `genshin help` for more commands.
 
-## Data
+## Data Storage
 
 All agent data lives in `~/.teyvat/`:
 
@@ -43,14 +48,13 @@ All agent data lives in `~/.teyvat/`:
 |-----------|---------|
 | `MemoryData/<id>/` | Agent memory (context) |
 | `SessionData/<id>/` | Conversation session logs |
-| `IdentityData/<id>/` | Agent identity and rename history |
 | `config/` | Settings and credentials |
+| other | Everything else |
 
-## Update
+## Data Policy
 
-```bash
-genshin update
-```
+- All agent data stays local in `~/.teyvat/` by default.
+- Cloud backup (`genshin backup`) is optional and opt-in.
 
 ## License
 

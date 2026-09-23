@@ -7,6 +7,9 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from "no
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { createRequire } from "node:module";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+const _execFileAsync = promisify(execFile);
 const require = createRequire(import.meta.url); // 2026-09-13：@model 里 require(pi-ai models.generated.js) 在 ESM 下 ReferenceError 被 catch 吞掉 → 官方 catalog 从未合并进列表
 import { registerPaimonTool } from "#kernel_backbone";
 import { renderToolCall, renderMessage } from "#tui_blockrender";
@@ -98,6 +101,26 @@ async function checkBalanceShared(): Promise<any> {
   return r;
 }
 (globalThis as any).__genshinCheckBalanceShared = checkBalanceShared;
+
+// 电量探测（2026-09-24 用户：电量预警 <10%，只支持 macbook/win）——Health WIKI 待做项落地
+async function checkBattery(): Promise<{ percent: number | null; charging: boolean; available: boolean }> {
+  try {
+    if (process.platform === "darwin") {
+      const { stdout } = await _execFileAsync("pmset", ["-g", "batt"]);
+      const out = String(stdout || "");
+      const m = out.match(/(\d+)%/);
+      const charging = /charging|AC Power/i.test(out);
+      return { percent: m ? parseInt(m[1], 10) : null, charging, available: !!m };
+    } else if (process.platform === "win32") {
+      const { stdout } = await _execFileAsync("wmic", ["path", "Win32_Battery", "get", "EstimatedChargeRemaining"]);
+      const out = String(stdout || "");
+      const m = out.match(/(\d+)/);
+      return { percent: m ? parseInt(m[1], 10) : null, charging: false, available: !!m };
+    }
+  } catch { /* 无电池/命令不可用 */ }
+  return { percent: null, charging: false, available: false };
+}
+(globalThis as any).__genshinCheckBattery = checkBattery;
 
 export function registerStatusTool(_pi: ExtensionAPI) {
   registerPaimonTool({
