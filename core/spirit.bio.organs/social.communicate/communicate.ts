@@ -1062,6 +1062,9 @@ async function sendMessage(opts: { to: string; text: string; mode?: SocialMode; 
     //   原「读末条 seq + 1 → 追加」是**读-改-写竞态**——两个进程同时发会算出同一个 seq（撞号/乱序）。
     //   复用 withInboxLock 的跨进程互斥（mkdir 锁 + 陈锁接管），把「读 seq + 追加」整体串行化；
     //   追加本身是单行 O_APPEND 小写（POSIX 原子），读者不会看到半行。
+    // ⚠️ `ts` 必须留在锁内（tester 2026-09-24 指出）：history / check-message 是**按 ts 排序**
+    //    （`rows.sort((a,b)=>a.ts-b.ts)`）——若把 `ts: Date.now()` 挪到锁外，ts 序就可能与 seq 序不一致，
+    //    顺序断言立刻变 flaky。改这段代码时**别把 ts 拿出来**。
     const seq = withInboxLock(publicMsgFile(rid), () => {
       const prev = readPublicMsgs(rid);
       const s = prev.length ? (Number(prev[prev.length - 1].seq) || prev.length) + 1 : 1;
