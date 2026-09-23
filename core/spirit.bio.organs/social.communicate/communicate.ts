@@ -1093,6 +1093,12 @@ async function sendMessage(opts: { to: string; text: string; mode?: SocialMode; 
     // ⚠️ `ts` 必须留在锁内（tester 2026-09-24 指出）：history / check-message 是**按 ts 排序**
     //    （`rows.sort((a,b)=>a.ts-b.ts)`）——若把 `ts: Date.now()` 挪到锁外，ts 序就可能与 seq 序不一致，
     //    顺序断言立刻变 flaky。改这段代码时**别把 ts 拿出来**。
+    // ⚠️⚠️ 锁内两不变量（改这段代码前必读）——2026-09-24 五轮并发压测得出：
+    //   ① **持有时间必须 ≪ 陈锁阈值（5s）**：若某次合法持有 >5s，等待者会判「陈锁」并 rename 接管
+    //      → **两进程同时进临界区** → 正是本锁要防的 seq 撞号。当前持有 1-2ms（余量 2500×）。
+    //   ② **锁内禁止 O(N) 操作**：seq 获取必须用 O(1) 的 lastPublicSeq()；旧版在锁内全量读+解析，
+    //      10 万条时单次 100-300ms → 余量掉到 ~20×，多写者会排队逼近 8s 超时。
+    //   （压测结论：「原语级验证通过 + 生产现场 224 条零异常」；无锁时撞号率实测 20%-33%）
     const seq = withInboxLock(publicMsgFile(rid), () => {
       const s = lastPublicSeq(rid) + 1;   // O(1) 尾读（原先锁内 O(N) 全量读+解析，见 lastPublicSeq 注释）
       appendPublicMsg(rid, { seq: s, id: `pm_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`, from: fromSid, from_name: fromName, text, ...(atList.length ? { at: atList } : {}), ts: Date.now() });
