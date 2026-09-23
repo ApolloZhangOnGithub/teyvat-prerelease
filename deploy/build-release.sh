@@ -191,6 +191,8 @@ head.ears/ears-config.json
 *ABANDONED*
 *REMOVED*
 *FUTURE*
+# 备份目录（2026-09-24 用户定稿）：prerelease 不打包 .backups-*（dev 仓保留）
+.backups-*
 # 开发期文件说明（2026-09-24 用户定稿）：prerelease 发布仓不打包 .SPEC（dev 仓保留）
 *.SPEC
 # prime-agent 的隐藏临时/证据文件：这个包会推到公开仓库 teyvat-prerelease，绝不能带上它们（2026-09-11）
