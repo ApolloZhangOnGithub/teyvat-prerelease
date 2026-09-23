@@ -351,8 +351,11 @@ export function registerStatusTool(_pi: ExtensionAPI) {
           const grReboot = T("重启", "reboot"), grModel = T("模型", "model"), grDir = T("目录", "dirs"), grTool = T("工具", "tools");
           const rows: [string, string, string, string][] = []; // [授权项, 组, 状态, 详情]
           const fr = readAuth("full-reboot-auth");
-          rows.push(["full-reboot", grReboot, fr?.authorized ? yes : no, fr?.ts ? fmtTs(fr.ts) : ""]);
           const sr = readAuth("self-reboot-auth");
+          // 2026-09-24（用户⑦⑧ 历史兼容）：full-reboot 授权认 legacy self-reboot-auth（旧名）——executes.ts 执行时会自动迁移认账，
+          // 这里显示口径也同步，否则旧授权用户看 status @permissions 显示「未授权」但实际能执行（口径不一致）。
+          const frAuthorized = !!(fr?.authorized || sr?.authorized);
+          rows.push(["full-reboot", grReboot, frAuthorized ? yes : no, fr?.ts ? fmtTs(fr.ts) : (sr?.ts ? fmtTs(sr.ts) : "")]);
           if (sr?.authorized) rows.push(["self-reboot", grReboot, yes, `${fmtTs(sr.ts)} [legacy]`]); // 未授权不显示（legacy）
           const ms = readAuth("model-switch-auth.json");
           const msDesc = ms?.authorized ? (ms?.all ? T("任意", "any") : ((ms?.models || []).join(",") || "?")) : "";

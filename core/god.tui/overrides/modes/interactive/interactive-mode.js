@@ -3623,6 +3623,18 @@ export class InteractiveMode {
         }
         for (const signal of signals) {
             const handler = () => {
+                // 2026-09-24（ISSUE 277，用户定稿）：关 terminal = 自动转后台。
+                // SIGHUP（终端没了）→ spawn headless 转后台（与 Ctrl+C ×2 / /h 同语义），不 killTrackedDetachedChildren（避免误杀刚 spawn 的 headless）。
+                // SIGTERM（外部终止：genshin kill / 关机）→ 仍优雅退出、不转后台。
+                if (signal === "SIGHUP" && (globalThis.__genshinCtrlCToBg ?? true)) {
+                    const pid = globalThis.__genshinPersonId || process.env.PAIMON_AGENT_ID || "";
+                    // 幂等：已 spawn 过（Ctrl+C ×2 后迅速关窗）不重复 spawn
+                    if (pid && !globalThis.__genshinDetaching && !globalThis.__genshinSpawnedHeadless) {
+                        try { globalThis.__genshinSpawnHeadlessBg?.(pid, "sighup"); } catch (e) { console.error("[god.tui/overrides/modes/interactive/interactive-mode.js] SIGHUP spawn headless: " + (e?.message || e)); }
+                    }
+                    void this.shutdown({ fromSignal: true });
+                    return;
+                }
                 // SIGHUP no longer hard-exits: graceful shutdown emits session_shutdown
                 // first, then attempts terminal restore. A genuinely dead terminal
                 // surfaces as an EIO on the restore writes, which the stdout/stderr
