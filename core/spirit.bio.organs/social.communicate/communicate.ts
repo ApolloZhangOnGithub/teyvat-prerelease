@@ -59,6 +59,8 @@ interface SocialMsg {
   to: string;          // sid | group:<gid> | public:<rid> | all
   chan?: string;       // 群/房间显示名（group 名或 public 房间名；public 属于 group 的一种；DM 无）
   chan_id?: string;    // 群/房间编号（创建时生成、**不可更改**）
+  muted?: boolean;     // **接收方本地标注**（粘性）：该条被我静音的房间拦下、永不自动注入，只能 check-message 手动取。
+                       // 注意：它不是发送方写的——发送方既不知道也无权决定（隐私，2026-09-24 用户定稿）
   mode: SocialMode;    // 发送方请求
   mode_used: SocialMode; // 实际生效
   at?: string[];       // @ 强调（群聊）
@@ -595,6 +597,42 @@ function readInbox(sid: string, limit = 50): SocialMsg[] {
   } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return []; }
 }
 
+// 粘性静音标记（2026-09-24 tester 指出）：静音判定**不能每次重算「当前」设置**，
+// 否则「静音期间收到 → 解除静音 → 被补注入」就违背定稿（静音消息永不自动消费，只能 check-message 手动取）。
+// 做法：接收方第一次见到「未注入且当时被我静音」的消息时，就地打上本地标记 muted:true（粘性），此后不再随设置变化。
+function markMuted(sid: string, ids: string[]): void {
+  try {
+    const file = inboxFile(sid);
+    if (!existsSync(file)) return;
+    const idSet = new Set(ids);
+    withInboxLock(file, () => {
+      const lines = readFileSync(file, "utf8").split("\n");
+      const out = lines.map(l => {
+        if (!l.trim()) return l;
+        try {
+          const m = JSON.parse(l) as SocialMsg;
+          if (idSet.has(m.id)) m.muted = true;
+          return JSON.stringify(m);
+        } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return l; }
+      });
+      writeFileAtomic(file, out.join("\n"));
+    });
+  } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); }
+}
+// 未注入消息分流：injectable=可自动注入；muted=被我静音拦下（含历史已标记的），并顺手把新遇到的打上粘性标记
+function splitPending(sid: string, all: SocialMsg[]): { injectable: SocialMsg[]; muted: SocialMsg[] } {
+  const injectable: SocialMsg[] = [];
+  const muted: SocialMsg[] = [];
+  const toMark: string[] = [];
+  for (const m of all) {
+    if (m.injected) continue;
+    if (m.muted === true) { muted.push(m); continue; }
+    if (isChanMutedByMe(m)) { muted.push(m); toMark.push(m.id); continue; }
+    injectable.push(m);
+  }
+  if (toMark.length) markMuted(sid, toMark);
+  return { injectable, muted };
+}
 function markInjected(sid: string, ids: string[]): void {
   try {
     const file = inboxFile(sid);
@@ -624,8 +662,8 @@ export function refreshSocialPending(): void {
   const sid = getMySid();
   if (!/^[a-f0-9]{8}$/.test(sid)) return;
   const all = readInbox(sid, 200);
-  // 被静音房间的消息由**接收方自己**判定（isChanMutedByMe）→ 不算未读（否则 footer 徽标会被常亮不消）
-  const pending = all.filter(m => !m.injected && !isChanMutedByMe(m));
+  // 被静音房间的消息由**接收方自己**粘性判定（splitPending 会就地打标记）→ 不算未读
+  const pending = splitPending(sid, all).injectable;
   // @DEP deferred 字段保留仅为兼容历史数据，新消息不会有 deferred
   const counts = { count: pending.length, interrupt: 0, queue: 0, deferred: 0 };
   for (const m of pending) { if (m.mode_used in counts) counts[m.mode_used]++; }
@@ -646,8 +684,8 @@ export function getPendingInbox(limit = 10, upto?: SocialMode): SocialMsg[] {
   const order: Record<SocialMode, number> = { interrupt: 0, queue: 1, deferred: 2 }; // @DEP deferred 仅为兼容历史数据
   const uptoRank = upto ? order[upto] : 2;
   const all = readInbox(sid, 200);
-  // 被静音房间的消息**不自动注入**（由接收方自己判；要看用 social check-message 手动取），因此不算 pending
-  const pending = all.filter(m => !m.injected && !isChanMutedByMe(m));
+  // 被静音房间的消息**不自动注入**（接收方本地粘性判定；要看用 social check-message 手动取），因此不算 pending
+  const pending = splitPending(sid, all).injectable;
   refreshSocialPending(); // footer 感知：更新全局未读数（statebar 读变量不读盘；含 interrupt 时高亮）
   return pending
     .filter(m => order[m.mode_used] <= uptoRank)
@@ -1040,8 +1078,8 @@ function watchInterruptTriggers(pi: ExtensionAPI): void {
       // ISSUE 151②（launcher 启动幂等杀旧实例）解决，此处 pid 校验冗余且有害——一律消费（竞态靠 unlink 原子性）。
       try { unlinkSync(f); } catch (e: any) { if ((e as any)?.code !== "ENOENT") console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return; } // 拿所有权失败 → 已由 watch/interval 另一方处理，放弃
       try {
-        // 被静音房间的消息由**我自己**判定不注入（trigger 消费是独立注入路径；2026-09-24 tester 实证曾漏过）
-        const msgs = readInbox(mySid, 50).filter((m: SocialMsg) => !m.injected && !isChanMutedByMe(m));
+        // 被静音房间的消息由**我自己**粘性判定不注入（trigger 消费是独立注入路径；2026-09-24 tester 实证曾漏过）
+        const msgs = splitPending(mySid, readInbox(mySid, 50)).injectable;
         // 立即注入范围：interrupt 全部（强制切断）；queue 仅在 resting（wait 中）时注入（打断 wait）
         const resting = existsSync(join(homedir(), ".teyvat", "RuntimeCache", mySid, "main-resting"));
         // 2026-09-14（alice 实测 ISSUE）：queue 原来只覆盖 resting（wait），hibernated 时 toInject 为空 →
@@ -1150,7 +1188,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
       "      不带参数 / new      = 所有未读（拿走即已读）\n" +
       "      <房间id|名>           = 概览：共 N 条 / M 条新（并提示用 new 查看）\n" +
       "      <id> latest 10        = 最新 10 条；latest 10-20 = 继续往早（第 11..20 新）\n" +
-      "      也支持普通会话（传 agent 的 sid/名），查与其往来；房间 id 形如 pub_xxx（与 8 位 hex 的 agent id **不同空间**）\n" +
+      "      也支持普通会话（传 agent 的 sid/名），查与其往来；房间编号为 **12 位 hex**（agent sid 为 8 位 hex，**同空间、位数不同**）\n" +
       "  action:\"focus\"  mode?              — declare focus: off | deep | rest (no mode = show all)\n" +
       "  action:\"group\"  gop, ...           — group ops: create|list|send|mute|add|remove\n" +
       "      create: gname, members[]  /  send: gid, text, at?  /  mute: gid, on?  /  add|remove: gid, members[]\n" +
@@ -1304,7 +1342,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
           const toSid = receipts[0]?.to ?? "";
           const modeUsed = receipts[0]?.mode_used ?? p.mode ?? "interrupt";
           const sendChan = channelOf(String(p.to ?? ""));
-          return { content: [{ type: "text", text: `Sent to ${receipts.length} receiver(s):\n${lines.map(l => "  " + l).join("\n")}\n\n${p.text}` }], details: { social: true, action: "send", count: receipts.length, target: p.to, targetDisplay: toSid ? displayName(toSid) : p.to, targetName: toSid ? displayNameShort(toSid) : p.to, targetSid: toSid, chanId: sendChan?.id, chanName: sendChan?.name, modeUsed, text: p.text, ts: Date.now(), lines } };
+          return { content: [{ type: "text", text: receipts.length === 1 ? `Sent a message to ${toSid ? displayName(toSid) : p.to} (in ${modeUsed} mode)\n${p.text}` : `Sent a message to ${receipts.length} receiver(s):\n${lines.map(l => "  " + l).join("\n")}\n\n${p.text}` }], details: { social: true, action: "send", count: receipts.length, target: p.to, targetDisplay: toSid ? displayName(toSid) : p.to, targetName: toSid ? displayNameShort(toSid) : p.to, targetSid: toSid, chanId: sendChan?.id, chanName: sendChan?.name, modeUsed, text: p.text, ts: Date.now(), lines } };
         }
         case "list": {
           // 2026-09-08（用户：list/global 冗余——组合参数）：list scope: 'local'(默认) | 'remote' | 'global'——scope=global 或带 view/device 参数时走跨设备视图（复用 socialGlobal；老 action:'global' 兼容别名同效果）；scope='remote' 走下方 remote 分支（等效旧 list remote:true）
@@ -1444,7 +1482,8 @@ function registerSocialTools(pi: ExtensionAPI): void {
         case "inbox": {
           const limit = Math.min(50, Math.max(1, p.limit ?? 20));
           const msgs = readInbox(getMySid(), 2000);
-          const pending = msgs.filter(m => !m.injected && !isChanMutedByMe(m));
+          const split = splitPending(getMySid(), msgs);
+          const pending = split.injectable;
           const lines: string[] = [];
           // 2026-09-24（用户）：inbox 显示改成「total in history / No new message / in this session / (today) of (total)」，
           // 不再用 "-- pending (N) -- / -- history (N) -- / (inbox empty)" 这种垃圾格式。
@@ -1465,7 +1504,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
           lines.push(`${todayCount} (today) of ${total} (total in history)`);
           // 被静音房间的消息：**不自动注入**，只给「N 条未读 + 最新一条预览」，要看全文用 social check-message <房间id>
           // （2026-09-24 用户定稿：mute ≠ 降级 queue；手动 inbox 只给计数+预览）
-          const mutedMsgs = msgs.filter(m => !m.injected && isChanMutedByMe(m));
+          const mutedMsgs = split.muted;
           if (mutedMsgs.length) {
             const byRoom = new Map<string, SocialMsg[]>();
             for (const m of mutedMsgs) { const k = m.chan_id || m.chan || "?"; const arr = byRoom.get(k) ?? []; arr.push(m); byRoom.set(k, arr); }
@@ -1506,9 +1545,10 @@ function registerSocialTools(pi: ExtensionAPI): void {
             refreshSocialPending();
             return { content: [{ type: "text", text: `new — ${unread.length} 条未读：\n${lines.map(l => "  " + l).join("\n")}` }], details: { social: true, action: "check-message", count: unread.length, lines } };
           }
-          // ② 解析目标：房间（pub_ 前缀 / 名称）或普通会话（agent sid 8 位 hex / 名字）
+          // ② 解析目标：房间（12 位 hex）或普通会话（agent sid 8 位 hex / 名字）——同空间、用位数区分
           const isSidLike = /^[a-f0-9]{8}$/.test(arg1);
-          const room = /^pub_/.test(arg1) || !isSidLike ? findPublic(arg1) : null;
+          const isRoomIdLike = /^[a-f0-9]{12}$/.test(arg1);
+          const room = isRoomIdLike || !isSidLike ? findPublic(arg1) : null;
           const rid = room ? room.id : null;
           const peer = rid ? null : (resolveSid(arg1) ?? arg1);
           // 会话消息（房间 = 房间日志；普通会话 = 我的 inbox 里与对方的往来）
@@ -1636,8 +1676,9 @@ function registerSocialTools(pi: ExtensionAPI): void {
                 .map((m: string) => resolveSid(String(m).trim()) ?? String(m).trim())
                 .filter((m: string) => !!m && m !== me && m !== meName);
               // 房间编号独立空间（2026-09-24 用户要求：room id 与 agent id 不能在同一个空间，位数不同）
-              // agent sid = 8 位 hex（abb49c68）；room id = `pub_` 前缀 + base36 时间戳（如 pub_muei24rh，12 位）
-              const rid = `pub_${Date.now().toString(36)}`;
+              // 房间编号：与 agent sid **同空间（都是 hex）、仅位数不同**（room 12 位 / agent 8 位）
+              // —— 2026-09-24 用户定稿：不要自造前缀/自造进制，保持 hex，用位数区分空间
+              const rid = (Date.now().toString(16) + Math.floor(Math.random() * 0x10000).toString(16).padStart(4, "0")).slice(-12);
               const ttl = Number(p.ttl_minutes ?? 0) || 0;
               const allMembers = [me, ...members];
               const names: Record<string, string> = {};
@@ -1705,7 +1746,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
               // 2026-09-24 用户定稿：房间消息的结算**面向房间**——不列个人、不暴露任何接收方的私人状态。
               // 发送方既不该决定、也不该知道接收方是否静音；收件人是「房间」而不是「人」。
               const off = receipts.filter((r: any) => String(r.status).includes("offline")).length;
-              return { content: [{ type: "text", text: `Sent to "${rname2}" (${rid}) seq ${out.seq}${at.length ? ` @${at.map((x: string) => displayNameShort(x)).join(", ")}` : ""}${off ? ` (${off} 位成员不在线)` : ""}` }], details: { social: true, action: "public", gop: "send", roomId: rid, roomName: rname2, count: receipts.length, offline: off, seq: out.seq, modeUsed: (receipts[0]?.mode_used ?? "interrupt"), text, at: at.length ? at : undefined, lines: [] } };
+              return { content: [{ type: "text", text: `Sent a message in "${rname2}" (${rid}, in interrupt mode) seq ${out.seq}${at.length ? ` @${at.map((x: string) => displayNameShort(x)).join(", ")}` : ""}${off ? ` (${off} 位成员不在线)` : ""}` }], details: { social: true, action: "public", gop: "send", roomId: rid, roomName: rname2, count: receipts.length, offline: off, seq: out.seq, modeUsed: "interrupt", text, at: at.length ? at : undefined, lines: [] } };
             }
             case "history": {
               const rid = String(p.gid ?? "").trim();
