@@ -473,6 +473,19 @@ function savePublic(r: PublicRoom): void {
   mkdirSync(PUBLIC_DIR, { recursive: true });
   writeJson(join(PUBLIC_DIR, `${r.id}.json`), r);
 }
+// 观察期埋点（2026-09-24，tester-01 建议）：**只计数、不干预、不改行为**。
+// 目的：让「参数误填」的观察期产出**数字**而非印象（尤其 send_missing_to_with_at = champion 实测 8/8 的形态）；
+// 到点即可用「过去 N 小时：send_missing_to_with_at = X 次」把提案带数据摆上桌。
+// 查看：cat ~/.teyvat/SocialData/metrics.json
+function bumpMetric(key: string): void {
+  try {
+    const f = join(SOCIAL_DIR, "metrics.json");
+    const m = readJson<Record<string, number>>(f, {});
+    m[key] = (m[key] ?? 0) + 1;
+    m[`${key}__last`] = Date.now();
+    writeJson(f, m);
+  } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] bumpMetric " + ((e as any)?.message || e)); }
+}
 function listPublics(): PublicRoom[] {
   try {
     mkdirSync(PUBLIC_DIR, { recursive: true });
@@ -1319,7 +1332,8 @@ function registerSocialTools(pi: ExtensionAPI): void {
     promptSnippet: "social(action, ...) — send|list|inbox|focus|group|public|global",
     parameters: Type.Object({
       action: Type.String({ messageDescription: "send | list | inbox | check-message | focus | group | public | global（public=公共聊天室，仅供跨框架；check-message=取某房间被静音的消息（不自动注入的那批）；global=跨设备查看）" }),
-      to: Type.Optional(Type.String({ messageDescription: "目标：send **必填**（sid | agent name | group:<gid> | public:<rid> | all）；public leave（创建者）: 管理权移交给哪位房内成员（sid 或房内名）。注：at=[...] 只是群发里的定向强调，不能代替 to" })),
+      to: Type.Optional(Type.String({ messageDescription: "目标（发给**人**）：send 用它发给单个 agent（sid | agent name | all）；注：群/房间请用 in，at=[...] 只是群发里的定向强调不能当收件人" })),
+      in: Type.Optional(Type.String({ messageDescription: "目标（发给**群 / 房间**）：send 用它发给群（group:<gid>）或房间（<6 位房间编号|房间名>）；public 各 gop 也可用它代替 gid。规则：to=人，in=群/房间" })),
       text: Type.Optional(Type.String({ messageDescription: "send: 消息内容；check-message: 查询修饰（空/new/latest N/latest A-B）" })),
       mode: Type.Optional(Type.Union([
         Type.Literal("interrupt"), Type.Literal("queue"), // @DEP deferred 废弃 ISSUE 103
@@ -1331,7 +1345,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
       gop: Type.Optional(Type.String({ messageDescription: "Group op: create | list | send | mute | add | remove" })),
       gname: Type.Optional(Type.String({ messageDescription: "群/房间名称（group create；public create / rename）" })),
       members: Type.Optional(Type.Array(Type.String(), { messageDescription: "Member sids/names (group create)" })),
-      gid: Type.Optional(Type.String({ messageDescription: "群/房间编号（group send/mute；public 各操作——也可直接用房间名）" })),
+      gid: Type.Optional(Type.String({ messageDescription: "群/房间编号（group send/mute；public 各操作——也可直接用 in 或房间名）" })),
       on: Type.Optional(Type.Boolean({ messageDescription: "Mute on/off (group mute, default true)" })),
       mute: Type.Optional(Type.Boolean({ messageDescription: "public manage: 房间静音（消息降 queue 不打断；@ 仍可突破）" })),
       at_mute: Type.Optional(Type.Boolean({ messageDescription: "public manage: @ 也静音（必须先 mute:true；默认@可突破静音）" })),
@@ -1453,10 +1467,32 @@ function registerSocialTools(pi: ExtensionAPI): void {
       const p = (rawParams ?? {}) as any;
       switch (action) {
         case "send": {
-          if (!p.to) throw new Error(`social send: to required —— 收件人必填（sid | agent name | group:<gid> | public:<rid> | all）。注意：at=[...] 是「群发里的定向强调」，**不能代替 to**；发房间消息请用 action:"public", gop:"send", gid:"<房间编号>"`);
+          // 目标语法（2026-09-24 用户定稿）：**to = 发给「人」；in = 发给「群 / 房间」**（与渲染一一对应，便于记忆）
+          //   人：to:"<sid|名字>"   群：in:"group:<gid>"   房间：in:"<6位编号|房间名>"
+          //   向后兼容：to:"group:<gid>" / to:"public:<rid>" 仍可用
+          const inRaw = String(p.in ?? "").trim();
+          let target = String(p.to ?? "").trim();
+          if (inRaw) {
+            if (/^(group|public):/.test(inRaw)) target = inRaw;
+            else {
+              let room: PublicRoom | null = null;
+              try { room = findPublic(inRaw); } catch { /* 名称不唯一等交给下面报错 */ }
+              if (room) target = `public:${room.id}`;
+              else throw new Error(`social send: in:"${inRaw}" 既不是群也不是房间 —— 群用 in:"group:<gid>"，房间用 in:"<6 位房间编号或名称>"`);
+            }
+          }
+          if (!target) {
+            // 专门识别「填了 at 却漏 to」这个高频误用（实测 8/8 次漏键都是这一形态）
+            if (Array.isArray(p.at) && p.at.length) {
+              bumpMetric("send_missing_target_with_at");
+              throw new Error(`social send: 检测到 at 但缺收件人 —— at=[...] 只是**群发里的定向强调**，不能当收件人。发给人用 to:"<sid|名字>"；发给群/房间用 in:"group:<gid>" 或 in:"<房间编号>"`);
+            }
+            bumpMetric("send_missing_target");
+            throw new Error(`social send: 收件人必填（发给人：to:"<sid|名字>"；发给群/房间：in:"group:<gid>" / in:"<房间编号或名称>"）`);
+          }
           if (!p.text) throw new Error("social send: text required");
           if (p.mode && !["interrupt", "queue"].includes(p.mode)) throw new Error(`social send: mode must be interrupt|queue (deferred 废弃, ISSUE 103), got "${p.mode}"`);
-          const out = await sendMessage({ to: p.to, text: p.text, mode: p.mode ?? "interrupt", at: p.at ?? [] });
+          const out = await sendMessage({ to: target, text: p.text, mode: p.mode ?? "interrupt", at: p.at ?? [] });
           const receipts = out.receipts as any[];
           const lines = receipts.map(r => `${displayName(r.to)}: ${r.status} (mode: ${r.mode_used})`);
           const toSid = receipts[0]?.to ?? "";
@@ -1789,6 +1825,14 @@ function registerSocialTools(pi: ExtensionAPI): void {
           // teyvat 内部 agent 之间用普通 social / social global 即可，无需这个。
           // 房间 id 复用 gid 字段传递。
           const gop = String(p.gop ?? "").trim();
+          // 2026-09-24 用户定稿：群/房间目标统一用 `in`（对方用 `gid` 的旧写法保留兼容）
+          if (p.in !== undefined && p.gid === undefined) p.gid = p.in;
+          if (!gop) { bumpMetric("public_missing_gop"); throw new Error("social public: gop 必填（create|list|join|leave|send|history|rename|dissolve|manage|mute）"); }
+          // 常见误用：房间操作把收件人写成了 to（to 是发给「人」的）——leave 的 to 是移交对象，故除外
+          if (["join", "leave", "send", "history", "rename", "dissolve", "manage", "mute"].includes(gop) && gop !== "leave" && p.gid === undefined && p.to !== undefined) {
+            bumpMetric("public_gop_got_to_instead_of_gid");
+            throw new Error(`social public ${gop}: 房间的目标用 gid 或 in，**不是 to**（to 是发给「人」的）`);
+          }
           const me = getMySid();
           const meName = getMyName();
           sweepExpiredPublics();   // TTL 惰性回收：先回收过期房间，再做本次操作

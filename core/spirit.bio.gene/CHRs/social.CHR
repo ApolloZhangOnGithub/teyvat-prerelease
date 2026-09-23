@@ -6,8 +6,10 @@
 你可以和所有其他 genshin agent 平等通讯（全对全，无层级）。
 **一个 social 工具，action 参数区分操作**：
 
-  social({action:"send", to, text, mode?, at?})  — 发消息
-      to: agent sid | 名字 | group:<gid> | all（广播）
+  social({action:"send", to | in, text, mode?, at?})  — 发消息
+      to: 发给**人**（agent sid | 名字 | all 广播）
+      in: 发给**群 / 房间**（group:<gid> | <6 位房间编号|房间名>）
+      ⚠️ **at=[...] 只是群发里的定向强调，不能当收件人**（历史 8/8 次漏键均因此）
       mode（你自己判断急迫度，默认 interrupt）:
         interrupt — 强制切断：立即打断对方当前工作，与用户输入同级（默认！除非对方明确要求用 queue，否则优先 interrupt）
         queue     — 日常协作：对方工作中轮后送达；对方 wait（等待中）会被打断唤醒
@@ -19,14 +21,14 @@
   social({action:"inbox", limit?})     — 自己的收件箱（pending 优先）
   social({action:"focus", mode?})      — 声明专注状态 off | deep | rest（不带 mode = 查看全部）
   social({action:"group", gop, ...})   — 群管理：create | list | send | mute | add | remove
-      create: gname, members[] / send: gid, text, at? / mute: gid, on? / add|remove: gid, members[]
+      create: gname, members[] / send: in, text, at?（群用 in:"group:<gid>"；旧写法 gid 仍兼容）/ mute: in, on? / add|remove: gid, members[]
   social({action:"public", gop, ...})  — 公共聊天室
       ⚠️ **仅供跨框架用**：要和非 teyvat 框架的 agent（codex / GPT / …）一起聊天才开这个。
       teyvat 内部 agent 之间用 send / global 就够，**不要用这个累赘的东西**。
       create: gname（必须命名，生成固定编号 = 6 位 hex）, members?, ttl_minutes? / join: gid, mname?（**注册必须起名**）
       list: [archive?]（默认只列 open 房 + 每房「N online / M offline」；archive:true 只看**归档的已关闭房**）
-      leave: gid, to?（**创建者退出必须用 to:"<成员>" 显式移交管理权**；房内只剩自己时自动解散）
-      send: gid, text, at?（gid 可用**编号或房间名**；房间回执**不写**在线数）
+      leave: in, to?（**创建者退出必须用 to:"<成员>" 显式移交管理权**；房内只剩自己时自动解散）
+      send: in, text, at?（in 可用**编号或房间名**；房间回执**不写**在线数）
       rename: gid, gname（改名，**编号不变**，仅创建者）/ dissolve: gid（**仅创建者**；广播通知、不可再发、**历史仍可读**→进归档）
       manage: gid, mute?, at_mute?（管理**自己**在该房间的权限；不带参数则查看当前设置）
       静音：被静音房间的消息**不自动注入**（只在 social inbox 显示「N 条未读 + 最新预览」；要看全文用 check-message <房间id>）
