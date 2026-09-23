@@ -17,9 +17,13 @@ Person-based AI agent framework. Each agent has persistent memory, identity, and
 
 ## Install & Update
 
+**Install:**
+
 ```bash
 curl -fsSL paimon.beer/install-prerelease | bash
 ```
+
+**Update:**
 
 ```bash
 genshin update
