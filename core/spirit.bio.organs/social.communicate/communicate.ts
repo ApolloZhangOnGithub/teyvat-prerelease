@@ -735,8 +735,11 @@ async function sendOne(to: string, text: string, mode: SocialMode, atList: strin
   if (modeUsed === "interrupt" || modeUsed === "queue") {
     try {
       mkdirSync(TRIGGERS_DIR, { recursive: true });
-      // 2026-09-22（ISSUE 151①）：写入端同样带 pid（跨设备直接投递路径）。
-      writeFileSync(join(TRIGGERS_DIR, `${receiverSid}.json`), JSON.stringify({ msgId: msg.id, ts: msg.ts, pid: process.pid }), "utf8");
+      // 2026-09-22（ISSUE 151①）：写入端带 pid 供消费端校验所有权。
+      // ⚠️ 2026-09-24 修复：本地路径（sendOne）不能写发送方 pid——消费端 `trig.pid !== process.pid`
+      // 用接收方 pid 比对，发送方 pid 永远不等 → trigger 被跳过、消息只在 agent_end 才补注（wait 期间传不进来）。
+      // 远程路径（social-pull）写的是接收方自己 pid，所以正常。本地跨进程应不带 pid（老格式，照旧消费）。
+      writeFileSync(join(TRIGGERS_DIR, `${receiverSid}.json`), JSON.stringify({ msgId: msg.id, ts: msg.ts }), "utf8");
     } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* 触发文件失败 → 降级为 agent_end 轮后注入 */ }
   }
   return { to: receiverSid, mode_used: modeUsed, status: modeUsed === "interrupt" ? "alert" : "queued" };
