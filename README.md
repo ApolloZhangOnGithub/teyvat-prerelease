@@ -2,7 +2,7 @@
 
 ![Teyvat TUI](medias/teyvat-tui.png)
 
-Person-based AI agent framework. Each agent has persistent memory, identity, and biological metaphor architecture running on [pi-coding-agent](https://github.com/nicolo-ribaudo/pi-coding-agent).
+Person-based AI agent framework. Each agent has persistent memory, identity, and biological metaphor architecture running on [pi](https://pi.dev).
 
 ## Preparation
 
