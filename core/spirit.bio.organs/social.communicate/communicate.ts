@@ -104,6 +104,8 @@ interface RegistryEntry {
 // ── 身份 ──────────────────────────────────────────────────────────────
 let _mySid = "";
 let _myName = "";
+let _nameFromIdentity = "";
+let _nameRefreshedAt = 0;
 let _personDir = "";
 
 function getMySid(): string {
@@ -113,7 +115,40 @@ function getMySid(): string {
   return env && /^[a-f0-9]{8}$/.test(env) ? env : "";
 }
 function getMyName(): string {
-  return _myName || process.env.PAIMON_AGENT_NAME || _mySid || "unknown";
+  // 2026-09-24（ISSUE 275）：名字优先从 identity.json 解析（30s 缓存），不永久缓存 env——
+  // 否则改名后（plist/identity.json 更新）运行中进程的 env 还是旧名，社交渲染/footer/DNA 头全是旧名，full-reboot 也无效。
+  if (Date.now() - _nameRefreshedAt > 30_000) {
+    const n = readNameFromIdentity();
+    if (n) { _nameFromIdentity = n; _nameRefreshedAt = Date.now(); }
+  }
+  return _nameFromIdentity || _myName || process.env.PAIMON_AGENT_NAME || getMySid() || "unknown";
+}
+
+// 从 ~/.teyvat/IdentityData/<sid>/identity.json 读当前 name（改名后这里最先更新）
+function readNameFromIdentity(): string {
+  const sid = getMySid();
+  if (!/^[a-f0-9]{8}$/.test(sid)) return "";
+  try {
+    const idFile = join(homedir(), ".teyvat", "IdentityData", sid, "identity.json");
+    if (!existsSync(idFile)) return "";
+    const d = JSON.parse(readFileSync(idFile, "utf8"));
+    return typeof d?.name === "string" && d.name ? d.name : "";
+  } catch { return ""; }
+}
+
+// 心跳时调用：检测 identity.json 的 name 是否变了，变了就同步 env + process.title + 缓存（下次 registry 写入用新名）
+function syncNameFromIdentity(): void {
+  const sid = getMySid();
+  if (!/^[a-f0-9]{8}$/.test(sid)) return;
+  const n = readNameFromIdentity();
+  if (!n || n === _myName) return;
+  const prev = _myName;
+  _myName = n;
+  _nameFromIdentity = n;
+  _nameRefreshedAt = Date.now();
+  try { process.env.PAIMON_AGENT_NAME = n; } catch { /* env 只读则忽略 */ }
+  try { if (process.title && process.title.startsWith("genshin:")) process.title = process.title.replace(/^genshin:[^(]+/, `genshin:${n}`); } catch { /* title 只读则忽略 */ }
+  console.error(`[social] name changed ${prev} → ${n}（synced env/title）`);
 }
 
 // ── 文件辅助 ──────────────────────────────────────────────────────────
@@ -152,6 +187,8 @@ let _lastPresenceTouch = 0;
 function touchPresence(): void {
   const sid = getMySid();
   if (!/^[a-f0-9]{8}$/.test(sid)) return;
+  // 2026-09-24（ISSUE 275）：心跳时先检测改名（identity.json name 变化）→ 同步 env/title，后续 registry 写入用新名。
+  syncNameFromIdentity();
   // 节流：30 秒内不重复写 registry（agent_end 每轮都会调）
   const now = Date.now();
   if (now - _lastPresenceTouch < 30_000) return;
@@ -1344,9 +1381,10 @@ function registerSocialTools(pi: ExtensionAPI): void {
           const toSid = receipts[0]?.to ?? "";
           const modeUsed = receipts[0]?.mode_used ?? p.mode ?? "interrupt";
           const sendChan = channelOf(String(p.to ?? ""));
-          // 2026-09-24（tester 实测发现）：此处原用 displayName(toSid)，而 displayName 自身就返回 `name (sid)` → 结果行出现「(sid) (in mode mode)」双括号；
-          // 改用 localNameOf + 手拼单括号，与摘要行 :1287 保持同一套拼法（同一个动作不能有两种说法）
-          return { content: [{ type: "text", text: receipts.length === 1 ? `Sent and ${modeUsed} ${toSid ? (localNameOf(toSid) ?? p.to) : p.to}${toSid ? ` (${toSid}, in ${modeUsed} mode)` : ""}\n${p.text}` : `Sent and ${modeUsed} to ${receipts.length} receiver(s):\n${lines.map(l => "  " + l).join("\n")}\n\n${p.text}` }], details: { social: true, action: "send", count: receipts.length, target: p.to, targetDisplay: toSid ? displayName(toSid) : p.to, targetName: toSid ? displayNameShort(toSid) : p.to, targetSid: toSid, chanId: sendChan?.id, chanName: sendChan?.name, modeUsed, text: p.text, ts: Date.now(), lines } };
+          // 2026-09-24（tester 指出边界）：结果行的名字解析必须与摘要行同源——
+          // localNameOf 只查本地 registry（无远程回退），跨机 agent / 直用 sid 发送时会退化成「sid (sid)」；
+          // 改用 displayNameShort（含 remoteNameCache 回退，且不含 sid），与摘要行 :1310 一致。
+          return { content: [{ type: "text", text: receipts.length === 1 ? `Sent and ${modeUsed} ${toSid ? displayNameShort(toSid) : p.to}${toSid ? ` (${toSid}, in ${modeUsed} mode)` : ""}\n${p.text}` : `Sent and ${modeUsed} to ${receipts.length} receiver(s):\n${lines.map(l => "  " + l).join("\n")}\n\n${p.text}` }], details: { social: true, action: "send", count: receipts.length, target: p.to, targetDisplay: toSid ? displayName(toSid) : p.to, targetName: toSid ? displayNameShort(toSid) : p.to, targetSid: toSid, chanId: sendChan?.id, chanName: sendChan?.name, modeUsed, text: p.text, ts: Date.now(), lines } };
         }
         case "list": {
           // 2026-09-08（用户：list/global 冗余——组合参数）：list scope: 'local'(默认) | 'remote' | 'global'——scope=global 或带 view/device 参数时走跨设备视图（复用 socialGlobal；老 action:'global' 兼容别名同效果）；scope='remote' 走下方 remote 分支（等效旧 list remote:true）

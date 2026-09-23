@@ -82,10 +82,10 @@ export function registerStatusTool(_pi: ExtensionAPI) {
   registerPaimonTool({
     name: "status",
     label: "Status",
-    messageDescription: "Query yourself. Usage: status @identity | status @history [N] | status @nickname <name> | status @model (当前模型) | status @model list (可切换清单) | status @balance | status @permissions | status switch-model <id>",
-    promptSnippet: "status @identity — query identity | status @history [N] — session 存续时期 | status @nickname <name> — set nickname | status @model — 当前模型 | status @model list — 可切换清单 | status @balance — 查余额（deepseek 实时/非 deepseek unavailable）| status @permissions — 授权状态 | status switch-model <id> — switch model (needs /a model auth)",
+    messageDescription: "Query yourself. Usage: status @identity | status @history [N] | status @name [make-nickname <名>] | status @model (当前模型) | status @model list (可切换清单) | status @balance | status @permissions | status switch-model <id>",
+    promptSnippet: "status @identity — query identity | status @history [N] — session 存续时期 | status @name — 查 name+nickname | status @name make-nickname <名> — 取别名（不动 name） | status @model — 当前模型 | status @model list — 可切换清单 | status @balance — 查余额（deepseek 实时/非 deepseek unavailable）| status @permissions — 授权状态 | status switch-model <id> — switch model (needs /a model auth)",
     parameters: Type.Object({
-      instruction: Type.String({ messageDescription: i18n("指令：@identity | @history [N 最近几个 session] | @nickname <名字> | @model（当前模型）| @model list（可切换清单）| @balance（查余额）| @permissions（授权状态）| switch-model <模型id>（切换模型，需 /a model 授权）", "Instruction: @identity | @history [N recent sessions] | @nickname <name> | @model (current model) | @model list (available models) | @balance (query balance) | @permissions (authorization status) | switch-model <id> (switch model, needs /a model auth)") }),
+      instruction: Type.String({ messageDescription: i18n("指令：@identity | @history [N 最近几个 session] | @name [make-nickname <名>] | @model（当前模型）| @model list（可切换清单）| @balance（查余额）| @permissions（授权状态）| switch-model <模型id>（切换模型，需 /a model 授权）", "Instruction: @identity | @history [N recent sessions] | @name [make-nickname <name>] | @model (current model) | @model list (available models) | @balance (query balance) | @permissions (authorization status) | switch-model <id> (switch model, needs /a model auth)") }),
     }),
     renderCall(args: any, theme: any) {
       return renderToolCall.label(theme, "status", args?.instruction || "");
@@ -100,7 +100,7 @@ export function registerStatusTool(_pi: ExtensionAPI) {
     async execute(_id: any, params: any) {
       const pid = (globalThis as any).__genshinPersonId || process.env.PAIMON_AGENT_ID;
       if (!pid) return { content: [{ type: "text", text: T("无法确定 agent ID", "Cannot determine agent ID") }], isError: true };
-      if (!params?.instruction) return { content: [{ type: "text", text: T("用法: status @identity | status @nickname <名字> | status @permissions", "Usage: status @identity | status @nickname <name> | status @permissions") }], isError: true };
+      if (!params?.instruction) return { content: [{ type: "text", text: T("用法: status @identity | status @name [make-nickname <名>] | status @permissions", "Usage: status @identity | status @name [make-nickname <name>] | status @permissions") }], isError: true };
       // @balance：查询当前 provider 的余额（deepseek 走 /user/balance；非 deepseek → unavailable）
       if (params.instruction === "@balance" || params.instruction.startsWith("@balance")) {
         const r = await checkDeepseekBalance();
@@ -209,6 +209,33 @@ export function registerStatusTool(_pi: ExtensionAPI) {
           lines.push("", T(`当前 session: #${all.length}（${fmt(new Date(cur.startTs).toISOString())} 启动${curIsHist ? "，旧记录(近似)" : cur.endReason !== "running" ? `，已结束: ${reasonLabel[cur.endReason] || cur.endReason}` : "，运行中"}）`, `Current session: #${all.length} (started ${fmt(new Date(cur.startTs).toISOString())}${curIsHist ? ", legacy (approx)" : cur.endReason !== "running" ? `, ended: ${reasonLabel[cur.endReason] || cur.endReason}` : ", running"})`));
           return { content: [{ type: "text", text: lines.join("\n") }] };
         } catch (e: any) { return { content: [{ type: "text", text: T(`读取会话记录失败: ${e?.message}`, `Failed to read session records: ${e?.message}`) }], isError: true }; }
+      }
+      // @name：查询 name + nickname；@name make-nickname <名> 给自己取别名（不影响用户起的 name）
+      // 2026-09-24（ISSUE 275，用户定稿）：入口从 @nickname 挪到 @name 下，查询同时显示 name 与 nickname。
+      if (params.instruction.startsWith("@name")) {
+        const rest = params.instruction.replace(/^@name\s*/, "").trim();
+        if (rest.startsWith("make-nickname")) {
+          const nick = rest.replace(/^make-nickname\s*/, "").trim();
+          if (!nick) return { content: [{ type: "text", text: T("用法: status @name make-nickname <名>", "Usage: status @name make-nickname <name>") }], isError: true };
+          try {
+            const idDir = join(homedir(), ".teyvat/IdentityData", pid);
+            const idPath = join(idDir, "identity.json");
+            let idData: any = {};
+            try { idData = JSON.parse(readFileSync(idPath, "utf8")); } catch (e) { console.error("[spirit.abio.status/status.ts] " + ((e as any)?.message || e)); }
+            idData.nickname = nick;
+            mkdirSync(idDir, { recursive: true });
+            writeFileSync(idPath, JSON.stringify(idData, null, 2));
+            return { content: [{ type: "text", text: T(`别名已设为: ${nick}（name 不变）`, `Nickname set to: ${nick} (name unchanged)`) }] };
+          } catch (e: any) { return { content: [{ type: "text", text: T(`设置别名失败: ${e?.message}`, `Failed to set nickname: ${e?.message}`) }], isError: true }; }
+        }
+        try {
+          const idPath = join(homedir(), ".teyvat/IdentityData", pid, "identity.json");
+          let idData: any = {};
+          try { idData = JSON.parse(readFileSync(idPath, "utf8")); } catch (e) { console.error("[spirit.abio.status/status.ts] " + ((e as any)?.message || e)); }
+          const lines = [`Name: ${idData?.name || pid}`];
+          if (idData?.nickname) lines.push(`Nickname: ${idData.nickname}`);
+          return { content: [{ type: "text", text: lines.join("\n") }] };
+        } catch (e: any) { return { content: [{ type: "text", text: T(`读取身份失败: ${e?.message}`, `Failed to read identity: ${e?.message}`) }], isError: true }; }
       }
       // @nickname：给自己取昵称（存 identity.json，不污染 plist.name）
       if (params.instruction.startsWith("@nickname")) {
