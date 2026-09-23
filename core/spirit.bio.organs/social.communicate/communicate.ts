@@ -57,6 +57,7 @@ interface SocialMsg {
   to: string;          // sid | group:<gid> | public:<rid> | all
   chan?: string;       // 群/房间显示名（group 名或 public 房间名；public 属于 group 的一种；DM 无）
   chan_id?: string;    // 群/房间编号（创建时生成、**不可更改**）
+  muted?: boolean;     // 被静音房间的消息：**不自动注入**，只在 inbox 里看到「未读计数+预览」，用 check-message 取
   mode: SocialMode;    // 发送方请求
   mode_used: SocialMode; // 实际生效
   at?: string[];       // @ 强调（群聊）
@@ -80,6 +81,7 @@ interface PublicRoom {
   id: string;
   name: string;
   members: string[];      // 成员 sid
+  member_names?: Record<string, string>;  // 成员注册名（2026-09-24 用户要求：注册身份必须有名字，不能只有 id）
   created: number;
   created_by: string;
   closed: boolean;
@@ -491,6 +493,16 @@ function findPublic(idOrName: string): PublicRoom | null {
   if (matches.length > 1) throw new Error(`social public: 房间名 "${key}" 不唯一（${matches.length} 个）——请改用编号`);
   return matches[0] ?? null;
 }
+// 本地 registry 里的名字（查不到返回 null）——用于「注册起名」自动填充
+function localNameOf(sid: string): string | null {
+  const reg = readJson<Record<string, RegistryEntry>>(REGISTRY_FILE, {});
+  return reg[sid]?.name ?? null;
+}
+// 成员显示：优先用房内**注册名**，否则回退 displayName（后者自带 (sid) 后缀）
+function memberLabel(r: PublicRoom, sid: string): string {
+  const n = r.member_names?.[sid];
+  return n ? `${n} (${sid})` : displayName(sid);
+}
 function publicMuteTag(st: PublicMuteState): string {
   if (st.mute && st.at_mute) return " [muted+@muted]";
   if (st.mute) return " [muted]";
@@ -609,7 +621,8 @@ export function getPendingInbox(limit = 10, upto?: SocialMode): SocialMsg[] {
   const order: Record<SocialMode, number> = { interrupt: 0, queue: 1, deferred: 2 }; // @DEP deferred 仅为兼容历史数据
   const uptoRank = upto ? order[upto] : 2;
   const all = readInbox(sid, 200);
-  const pending = all.filter(m => !m.injected);
+  // muted 的消息**不自动注入**（要走 social check-message 手动取），因此不算 pending
+  const pending = all.filter(m => !m.injected && !m.muted);
   refreshSocialPending(); // footer 感知：更新全局未读数（statebar 读变量不读盘；含 interrupt 时高亮）
   return pending
     .filter(m => order[m.mode_used] <= uptoRank)
@@ -833,7 +846,7 @@ async function _pullRemoteMessagesImpl(): Promise<number> {
   } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return 0; } // 拉取失败静默（下次心跳再拉）
 }
 
-async function sendOne(to: string, text: string, mode: SocialMode, atList: string[], chan: { kind: "group" | "public"; id: string; name: string } | null, fromSid: string, fromName: string): Promise<{ to: string; mode_used: SocialMode; status: string }> {
+async function sendOne(to: string, text: string, mode: SocialMode, atList: string[], chan: { kind: "group" | "public"; id: string; name: string } | null, fromSid: string, fromName: string, muted = false): Promise<{ to: string; mode_used: SocialMode; status: string }> {
   const receiverSid = to;
   // 跨设备：本机 registry 无此 sid → 远端投递（server messaging；对方设备 agent 拉取）。群/广播暂限本机。
   const reg = readJson<Record<string, RegistryEntry>>(REGISTRY_FILE, {});
@@ -854,6 +867,7 @@ async function sendOne(to: string, text: string, mode: SocialMode, atList: strin
     from_name: fromName,
     to: chan ? `${chan.kind}:${chan.id}` : to,
     ...(chan ? { chan: chan.name, chan_id: chan.id } : {}),
+    ...(muted ? { muted: true } : {}),
     mode,
     mode_used: modeUsed,
     ...(atList.length ? { at: atList } : {}),
@@ -931,14 +945,13 @@ async function sendMessage(opts: { to: string; text: string; mode?: SocialMode; 
       // 按收件人隔离错误：单个收件人投递失败不应让整条 send 抛错
       // （否则「消息已落库但调用方看到异常」＝半成功，重试会造成重复——2026-09-24 tester 指出）
       try {
-        // per-room 静音 + @ 突破（2026-09-24 用户定稿）：
-        //   默认 @ 突破静音（@ 到你 = interrupt）；只有「房间静音 + @静音」都开才降 queue
+        // 静音语义（2026-09-24 用户定稿）：被静音房间的消息 **不自动注入**，只在手动 inbox 看到「N 条未读 + 最新预览」，
+        // 用 social check-message <房间id> 取出；**@ 默认突破静音**（该条恢复自动注入）；mute+at_mute 双开则 @ 也不突破。
         const st = loadPublicMuteStateOf(m, rid);
         const isAt = atList.includes(m);
-        const mMode: SocialMode = isAt
-          ? ((st.mute && st.at_mute) ? "queue" : "interrupt")
-          : (st.mute ? "queue" : mode);
-        receipts.push(await sendOne(m, text, mMode, atList, { kind: "public", id: rid, name: room.name }, fromSid, fromName));
+        const breakthrough = isAt && !(st.mute && st.at_mute);
+        const mutedNow = st.mute && !breakthrough;
+        receipts.push(await sendOne(m, text, mutedNow ? "queue" : (isAt ? "interrupt" : mode), atList, { kind: "public", id: rid, name: room.name }, fromSid, fromName, mutedNow));
       } catch (e) {
         console.error("[spirit.bio.organs/social.communicate/communicate.ts] public delivery failed for " + m + ": " + ((e as any)?.message || e));
         receipts.push({ to: m, mode_used: mode, status: "failed: " + ((e as any)?.message || e) });
@@ -1120,12 +1133,12 @@ function registerSocialTools(pi: ExtensionAPI): void {
       "      send: gid, text, at?（gid 可用**编号或房间名**；@某人默认**突破静音**）/ history: gid, limit?\n" +
       "      rename: gid, gname（改名，**编号不变**，仅创建者）/ dissolve: gid（仅创建者；解散后成员收到通知、不可再发、历史仍可读）\n" +
       "      manage: gid, mute?, at_mute?（管理**自己**在该房间的权限；不带参数=查看当前设置）\n" +
-      "          默认 @ 可突破静音；要到 @ 也不打断，需先 mute:true 再 at_mute:true（**不能单独开 at_mute**）\n" +
+      "          静音：被静音房间的消息**不自动注入**（只在 social inbox 显示「N 条未读 + 最新预览」，用 social check-message <房间id> 取全文）；**@ 默认突破静音**；要到 @ 也不打断，先 mute:true 再 at_mute:true（**不能单独开 at_mute**）\n" +
       "  action:\"global\" [device|<id>]     — cross-device view (devices + agents); list 也支持 scope:'local'|'remote'|'global'\n" +
       "Messages auto-inject: interrupt immediately, queue at turn end (hibernate blocked while pending).",
     promptSnippet: "social(action, ...) — send|list|inbox|focus|group|public|global",
     parameters: Type.Object({
-      action: Type.String({ messageDescription: "send | list | inbox | focus | group | public | global（public=公共聊天室，仅供跨框架；global=跨设备查看——兼容别名，等效 list scope:'global'；list 支持 scope:'local'|'remote'|'global' 组合参数）" }),
+      action: Type.String({ messageDescription: "send | list | inbox | check-message | focus | group | public | global（public=公共聊天室，仅供跨框架；check-message=取某房间被静音的消息（不自动注入的那批）；global=跨设备查看）" }),
       to: Type.Optional(Type.String({ messageDescription: "Target (send): sid | agent name | group:<gid> | all" })),
       text: Type.Optional(Type.String({ messageDescription: "Message content (send)" })),
       mode: Type.Optional(Type.Union([
@@ -1142,6 +1155,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
       on: Type.Optional(Type.Boolean({ messageDescription: "Mute on/off (group mute, default true)" })),
       mute: Type.Optional(Type.Boolean({ messageDescription: "public manage: 房间静音（消息降 queue 不打断；@ 仍可突破）" })),
       at_mute: Type.Optional(Type.Boolean({ messageDescription: "public manage: @ 也静音（必须先 mute:true；默认@可突破静音）" })),
+      mname: Type.Optional(Type.String({ messageDescription: "public join: 你的注册名（必填——注册身份不能只有 id；本地 agent 可省略，自动取注册名）" })),
       ttl_minutes: Type.Optional(Type.Number({ messageDescription: "public create: N 分钟无消息自动解散（可选；不填=不过期）" })),
       // global 跨设备视图参数（2026-09-05 用户定稿：social global [device | <device_id>]）
       view: Type.Optional(Type.String({ messageDescription: "global: 'device'=设备列表（默认跨设备 agents 概览）；具体 device_id=该设备 agents" })),
@@ -1389,6 +1403,19 @@ function registerSocialTools(pi: ExtensionAPI): void {
           }
           lines.push(`${inSessionCount} in this session`);
           lines.push(`${todayCount} (today) of ${total} (total in history)`);
+          // 被静音房间的消息：**不自动注入**，只给「N 条未读 + 最新一条预览」，要看全文用 social check-message <房间id>
+          // （2026-09-24 用户定稿：mute ≠ 降级 queue；手动 inbox 只给计数+预览）
+          const mutedMsgs = msgs.filter(m => !m.injected && m.muted);
+          if (mutedMsgs.length) {
+            const byRoom = new Map<string, SocialMsg[]>();
+            for (const m of mutedMsgs) { const k = m.chan_id || m.chan || "?"; const arr = byRoom.get(k) ?? []; arr.push(m); byRoom.set(k, arr); }
+            lines.push(`${mutedMsgs.length} muted (静音房间——用 social check-message <房间id> 查看)`);
+            for (const [rid, arr] of byRoom) {
+              const last = arr.reduce((a, b) => (a.ts >= b.ts ? a : b));
+              const preview = String(last.text ?? "").replace(/\s+/g, " ").slice(0, 20);
+              lines.push(`  ${last.chan || rid} (${rid}): ${arr.length} 条未读 · 最新 "${preview}${String(last.text ?? "").length > 20 ? "…" : ""}"`);
+            }
+          }
           if (p.history === true) {
             const history = msgs.filter(m => m.injected).slice(-Math.max(0, limit - pending.length));
             if (history.length) {
@@ -1397,6 +1424,19 @@ function registerSocialTools(pi: ExtensionAPI): void {
             }
           }
           return { content: [{ type: "text", text: lines.join("\n") }], details: { social: true, action: "inbox", count: pending.length, lines } };
+        }
+        case "check-message": {
+          // 取出被静音房间的消息（不自动注入的那批）——2026-09-24 用户定稿：用 social check-message <房间id>
+          const key = String(p.gid ?? "").trim();
+          if (!key) throw new Error("social check-message: gid(房间编号) required");
+          let rid = key;
+          try { const r = findPublic(key); if (r) rid = r.id; } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); }
+          const msgs = readInbox(getMySid(), 2000).filter(m => m.muted === true && !m.injected && (m.chan_id === rid || m.chan === rid));
+          if (!msgs.length) return { content: [{ type: "text", text: `check-message ${rid}: 没有未读` }], details: { social: true, action: "check-message", count: 0, lines: [] } };
+          const lines = msgs.map(m => `[${m.mode_used}] ${m.chan ? m.chan + " · " : ""}${m.from_name} (${fmtTime(m.ts)}): ${m.text}`);
+          markInjected(getMySid(), msgs.map(m => m.id));
+          refreshSocialPending();
+          return { content: [{ type: "text", text: `check-message ${rid} — ${msgs.length} 条：\n${lines.map(l => "  " + l).join("\n")}` }], details: { social: true, action: "check-message", count: msgs.length, lines } };
         }
         case "focus": {
           const mode = p.mode as SocialFocus | undefined;
@@ -1498,16 +1538,19 @@ function registerSocialTools(pi: ExtensionAPI): void {
                 .filter((m: string) => !!m && m !== me && m !== meName);
               const rid = `p${Date.now().toString(36)}`;
               const ttl = Number(p.ttl_minutes ?? 0) || 0;
-              const room: PublicRoom = { id: rid, name, members: [me, ...members], created: Date.now(), created_by: me, closed: false, ...(ttl > 0 ? { ttl_minutes: ttl } : {}) };
+              const allMembers = [me, ...members];
+              const names: Record<string, string> = {};
+              for (const x of allMembers) names[x] = localNameOf(x) ?? x;
+              const room: PublicRoom = { id: rid, name, members: allMembers, member_names: names, created: Date.now(), created_by: me, closed: false, ...(ttl > 0 ? { ttl_minutes: ttl } : {}) };
               savePublic(room);
-              const memList = room.members.map((x: string) => displayName(x)).join(", ");
-              return { content: [{ type: "text", text: `Public room "${name}" created (${rid})\nadmin: ${displayName(me)}  members: ${memList}` }], details: { social: true, action: "public", gop: "create", lines: [`${rid} "${name}"`, `members: ${memList}`] } };
+              const memList = room.members.map((x: string) => memberLabel(room, x)).join(", ");
+              return { content: [{ type: "text", text: `Public room "${name}" created (${rid})\nadmin: ${memberLabel(room, me)}  members: ${memList}` }], details: { social: true, action: "public", gop: "create", lines: [`${rid} "${name}"`, `members: ${memList}`] } };
             }
             case "list": {
               const all = listPublics();
               if (!all.length) return { content: [{ type: "text", text: "(no public rooms)" }], details: { social: true, action: "public", gop: "list", count: 0, lines: [] } };
               const lines = all.map(r => {
-                const members = r.members.map((x: string) => displayName(x) || x).join(", ") || "(none)";
+                const members = r.members.map((x: string) => memberLabel(r, x)).join(", ") || "(none)";
                 return `${r.id} "${r.name}" ${r.closed ? "[dissolved]" : "[open]"}${r.members.includes(me) ? " (joined)" : ""}${publicMuteTag(loadPublicMuteStateOf(me, r.id))}  admin: ${displayName(r.created_by)}\n      members(${r.members.length}): ${members}`;
               });
               return { content: [{ type: "text", text: `Public rooms:\n${lines.map(l => "  " + l).join("\n")}` }], details: { social: true, action: "public", gop: "list", count: all.length, lines } };
@@ -1518,9 +1561,14 @@ function registerSocialTools(pi: ExtensionAPI): void {
               const r = findPublic(rid);
               if (!r) throw new Error(`social public join: room ${rid} not found`);
               if (r.closed) throw new Error(`social public join: room "${r.name}" 已解散`);
+              // 注册身份必须起名（2026-09-24 用户要求：不能只有 id）——本地 agent 自动取注册名，外部 agent 必须传 mname
+              const declared = String(p.mname ?? "").trim() || localNameOf(me) || "";
+              if (!declared) throw new Error("social public join: 请用 mname 指定你的名字——注册身份必须有名字，不能只有 id");
+              if (!r.member_names) r.member_names = {};
+              r.member_names[me] = declared;
               if (!r.members.includes(me) && !r.members.includes(meName)) r.members.push(me);
               savePublic(r);
-              return { content: [{ type: "text", text: `Joined "${r.name}" (${rid}) — members: ${r.members.length}` }], details: { social: true, action: "public", gop: "join", lines: [`joined ${rid}`, `members: ${r.members.length}`] } };
+              return { content: [{ type: "text", text: `Joined "${r.name}" (${r.id}) as "${declared}" — members: ${r.members.length}` }], details: { social: true, action: "public", gop: "join", lines: [`joined ${r.id}`, `as: ${declared}`, `members: ${r.members.length}`] } };
             }
             case "leave": {
               const rid = String(p.gid ?? "").trim();
@@ -1624,7 +1672,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
           }
         }
         default:
-          throw new Error(`social: unknown action "${action}" (send|list|inbox|focus|group|public)`);
+          throw new Error(`social: unknown action "${action}" (send|list|inbox|check-message|focus|group|public)`);
       }
     },
   });
