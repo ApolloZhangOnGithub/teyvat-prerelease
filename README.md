@@ -4,39 +4,13 @@ Person-based AI agent framework. Each agent has persistent memory, identity, and
 
 ## Requirements
 
-- macOS or Linux
-- [Node.js](https://nodejs.org/) >= 18
-- [Bun](https://bun.sh/) (`curl -fsSL https://bun.sh/install | bash`)
-- [GitHub CLI](https://cli.github.com/) (`brew install gh`)
-- Anthropic API key (Claude)
+- macOS / Linux / WSL
+- DeepSeek API key，或任意 OpenAI-compatible API key
 
 ## Install
 
-### One-line install
-
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/ApolloZhangOnGithub/teyvat-dev/main/Codebase/deploy/bootstrap.sh)
-```
-
-### Manual install
-
-```bash
-# 1. Clone
-git clone https://github.com/ApolloZhangOnGithub/teyvat-dev.git ~/genshin-src
-cd ~/genshin-src/Codebase/core && bun install
-
-# 2. Install
-bash ~/genshin-src/Codebase/deploy/install.sh
-
-# 3. Login (requires gh auth login first)
-genshin login
-```
-
-### npm install
-
-```bash
-npm install -g teyvat
-genshin login
+curl -fsSL paimon.beer/install-prerelease | bash
 ```
 
 ## Usage
@@ -74,44 +48,17 @@ All agent data lives in `~/.teyvat/`:
 
 | Directory | Content |
 |-----------|---------|
-| `MemoryData/<id>/` | Agent memory (context, work memory, neocortex) |
+| `MemoryData/<id>/` | Agent memory (context) |
 | `SessionData/<id>/` | Conversation session logs |
 | `IdentityData/<id>/` | Agent identity and rename history |
 | `UserAccount/` | Login credentials and settings |
 
-## Sync
-
-Teyvat syncs agent data across devices via an SSH tunnel to the sync server.
-
-The sync happens automatically:
-- **On start**: pulls latest data
-- **Every 5 minutes**: pushes changes
-- **On exit**: final push
-
-To set up sync on a new device, the bootstrap script handles it. Manual setup:
-
-```bash
-# Add your SSH key to the server
-# (替换为你的 sync 服务器——不要提交真实 IP 到公开仓库)
-ssh-copy-id root@<your-sync-server>
-
-# The LaunchAgent (macOS) keeps the tunnel alive
-# It's created automatically by bootstrap.sh
-```
-
 ## Update
 
 ```bash
-cd ~/genshin-src && git pull
-bash Codebase/deploy/install.sh
-```
-
-Or if installed via npm:
-
-```bash
-npm update -g teyvat
+genshin update
 ```
 
 ## License
 
-MIT
+License not decided.

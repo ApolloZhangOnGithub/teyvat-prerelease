@@ -935,18 +935,25 @@ function wrapSingleLine(line, width) {
         const isWhitespace = token.trim() === "";
         // Token itself is too long - break it character by character
         if (tokenVisibleLength > width && !isWhitespace) {
+            let longToken = token;
             if (currentLine) {
-                // Add specific reset for underline only (preserves background)
-                const lineEndReset = tracker.getLineEndReset();
-                if (lineEndReset) {
-                    currentLine += lineEndReset;
+                // 2026-09-24（用户：URL 折行多空格）：leading 空格（缩进）单独成 currentLine 时，长 token 会把纯空格 push 成空行。
+                // 纯 whitespace 的 currentLine 合并到长 token 前一起折（保留缩进，不再产生空行）。
+                if (currentLine.trim() === "") {
+                    longToken = currentLine + token;
+                } else {
+                    // Add specific reset for underline only (preserves background)
+                    const lineEndReset = tracker.getLineEndReset();
+                    if (lineEndReset) {
+                        currentLine += lineEndReset;
+                    }
+                    wrapped.push(currentLine);
                 }
-                wrapped.push(currentLine);
                 currentLine = "";
                 currentVisibleLength = 0;
             }
             // Break long token - breakLongWord handles its own resets
-            const broken = breakLongWord(token, width, tracker);
+            const broken = breakLongWord(longToken, width, tracker);
             for (let i = 0; i < broken.length - 1; i++) {
                 wrapped.push(broken[i]);
             }

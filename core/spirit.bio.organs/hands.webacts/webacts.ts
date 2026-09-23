@@ -139,7 +139,7 @@ export default function (pi: ExtensionAPI) {
 
   function formatFetch(r: any, label: string): { content: any[]; details: any; isError: boolean } {
     if (r?.error) {
-      return { content: [{ type: "text", text: `Web ${label} 失败: ${r.error}` }], details: {}, isError: true };
+      return { content: [{ type: "text", text: i18n(`Web ${label} 失败: ${r.error}`, `Web ${label} failed: ${r.error}`) }], details: {}, isError: true };
     }
     const modeTag = r.mode && r.mode !== "auto" ? ` (mode:${r.mode})` : "";
     const head = `[HTTP ${r.status}] ${r.url}${modeTag}`;
@@ -149,7 +149,7 @@ export default function (pi: ExtensionAPI) {
 
   function formatSearch(r: any, label: string): { content: any[]; details: any; isError: boolean } {
     if (r?.error) {
-      return { content: [{ type: "text", text: `Web ${label} 失败: ${r.error}` }], details: {}, isError: true };
+      return { content: [{ type: "text", text: i18n(`Web ${label} 失败: ${r.error}`, `Web ${label} failed: ${r.error}`) }], details: {}, isError: true };
     }
     const lines: string[] = [];
     // DeepSeek 供应商：模型整合的回答在前

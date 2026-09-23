@@ -5,6 +5,7 @@
 // 只读 context.md；历史数据（2026-09-23 之前）无 blockId，故取不到——不碰历史。
 
 import { readFileSync, existsSync } from "node:fs";
+import { i18n } from "#tui_localizations";
 
 export interface BlockHit {
   blockId: string;
@@ -17,7 +18,7 @@ export interface BlockHit {
 
 /** 从 context.md 按 blockId 找块。同一 blockId 可能命中多条（工具往返 toolCall+toolResult 同 id）。 */
 export function fetchBlockById(ctxPath: string, blockId: string): { hits: BlockHit[]; error?: string } {
-  if (!existsSync(ctxPath)) return { hits: [], error: `context.md 不存在: ${ctxPath}` };
+  if (!existsSync(ctxPath)) return { hits: [], error: i18n(`context.md 不存在: ${ctxPath}`, `context.md not found: ${ctxPath}`) };
   const hits: BlockHit[] = [];
   for (const line of readFileSync(ctxPath, "utf8").split("\n")) {
     const t = line.trim();
