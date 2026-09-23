@@ -62,6 +62,41 @@ function fmtUntilLabel(ts: number): string {
   return `${mm2}-${dd} ${hh}:${mm}`;
 }
 
+// ── 序数渲染管线（2026-09-24 用户 ISSUE 276：hibernate 复用序数 1st/2nd/3rd/11th）──
+function ordinal(n: number): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
+}
+
+// ── hibernate 复用记录（2026-09-24 用户 ISSUE 276）：RuntimeCache/<sid>/hibernate-reuse.json ──
+// { summary, summaryTs, lastTs, count }
+// summary = 上次 hibernate 文案；summaryTs = 文案第一次写的时间（renderCall 显示 "of <时间>"）；
+// lastTs = 最近一次 hibernate（写/复用）时间（"超过 10 分钟"判断用）；count = 累计 reuse 次数（写新 summary 清零）。
+function reuseFilePath(pid: string): string { return join(runtimeCacheDir(pid), "hibernate-reuse.json"); }
+function readReuse(pid: string): { summary: string; summaryTs: number; lastTs: number; count: number } | null {
+  try {
+    const j = JSON.parse(require("fs").readFileSync(reuseFilePath(pid), "utf8"));
+    if (!j?.summary) return null;
+    return { summary: String(j.summary), summaryTs: Number(j.summaryTs) || 0, lastTs: Number(j.lastTs) || 0, count: Number(j.count) || 0 };
+  } catch { return null; }
+}
+function writeReuse(pid: string, rec: { summary: string; summaryTs: number; lastTs: number; count: number }): void {
+  try { writeFileAtomic(reuseFilePath(pid), JSON.stringify(rec)); } catch (e) { dlog(`hibernate reuse write failed: ${(e as any)?.message}`); }
+}
+function fmtReuseTime(ts: number): string {
+  if (!ts) return "?";
+  const d = new Date(ts);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
 export function registerHibernateTool(_pi: ExtensionAPI) {
   registerPaimonTool({
     name: "hibernate",
@@ -70,18 +105,31 @@ export function registerHibernateTool(_pi: ExtensionAPI) {
       "Deep sleep until user returns or specified time. Call when you have nothing left to do.\n" +
       "Summary should describe what you accomplished.\n" +
       "Add until:'HH:MM' to wake at a specific time (e.g. '09:00', 'tomorrow 09:00', or ISO datetime).",
-    promptSnippet: "hibernate({summary:'what you did'}) to sleep, hibernate({summary:..., until:'HH:MM'}) for timed wake",
+    promptSnippet: "hibernate({summary:'what you did'}) to sleep, hibernate({summary:..., until:'HH:MM'}) for timed wake, hibernate({reuse:true}) to reuse last message",
     parameters: Type.Object({
-      summary: Type.String({ messageDescription: "Summary of what you accomplished" }),
+      summary: Type.Optional(Type.String({ messageDescription: "Summary of what you accomplished（reuse:true 时可省略，复用上次文案）" })),
       until: Type.Optional(Type.String({ messageDescription: "Wake time: 'HH:MM' (today/tomorrow), 'tomorrow HH:MM', or ISO datetime" })),
+      reuse: Type.Optional(Type.Boolean({ messageDescription: "复用上次 hibernate 文案（没有新内容时传 true；满 5 次或超 10 分钟会拒绝）" })),
     }),
     renderCall(args: any, theme: any) {
       // 2026-09-14 二次修复（ISSUE 240 同期回归）：02:11 的「✻ 与摘要合并」改用 Markdown 组件渲染——
       // Markdown 没有悬挂缩进，摘要第二行起全部顶头（房东：「第二行开始的对齐没了，改成顶头」）。
       // 改用与所有工具调用行同源的 bulletText 悬挂缩进管线：首行 ✻ [until] 摘要首行，续行对齐到摘要首字。
-      const s = (args?.summary ?? "").trim();
       const until = args?.until ? String(args.until).trim() : "";
       const untilStr = until ? `until ${until}` : "";
+      // 复用模式（2026-09-24 用户 ISSUE 276）：渲染上次 summary + "(reused hibernate message of <时间>)"，多次复用加序数（高亮数字）。
+      if (args?.reuse === true) {
+        const rec = readReuse(personId());
+        if (rec?.summary) {
+          const text = (untilStr ? untilStr + " " : "") + rec.summary;
+          const thisCount = rec.count + 1; // 这次是第几次 reuse（execute 里 count 还没 ++）
+          let suffix = `(reused hibernate message of ${fmtReuseTime(rec.summaryTs)}`;
+          if (thisCount >= 2) suffix += ` for the ${theme.bold(ordinal(thisCount))} time`;
+          suffix += ")";
+          return bulletText("✻", text + " " + suffix);
+        }
+      }
+      const s = (args?.summary ?? "").trim();
       const text = ((untilStr ? untilStr + " " : "") + (s || "hibernating")).trim();
       return bulletText("✻", text);
     },
@@ -95,14 +143,33 @@ export function registerHibernateTool(_pi: ExtensionAPI) {
     async execute(_id, rawParams, _signal, _onUpdate, _ctx) {
       const gbg = (globalThis as any).__genshinBgCount;
       debug.log("D0002", `execute bgCount=${gbg} gb-type=${typeof gbg}`);
-      const params = rawParams as { summary: string };
+      const params = rawParams as { summary?: string; until?: string; reuse?: boolean };
+      const pid = personId();
+      const reuse = params.reuse === true;
+      let summary = (params.summary ?? "").trim();
+      let reuseRec: { summary: string; summaryTs: number; lastTs: number; count: number } | null = null;
       // _heart 是模块级全局变量——analysis session 的 hibernate 会把它设成 hibernated，
       // 导致主 session 的 hibernate 被下面守卫拦截。现在去掉守卫，始终调 transition，
       // StatusBar.transition 自带防重入 guard。
       if (heartState() !== "working" && heartState() !== "resting" && heartState() !== "hibernated") {
         return { content: [{ type: "text", text: "" }], details: {} };
       }
-      if (!params.summary?.trim()) {
+      // 复用模式（2026-09-24 用户 ISSUE 276）：读上次文案 + 上限判断（满 5 次 / 超 10 分钟）
+      if (reuse) {
+        reuseRec = readReuse(pid);
+        if (!reuseRec?.summary) {
+          return { content: [{ type: "text", text: i18n("ERR: 无上次 hibernate 文案可复用，请正常写 summary。", "ERR: no previous hibernate message to reuse; write a summary.") }], details: {}, isError: true };
+        }
+        const age = Date.now() - reuseRec.lastTs;
+        if (reuseRec.count >= 5) {
+          return { content: [{ type: "text", text: i18n(`已复用 ${reuseRec.count} 次（达 5 次上限），建议写新 summary。`, `Reused ${reuseRec.count} times (hit the 5-time limit); suggest writing a new summary.`) }], details: {}, isError: true };
+        }
+        if (age > 10 * 60_000) {
+          return { content: [{ type: "text", text: i18n(`距上次 hibernate 已超过 10 分钟，建议写新 summary。`, `More than 10 minutes since last hibernate; suggest writing a new summary.`) }], details: {}, isError: true };
+        }
+        summary = reuseRec.summary; // 复用上次文案
+      }
+      if (!summary) {
         return { content: [{ type: "text", text: i18n("ERR: summary 不能为空。", "ERR: summary cannot be empty.") }], details: {}, isError: true };
       }
 
