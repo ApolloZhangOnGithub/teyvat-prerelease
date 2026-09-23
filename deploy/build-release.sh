@@ -175,6 +175,9 @@ PKGEOF
 
   # README（每次覆盖）
   [ -f "$DEV/../B.docs/Cook.Human/README_release.md" ] && cp "$DEV/../B.docs/Cook.Human/README_release.md" "$PRERELEASE_DIR/README.md"
+  # medias（README 引用的图片，2026-09-24）
+  mkdir -p "$PRERELEASE_DIR/medias"
+  [ -d "$DEV/../B.docs/Cook.Human/medias" ] && cp "$DEV/../B.docs/Cook.Human/medias/"*.png "$PRERELEASE_DIR/medias/" 2>/dev/null || true
 
   # .gitignore
   cat > "$PRERELEASE_DIR/.gitignore" << 'GITEOF'

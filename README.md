@@ -1,5 +1,7 @@
 # Teyvat
 
+![Teyvat TUI](medias/teyvat-tui.png)
+
 Person-based AI agent framework. Each agent has persistent memory, identity, and biological metaphor architecture running on [pi-coding-agent](https://github.com/nicolo-ribaudo/pi-coding-agent).
 
 ## Preparation
@@ -8,14 +10,19 @@ Person-based AI agent framework. Each agent has persistent memory, identity, and
 
 ## Environment
 
-- macOS / Linux / WSL
-- Windows (limited support)
+- Full support: macOS / Linux
+- As much support: WSL
+- Limited support: Windows & Android
+- Future support: Web Sandbox
 
 ## Install & Update
 
 ```bash
-curl -fsSL paimon.beer/install-prerelease | bash  # Install
-genshin update                                    # Update to latest
+curl -fsSL paimon.beer/install-prerelease | bash
+```
+
+```bash
+genshin update
 ```
 
 ## Usage
@@ -31,7 +38,7 @@ genshin clone, c <agent>                   # Clone an agent
 genshin note, n <agent> [note]             # View / append agent note
 genshin org, o [name|id|index]             # Organization management
 genshin doctor                             # System diagnostics
-genshin backup, b [config|init|now|status] # Cloud backup
+genshin backup, b [config|init|now|status] # Cloud backup (might be future supported)
 genshin login / logout / unbind / whoami   # Account
 genshin settings, s                        # Interactive settings
 genshin config provider <name> --base-url <url>  # Configure provider
