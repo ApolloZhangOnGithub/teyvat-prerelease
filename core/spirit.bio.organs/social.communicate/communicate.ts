@@ -473,23 +473,17 @@ function savePublic(r: PublicRoom): void {
   mkdirSync(PUBLIC_DIR, { recursive: true });
   writeJson(join(PUBLIC_DIR, `${r.id}.json`), r);
 }
-// 观察期埋点（2026-09-24，tester-01 建议）：**只计数、不干预、不改行为**。
-// 目的：让「参数误填」的观察期产出**数字**而非印象（尤其 send_missing_target_with_at = champion 实测 8/8 的形态）；
-// 到点即可用「过去 N 小时：send_missing_target_with_at = X 次」把提案带数据摆上桌。
-// **按调用者 sid 分桶**（tester-01 建议的第二重保险）：① 看得出来是"谁的习惯"而非一团总数；
-//   ② 期末其他 agent 的桶恒为 0 ⇒ **机器可验证的"零干预"**（比口头承诺硬）；③ 将来多 agent 用同一工具时可区分"个体习惯 vs 工具设计"。
-// 查看：cat ~/.teyvat/SocialData/metrics.json （期末按**窗口增量**算）
+// 观察期埋点（2026-09-24）——**append-only，只计数、不干预、不改行为**。
+// 历史：初版写成「read-modify-write + 无锁」（tester-01 指出：正是我们刚花五轮修掉的 seq 竞态同形 ✗，
+//   跨进程并发时 A读→B读→A写→B写覆盖A ⇒ **静默丢计数**）⇒ 改为**单行 O_APPEND 原子追加**：零 RMW/零竞态/零锁。
+//   不引入锁的理由：锁有自己的不变量要守（今天就证明过不变量容易被后续改动破坏），一个只写一行的小工具不该背这个。
+// 白得：① 每条自带 `ts`（窗口增量不必靠 `_updated` 猜）② 自带 `sid`（分桶天然成立；期末其他 agent 桶恒为 0 ⇒ **机器可验证的零干预**）
+// 位置：SocialData/metrics.jsonl；查看：`node <tester 提供的> metrics_agg.mjs --baseline base.json --keys ...`（纯读、没发生的键显式报 0）
+const METRICS_FILE = join(SOCIAL_DIR, "metrics.jsonl");
 function bumpMetric(key: string): void {
   try {
-    const f = join(SOCIAL_DIR, "metrics.json");
-    const all = readJson<Record<string, any>>(f, {});
-    const sid = getMySid() || "unknown";
-    const bucket: Record<string, number> = (all[sid] && typeof all[sid] === "object") ? all[sid] : {};
-    bucket[key] = (bucket[key] ?? 0) + 1;
-    bucket[`${key}__last`] = Date.now();
-    all[sid] = bucket;
-    all._updated = Date.now();
-    writeJson(f, all);
+    mkdirSync(SOCIAL_DIR, { recursive: true });
+    appendFileSync(METRICS_FILE, JSON.stringify({ key, sid: getMySid() || "unknown", ts: Date.now() }) + "\n", "utf8");
   } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] bumpMetric " + ((e as any)?.message || e)); }
 }
 function listPublics(): PublicRoom[] {
@@ -1759,7 +1753,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
           switch (gop) {
             case "create": {
               const name = String(p.gname ?? "").trim();
-              if (!name) throw new Error("social group create: gname required");
+              if (!name) { bumpMetric("group_create_missing_gname"); throw new Error("social group create: gname required"); }
               const members = (p.members ?? [])
                 .map((m: string) => resolveSid(String(m).trim()) ?? String(m).trim())
                 .filter((m: string) => !!m && m !== me);
@@ -1834,6 +1828,8 @@ function registerSocialTools(pi: ExtensionAPI): void {
           // 2026-09-24 用户定稿：群/房间目标统一用 `in`（对方用 `gid` 的旧写法保留兼容）
           if (p.in !== undefined && p.gid === undefined) p.gid = p.in;
           if (!gop) { bumpMetric("public_missing_gop"); throw new Error("social public: gop 必填（create|list|join|leave|send|history|rename|dissolve|manage|mute）"); }
+          // 双开关混淆（tester-01 提案的第 5 个计数器）：mute 用 `on`、manage 用 `mute`，同时给 = 混淆
+          if (p.on !== undefined && p.mute !== undefined) bumpMetric("mute_on_both_set");
           // 常见误用：房间操作把收件人写成了 to（to 是发给「人」的）——leave 的 to 是移交对象，故除外
           if (["join", "leave", "send", "history", "rename", "dissolve", "manage", "mute"].includes(gop) && gop !== "leave" && p.gid === undefined && p.to !== undefined) {
             bumpMetric("public_gop_got_to_instead_of_gid");

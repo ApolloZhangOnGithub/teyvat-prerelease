@@ -730,12 +730,29 @@ export default function registerMemory(pi: ExtensionAPI) {
   pi.on("before_agent_start", async (_event, _ctx) => {
     if (!personDir) return;
     _refreshModelMax(); // 2026-09-13：扩展加载时 __genshinGetModel 尚未注册，modelMax 是 1M 兜底——首轮/切模型后不刷新会把 200k 模型按 1M 算（ratio 偏小 5 倍）
-    // 2026-09-23（用户：余额预警）——60s 节流查一次 DeepSeek 余额（provider 是 deepseek 时，fire-and-forget）
+    // 2026-09-24（用户：余额预警 + 自动恢复，复用共享缓存不垃圾轮询）——
+    // 60s 节流，用 __genshinCheckBalanceShared（本机共享缓存，谁过期谁 fetch），
+    // 余额 < 阈值 → 预警（只对 working，不打扰 wait/hibernate）；恢复 → 告知。
     const _nowB = Date.now();
     if (_nowB - ((globalThis as any).__genshinLastBalanceCheck || 0) > 60000) {
       (globalThis as any).__genshinLastBalanceCheck = _nowB;
       if ((globalThis as any).__genshinGetModel?.()?.provider === "deepseek") {
-        void (globalThis as any).__genshinCheckBalance?.().catch(() => {});
+        void (globalThis as any).__genshinCheckBalanceShared?.().then((r: any) => {
+          try {
+            if (!r || r.unavailable) return;
+            const warnCny = Number(process.env.GENSHIN_BALANCE_WARN_CNY || (globalThis as any).__genshinBalanceWarnCny || 10);
+            const low = !r.is_available || Number(r.total_balance) < warnCny;
+            const wasLow = !!(globalThis as any).__genshinBalanceLow;
+            (globalThis as any).__genshinBalanceLow = low;
+            // 只对 working 状态打扰（wait/hibernate 不打扰——用户 2026-09-24 定稿）
+            if ((globalThis as any).__genshinHeartState !== "working") return;
+            if (low && !wasLow) {
+              sendCustomMessage(pi, "memory-reminder", i18n(`⚠️ 余额不足：DeepSeek 余额 ${r.total_balance} ${r.currency}（< ${warnCny} 元），建议暂停或充值，避免撞 402。`, `⚠️ Low balance: DeepSeek ${r.total_balance} ${r.currency} (< ${warnCny} CNY), suggest pausing or topping up to avoid 402.`));
+            } else if (!low && wasLow) {
+              sendCustomMessage(pi, "memory-reminder", i18n(`✅ 余额已恢复：DeepSeek 余额 ${r.total_balance} ${r.currency}，继续。`, `✅ Balance restored: DeepSeek ${r.total_balance} ${r.currency}, continuing.`));
+            }
+          } catch (e) { /* 预警失败静默 */ }
+        }).catch(() => {});
       }
     }
     const context = readFile(path.join(personDir, "context.md"));

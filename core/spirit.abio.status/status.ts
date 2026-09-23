@@ -78,6 +78,27 @@ async function checkDeepseekBalance(): Promise<any> {
 }
 (globalThis as any).__genshinCheckBalance = checkDeepseekBalance;
 
+// 共享余额缓存（2026-09-24 用户：不要垃圾轮询，一台电脑复用）——本机所有 agent 共用一份缓存文件，
+// 60s 内新鲜直接读，过期才 fetch（谁先过期谁 fetch，其他 agent 读缓存）。防 terminal 杀掉：缓存是文件，agent 死了不影响其他 agent 读。
+async function checkBalanceShared(): Promise<any> {
+  const cachePath = join(homedir(), ".teyvat/RuntimeCache", "balance.json");
+  try {
+    const cached = JSON.parse(readFileSync(cachePath, "utf8"));
+    if (Date.now() - (cached?.last_updated || 0) < 60_000) {
+      return cached; // 新鲜，直接复用
+    }
+  } catch { /* 无缓存/解析失败 → fetch */ }
+  const r = await checkDeepseekBalance();
+  if (r && !r.unavailable) {
+    try {
+      mkdirSync(join(homedir(), ".teyvat/RuntimeCache"), { recursive: true });
+      writeFileSync(cachePath, JSON.stringify(r));
+    } catch { /* 写缓存失败不致命，下次重新 fetch */ }
+  }
+  return r;
+}
+(globalThis as any).__genshinCheckBalanceShared = checkBalanceShared;
+
 export function registerStatusTool(_pi: ExtensionAPI) {
   registerPaimonTool({
     name: "status",
