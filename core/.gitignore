@@ -38,3 +38,6 @@ debug/debug.accessories/
 # prime-agent 的隐藏临时/证据文件：一律不进仓库（用户要求 2026-09-11）
 .prime*
 .prime-agent*
+
+# 编辑器本地配置（2026-09-24）
+.vscode/
