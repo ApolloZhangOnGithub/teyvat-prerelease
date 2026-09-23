@@ -1,5 +1,6 @@
 {
   "//": "teyvat 统一工具清单。新增工具必须四步全做（NORM-013, LESSON 055）：1) registerPaimonTool 代码注册 2) 本文件 tools 键声明 3) promotor.dna func 声明 4) make（polymerase 转译 rna.json）。缺任何一步 make 报错。Wiki: Func(Bio Mechanism).WIKI",
+  "//desc-source": "【唯一来源声明】工具说明的唯一真相源 = 各工具的 registerPaimonTool 源码：messageDescription=完整说明（help <name> 详情）、promptSnippet=一句话摘要。本文件 tools.*.desc 是「派生摘要」，仅供 help 列表展示，不是真相源；运行时 TOOL_HELP（backbone.ts 注册时收集）是快照，也不是真相源。改工具说明一律改 registerPaimonTool 源码，本文件 desc 保持与 promptSnippet 同步（不同步时以源码为准）。",
   "tools": {
     "execute": {
       "default": true,

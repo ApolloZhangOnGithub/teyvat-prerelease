@@ -828,16 +828,10 @@ function watchInterruptTriggers(pi: ExtensionAPI): void {
       if (!/^[a-f0-9]{8}$/.test(mySid)) return;
       let trig: any = null;
       try { trig = JSON.parse(readFileSync(f, "utf8")); } catch (e: any) { if ((e as any)?.code !== "ENOENT") console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return; } // ENOENT=已被 watch/interval 另一方消费（竞态）——静默
-      // 2026-09-22（ISSUE 151①）：**实例所有权校验**——trigger 带写入者 pid，只有本进程写的才消费。
-      // 场景：换代残留的孤儿实例（同 sid）与我们 watch 同一 triggers 目录，谁先 unlink 谁消费；
-      // 孤儿抢走 → 我们读 ENOENT → 静默跳过 → 跨设备打断丢失（testor 的 inode 铁证）。
-      // 规则：pid 对不上、**且写入者还活着** → 不碰（留给它，不 unlink）；写入者已死（崩溃/被杀）→ 接管（不能把消息饿死）。
-      // 老格式（无 pid）→ 照旧消费（向后兼容）。
-      if (trig?.pid && trig.pid !== process.pid) {
-        let writerAlive = false;
-        try { process.kill(trig.pid, 0); writerAlive = true; } catch { writerAlive = false; }
-        if (writerAlive) return; // 别人（活的）的 trigger——不消费、不 unlink
-      }
+      // 2026-09-24（ISSUE 273 修复）：删除 ISSUE 151① 的 pid 所有权校验——它用「写入者 pid vs 接收方 pid」判断，
+      // 但本地消息（sendOne）的 trigger 带的是**发送方** pid，接收方比对恒不等 → trigger 被跳过、消息滞留 inbox
+      // （champion 02:41 实测：interrupt 消息 injected=false，要手动 inbox 拉）。同 sid 孤儿抢 trigger 已由
+      // ISSUE 151②（launcher 启动幂等杀旧实例）解决，此处 pid 校验冗余且有害——一律消费（竞态靠 unlink 原子性）。
       try { unlinkSync(f); } catch (e: any) { if ((e as any)?.code !== "ENOENT") console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return; } // 拿所有权失败 → 已由 watch/interval 另一方处理，放弃
       try {
         const msgs = readInbox(mySid, 50).filter((m: SocialMsg) => !m.injected);

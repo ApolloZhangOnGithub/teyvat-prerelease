@@ -336,6 +336,9 @@ const TOOL_QUEUE: any[] = [];
 
 // help 库：name → { desc, detail }。注册时自动收集 messageDescription，
 // help 工具按需查询（系统提示只给一行摘要，详情走 help，省 token）。
+// 【唯一来源声明】TOOL_HELP 是「注册时快照」（各工具 registerPaimonTool 执行时收集），不是真相源——
+// 工具说明的唯一真相源是各工具的 registerPaimonTool 源码（messageDescription / promptSnippet）。
+// 改说明只改源码，本快照靠 make 重新装配 + 重启刷新，不要在这里手改。
 const TOOL_HELP: Record<string, { desc: string; detail: string; params?: string[] }> = {};
 export function getToolHelp(name: string): { desc: string; detail: string; params?: string[] } | undefined {
   return TOOL_HELP[name];

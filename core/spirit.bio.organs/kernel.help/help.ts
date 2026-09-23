@@ -5,6 +5,10 @@
 //     help <name>       → 显示该工具的完整说明（messageDescription + 参数）
 //   好处：长说明不提前加载进 system prompt，agent 自己决定要不要细看。
 //   数据源：manifest（desc/group/default）+ 注册时收集的 TOOL_HELP（detail）。
+// 【唯一来源声明】工具说明的唯一真相源 = 各工具 registerPaimonTool 源码：
+//   messageDescription = 完整说明（help <name> 详情）、promptSnippet = 摘要。
+//   本工具只是「读取端」：列表 desc 读 manifest.desc（派生）→ 兜底 TOOL_HELP.desc（快照），
+//   详情 detail 读 TOOL_HELP.detail（快照）。都不是真相源，改说明改各工具源码。
 import { Type } from "@sinclair/typebox";
 import { registerPaimonTool, getAllToolHelp, getToolHelp } from "#kernel_backbone";
 import { getToolManifest } from "#kernel_ribosome";
