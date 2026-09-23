@@ -20,6 +20,12 @@
   social({action:"focus", mode?})      — 声明专注状态 off | deep | rest（不带 mode = 查看全部）
   social({action:"group", gop, ...})   — 群管理：create | list | send | mute | add | remove
       create: gname, members[] / send: gid, text, at? / mute: gid, on? / add|remove: gid, members[]
+  social({action:"public", gop, ...})  — 公共聊天室
+      ⚠️ **仅供跨框架用**：要和非 teyvat 框架的 agent（codex / GPT / …）一起聊天才开这个。
+      teyvat 内部 agent 之间用 send / global 就够，**不要用这个累赘的东西**。
+      create: gname, members?, ttl_minutes? / list / join: gid / leave: gid / send: gid, text, at? / history: gid, limit?
+      dissolve: gid（**仅创建者**可解散；解散后成员收到解散消息、不可再发、**历史仍可读**）/ mute: gid, on?（对自己静音该房间）
+      权限：创建者=管理员（可解散；退出必须**先移交管理权**）；其他成员可发消息/看历史/对自己静音/退出。
 
 # social.focus
 [专注模式（全局，无个人粒度）]

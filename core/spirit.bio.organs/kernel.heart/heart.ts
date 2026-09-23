@@ -985,9 +985,12 @@ export default function (pi: ExtensionAPI) {
           try { require("fs").unlinkSync(pausedRc); } catch { /* 不存在正常 */ }
         }
       } catch (e) { console.error("[heart.ts] clear paused: " + ((e as any)?.message || e)); }
-    } else if (heartState() !== "hibernated") {
+    } else {
+      // 2026-09-24（用户）：session 关闭后不切 paused——保持原状态（working），让下一个 session_start（reload 场景）
+      // 或 launcher 重启自然接管。原逻辑切 paused：paused 恢复靠用户输入，headless 后台无人恢复 → 空转死
+      // （background agent 自死根因）。reload 场景 shutdown→start 配对，中间不该插 paused；
+      // 孤儿检测场景进程马上退出，切 paused 也无意义。
       (globalThis as any).__genshinWaitReason = "shutdown";
-      transition({ kind: "paused", reason: "shutdown" });
     }
     setHasUserMessage(false);
     // 终刷列表统计缓存（list.cjs 查询只读缓存，进程退出前落一次最新的）
