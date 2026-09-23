@@ -149,22 +149,13 @@ export function hangWrapText(text, width, h) {
   if (visibleWidth(stripped) > width && /\S{30,}/.test(stripped) && stripped.includes("/")) {
     src = text.replace(/\//g, "/ ");
   }
-  const contWidth = Math.max(1, width - indW);
-  // 2026-09-24 修复：先剥前缀、只折「内容」再拼回前缀。
-  // 原 wrapTextWithAnsi(src, contWidth) 把带前缀的整行折——前缀里的空格把 "  1" 折成单独一行、内容被推到续行
-  // → 用户报「对齐的是数字」而非「数字后的字符」（差前缀宽）。现按可见宽度切前缀（ANSI 安全），内容单独折。
   const prefix = _sliceByColumn ? _sliceByColumn(src, 0, indW) : src.slice(0, indW);
   const rest = src.slice(prefix.length);
-  const wrapped = wrapTextWithAnsi(rest, contWidth);
+  // 2026-09-24（统一）：折行核心收敛到 wrapWithPrefix（折内容 + 续行缩进到前缀后），此处只做前缀识别 + / 断点预处理。
+  const result = wrapWithPrefix(rest, prefix, width, h);
   // 复原断点空格
   if (src !== text) {
-    for (let i = 0; i < wrapped.length; i++) wrapped[i] = wrapped[i].replace(/\/ /g, "/");
-  }
-  if (wrapped.length <= 1) return [prefix + wrapped[0]];
-  const indent = " ".repeat(indW);
-  const result = [prefix + wrapped[0]];
-  for (let i = 1; i < wrapped.length; i++) {
-    result.push(indent + wrapped[i]);
+    for (let i = 0; i < result.length; i++) result[i] = result[i].replace(/\/ /g, "/");
   }
   return result;
 }

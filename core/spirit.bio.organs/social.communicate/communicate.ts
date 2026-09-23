@@ -1244,14 +1244,16 @@ function registerSocialTools(pi: ExtensionAPI): void {
         const modeWord = args?.mode === "queue" ? "queue" : "interrupt";
         const article = /^[aeiou]/i.test(modeWord) ? "an" : "a";
         const title = rcChan
-          ? `send a message in ${toDisplay}`.trim()
+          ? `send ${article} ${modeWord} message in ${toDisplay}`.trim()
           : `send ${article} ${modeWord} message to ${toDisplay}`.trim();
         return renderToolCall.detail(theme, "Social", title, "");
       }
       // public gop 的调用行：send 也用「in <房间>」（与上面的房间私信一致）
       if (a === "public" && args?.gop === "send" && args?.gid) {
         const rc = channelOf(`public:${args.gid}`);
-        return renderToolCall.detail(theme, "Social", `send a message in ${theme.fg("room", rc?.name || String(args.gid))} (${theme.fg("room", String(args.gid))})`, "");
+        const mw = args?.mode === "queue" ? "queue" : "interrupt";
+        const art = /^[aeiou]/i.test(mw) ? "an" : "a";
+        return renderToolCall.detail(theme, "Social", `send ${art} ${mw} message in ${theme.fg("room", rc?.name || String(args.gid))} (${theme.fg("room", String(args.gid))})`, "");
       }
       const d = a === "inbox" ? (args?.limit ? `(${args.limit})` : "")
         : a === "focus" ? (args?.mode ?? "")
@@ -1277,15 +1279,15 @@ function registerSocialTools(pi: ExtensionAPI): void {
         let summary = a || "done";
         if (a === "send") {
           if (d.count === 1 && d.modeUsed && !d.chanId) {
-            // 单发（私信）：`Sent a message to <名称> (<sid>, in <mode> mode)`
-            // 2026-09-24（用户）：原「Sent and <mode> …」是病句（动词并列读不通）→ 改正句，与房间行 `Sent a message in …` 平行
+            // 单发（私信）：`Sent and <mode 高亮> <名称> (<sid>, in <mode> mode)`
+            // 2026-09-24 用户定稿：**保留原状态式措辞**（mode 粗体高亮）——与调用行「send a/an <mode> message …」形成区别
             // ISSUE 110：接收方名字蓝紫色（accent 语义键，与调用行一致；bluePurple 不可用见 ISSUE 111）
             const name = d.targetName ?? d.target ?? "?";
             const sid = d.targetSid;
-            summary = `Sent a message to ${theme.fg("accent", String(name))}${sid ? ` (${sid}, in ${d.modeUsed} mode)` : ""}`;
+            summary = `Sent and ${theme.bold(d.modeUsed)} ${theme.fg("accent", String(name))}${sid ? ` (${sid}, in ${d.modeUsed} mode)` : ""}`;
           } else if (d.chanId) {
-            // 房间消息：面向房间结算，**不列个人**（2026-09-24 用户定稿）；房间名/编号用 room 橙色
-            summary = `Sent a message in ${theme.fg("room", String(d.chanName ?? d.chanId))} (${theme.fg("room", String(d.chanId))})`;
+            // 房间消息：状态式但**不列个人**（隐私定稿：发送方不得知个人投递态）——房间名/编号用 room 橙
+            summary = `Sent and ${theme.bold(String(d.modeUsed ?? "interrupt"))} in ${theme.fg("room", String(d.chanName ?? d.chanId))} (${theme.fg("room", String(d.chanId))}, in ${d.modeUsed ?? "interrupt"} mode)`;
           } else {
             summary = d.count === 1 ? `Sent to ${theme.fg("accent", d.targetDisplay ?? d.target ?? "?")}` : `Sent to ${theme.bold(String(d.count))} receivers`;
           }
@@ -1302,7 +1304,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
           else if (g === "list") summary = `${theme.bold(String(d.count ?? 0))} room(s)`;
           else if (g === "join") summary = `join ${theme.fg("room", tag)} as ${theme.fg("accent", String(d.memberName ?? ""))}`;
           else if (g === "leave") summary = `leave ${tag} · ${theme.bold(String(d.count ?? 0))} members left`;
-          else if (g === "send") summary = `Sent a message in ${theme.fg("room", String(d.roomName ?? d.roomId ?? ""))} (${theme.fg("room", String(d.roomId ?? ""))}, in ${d.modeUsed ?? "interrupt"} mode)${d.at?.length ? ` @${d.at.map((x: string) => displayNameShort(x)).join(", ")}` : ""}${d.offline ? ` · ${d.offline} 位成员不在线` : ""}`;
+          else if (g === "send") summary = `Sent and ${theme.bold("interrupt")} in ${theme.fg("room", String(d.roomName ?? d.roomId ?? ""))} (${theme.fg("room", String(d.roomId ?? ""))}, in interrupt mode) seq ${d.seq ?? "?"}${d.at?.length ? ` @${d.at.map((x: string) => displayNameShort(x)).join(", ")}` : ""}${d.offline ? ` · ${d.offline} 位成员不在线` : ""}`;
           else if (g === "history") summary = `${tag} · ${theme.bold(String(d.count ?? 0))} msg`;
           else if (g === "rename") summary = `rename ${theme.fg("accent", String(d.oldName ?? ""))} → ${theme.fg("accent", String(d.roomName ?? ""))} (${d.roomId ?? ""})`;
           else if (g === "dissolve") summary = `dissolve ${tag} · notified ${theme.bold(String(d.count ?? 0))}`;
@@ -1342,7 +1344,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
           const toSid = receipts[0]?.to ?? "";
           const modeUsed = receipts[0]?.mode_used ?? p.mode ?? "interrupt";
           const sendChan = channelOf(String(p.to ?? ""));
-          return { content: [{ type: "text", text: receipts.length === 1 ? `Sent a message to ${toSid ? displayName(toSid) : p.to} (in ${modeUsed} mode)\n${p.text}` : `Sent a message to ${receipts.length} receiver(s):\n${lines.map(l => "  " + l).join("\n")}\n\n${p.text}` }], details: { social: true, action: "send", count: receipts.length, target: p.to, targetDisplay: toSid ? displayName(toSid) : p.to, targetName: toSid ? displayNameShort(toSid) : p.to, targetSid: toSid, chanId: sendChan?.id, chanName: sendChan?.name, modeUsed, text: p.text, ts: Date.now(), lines } };
+          return { content: [{ type: "text", text: receipts.length === 1 ? `Sent and ${modeUsed} ${toSid ? displayName(toSid) : p.to} (in ${modeUsed} mode)\n${p.text}` : `Sent and ${modeUsed} to ${receipts.length} receiver(s):\n${lines.map(l => "  " + l).join("\n")}\n\n${p.text}` }], details: { social: true, action: "send", count: receipts.length, target: p.to, targetDisplay: toSid ? displayName(toSid) : p.to, targetName: toSid ? displayNameShort(toSid) : p.to, targetSid: toSid, chanId: sendChan?.id, chanName: sendChan?.name, modeUsed, text: p.text, ts: Date.now(), lines } };
         }
         case "list": {
           // 2026-09-08（用户：list/global 冗余——组合参数）：list scope: 'local'(默认) | 'remote' | 'global'——scope=global 或带 view/device 参数时走跨设备视图（复用 socialGlobal；老 action:'global' 兼容别名同效果）；scope='remote' 走下方 remote 分支（等效旧 list remote:true）
@@ -1746,7 +1748,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
               // 2026-09-24 用户定稿：房间消息的结算**面向房间**——不列个人、不暴露任何接收方的私人状态。
               // 发送方既不该决定、也不该知道接收方是否静音；收件人是「房间」而不是「人」。
               const off = receipts.filter((r: any) => String(r.status).includes("offline")).length;
-              return { content: [{ type: "text", text: `Sent a message in "${rname2}" (${rid}, in interrupt mode) seq ${out.seq}${at.length ? ` @${at.map((x: string) => displayNameShort(x)).join(", ")}` : ""}${off ? ` (${off} 位成员不在线)` : ""}` }], details: { social: true, action: "public", gop: "send", roomId: rid, roomName: rname2, count: receipts.length, offline: off, seq: out.seq, modeUsed: "interrupt", text, at: at.length ? at : undefined, lines: [] } };
+              return { content: [{ type: "text", text: `Sent and interrupt in "${rname2}" (${rid}, in interrupt mode) seq ${out.seq}${at.length ? ` @${at.map((x: string) => displayNameShort(x)).join(", ")}` : ""}${off ? ` (${off} 位成员不在线)` : ""}` }], details: { social: true, action: "public", gop: "send", roomId: rid, roomName: rname2, count: receipts.length, offline: off, seq: out.seq, modeUsed: "interrupt", text, at: at.length ? at : undefined, lines: [] } };
             }
             case "history": {
               const rid = String(p.gid ?? "").trim();
