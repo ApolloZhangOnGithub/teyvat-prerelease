@@ -33,7 +33,9 @@ globalThis.__genshinSYM = SYM;
 // 且三份都**不认**「数字 + 两个以上空格」这种形态（Read/Write/social 行号栏就是 `  1  code`）→
 // indW=0 → 续行只拿到块缩进 → 对不上序号后的文字（表现为顶头）。现在收口到这一处，三处共用。
 // 形态：bullet 符号类 / `1 │ ` / `1+ ` / `1\t` /「数字 + 两个以上空格」
-const PREFIX_RE = /^(\s*(?:(?:[•◦●○$⎿⏺∴▸→◆◇*>]|\d+\s*│)\s+|\d+\s*[+\-]\s|\s*\d+\t|\s*\d+ {2,})?)/;
+// 2026-09-24（用户报 social 消息对齐）：增加「数字+点+空格」＝markdown 编号（1. 2. 3.）识别，可跟在行号后（如 `129  3. O(1)...` 前缀=`129  3. `）。
+// `\d+\.\s+` 只匹配「点后跟空格」，不误伤小数（3.14 点后跟数字）或 IP。
+const PREFIX_RE = /^(\s*(?:(?:[•◦●○$⎿⏺∴▸→◆◇*>]|\d+\s*│)\s+(?:\d+\.\s+)?|\d+\s*[+\-]\s|\s*\d+\t|\s*\d+ {2,}(?:\d+\.\s+)?)?)/;
 export function prefixWidthOf(line, visibleWidth) {
   const stripped = String(line).replace(/\x1b\[[0-9;]*m/g, "");
   const m = stripped.match(PREFIX_RE);

@@ -451,8 +451,16 @@ function lastPublicSeq(rid: string): number {
         if (!l) continue;
         try { const m = JSON.parse(l); if (m && typeof m.seq === "number") return m.seq; } catch { /* 截断行，继续往前 */ }
       }
-      return 0;
     } finally { closeSync(fd); }
+    // 异常路径兜底（tester-02 2026-09-24 P3 提醒）：尾读窗口内**没有任何可解析的 seq**
+    //   （历史半行 / 格式变更 / 手工编辑）时，**不能**退化成「按行数发号」——行数+1 会与已存在的 seq 相撞，
+    //   成为日后「偶发撞号」的暗门。改为扫全表取 **max(seq)**（只发生在异常路径，不破坏常态 O(1)）。
+    let maxSeq = 0;
+    for (const m of readPublicMsgs(rid)) {
+      const n = Number(m?.seq);
+      if (Number.isFinite(n) && n > maxSeq) maxSeq = n;
+    }
+    return maxSeq;
   } catch (e) {
     if ((e as any)?.code !== "ENOENT") console.error("[spirit.bio.organs/social.communicate/communicate.ts] lastPublicSeq " + ((e as any)?.message || e));
     return 0;
