@@ -439,9 +439,14 @@ function loadPublicMutesOf(sid: string): string[] {
   return [];
 }
 function loadPublicAtMutesOf(sid: string): string[] {
-  const raw = readJson<any>(join(MUTES_DIR, `${sid}.public-at.json`), []);
+  // 注意：默认值必须用 null——若用 []，文件不存在时会命中 Array.isArray([]) 提前返回，回退分支永远不可达（实测踩过）
+  const raw = readJson<any>(join(MUTES_DIR, `${sid}.public-at.json`), null);
   if (Array.isArray(raw)) return raw.map(String);
   if (raw && typeof raw === "object") return Object.entries(raw).filter(([, v]) => !!(v as any)?.at_mute).map(([k]) => k);
+  // 过渡期迁移：at_mute 曾存在旧 map 格式的 <sid>.public.json 里 → 读时也捞一遍
+  // （实测事故：只读 -at.json 会让过渡期的 at_mute 丢失 → @ 静音失效）
+  const legacy = readJson<any>(join(MUTES_DIR, `${sid}.public.json`), null);
+  if (legacy && !Array.isArray(legacy) && typeof legacy === "object") return Object.entries(legacy).filter(([, v]) => !!(v as any)?.at_mute).map(([k]) => k);
   return [];
 }
 function saveMuteList(file: string, list: string[]): void {
@@ -1495,8 +1500,8 @@ function registerSocialTools(pi: ExtensionAPI): void {
               const ttl = Number(p.ttl_minutes ?? 0) || 0;
               const room: PublicRoom = { id: rid, name, members: [me, ...members], created: Date.now(), created_by: me, closed: false, ...(ttl > 0 ? { ttl_minutes: ttl } : {}) };
               savePublic(room);
-              const memList = room.members.map((x: string) => `${displayName(x)} (${x})`).join(", ");
-              return { content: [{ type: "text", text: `Public room "${name}" created (${rid})\nadmin: ${displayName(me)} (${me})  members: ${memList}` }], details: { social: true, action: "public", gop: "create", lines: [`${rid} "${name}"`, `members: ${memList}`] } };
+              const memList = room.members.map((x: string) => displayName(x)).join(", ");
+              return { content: [{ type: "text", text: `Public room "${name}" created (${rid})\nadmin: ${displayName(me)}  members: ${memList}` }], details: { social: true, action: "public", gop: "create", lines: [`${rid} "${name}"`, `members: ${memList}`] } };
             }
             case "list": {
               const all = listPublics();
