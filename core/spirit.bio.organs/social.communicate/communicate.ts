@@ -20,7 +20,7 @@ import { renderToolCall, renderMessage, GUTTER, lineNumbered, SYM } from "#tui_b
 import { i18n } from "#tui_localizations";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync, statSync, rmdirSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync, statSync, rmdirSync, openSync, readSync, closeSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { createCipheriv, createDecipheriv, createHash, createPrivateKey, createPublicKey, diffieHellman, generateKeyPairSync, randomBytes } from "node:crypto";
@@ -430,6 +430,34 @@ function setGroupMute(gid: string, on: boolean): void {
 // ── public 聊天室（champion-01 2026-09-24）─────────────────────────────
 // 元数据：<SOCIAL_DIR>/public_rooms/<rid>.json；消息：<rid>.msgs.jsonl（追加式，seq 从 1）
 function publicMsgFile(rid: string): string { return join(PUBLIC_DIR, `${rid}.msgs.jsonl`); }
+// 只读尾部取最后一条的 seq —— O(1)。
+// 2026-09-24（tester-01 容量测算）：原先在**锁内**做全量读+解析整个日志（O(N)）——按 ~123B/条外推，
+// 10 万条 ≈ 12MB → 单次读+解析 100-300ms，且**锁持有时间随日志线性增长** → 多写者互相排队、逼近 8s 锁超时。
+// 改为只 stat 大小 + 倒读最多 4KB（够放几十条），解析最后一条完整行 → 锁内成本恒定。
+function lastPublicSeq(rid: string): number {
+  try {
+    const f = publicMsgFile(rid);
+    const size = statSync(f).size;
+    if (!size) return 0;
+    const TAIL = Math.min(size, 4096);
+    const fd = openSync(f, "r");
+    try {
+      const buf = Buffer.alloc(TAIL);
+      readSync(fd, buf, 0, TAIL, size - TAIL);
+      const lines = buf.toString("utf8").split("\n");
+      // 从后往前找第一条能解析且带 seq 的记录（首行可能被截断/半行）
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const l = lines[i].trim();
+        if (!l) continue;
+        try { const m = JSON.parse(l); if (m && typeof m.seq === "number") return m.seq; } catch { /* 截断行，继续往前 */ }
+      }
+      return 0;
+    } finally { closeSync(fd); }
+  } catch (e) {
+    if ((e as any)?.code !== "ENOENT") console.error("[spirit.bio.organs/social.communicate/communicate.ts] lastPublicSeq " + ((e as any)?.message || e));
+    return 0;
+  }
+}
 function loadPublic(rid: string): PublicRoom | null {
   return readJson<PublicRoom | null>(join(PUBLIC_DIR, `${rid}.json`), null);
 }
@@ -1066,8 +1094,7 @@ async function sendMessage(opts: { to: string; text: string; mode?: SocialMode; 
     //    （`rows.sort((a,b)=>a.ts-b.ts)`）——若把 `ts: Date.now()` 挪到锁外，ts 序就可能与 seq 序不一致，
     //    顺序断言立刻变 flaky。改这段代码时**别把 ts 拿出来**。
     const seq = withInboxLock(publicMsgFile(rid), () => {
-      const prev = readPublicMsgs(rid);
-      const s = prev.length ? (Number(prev[prev.length - 1].seq) || prev.length) + 1 : 1;
+      const s = lastPublicSeq(rid) + 1;   // O(1) 尾读（原先锁内 O(N) 全量读+解析，见 lastPublicSeq 注释）
       appendPublicMsg(rid, { seq: s, id: `pm_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`, from: fromSid, from_name: fromName, text, ...(atList.length ? { at: atList } : {}), ts: Date.now() });
       return s;
     });
