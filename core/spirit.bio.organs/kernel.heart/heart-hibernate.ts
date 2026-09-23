@@ -216,6 +216,10 @@ export function registerHibernateTool(_pi: ExtensionAPI) {
           }, unloadMin * 60_000)
         : undefined;
       transition({ kind: "hibernated", ts: Date.now(), unloadTimer });
+      // 写复用记录（2026-09-24 用户 ISSUE 276）：reuse 时 count++ 且 summary/summaryTs 不变；正常写 summary 时 count=0 且更新 summary/summaryTs
+      writeReuse(pid, reuse
+        ? { summary: reuseRec!.summary, summaryTs: reuseRec!.summaryTs, lastTs: Date.now(), count: reuseRec!.count + 1 }
+        : { summary, summaryTs: Date.now(), lastTs: Date.now(), count: 0 });
       setHasUserMessage(false);
       dlog("hibernate" + (untilTs ? ` until=${untilTs}` : ""));
 
