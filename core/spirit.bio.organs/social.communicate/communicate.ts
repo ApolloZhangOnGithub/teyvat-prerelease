@@ -1251,7 +1251,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
       "      不带参数 / new      = 所有未读（拿走即已读）\n" +
       "      <房间id|名>           = 概览：共 N 条 / M 条新（并提示用 new 查看）\n" +
       "      <id> latest 10        = 最新 10 条；latest 10-20 = 继续往早（第 11..20 新）\n" +
-      "      也支持普通会话（传 agent 的 sid/名），查与其往来；房间编号为 **12 位 hex**（agent sid 为 8 位 hex，**同空间、位数不同**）\n" +
+      "      也支持普通会话（传 agent 的 sid/名），查与其往来；房间编号为 **6 位 hex**（agent sid 为 8 位 hex，**同空间、位数不同**）\n" +
       "  action:\"focus\"  mode?              — declare focus: off | deep | rest (no mode = show all)\n" +
       "  action:\"group\"  gop, ...           — group ops: create|list|send|mute|add|remove\n" +
       "      create: gname, members[]  /  send: gid, text, at?  /  mute: gid, on?  /  add|remove: gid, members[]\n" +
@@ -1613,9 +1613,9 @@ function registerSocialTools(pi: ExtensionAPI): void {
             refreshSocialPending();
             return { content: [{ type: "text", text: `new — ${unread.length} 条未读：\n${lines.map(l => "  " + l).join("\n")}` }], details: { social: true, action: "check-message", count: unread.length, lines } };
           }
-          // ② 解析目标：房间（12 位 hex）或普通会话（agent sid 8 位 hex / 名字）——同空间、用位数区分
+          // ② 解析目标：房间（6 位 hex，历史房有 9/12 位变体）或普通会话（agent sid 8 位 hex / 名字）——同空间、用位数区分
           const isSidLike = /^[a-f0-9]{8}$/.test(arg1);
-          const isRoomIdLike = /^[a-f0-9]{12}$/.test(arg1);
+          const isRoomIdLike = /^[a-f0-9]{6}$/.test(arg1);   // 注：非 8 位一律先按房间/名字查（findPublic 兜底），故历史变长编号仍可用
           const room = isRoomIdLike || !isSidLike ? findPublic(arg1) : null;
           const rid = room ? room.id : null;
           const peer = rid ? null : (resolveSid(arg1) ?? arg1);
@@ -1745,9 +1745,14 @@ function registerSocialTools(pi: ExtensionAPI): void {
                 .map((m: string) => resolveSid(String(m).trim()) ?? String(m).trim())
                 .filter((m: string) => !!m && m !== me && m !== meName);
               // 房间编号独立空间（2026-09-24 用户要求：room id 与 agent id 不能在同一个空间，位数不同）
-              // 房间编号：与 agent sid **同空间（都是 hex）、仅位数不同**（room 12 位 / agent 8 位）
-              // —— 2026-09-24 用户定稿：不要自造前缀/自造进制，保持 hex，用位数区分空间
-              const rid = (Date.now().toString(16) + Math.floor(Math.random() * 0x10000).toString(16).padStart(4, "0")).slice(-12);
+              // 房间编号：与 agent sid **同空间（都是 hex）、仅位数不同**（room 6 位 / agent 8 位）
+              // —— 2026-09-24 用户定稿：不要自造前缀/自造进制，保持 hex，用位数区分空间；6 位 = 16^6 ≈ 1677 万，
+              //    实际房间数是个位到几十，纯随机即可，撞了就重摇（不用时间戳，时间戳会吃掉随机位）
+              let rid = "";
+              for (let i = 0; i < 8; i++) {
+                rid = Math.floor(Math.random() * 0x1000000).toString(16).padStart(6, "0");
+                if (!loadPublic(rid)) break;
+              }
               const ttl = Number(p.ttl_minutes ?? 0) || 0;
               const allMembers = [me, ...members];
               const names: Record<string, string> = {};
