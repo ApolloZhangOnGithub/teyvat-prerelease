@@ -1239,11 +1239,12 @@ function registerSocialTools(pi: ExtensionAPI): void {
         let summary = a || "done";
         if (a === "send") {
           if (d.count === 1 && d.modeUsed && !d.chanId) {
-            // 单发（私信）：Sent and <mode 高亮> <名称> (<sid>, in <mode> mode)
+            // 单发（私信）：`Sent a message to <名称> (<sid>, in <mode> mode)`
+            // 2026-09-24（用户）：原「Sent and <mode> …」是病句（动词并列读不通）→ 改正句，与房间行 `Sent a message in …` 平行
             // ISSUE 110：接收方名字蓝紫色（accent 语义键，与调用行一致；bluePurple 不可用见 ISSUE 111）
             const name = d.targetName ?? d.target ?? "?";
             const sid = d.targetSid;
-            summary = `Sent and ${theme.bold(d.modeUsed)} ${theme.fg("accent", String(name))}${sid ? ` (${sid}, in ${d.modeUsed} mode)` : ""}`;
+            summary = `Sent a message to ${theme.fg("accent", String(name))}${sid ? ` (${sid}, in ${d.modeUsed} mode)` : ""}`;
           } else if (d.chanId) {
             // 房间消息：面向房间结算，**不列个人**（2026-09-24 用户定稿）
             summary = `Sent to ${theme.fg("accent", String(d.chanName ?? d.chanId))} (${d.chanId})`;

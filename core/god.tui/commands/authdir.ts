@@ -46,7 +46,7 @@ export async function authdirCompletions(prefix: string) {
     }
     return items.length ? items : null;
   }
-  const subs: [string, string][] = [["all", T("全量白名单（系统黑名单仍生效）", "Full whitelist (system blacklist still applies)")], ["full-reboot", T("授权模型完整重启（full-reboot）", "Authorize model full-reboot")], ["model ", T("授权模型切换（status switch-model，<id>|all）", "Authorize model switch (status switch-model, <id>|all)")], ["remove ", T("撤销授权", "Revoke authorization")], ["list", T("查看状态", "View status")]];
+  const subs: [string, string][] = [["all", T("全量白名单（系统黑名单仍生效）", "Full whitelist (system blacklist still applies)")], ["root", T("开启 root 授权（~/.teyvat 全域可操作）", "Enable root authorization (~/.teyvat fully accessible)")], ["full-reboot", T("授权模型完整重启（full-reboot）", "Authorize model full-reboot")], ["model ", T("授权模型切换（status switch-model，<id>|all）", "Authorize model switch (status switch-model, <id>|all)")], ["max-upload-size ", T("授权单文件上传上限（<MB>，1-30）", "Max upload size (<MB>, 1-30)")], ["remove ", T("撤销授权", "Revoke authorization")], ["list", T("查看状态", "View status")]];
   for (const [s, desc] of subs) {
     if (s.startsWith(prefix)) items.push({ value: s, label: s.trim(), description: desc });
   }
