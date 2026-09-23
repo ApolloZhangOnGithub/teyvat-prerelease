@@ -1350,7 +1350,8 @@ function registerSocialTools(pi: ExtensionAPI): void {
             summary = `Sent and ${theme.bold(d.modeUsed)} ${theme.fg("accent", String(name))}${sid ? ` (${sid})` : ""}`;
           } else if (d.chanId) {
             // 房间消息：状态式但**不列个人**（隐私定稿：发送方不得知个人投递态）——房间名/编号用 room 橙
-            summary = `Sent and ${theme.bold(String(d.modeUsed ?? "interrupt"))} in ${theme.fg("room", String(d.chanName ?? d.chanId))} (${theme.fg("room", String(d.chanId))})`;
+            // 房间消息：**动作式**（`Sent a message in …`）——用户 2026-09-24 定稿：「Sent and <mode>」只用于**私信**；房间用动作式，且不显示 seq
+            summary = `Sent a message in ${theme.fg("room", String(d.chanName ?? d.chanId))} (${theme.fg("room", String(d.chanId))})`;
           } else {
             summary = d.count === 1 ? `Sent to ${theme.fg("accent", d.targetDisplay ?? d.target ?? "?")}` : `Sent to ${theme.bold(String(d.count))} receivers`;
           }
@@ -1367,7 +1368,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
           else if (g === "list") summary = `${theme.bold(String(d.count ?? 0))} room(s)`;
           else if (g === "join") summary = `join ${theme.fg("room", tag)} as ${theme.fg("accent", String(d.memberName ?? ""))}`;
           else if (g === "leave") summary = `leave ${tag} · ${theme.bold(String(d.count ?? 0))} members left`;
-          else if (g === "send") summary = `Sent and ${theme.bold("interrupt")} in ${theme.fg("room", String(d.roomName ?? d.roomId ?? ""))} (${theme.fg("room", String(d.roomId ?? ""))}) seq ${d.seq ?? "?"}${d.at?.length ? ` @${d.at.map((x: string) => displayNameShort(x)).join(", ")}` : ""}${d.offline ? ` · ${d.offline} 位成员不在线` : ""}`;
+          else if (g === "send") summary = `Sent a message in ${theme.fg("room", String(d.roomName ?? d.roomId ?? ""))} (${theme.fg("room", String(d.roomId ?? ""))})${d.at?.length ? ` @${d.at.map((x: string) => displayNameShort(x)).join(", ")}` : ""}${d.offline ? ` · ${d.offline} 位成员不在线` : ""}`;
           else if (g === "history") summary = `${tag} · ${theme.bold(String(d.count ?? 0))} msg`;
           else if (g === "rename") summary = `rename ${theme.fg("accent", String(d.oldName ?? ""))} → ${theme.fg("accent", String(d.roomName ?? ""))} (${d.roomId ?? ""})`;
           else if (g === "dissolve") summary = `dissolve ${tag} · notified ${theme.bold(String(d.count ?? 0))}`;
@@ -1822,7 +1823,8 @@ function registerSocialTools(pi: ExtensionAPI): void {
               // 发送方既不该决定、也不该知道接收方是否静音；收件人是「房间」而不是「人」。
               const off = receipts.filter((r: any) => String(r.status).includes("offline")).length;
               // 2026-09-24（tester 实测发现）：房间名不带引号，与摘要行 :1307 一致（原写死 in "${rname2}" 多了引号）
-              return { content: [{ type: "text", text: `Sent and interrupt in ${rname2} (${rid}) seq ${out.seq}${at.length ? ` @${at.map((x: string) => displayNameShort(x)).join(", ")}` : ""}${off ? ` (${off} 位成员不在线)` : ""}` }], details: { social: true, action: "public", gop: "send", roomId: rid, roomName: rname2, count: receipts.length, offline: off, seq: out.seq, modeUsed: "interrupt", text, at: at.length ? at : undefined, lines: [] } };
+              // 渲染用 `Sent a message in …`（动作式）；content（给模型的自述）额外带 seq，便于我核对房间日志序号——用户可见处不出现 seq
+              return { content: [{ type: "text", text: `Sent a message in ${rname2} (${rid}) seq ${out.seq}${at.length ? ` @${at.map((x: string) => displayNameShort(x)).join(", ")}` : ""}${off ? ` (${off} 位成员不在线)` : ""}` }], details: { social: true, action: "public", gop: "send", roomId: rid, roomName: rname2, count: receipts.length, offline: off, seq: out.seq, modeUsed: "interrupt", text, at: at.length ? at : undefined, lines: [] } };
             }
             case "history": {
               const rid = String(p.gid ?? "").trim();
