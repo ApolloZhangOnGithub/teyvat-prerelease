@@ -21,6 +21,7 @@
   wait({seconds:N, title:'等待原因'})                              — 暂停 N 秒后自动继续（title 显示在调用行）
   wait({seconds:N, title:'等用户', wait_for_user:true})            — 暂停 N 秒，等用户消息
   hibernate({summary:"做了什么"})                                  — 休眠，等用户回来
+  hibernate({reuse:true})                                          — 无新内容时复用上次 summary（满 5 次/超 10 分钟会拒绝，需写新 summary）
 
 【什么时候用什么】
 - 有活干：写 intentions，继续工作（不需要调任何工具）

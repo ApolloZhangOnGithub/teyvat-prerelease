@@ -398,4 +398,4 @@ esac
 update_index
 
 echo ""
-echo "── 完成 v${VER} ──"
+echo "── 完成 v${VER}${PINNED_DEV:+（dev ${PINNED_DEV}）} ──"
