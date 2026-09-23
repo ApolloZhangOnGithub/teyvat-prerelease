@@ -1344,7 +1344,9 @@ function registerSocialTools(pi: ExtensionAPI): void {
           const toSid = receipts[0]?.to ?? "";
           const modeUsed = receipts[0]?.mode_used ?? p.mode ?? "interrupt";
           const sendChan = channelOf(String(p.to ?? ""));
-          return { content: [{ type: "text", text: receipts.length === 1 ? `Sent and ${modeUsed} ${toSid ? displayName(toSid) : p.to} (in ${modeUsed} mode)\n${p.text}` : `Sent and ${modeUsed} to ${receipts.length} receiver(s):\n${lines.map(l => "  " + l).join("\n")}\n\n${p.text}` }], details: { social: true, action: "send", count: receipts.length, target: p.to, targetDisplay: toSid ? displayName(toSid) : p.to, targetName: toSid ? displayNameShort(toSid) : p.to, targetSid: toSid, chanId: sendChan?.id, chanName: sendChan?.name, modeUsed, text: p.text, ts: Date.now(), lines } };
+          // 2026-09-24（tester 实测发现）：此处原用 displayName(toSid)，而 displayName 自身就返回 `name (sid)` → 结果行出现「(sid) (in mode mode)」双括号；
+          // 改用 localNameOf + 手拼单括号，与摘要行 :1287 保持同一套拼法（同一个动作不能有两种说法）
+          return { content: [{ type: "text", text: receipts.length === 1 ? `Sent and ${modeUsed} ${toSid ? (localNameOf(toSid) ?? p.to) : p.to}${toSid ? ` (${toSid}, in ${modeUsed} mode)` : ""}\n${p.text}` : `Sent and ${modeUsed} to ${receipts.length} receiver(s):\n${lines.map(l => "  " + l).join("\n")}\n\n${p.text}` }], details: { social: true, action: "send", count: receipts.length, target: p.to, targetDisplay: toSid ? displayName(toSid) : p.to, targetName: toSid ? displayNameShort(toSid) : p.to, targetSid: toSid, chanId: sendChan?.id, chanName: sendChan?.name, modeUsed, text: p.text, ts: Date.now(), lines } };
         }
         case "list": {
           // 2026-09-08（用户：list/global 冗余——组合参数）：list scope: 'local'(默认) | 'remote' | 'global'——scope=global 或带 view/device 参数时走跨设备视图（复用 socialGlobal；老 action:'global' 兼容别名同效果）；scope='remote' 走下方 remote 分支（等效旧 list remote:true）
@@ -1748,7 +1750,8 @@ function registerSocialTools(pi: ExtensionAPI): void {
               // 2026-09-24 用户定稿：房间消息的结算**面向房间**——不列个人、不暴露任何接收方的私人状态。
               // 发送方既不该决定、也不该知道接收方是否静音；收件人是「房间」而不是「人」。
               const off = receipts.filter((r: any) => String(r.status).includes("offline")).length;
-              return { content: [{ type: "text", text: `Sent and interrupt in "${rname2}" (${rid}, in interrupt mode) seq ${out.seq}${at.length ? ` @${at.map((x: string) => displayNameShort(x)).join(", ")}` : ""}${off ? ` (${off} 位成员不在线)` : ""}` }], details: { social: true, action: "public", gop: "send", roomId: rid, roomName: rname2, count: receipts.length, offline: off, seq: out.seq, modeUsed: "interrupt", text, at: at.length ? at : undefined, lines: [] } };
+              // 2026-09-24（tester 实测发现）：房间名不带引号，与摘要行 :1307 一致（原写死 in "${rname2}" 多了引号）
+              return { content: [{ type: "text", text: `Sent and interrupt in ${rname2} (${rid}, in interrupt mode) seq ${out.seq}${at.length ? ` @${at.map((x: string) => displayNameShort(x)).join(", ")}` : ""}${off ? ` (${off} 位成员不在线)` : ""}` }], details: { social: true, action: "public", gop: "send", roomId: rid, roomName: rname2, count: receipts.length, offline: off, seq: out.seq, modeUsed: "interrupt", text, at: at.length ? at : undefined, lines: [] } };
             }
             case "history": {
               const rid = String(p.gid ?? "").trim();
