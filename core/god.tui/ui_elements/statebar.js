@@ -31,6 +31,11 @@ export const STATUS_DEFS = {
   "paused":               { label: "Paused",            color: "accent" },
   "error":                { label: "Error",             color: "error" },
   "error-backoff":        { label: "Retrying",          color: "error" },
+  // 2026-09-24（用户：清理死状态——注释保留不删）：以下状态无任何 transition 到它们，仅历史残留。
+  // "aborted":              { label: "Aborted",           color: "error" },
+  // "sleeping(compacting)": { label: "Compacting Memory", color: "accent" },
+  // "sleeping(nap)":        { label: "Nap",               color: "accent" },
+  // "sleeping(sleep)":      { label: "Sleeping",          color: "accent" },
 };
 
 // 2026-09-13（ISSUE 226）：耗时格式唯一实现在 blocks_nongod（fmtElapsedCoarse=整秒计时器格式），这里只保留同名出口给既有调用方

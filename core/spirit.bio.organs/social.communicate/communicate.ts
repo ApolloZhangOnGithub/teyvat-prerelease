@@ -1491,6 +1491,9 @@ function registerSocialTools(pi: ExtensionAPI): void {
               const r = loadPublic(rid);
               if (!r) throw new Error(`social public mute: room ${rid} not found`);
               const on = p.on !== false;
+              // 与 join/send/history 对齐：已解散房间不再有任何消息，静音无意义 → 拒绝；
+              // 但允许 on:false（取消静音）作为幂等清理（ISSUE: 联调发现 mute 曾静默成功）。
+              if (r.closed && on) throw new Error(`social public mute: room "${r.name}" (${rid}) 已解散——静音无意义（不再有房间消息）；如需清理旧静音，用 on:false`);
               setPublicMute(rid, on);
               return { content: [{ type: "text", text: `Public room "${r.name}" ${on ? "muted" : "unmuted"} for you (${rid})` }], details: { social: true, action: "public", gop: "mute", lines: [`${on ? "muted" : "unmuted"} ${rid}`] } };
             }
