@@ -500,10 +500,22 @@ function localNameOf(sid: string): string | null {
   const reg = readJson<Record<string, RegistryEntry>>(REGISTRY_FILE, {});
   return reg[sid]?.name ?? null;
 }
+// 解析 `public:<id>` / `group:<id>` 目标 → 房间信息（2026-09-24 用户要求：send 的调用行/结果行要带房间上下文）
+function channelOf(to: string): { id: string; name: string; kind: "public" | "group" } | null {
+  const m = String(to ?? "").match(/^(public|group):(.+)$/);
+  if (!m) return null;
+  const kind = m[1] as "public" | "group";
+  const id = m[2];
+  let name = "";
+  try { name = kind === "public" ? (findPublic(id)?.name ?? "") : (loadGroup(id)?.name ?? ""); }
+  catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); }
+  return { id, name, kind };
+}
 // 成员显示：优先用房内**注册名**，否则回退 displayName（后者自带 (sid) 后缀）
 function memberLabel(r: PublicRoom, sid: string): string {
   const n = r.member_names?.[sid];
-  return n ? `${n} (${sid})` : displayName(sid);
+  if (!n) return displayName(sid);
+  return n.includes(`(${sid})`) ? n : `${n} (${sid})`;   // 防重复拼 sid（displayName 已自带 (sid)，2026-09-24 tester 发现）
 }
 function publicMuteTag(st: PublicMuteState): string {
   if (st.mute && st.at_mute) return " [muted+@muted]";
@@ -1183,7 +1195,11 @@ function registerSocialTools(pi: ExtensionAPI): void {
         // 不再作为详情区 body 传进调用行（此前导致调用行显示正文 = 用户看到的垃圾）。
         // 名字用蓝紫色（accent #B1B9F9；注：bluePurple 是 vars 色值键非 colors 语义键，theme.fg 不认会抛错——ISSUE 111）。
         const toName = String(args?.to ?? "");
-        const toDisplay = toName ? theme.fg("accent", toName) : "";
+        // 2026-09-24 用户要求：发到房间时调用行要带房间上下文（"…message to <房间名> (pub_xxx)"）
+        const rcChan = channelOf(toName);
+        const toDisplay = rcChan
+          ? `${rcChan.name ? theme.fg("accent", rcChan.name) + " " : ""}(${theme.fg("accent", rcChan.id)})`
+          : (toName ? theme.fg("accent", toName) : "");
         const modeWord = args?.mode === "queue" ? "queue" : "interrupt";
         const article = /^[aeiou]/i.test(modeWord) ? "an" : "a";
         const title = `send ${article} ${modeWord} message to ${toDisplay}`.trim();
@@ -1192,6 +1208,8 @@ function registerSocialTools(pi: ExtensionAPI): void {
       const d = a === "inbox" ? (args?.limit ? `(${args.limit})` : "")
         : a === "focus" ? (args?.mode ?? "")
         : a === "group" ? `${args?.gop ?? ""}${args?.gname || args?.gid ? ` ${args?.gname || args?.gid}` : ""}`
+        : a === "public" ? `${args?.gop ?? ""}${args?.gid || args?.gname ? ` ${args?.gid || args?.gname}` : ""}`
+        : a === "check-message" ? `${args?.gid ?? "new"}${args?.text ? ` ${args.text}` : ""}`
         : "";
       return renderToolCall.label(theme, "Social", [a, d].filter(Boolean).join(" "));
     },
@@ -1215,9 +1233,11 @@ function registerSocialTools(pi: ExtensionAPI): void {
             // ISSUE 110：接收方名字蓝紫色（accent 语义键，与调用行一致；bluePurple 不可用见 ISSUE 111）
             const name = d.targetName ?? d.target ?? "?";
             const sid = d.targetSid;
-            summary = `Sent and ${theme.bold(d.modeUsed)} ${theme.fg("accent", String(name))}${sid ? ` (${sid}, in ${d.modeUsed} mode)` : ""}`;
+            const roomTag = d.chanId ? ` in ${d.chanName ? theme.fg("accent", String(d.chanName)) + " " : ""}(${d.chanId})` : "";
+            summary = `Sent and ${theme.bold(d.modeUsed)} ${theme.fg("accent", String(name))}${sid ? ` (${sid}, in ${d.modeUsed} mode)` : ""}${roomTag}`;
           } else {
-            summary = d.count === 1 ? `Sent to ${theme.fg("accent", d.targetDisplay ?? d.target ?? "?")}` : `Sent to ${theme.bold(String(d.count))} receivers`;
+            const roomTag = d.chanId ? ` in ${d.chanName ? theme.fg("accent", String(d.chanName)) + " " : ""}(${d.chanId})` : "";
+            summary = (d.count === 1 ? `Sent to ${theme.fg("accent", d.targetDisplay ?? d.target ?? "?")}` : `Sent to ${theme.bold(String(d.count))} receivers`) + roomTag;
           }
         }
         else if (a === "list") summary = `Agents ${theme.bold(String(d.count ?? 0))}`;
@@ -1232,7 +1252,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
           else if (g === "list") summary = `${theme.bold(String(d.count ?? 0))} room(s)`;
           else if (g === "join") summary = `join ${tag} as ${theme.fg("accent", String(d.memberName ?? ""))}`;
           else if (g === "leave") summary = `leave ${tag} · ${theme.bold(String(d.count ?? 0))} members left`;
-          else if (g === "send") summary = `➤ ${tag} #${d.seq ?? "?"} · ${theme.bold(String(d.count ?? 0))} receiver(s)`;
+          else if (g === "send") summary = `➤ ${tag} · seq ${d.seq ?? "?"} · ${theme.bold(String(d.count ?? 0))} receiver(s)`;
           else if (g === "history") summary = `${tag} · ${theme.bold(String(d.count ?? 0))} msg`;
           else if (g === "rename") summary = `rename ${theme.fg("accent", String(d.oldName ?? ""))} → ${theme.fg("accent", String(d.roomName ?? ""))} (${d.roomId ?? ""})`;
           else if (g === "dissolve") summary = `dissolve ${tag} · notified ${theme.bold(String(d.count ?? 0))}`;
@@ -1268,10 +1288,11 @@ function registerSocialTools(pi: ExtensionAPI): void {
           if (p.mode && !["interrupt", "queue"].includes(p.mode)) throw new Error(`social send: mode must be interrupt|queue (deferred 废弃, ISSUE 103), got "${p.mode}"`);
           const out = await sendMessage({ to: p.to, text: p.text, mode: p.mode ?? "interrupt", at: p.at ?? [] });
           const receipts = out.receipts as any[];
-          const lines = receipts.map(r => `${displayName(r.to)}: ${r.status} (mode: ${r.mode_used})`);
+          const lines = receipts.map(r => `${displayName(r.to)}: ${r.status}${String(r.status).startsWith("muted") ? "" : ` (mode: ${r.mode_used})`}`);
           const toSid = receipts[0]?.to ?? "";
           const modeUsed = receipts[0]?.mode_used ?? p.mode ?? "interrupt";
-          return { content: [{ type: "text", text: `Sent to ${receipts.length} receiver(s):\n${lines.map(l => "  " + l).join("\n")}\n\n${p.text}` }], details: { social: true, action: "send", count: receipts.length, target: p.to, targetDisplay: toSid ? displayName(toSid) : p.to, targetName: toSid ? displayNameShort(toSid) : p.to, targetSid: toSid, modeUsed, text: p.text, ts: Date.now(), lines } };
+          const sendChan = channelOf(String(p.to ?? ""));
+          return { content: [{ type: "text", text: `Sent to ${receipts.length} receiver(s):\n${lines.map(l => "  " + l).join("\n")}\n\n${p.text}` }], details: { social: true, action: "send", count: receipts.length, target: p.to, targetDisplay: toSid ? displayName(toSid) : p.to, targetName: toSid ? displayNameShort(toSid) : p.to, targetSid: toSid, chanId: sendChan?.id, chanName: sendChan?.name, modeUsed, text: p.text, ts: Date.now(), lines } };
         }
         case "list": {
           // 2026-09-08（用户：list/global 冗余——组合参数）：list scope: 'local'(默认) | 'remote' | 'global'——scope=global 或带 view/device 参数时走跨设备视图（复用 socialGlobal；老 action:'global' 兼容别名同效果）；scope='remote' 走下方 remote 分支（等效旧 list remote:true）
@@ -1487,7 +1508,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
             ? inbox.filter(m => !m.injected && (m.chan_id === rid || m.chan === rid))
             : inbox.filter(m => !m.injected && (m.from === peer || m.to === peer));
           const fullId = room ? room.id : String(peer);           // 用户要求：显示 id 要显示全，不要摘要
-          const label = room ? `"${room.name}" (${fullId})` : `${displayName(String(peer))} (${fullId})`;
+          const label = room ? `"${room.name}" (${fullId})` : `${localNameOf(String(peer)) ?? String(peer)} (${fullId})`;
           // ③ latest N / latest A-B
           const mwin = arg2.match(/^latest(?:\s+(\d+))?(?:\s*-\s*(\d+))?$/i);
           if (mwin) {
@@ -1643,8 +1664,20 @@ function registerSocialTools(pi: ExtensionAPI): void {
               if (!rid) throw new Error("social public leave: gid(房间编号或名称) required");
               const r = findPublic(rid);
               if (!r) throw new Error(`social public leave: room ${rid} not found`);
-              if (r.created_by === me || r.created_by === meName) throw new Error("social public leave: 创建者不能直接退出——必须先移交管理权（移交机制待定）");
-              r.members = r.members.filter(x => x !== me && x !== meName);
+              // 创建者退出（2026-09-24）：唯一出口是「房里只剩他一人 → 自动解散」（避免无 admin 孤儿房）；
+              // 否则必须先移交管理权（移交机制待用户定），并给出明确出路提示。
+              const isCreator = r.created_by === me || r.created_by === meName;
+              const others = r.members.filter((x: string) => x !== me && x !== meName);
+              if (isCreator) {
+                if (others.length === 0) {
+                  r.closed = true;
+                  r.closed_at = Date.now();
+                  savePublic(r);
+                  return { content: [{ type: "text", text: `房间 "${r.name}" (${r.id}) 只剩创建者一人——已自动解散` }], details: { social: true, action: "public", gop: "leave", roomId: r.id, roomName: r.name, count: 0, lines: [`auto-dissolved ${r.id}`] } };
+                }
+                throw new Error(`social public leave: 创建者不能直接退出——必须先移交管理权（移交机制待定）；或等其他成员全部退出后自动解散`);
+              }
+              r.members = others;
               savePublic(r);
               return { content: [{ type: "text", text: `Left "${r.name}" (${rid}) — members: ${r.members.length}` }], details: { social: true, action: "public", gop: "leave", roomId: r.id, roomName: r.name, count: r.members.length, lines: [`left ${r.id}`, `members: ${r.members.length}`] } };
             }
@@ -1656,7 +1689,8 @@ function registerSocialTools(pi: ExtensionAPI): void {
               const at = (p.at ?? []).map((a: string) => resolveSid(String(a).trim()) ?? String(a).trim()).filter(Boolean);
               const out = await sendMessage({ to: `public:${rid}`, text, mode: "interrupt", at });
               const receipts = out.receipts as any[];
-              const lines = receipts.map(r => `${displayName(r.to)}: ${r.status} (mode: ${r.mode_used})`);
+              // 回执行：muted 时 status 已自带说明，不再重复打印 (mode: muted)
+              const lines = receipts.map(r => `${displayName(r.to)}: ${r.status}${String(r.status).startsWith("muted") ? "" : ` (mode: ${r.mode_used})`}`);
               return { content: [{ type: "text", text: `Public "${rid}" seq ${out.seq} (${receipts.length} receivers):\n${lines.map(l => "  " + l).join("\n")}` }], details: { social: true, action: "public", gop: "send", roomId: rid, roomName: (loadPublic(rid)?.name ?? rid), count: receipts.length, seq: out.seq, text, lines } };
             }
             case "history": {

@@ -133,6 +133,12 @@ export function markdownBullet(md, dotStr, width) {
 // 若行首有前缀（空白 + 可选 bullet/$ 及其后空格），首行按 width 折，续行按 width-前缀宽 折并补缩进 →
 // 续行和「前缀后面的字」同列。无前缀则退回普通 wrapTextWithAnsi，行为不变（不影响别的 Text 用途）。
 export function hangWrapText(text, width, h) {
+  // 2026-09-24（ISSUE 264 延续）：多行文本逐行处理——每行识别各自前缀 + 各自折行对齐。
+  // 原实现只剥第一行前缀，后续行（social 消息行号 4/5）的前缀没被识别，折行时续行对齐到「第一行前缀宽」=数字位置，
+  // 而非「各自行内容」=* 位置。多行逐行递归，单行逻辑不变。
+  if (String(text).includes("\n")) {
+    return String(text).split("\n").flatMap((line) => hangWrapText(line, width, h));
+  }
   const { visibleWidth, wrapTextWithAnsi } = h;
   const stripped = String(text).replace(new RegExp(String.fromCharCode(27) + "\\[[0-9;]*m", "g"), ""); // 下游还要用（长 token 断点判断）
   const indW = prefixWidthOf(text, visibleWidth); // 2026-09-22：前缀识别收口到 prefixWidthOf（此前三处各写一份）
