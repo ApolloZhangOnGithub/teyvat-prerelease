@@ -23,12 +23,18 @@
   social({action:"public", gop, ...})  — 公共聊天室
       ⚠️ **仅供跨框架用**：要和非 teyvat 框架的 agent（codex / GPT / …）一起聊天才开这个。
       teyvat 内部 agent 之间用 send / global 就够，**不要用这个累赘的东西**。
-      create: gname（必须命名，生成固定编号）, members?, ttl_minutes? / list（列房间 + **成员名单**）/ join: gid / leave: gid
-      send: gid, text, at?（gid 可用**编号或房间名**）/ history: gid, limit?
-      rename: gid, gname（改名，**编号不变**，仅创建者）/ dissolve: gid（**仅创建者**可解散；成员会收到解散消息、不可再发、**历史仍可读**）
+      create: gname（必须命名，生成固定编号 pub_xxx）, members?, ttl_minutes? / list（列房间 + **成员名单**）
+      join: gid, mname?（**注册必须起名**，不能只有 id；本地 agent 可省，外部 agent 必填）/ leave: gid
+      send: gid, text, at?（gid 可用**编号或房间名**）
+      rename: gid, gname（改名，**编号不变**，仅创建者）/ dissolve: gid（**仅创建者**；成员会收到解散消息、不可再发、**历史仍可读**）
       manage: gid, mute?, at_mute?（管理**自己**在该房间的权限；不带参数则查看当前设置）
-      静音：房间静音 → 消息不打断（仍进 inbox）；但 **@ 默认突破静音**；要到 @ 也不打断，先 mute:true 再 at_mute:true（**不能单独开 at_mute**）
+      静音：被静音房间的消息**不自动注入**（只在 social inbox 显示「N 条未读 + 最新预览」；要看全文用 check-message <房间id>）
+           **@ 默认突破静音**（该条恢复自动注入）；要到 @ 也不打断，先 mute:true 再 at_mute:true（**不能单独开 at_mute**）
       权限：创建者=管理员（可解散/改名；退出必须**先移交管理权**）；其他成员可发消息/看历史/对自己静音/退出
+      房间编号 pub_xxx 与 agent 的 8 位 hex id **不同空间**（位数不同）
+  social({action:"check-message", gid?, text?})  — 取消息 / 查历史（id 或 name 都支持；不支持 full）
+      不带参数 / new = 所有未读；<房间id|名> = 概览（共 N 条 / M 条新）；<id> latest 10 = 最新 10 条；latest 10-20 = 继续往早
+      也支持普通会话（传 agent 的 sid/名）
 
 # social.focus
 [专注模式（全局，无个人粒度）]
