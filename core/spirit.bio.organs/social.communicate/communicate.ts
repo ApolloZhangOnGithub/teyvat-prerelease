@@ -562,7 +562,9 @@ function channelOf(to: string): { id: string; name: string; kind: "public" | "gr
 }
 // 成员显示：优先用房内**注册名**，否则回退 displayName（后者自带 (sid) 后缀）
 function memberLabel(r: PublicRoom, sid: string): string {
-  const n = r.member_names?.[sid];
+  // 2026-09-24：本地 agent 优先用**当前**注册名（改名后不残留旧的房内快照）——
+  // 房内 member_names 是加入时的快照，改名后不会自动更新；外部 agent（无本地 registry）才回退快照。
+  const n = localNameOf(sid) ?? r.member_names?.[sid];
   if (!n) return displayName(sid);
   return n.includes(`(${sid})`) ? n : `${n} (${sid})`;   // 防重复拼 sid（displayName 已自带 (sid)，2026-09-24 tester 发现）
 }
