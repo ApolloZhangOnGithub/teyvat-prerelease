@@ -1256,9 +1256,11 @@ function registerSocialTools(pi: ExtensionAPI): void {
       "  action:\"group\"  gop, ...           — group ops: create|list|send|mute|add|remove\n" +
       "      create: gname, members[]  /  send: gid, text, at?  /  mute: gid, on?  /  add|remove: gid, members[]\n" +
       "  action:\"public\" gop, ...            — 公共聊天室（⚠️ 仅供跨框架用：要和非 teyvat agent 一起聊天才开；teyvat 内部 agent 之间用 send / global 即可，不要用这个累赘）\n" +
-      "      create: gname, members?, ttl_minutes? / list（含成员名单）/ join: gid / leave: gid\n" +
-      "      send: gid, text, at?（gid 可用**编号或房间名**；@某人默认**突破静音**）/ history: gid, limit?\n" +
-      "      rename: gid, gname（改名，**编号不变**，仅创建者）/ dissolve: gid（仅创建者；解散后成员收到通知、不可再发、历史仍可读）\n" +
+      "      create: gname, members?, ttl_minutes? / join: gid, mname?（**注册必须起名**）\n" +
+      "      list: [archive?]（默认只列 open 房 + 每房「N online / M offline」；archive:true 只看**归档的已关闭房**）\n" +
+      "      leave: gid, to?（**创建者退出必须用 to:\"<成员>\" 显式移交管理权**；房内只剩自己时自动解散）\n" +
+      "      send: gid, text, at?（gid 可用**编号或房间名**；@某人默认**突破静音**；房间回执不写在线数）/ history: gid, limit?\n" +
+      "      rename: gid, gname（改名，**编号不变**，仅创建者）/ dissolve: gid（仅创建者；解散后成员收到通知、不可再发、历史仍可读→进归档）\n" +
       "      manage: gid, mute?, at_mute?（管理**自己**在该房间的权限；不带参数=查看当前设置）\n" +
       "          静音：被静音房间的消息**不自动注入**（只在 social inbox 显示「N 条未读 + 最新预览」，用 social check-message <房间id> 取全文）；**@ 默认突破静音**；要到 @ 也不打断，先 mute:true 再 at_mute:true（**不能单独开 at_mute**）\n" +
       "  action:\"global\" [device|<id>]     — cross-device view (devices + agents); list 也支持 scope:'local'|'remote'|'global'\n" +
@@ -1266,7 +1268,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
     promptSnippet: "social(action, ...) — send|list|inbox|focus|group|public|global",
     parameters: Type.Object({
       action: Type.String({ messageDescription: "send | list | inbox | check-message | focus | group | public | global（public=公共聊天室，仅供跨框架；check-message=取某房间被静音的消息（不自动注入的那批）；global=跨设备查看）" }),
-      to: Type.Optional(Type.String({ messageDescription: "Target (send): sid | agent name | group:<gid> | all" })),
+      to: Type.Optional(Type.String({ messageDescription: "目标：send: sid | agent name | group:<gid> | public:<rid> | all；public leave（创建者）: 管理权移交给哪位房内成员（sid 或房内名）" })),
       text: Type.Optional(Type.String({ messageDescription: "send: 消息内容；check-message: 查询修饰（空/new/latest N/latest A-B）" })),
       mode: Type.Optional(Type.Union([
         Type.Literal("interrupt"), Type.Literal("queue"), // @DEP deferred 废弃 ISSUE 103
@@ -1284,6 +1286,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
       at_mute: Type.Optional(Type.Boolean({ messageDescription: "public manage: @ 也静音（必须先 mute:true；默认@可突破静音）" })),
       mname: Type.Optional(Type.String({ messageDescription: "public join: 你的注册名（必填——注册身份不能只有 id；本地 agent 可省略，自动取注册名）" })),
       ttl_minutes: Type.Optional(Type.Number({ messageDescription: "public create: N 分钟无消息自动解散（可选；不填=不过期）" })),
+      archive: Type.Optional(Type.Boolean({ messageDescription: "public list: true = 只看归档的已关闭房（dissolved/expired）" })),
       // global 跨设备视图参数（2026-09-05 用户定稿：social global [device | <device_id>]）
       view: Type.Optional(Type.String({ messageDescription: "global: 'device'=设备列表（默认跨设备 agents 概览）；具体 device_id=该设备 agents" })),
       device: Type.Optional(Type.String({ messageDescription: "global: 指定设备 id → 显示该设备 genshin（agent 列表）" })),
@@ -1368,7 +1371,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
           else if (g === "list") summary = `${theme.bold(String(d.count ?? 0))} room(s)`;
           else if (g === "join") summary = `join ${theme.fg("room", tag)} as ${theme.fg("accent", String(d.memberName ?? ""))}`;
           else if (g === "leave") summary = `leave ${tag} · ${theme.bold(String(d.count ?? 0))} members left`;
-          else if (g === "send") summary = `Sent a message in ${theme.fg("room", String(d.roomName ?? d.roomId ?? ""))} (${theme.fg("room", String(d.roomId ?? ""))})${d.at?.length ? ` @${d.at.map((x: string) => displayNameShort(x)).join(", ")}` : ""}${d.offline ? ` · ${d.offline} 位成员不在线` : ""}`;
+          else if (g === "send") summary = `Sent a message in ${theme.fg("room", String(d.roomName ?? d.roomId ?? ""))} (${theme.fg("room", String(d.roomId ?? ""))})${d.at?.length ? ` @${d.at.map((x: string) => displayNameShort(x)).join(", ")}` : ""}`;
           else if (g === "history") summary = `${tag} · ${theme.bold(String(d.count ?? 0))} msg`;
           else if (g === "rename") summary = `rename ${theme.fg("accent", String(d.oldName ?? ""))} → ${theme.fg("accent", String(d.roomName ?? ""))} (${d.roomId ?? ""})`;
           else if (g === "dissolve") summary = `dissolve ${tag} · notified ${theme.bold(String(d.count ?? 0))}`;
@@ -1764,13 +1767,22 @@ function registerSocialTools(pi: ExtensionAPI): void {
               return { content: [{ type: "text", text: `Public room "${name}" created (${rid})\nadmin: ${memberLabel(room, me)}  members: ${memList}` }], details: { social: true, action: "public", gop: "create", roomId: rid, roomName: name, count: room.members.length, lines: [`${rid} "${name}"`, `members: ${memList}`] } };
             }
             case "list": {
+              // 2026-09-24 用户定稿：默认**只列 open 房**；已关闭的（dissolved/expired）进**归档**，
+              // 默认视图只在末尾给一行提示；要看归档用 `gop:"list", archive:true`
+              const wantArchive = p.archive === true || String(p.gid ?? "").trim() === "archive";
               const all = listPublics();
-              if (!all.length) return { content: [{ type: "text", text: "(no public rooms)" }], details: { social: true, action: "public", gop: "list", count: 0, lines: [] } };
-              const lines = all.map(r => {
+              const archivedCount = all.filter(r => r.closed).length;
+              const shown = wantArchive ? all.filter(r => r.closed) : all.filter(r => !r.closed);
+              const archHint = !wantArchive && archivedCount ? `\n  and ${archivedCount} archived (please use social({action:"public", gop:"list", archive:true}) to view)` : "";
+              if (!shown.length) return { content: [{ type: "text", text: `${wantArchive ? "(no archived rooms)" : "(no public rooms)"}${archHint}` }], details: { social: true, action: "public", gop: "list", archive: wantArchive, count: 0, archived: archivedCount, lines: [] } };
+              const lines = shown.map(r => {
+                // 在线/不在线人数（用户 2026-09-24：**查询处**要写清多少在线、多少不在线；直接发消息处不写）
+                const online = r.members.filter((x: string) => /^[a-f0-9]{8}$/.test(x) && isAgentActive(x)).length;
+                const offline = r.members.length - online;
                 const members = r.members.map((x: string) => memberLabel(r, x)).join(", ") || "(none)";
-                return `${r.id} "${r.name}" ${r.closed ? (r.closed_reason === "expired" ? "[expired]" : "[dissolved]") : "[open]"}${r.members.includes(me) ? " (joined)" : ""}${publicMuteTag(loadPublicMuteStateOf(me, r.id))}  admin: ${displayName(r.created_by)}\n      members(${r.members.length}): ${members}`;
+                return `${r.id} "${r.name}" ${r.closed ? (r.closed_reason === "expired" ? "[expired]" : "[dissolved]") : "[open]"}${r.members.includes(me) ? " (joined)" : ""}${publicMuteTag(loadPublicMuteStateOf(me, r.id))}  admin: ${displayName(r.created_by)}\n      members(${r.members.length}) ${online} online / ${offline} offline: ${members}`;
               });
-              return { content: [{ type: "text", text: `Public rooms:\n${lines.map(l => "  " + l).join("\n")}` }], details: { social: true, action: "public", gop: "list", count: all.length, lines } };
+              return { content: [{ type: "text", text: `${wantArchive ? "Archived rooms:" : "Public rooms:"}\n${lines.map(l => "  " + l).join("\n")}${archHint}` }], details: { social: true, action: "public", gop: "list", archive: wantArchive, count: shown.length, archived: archivedCount, lines } };
             }
             case "join": {
               const rid = String(p.gid ?? "").trim();
@@ -1804,7 +1816,17 @@ function registerSocialTools(pi: ExtensionAPI): void {
                   savePublic(r);
                   return { content: [{ type: "text", text: `房间 "${r.name}" (${r.id}) 只剩创建者一人——已自动解散` }], details: { social: true, action: "public", gop: "leave", roomId: r.id, roomName: r.name, count: 0, lines: [`auto-dissolved ${r.id}`] } };
                 }
-                throw new Error(`social public leave: 创建者不能直接退出——必须先移交管理权（移交机制待定）；或等其他成员全部退出后自动解散`);
+                // 2026-09-24 用户定稿：**强制显式移交**（顺延太坑，暂不采用）——
+                // 创建者退出必须用 to:"<成员>" 指定接手人；不指定就报错并列出现可移交的成员
+                const toRaw = String(p.to ?? "").trim();
+                if (!toRaw) throw new Error(`social public leave: 创建者不能直接退出——请用 to:"<成员>" **显式移交管理权**（房内成员：${others.map((x: string) => memberLabel(r, x)).join(", ")}）；或等其他成员全部退出后自动解散`);
+                const toSid = resolveSid(toRaw) ?? toRaw;
+                const target = others.find((x: string) => x === toSid) ?? others.find((x: string) => (r.member_names?.[x] ?? "") === toRaw);
+                if (!target) throw new Error(`social public leave: to:"${toRaw}" 不是本房成员——管理权只能移交给房内成员（可选：${others.map((x: string) => memberLabel(r, x)).join(", ")}）`);
+                r.created_by = target;
+                r.members = others;
+                savePublic(r);
+                return { content: [{ type: "text", text: `管理权已移交给 ${memberLabel(r, target)}；你已退出 "${r.name}" (${r.id}) — members: ${r.members.length}` }], details: { social: true, action: "public", gop: "leave", roomId: r.id, roomName: r.name, newAdmin: target, count: r.members.length, lines: [`transferred admin → ${memberLabel(r, target)}`, `left ${r.id}`, `members: ${r.members.length}`] } };
               }
               r.members = others;
               savePublic(r);
@@ -1821,10 +1843,9 @@ function registerSocialTools(pi: ExtensionAPI): void {
               const rname2 = loadPublic(rid)?.name ?? rid;
               // 2026-09-24 用户定稿：房间消息的结算**面向房间**——不列个人、不暴露任何接收方的私人状态。
               // 发送方既不该决定、也不该知道接收方是否静音；收件人是「房间」而不是「人」。
-              const off = receipts.filter((r: any) => String(r.status).includes("offline")).length;
-              // 2026-09-24（tester 实测发现）：房间名不带引号，与摘要行 :1307 一致（原写死 in "${rname2}" 多了引号）
-              // 渲染用 `Sent a message in …`（动作式）；content 也**不带 seq**（用户可见——用户问「seq 1 是什么意思」说明 content 也会被看到，故一并去掉；需要序号时用 check-message/history 查）
-              return { content: [{ type: "text", text: `Sent a message in ${rname2} (${rid})${at.length ? ` @${at.map((x: string) => displayNameShort(x)).join(", ")}` : ""}${off ? ` (${off} 位成员不在线)` : ""}` }], details: { social: true, action: "public", gop: "send", roomId: rid, roomName: rname2, count: receipts.length, offline: off, seq: out.seq, modeUsed: "interrupt", text, at: at.length ? at : undefined, lines: [] } };
+              // 2026-09-24（用户）：**直接发消息的回执不写在线/不在线数**（那是查询处的事，见 list）；
+              // 渲染用 `Sent a message in …`（动作式）；content 也**不带 seq**（用户问「seq 1 是什么意思」，故一并去掉）
+              return { content: [{ type: "text", text: `Sent a message in ${rname2} (${rid})${at.length ? ` @${at.map((x: string) => displayNameShort(x)).join(", ")}` : ""}` }], details: { social: true, action: "public", gop: "send", roomId: rid, roomName: rname2, count: receipts.length, seq: out.seq, modeUsed: "interrupt", text, at: at.length ? at : undefined, lines: [] } };
             }
             case "history": {
               const rid = String(p.gid ?? "").trim();
