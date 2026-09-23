@@ -1396,8 +1396,14 @@ case "$MODE" in
       # 2026-09-04：teyvat 专属 env keys（/c 维护的 API keys，如 OPENROUTER_API_KEY）——
       # launcher 常驻旧 shell 时用户新设的 key 进不来（env 启动时固定），每次迭代 source 保证 agent 进程拿到最新 key
       [ -f "$PAIMON_HOME/config/env-keys.sh" ] && . "$PAIMON_HOME/config/env-keys.sh"
+      # 2026-09-24（ISSUE 275 残留修复）：从 identity.json 读最新 name（改名后 launcher 仍用旧 $NAME 注入，full-reboot 回退旧名）
+      _IDENTITY_JSON="$PAIMON_HOME/IdentityData/$ID/identity.json"
+      if [ -f "$_IDENTITY_JSON" ]; then
+        _LIVE_NAME=$(node -e "try{const j=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));console.log(typeof j.name==='string'&&j.name?j.name:'')}catch(e){console.log('')}" "$_IDENTITY_JSON" 2>/dev/null)
+        [ -n "$_LIVE_NAME" ] && NAME="$_LIVE_NAME"
+      fi
       export PAIMON_AGENT_NAME="$NAME"
-  export PAIMON_AGENT_ID="$ID"
+      export PAIMON_AGENT_ID="$ID"
       # 版本号导出（agent 启动时读取，检测版本变更）
       PAIMON_VER_FILE="$PAIMON_HOME/agent/version.json"
       if [ -f "$PAIMON_VER_FILE" ]; then
