@@ -1513,7 +1513,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
           if (p.scope === "global" || p.view === "device" || p.device) {
             let b: any = null;
             try { b = JSON.parse(readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8")); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); }
-            if (!b?.token || !b?.deviceId) return { content: [{ type: "text", text: "(未绑定——先 genshin login)" }], details: { social: true, action: "list", count: 0, lines: [] } };
+            if (!b?.token || !b?.deviceId) return { content: [{ type: "text", text: i18n("(未绑定——先 genshin login)", "(not bound — run genshin login first)") }], details: { social: true, action: "list", count: 0, lines: [] } };
             return socialGlobal(p, b);
           }
           touchPresence();
@@ -1568,15 +1568,15 @@ function registerSocialTools(pi: ExtensionAPI): void {
           // 视图：默认=跨设备 agents 概览；view="device"=设备列表；device=<id>=该设备 genshin 输出
           let b: any = null;
           try { b = JSON.parse(readFileSync(join(homedir(), ".teyvat", "UserAccount", "binding.json"), "utf8")); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); /* 未绑定/损坏 → 下方提示 login */ }
-          if (!b?.token || !b?.deviceId) return { content: [{ type: "text", text: "(未绑定——先 genshin login)" }], details: { social: true, action: "global", count: 0, lines: [] } };
+          if (!b?.token || !b?.deviceId) return { content: [{ type: "text", text: i18n("(未绑定——先 genshin login)", "(not bound — run genshin login first)") }], details: { social: true, action: "global", count: 0, lines: [] } };
           const H = { Authorization: "Bearer " + b.token, "X-Device-Id": b.deviceId, "X-Device-Name": require("os").hostname(), "User-Agent": SYNC_UA };
           const _url = syncEndpoint() + "/auth/devices";
           let res: Response;
           try { res = await fetch(_url, { signal: AbortSignal.timeout(10_000), headers: H }); } catch (e: any) {
             // 2026-09-05 诊断：fetch 网络层异常 → 返回真实信息（含 URL/cause）定位
-            return { content: [{ type: "text", text: "(global 网络错误: " + (e?.message || e) + (e?.cause?.message ? " | cause: " + e.cause.message : "") + " | url=" + _url + ")" }], details: { social: true, action: "global", count: 0, lines: [] } };
+            return { content: [{ type: "text", text: i18n("(global 网络错误: " + (e?.message || e) + (e?.cause?.message ? " | cause: " + e.cause.message : "") + " | url=" + _url + ")", "(global network error: " + (e?.message || e) + (e?.cause?.message ? " | cause: " + e.cause.message : "") + " | url=" + _url + ")") }], details: { social: true, action: "global", count: 0, lines: [] } };
           }
-          if (!res.ok) return { content: [{ type: "text", text: "(server 查询失败: HTTP " + res.status + ")" }], details: { social: true, action: "global", count: 0, lines: [] } };
+          if (!res.ok) return { content: [{ type: "text", text: i18n("(server 查询失败: HTTP " + res.status + ")", "(server query failed: HTTP " + res.status + ")") }], details: { social: true, action: "global", count: 0, lines: [] } };
           const j: any = await res.json();
           const ds = (j?.devices ?? []).filter((d: any) => d.device_id === b.deviceId || (d.agents && String(d.agents).length > 2) || !d.archived);
           const fmtTs = (s: string) => { if (!s) return ""; try { return new Date(String(s).replace(" ", "T") + "Z").toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return s; } };
@@ -2041,14 +2041,14 @@ function registerSocialTools(pi: ExtensionAPI): void {
 // ── 跨设备 agents 视图（2026-09-08 用户：list/global 应组合参数——提取共享供 list scope=global 与 global 兼容别名调用）──
 // 拉 /auth/devices → 三视图：device=<id> 设备 agents 详情 / view='device' 设备列表 / 默认跨设备概览（每设备+agent 明细）
 async function socialGlobal(p: any, b: any): Promise<any> {
-  if (!b?.token || !b?.deviceId) return { content: [{ type: "text", text: "(未绑定——先 genshin login)" }], details: { social: true, action: "global", count: 0, lines: [] } };
+  if (!b?.token || !b?.deviceId) return { content: [{ type: "text", text: i18n("(未绑定——先 genshin login)", "(not bound — run genshin login first)") }], details: { social: true, action: "global", count: 0, lines: [] } };
   const H = { Authorization: "Bearer " + b.token, "X-Device-Id": b.deviceId, "X-Device-Name": require("os").hostname(), "User-Agent": SYNC_UA };
   const _url = syncEndpoint() + "/auth/devices";
   let res: Response;
   try { res = await fetch(_url, { signal: AbortSignal.timeout(10_000), headers: H }); } catch (e: any) {
-    return { content: [{ type: "text", text: "(global 网络错误: " + (e?.message || e) + (e?.cause?.message ? " | cause: " + e.cause.message : "") + " | url=" + _url + ")" }], details: { social: true, action: "global", count: 0, lines: [] } };
+    return { content: [{ type: "text", text: i18n("(global 网络错误: " + (e?.message || e) + (e?.cause?.message ? " | cause: " + e.cause.message : "") + " | url=" + _url + ")", "(global network error: " + (e?.message || e) + (e?.cause?.message ? " | cause: " + e.cause.message : "") + " | url=" + _url + ")") }], details: { social: true, action: "global", count: 0, lines: [] } };
   }
-  if (!res.ok) return { content: [{ type: "text", text: "(server 查询失败: HTTP " + res.status + ")" }], details: { social: true, action: "global", count: 0, lines: [] } };
+  if (!res.ok) return { content: [{ type: "text", text: i18n("(server 查询失败: HTTP " + res.status + ")", "(server query failed: HTTP " + res.status + ")") }], details: { social: true, action: "global", count: 0, lines: [] } };
   const j: any = await res.json();
   const ds = (j?.devices ?? []).filter((d: any) => d.device_id === b.deviceId || (d.agents && String(d.agents).length > 2) || !d.archived);
   const fmtTs = (s: string) => { if (!s) return ""; try { return new Date(String(s).replace(" ", "T") + "Z").toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }); } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return s; } };

@@ -5,7 +5,7 @@ Person-based AI agent framework. Each agent has persistent memory, identity, and
 ## Requirements
 
 - macOS / Linux / WSL
-- DeepSeek API key，或任意 OpenAI-compatible API key
+- DeepSeek API key, or any compatible API key
 
 ## Install
 
@@ -16,31 +16,24 @@ curl -fsSL paimon.beer/install-prerelease | bash
 ## Usage
 
 ```bash
-genshin                    # List all agents
-genshin <name>             # Start / enter an agent (creates if new)
-genshin doctor             # Health check
-genshin whoami             # Show current login
-genshin sync               # Show sync status
-genshin sync push          # Push data to cloud
-genshin sync pull          # Pull data from cloud
+genshin                                    # Create / start an agent
+genshin kill, k <agent>                    # Kill a running agent
+genshin archive, a <agent>                 # Archive an agent
+genshin unarchive, ua <agent>              # Restore an archived agent
+genshin archived, A                        # List archived agents
+genshin rename <old> <new>                 # Rename an agent
+genshin clone, c <agent>                   # Clone an agent
+genshin note, n <agent> [note]             # View / append agent note
+genshin org, o [name|id|index]             # Organization management
+genshin doctor                             # System diagnostics
+genshin backup, b [config|init|now|status] # Cloud backup
+genshin login / logout / unbind / whoami   # Account
+genshin settings, s                        # Interactive settings
+genshin config provider <name> --base-url <url>  # Configure provider
+genshin update                             # Update
 ```
 
-### Agent management
-
-```bash
-genshin archive <name>     # Archive an agent
-genshin unarchive <name>   # Restore archived agent
-genshin archived           # List archived agents
-genshin rename <old> <new> # Rename an agent
-genshin kill <name>        # Kill a running agent
-```
-
-### Agent naming rules
-
-- Must start with a letter (a-z, A-Z)
-- Only letters, digits, and underscore allowed
-- Examples: `alice`, `test_01`, `Dev_Agent`
-- Invalid: `123bot`, `my-agent`, `agent!`
+See `genshin help` for more commands.
 
 ## Data
 
@@ -51,7 +44,7 @@ All agent data lives in `~/.teyvat/`:
 | `MemoryData/<id>/` | Agent memory (context) |
 | `SessionData/<id>/` | Conversation session logs |
 | `IdentityData/<id>/` | Agent identity and rename history |
-| `UserAccount/` | Login credentials and settings |
+| `config/` | Settings and credentials |
 
 ## Update
 
