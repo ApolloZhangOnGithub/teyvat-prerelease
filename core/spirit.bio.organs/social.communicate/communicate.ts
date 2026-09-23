@@ -1823,8 +1823,8 @@ function registerSocialTools(pi: ExtensionAPI): void {
               // 发送方既不该决定、也不该知道接收方是否静音；收件人是「房间」而不是「人」。
               const off = receipts.filter((r: any) => String(r.status).includes("offline")).length;
               // 2026-09-24（tester 实测发现）：房间名不带引号，与摘要行 :1307 一致（原写死 in "${rname2}" 多了引号）
-              // 渲染用 `Sent a message in …`（动作式）；content（给模型的自述）额外带 seq，便于我核对房间日志序号——用户可见处不出现 seq
-              return { content: [{ type: "text", text: `Sent a message in ${rname2} (${rid}) seq ${out.seq}${at.length ? ` @${at.map((x: string) => displayNameShort(x)).join(", ")}` : ""}${off ? ` (${off} 位成员不在线)` : ""}` }], details: { social: true, action: "public", gop: "send", roomId: rid, roomName: rname2, count: receipts.length, offline: off, seq: out.seq, modeUsed: "interrupt", text, at: at.length ? at : undefined, lines: [] } };
+              // 渲染用 `Sent a message in …`（动作式）；content 也**不带 seq**（用户可见——用户问「seq 1 是什么意思」说明 content 也会被看到，故一并去掉；需要序号时用 check-message/history 查）
+              return { content: [{ type: "text", text: `Sent a message in ${rname2} (${rid})${at.length ? ` @${at.map((x: string) => displayNameShort(x)).join(", ")}` : ""}${off ? ` (${off} 位成员不在线)` : ""}` }], details: { social: true, action: "public", gop: "send", roomId: rid, roomName: rname2, count: receipts.length, offline: off, seq: out.seq, modeUsed: "interrupt", text, at: at.length ? at : undefined, lines: [] } };
             }
             case "history": {
               const rid = String(p.gid ?? "").trim();
