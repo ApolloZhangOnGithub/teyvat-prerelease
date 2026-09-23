@@ -1058,9 +1058,16 @@ async function sendMessage(opts: { to: string; text: string; mode?: SocialMode; 
     const rid = room.id;   // 归一化：日志/编号一律用稳定 id（名称可变、编号不可变）
     if (room.closed) throw new Error(`social.send: public room "${room.name}" (${rid}) ${closedWord(room)}——不可再发（历史仍可读）`);
     if (!room.members.includes(fromSid) && !room.members.includes(fromName)) throw new Error(`social.send: not a member of public room ${room.name}`);
-    const prev = readPublicMsgs(rid);
-    const seq = prev.length ? (Number(prev[prev.length - 1].seq) || prev.length) + 1 : 1;
-    appendPublicMsg(rid, { seq, id: `pm_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`, from: fromSid, from_name: fromName, text, ...(atList.length ? { at: atList } : {}), ts: Date.now() });
+    // 并发安全（2026-09-24 用户点出：「多消息多接收者高频互发的承载能力与顺序」是 IM 基本问题）：
+    //   原「读末条 seq + 1 → 追加」是**读-改-写竞态**——两个进程同时发会算出同一个 seq（撞号/乱序）。
+    //   复用 withInboxLock 的跨进程互斥（mkdir 锁 + 陈锁接管），把「读 seq + 追加」整体串行化；
+    //   追加本身是单行 O_APPEND 小写（POSIX 原子），读者不会看到半行。
+    const seq = withInboxLock(publicMsgFile(rid), () => {
+      const prev = readPublicMsgs(rid);
+      const s = prev.length ? (Number(prev[prev.length - 1].seq) || prev.length) + 1 : 1;
+      appendPublicMsg(rid, { seq: s, id: `pm_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`, from: fromSid, from_name: fromName, text, ...(atList.length ? { at: atList } : {}), ts: Date.now() });
+      return s;
+    });
     const members = room.members.map((m: string) => resolveSid(m) ?? m).filter((m: string) => /^[a-f0-9]{8}$/.test(m));
     const offlineMembers: string[] = [];
     for (const m of members) { if (!isAgentActive(m)) offlineMembers.push(m); }
