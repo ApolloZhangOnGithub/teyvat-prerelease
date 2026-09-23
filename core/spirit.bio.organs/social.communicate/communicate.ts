@@ -944,8 +944,9 @@ function registerSocialTools(pi: ExtensionAPI): void {
       "  action:\"focus\"  mode?              — declare focus: off | deep | rest (no mode = show all)\n" +
       "  action:\"group\"  gop, ...           — group ops: create|list|send|mute|add|remove\n" +
       "      create: gname, members[]  /  send: gid, text, at?  /  mute: gid, on?  /  add|remove: gid, members[]\n" +
+      "  action:\"global\" [device|<id>]     — cross-device view (devices + agents); list 也支持 scope:'local'|'remote'|'global'\n" +
       "Messages auto-inject: interrupt immediately, queue at turn end (hibernate blocked while pending).",
-    promptSnippet: "social(action, ...) — send|list|inbox|focus|group",
+    promptSnippet: "social(action, ...) — send|list|inbox|focus|group|global",
     parameters: Type.Object({
       action: Type.String({ messageDescription: "send | list | inbox | focus | group | global（global=跨设备查看——兼容别名，等效 list scope:'global'；list 支持 scope:'local'|'remote'|'global' 组合参数）" }),
       to: Type.Optional(Type.String({ messageDescription: "Target (send): sid | agent name | group:<gid> | all" })),

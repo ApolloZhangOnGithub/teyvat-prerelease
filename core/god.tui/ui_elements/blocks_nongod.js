@@ -144,14 +144,19 @@ export function hangWrapText(text, width, h) {
     src = text.replace(/\//g, "/ ");
   }
   const contWidth = Math.max(1, width - indW);
-  const wrapped = wrapTextWithAnsi(src, contWidth);
+  // 2026-09-24 修复：先剥前缀、只折「内容」再拼回前缀。
+  // 原 wrapTextWithAnsi(src, contWidth) 把带前缀的整行折——前缀里的空格把 "  1" 折成单独一行、内容被推到续行
+  // → 用户报「对齐的是数字」而非「数字后的字符」（差前缀宽）。现按可见宽度切前缀（ANSI 安全），内容单独折。
+  const prefix = _sliceByColumn ? _sliceByColumn(src, 0, indW) : src.slice(0, indW);
+  const rest = src.slice(prefix.length);
+  const wrapped = wrapTextWithAnsi(rest, contWidth);
   // 复原断点空格
   if (src !== text) {
     for (let i = 0; i < wrapped.length; i++) wrapped[i] = wrapped[i].replace(/\/ /g, "/");
   }
-  if (wrapped.length <= 1) return wrapped;
+  if (wrapped.length <= 1) return [prefix + wrapped[0]];
   const indent = " ".repeat(indW);
-  const result = [wrapped[0]];
+  const result = [prefix + wrapped[0]];
   for (let i = 1; i < wrapped.length; i++) {
     result.push(indent + wrapped[i]);
   }
@@ -201,7 +206,7 @@ export function wrapHanging(lines, width, h) {
 //   renderResult() { return renderMessage.silent(); },
 
 // 组件注入：调用方通过 initBlockrender() 注入 Text/Container/helpers，避免循环依赖
-let _Text = null, _Container = null, _visibleWidth = null, _wrapTextWithAnsi = null, _Markdown = null, _markdownTheme = null;
+let _Text = null, _Container = null, _visibleWidth = null, _wrapTextWithAnsi = null, _sliceByColumn = null, _Markdown = null, _markdownTheme = null;
 export function initBlockrender(Text, Container, visibleWidth, wrapTextWithAnsi, Markdown, markdownTheme) {
   _Text = Text; _Container = Container;
   if (visibleWidth) _visibleWidth = visibleWidth;
@@ -216,6 +221,7 @@ export function initBlockrender(Text, Container, visibleWidth, wrapTextWithAnsi,
     const m = await import("@earendil-works/pi-tui");
     if (!_visibleWidth) _visibleWidth = m.visibleWidth;
     if (!_wrapTextWithAnsi) _wrapTextWithAnsi = m.wrapTextWithAnsi;
+    if (!_sliceByColumn) _sliceByColumn = m.sliceByColumn;
     if (!_Markdown) _Markdown = m.Markdown;
   } catch { /* not available in all deployment contexts */ }
 })();

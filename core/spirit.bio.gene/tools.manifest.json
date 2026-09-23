@@ -5,13 +5,13 @@
       "default": true,
       "locked": true,
       "group": "核心",
-      "desc": "执行 shell 命令 (ls/grep/find 等)"
+      "desc": "执行 shell 命令 + 后台任务管理（action: list/show/kill）"
     },
     "read": {
       "default": true,
       "locked": true,
       "group": "核心",
-      "desc": "读文件",
+      "desc": "读文件（office 自动提取 docx/pptx/xlsx/pdf）",
       "chr": "fileread.wise"
     },
     "write": {
@@ -48,7 +48,7 @@
       "default": true,
       "locked": false,
       "group": "运行",
-      "desc": "查询身份和运行时版本 status @identity"
+      "desc": "查询身份/履历/模型/余额/授权：status @identity/@history/@nickname/@model/@balance/@permissions/switch-model"
     },
     "help": {
       "default": true,
@@ -60,7 +60,7 @@
       "default": true,
       "locked": false,
       "group": "运行",
-      "desc": "主动记忆管理：manage/archive(旧名 sweep)/fetch/revert/mark_enter/mark_exit (hash-lock 两步)",
+      "desc": "主动记忆管理：manage/archive(旧名 sweep)/fetch/revert/mark_enter/mark_exit/memory-reboot (hash-lock 两步)",
       "chr": "memory.amem"
     },
     "nap": {
@@ -95,7 +95,7 @@
       "default": true,
       "locked": false,
       "group": "感官",
-      "desc": "视觉：VL 看图 + 本地 OCR + native 注入当前模型"
+      "desc": "视觉：本地 OCR + native 注入 + ax 读 UI 树（VL 已禁用）"
     },
     "highlight": {
       "default": true,
@@ -120,7 +120,7 @@
       "default": true,
       "locked": false,
       "group": "社交",
-      "desc": "agent 通讯：send/list/inbox/focus/group (action 参数)",
+      "desc": "agent 通讯：send/list/inbox/focus/group/global (action 参数)",
       "chr": "social.tools"
     }
   },
