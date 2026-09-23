@@ -20,10 +20,10 @@ export default function registerHelp(pi: any): void {
       "Query tool usage on demand. 'help' lists all tools with one-line summaries grouped by category; " +
       "'help <name>' shows the full usage for that tool (description + parameters). " +
       "The system prompt only carries one-line summaries — use this tool when you need details " +
-      "about how a specific tool works (e.g. help mobile, help amem, help social).",
+      "about how a specific tool works (e.g. help status, help amem, help eyes, help social).",
     promptSnippet: "help [tool name] — list all tools or show usage for one (e.g. help amem)",
     parameters: Type.Object({
-      name: Type.Optional(Type.String({ messageDescription: "Tool name to show full usage for (e.g. 'amem', 'mobile', 'social'). Omit to list all tools." })),
+      name: Type.Optional(Type.String({ messageDescription: "Tool name to show full usage for (e.g. 'amem', 'social', 'eyes', 'status'). Omit to list all tools." })),
     }),
     renderCall: (args: any, theme: any) => {
       // ISSUE 122：原 theme?.["toolCall"]?.() 是错误 API（不存在，可选链静默返回 undefined → 调用行不可见）
