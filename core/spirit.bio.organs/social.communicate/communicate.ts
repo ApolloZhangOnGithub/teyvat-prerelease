@@ -427,44 +427,51 @@ function appendPublicMsg(rid: string, m: any): void {
 //   - 但**不能单独启用 at_mute**（必须 mute 已开）
 type PublicMuteState = { mute?: boolean; at_mute?: boolean };
 
-function loadPublicMuteMapOf(sid: string): Record<string, PublicMuteState> {
-  const raw = readJson<any>(join(MUTES_DIR, `${sid}.public.json`), {});
-  if (Array.isArray(raw)) { const o: Record<string, PublicMuteState> = {}; for (const r of raw) o[String(r)] = { mute: true }; return o; } // 兼容旧数组格式
-  return (raw && typeof raw === "object") ? raw as Record<string, PublicMuteState> : {};
+// 存储兼容（重要，2026-09-24 联调发现跨版本不兼容）：
+//   <sid>.public.json    = **字符串数组**（房间静音列表）—— 老版本代码按数组读，必须保持数组格式，
+//                          否则旧进程读到 map 会 `.includes is not a function` 炸（实测事故）
+//   <sid>.public-at.json = 字符串数组（@ 也静音的房间列表）—— 新文件，老版本不读，天然安全
+// 读时兼容过渡期的 map 格式，**写一律用数组**（向后兼容优先）
+function loadPublicMutesOf(sid: string): string[] {
+  const raw = readJson<any>(join(MUTES_DIR, `${sid}.public.json`), []);
+  if (Array.isArray(raw)) return raw.map(String);
+  if (raw && typeof raw === "object") return Object.entries(raw).filter(([, v]) => !!(v as any)?.mute).map(([k]) => k);
+  return [];
 }
-function savePublicMuteMapOf(sid: string, m: Record<string, PublicMuteState>): void {
+function loadPublicAtMutesOf(sid: string): string[] {
+  const raw = readJson<any>(join(MUTES_DIR, `${sid}.public-at.json`), []);
+  if (Array.isArray(raw)) return raw.map(String);
+  if (raw && typeof raw === "object") return Object.entries(raw).filter(([, v]) => !!(v as any)?.at_mute).map(([k]) => k);
+  return [];
+}
+function saveMuteList(file: string, list: string[]): void {
   mkdirSync(MUTES_DIR, { recursive: true });
-  writeJson(join(MUTES_DIR, `${sid}.public.json`), m);
+  writeJson(join(MUTES_DIR, file), list);
 }
 function loadPublicMuteStateOf(sid: string, rid: string): PublicMuteState {
-  return loadPublicMuteMapOf(sid)[rid] ?? {};
-}
-function loadPublicMutes(): string[] {
-  return loadPublicMutesOf(getMySid());
-}
-function loadPublicMutesOf(sid: string): string[] {
-  return Object.entries(loadPublicMuteMapOf(sid)).filter(([, v]) => !!(v && v.mute)).map(([k]) => k);
+  return { mute: loadPublicMutesOf(sid).includes(rid), at_mute: loadPublicAtMutesOf(sid).includes(rid) };
 }
 // 统一设置入口：mute / at_mute 联动（at_mute 必须在 mute 之上）
 function setPublicMuteFlags(rid: string, next: { mute?: boolean; at_mute?: boolean }): PublicMuteState {
   const sid = getMySid();
   if (!/^[a-f0-9]{8}$/.test(sid)) throw new Error("social public manage: cannot determine own session id");
-  const map = loadPublicMuteMapOf(sid);
-  const cur: PublicMuteState = map[rid] ?? {};
-  let mute = cur.mute === true;
-  let atMute = cur.at_mute === true;
+  const mutes = loadPublicMutesOf(sid);
+  const atMutes = loadPublicAtMutesOf(sid);
+  const curMute = mutes.includes(rid);
+  let mute = curMute;
+  let atMute = atMutes.includes(rid);
   if (next.mute !== undefined) {
-    const turningOn = next.mute === true && cur.mute !== true;
+    const turningOn = next.mute === true && !curMute;
     mute = next.mute === true;
     if (!mute) atMute = false;                                                     // 关房间静音 → 连带关 @静音
     else if (turningOn && next.at_mute === undefined) atMute = false;               // 新开静音 → @ 默认不静音
   }
   if (next.at_mute !== undefined) atMute = next.at_mute === true;
   if (atMute && !mute) throw new Error("social public manage: 不能单独启用 @静音——请先开房间静音（mute:true），再设 at_mute:true");
-  if (!mute && !atMute) delete map[rid];
-  else map[rid] = { mute, at_mute: atMute };
-  savePublicMuteMapOf(sid, map);
-  return map[rid] ?? { mute: false, at_mute: false };
+  const setIn = (list: string[], val: boolean) => { const i = list.indexOf(rid); if (val && i < 0) list.push(rid); if (!val && i >= 0) list.splice(i, 1); return list; };
+  saveMuteList(`${sid}.public.json`, setIn(mutes, mute));
+  saveMuteList(`${sid}.public-at.json`, setIn(atMutes, atMute));
+  return { mute, at_mute: atMute };
 }
 function setPublicMute(rid: string, on: boolean): void {
   setPublicMuteFlags(rid, { mute: on });
@@ -916,14 +923,21 @@ async function sendMessage(opts: { to: string; text: string; mode?: SocialMode; 
     const onlineMembers = members.filter(m => !offlineMembers.includes(m));
     for (const m of onlineMembers) {
       if (m === fromSid) continue;
-      // per-room 静音 + @ 突破（2026-09-24 用户定稿）：
-      //   默认 @ 突破静音（@ 到你 = interrupt）；只有「房间静音 + @静音」都开才降 queue
-      const st = loadPublicMuteStateOf(m, rid);
-      const isAt = atList.includes(m);
-      const mMode: SocialMode = isAt
-        ? ((st.mute && st.at_mute) ? "queue" : "interrupt")
-        : (st.mute ? "queue" : mode);
-      receipts.push(await sendOne(m, text, mMode, atList, { kind: "public", id: rid, name: room.name }, fromSid, fromName));
+      // 按收件人隔离错误：单个收件人投递失败不应让整条 send 抛错
+      // （否则「消息已落库但调用方看到异常」＝半成功，重试会造成重复——2026-09-24 tester 指出）
+      try {
+        // per-room 静音 + @ 突破（2026-09-24 用户定稿）：
+        //   默认 @ 突破静音（@ 到你 = interrupt）；只有「房间静音 + @静音」都开才降 queue
+        const st = loadPublicMuteStateOf(m, rid);
+        const isAt = atList.includes(m);
+        const mMode: SocialMode = isAt
+          ? ((st.mute && st.at_mute) ? "queue" : "interrupt")
+          : (st.mute ? "queue" : mode);
+        receipts.push(await sendOne(m, text, mMode, atList, { kind: "public", id: rid, name: room.name }, fromSid, fromName));
+      } catch (e) {
+        console.error("[spirit.bio.organs/social.communicate/communicate.ts] public delivery failed for " + m + ": " + ((e as any)?.message || e));
+        receipts.push({ to: m, mode_used: mode, status: "failed: " + ((e as any)?.message || e) });
+      }
     }
     if (offlineMembers.length) {
       receipts.push({ to: `(offline: ${offlineMembers.join(",")})`, mode_used: mode, status: "skipped-offline" });
@@ -1481,7 +1495,8 @@ function registerSocialTools(pi: ExtensionAPI): void {
               const ttl = Number(p.ttl_minutes ?? 0) || 0;
               const room: PublicRoom = { id: rid, name, members: [me, ...members], created: Date.now(), created_by: me, closed: false, ...(ttl > 0 ? { ttl_minutes: ttl } : {}) };
               savePublic(room);
-              return { content: [{ type: "text", text: `Public room "${name}" created (${rid})\nadmin: ${me}  members: ${room.members.join(", ")}` }], details: { social: true, action: "public", gop: "create", lines: [`${rid} "${name}"`, `members: ${room.members.join(", ")}`] } };
+              const memList = room.members.map((x: string) => `${displayName(x)} (${x})`).join(", ");
+              return { content: [{ type: "text", text: `Public room "${name}" created (${rid})\nadmin: ${displayName(me)} (${me})  members: ${memList}` }], details: { social: true, action: "public", gop: "create", lines: [`${rid} "${name}"`, `members: ${memList}`] } };
             }
             case "list": {
               const all = listPublics();
