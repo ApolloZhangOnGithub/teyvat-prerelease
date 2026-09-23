@@ -121,10 +121,10 @@ function getAgentScope(): string {
 const TMUX_PFX = () => "dev-" + getAgentScope() + "-";
 const tmuxClean = (n: string) => TMUX_PFX() + (n || `t${Date.now().toString().slice(-5)}`).replace(/[^a-zA-Z0-9_]/g, "");
 const tmuxHas = async (n: string): Promise<boolean> => {
-  try { await asyncSh(`tmux has-session -t ${n} 2>/dev/null`); return true; } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); return false; }
+  try { await asyncSh(`tmux has-session -t =${n} 2>/dev/null`); return true; } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); return false; }
 };
 const tmuxPeek = async (n: string): Promise<string> => {
-  const raw = (await asyncShSafe(`tmux capture-pane -pt ${n} -S -200 2>/dev/null`)).split("\n").filter(Boolean);
+  const raw = (await asyncShSafe(`tmux capture-pane -pt =${n} -S -200 2>/dev/null`)).split("\n").filter(Boolean);
   const MAX = 100, HEAD = 30;
   if (raw.length <= MAX) return raw.join("\n");
   // 2026-09-24（ISSUE 272）：折行膨胀时保留头尾 + 中间省略落盘。
@@ -241,7 +241,7 @@ export async function killBackgroundTask(id: number): Promise<string> {
   const rc = running.get(id);
   if (!rc) return `@${id}: not found`;
   if (rc.type === "tty" && rc.tmuxSession) {
-    await asyncShSafe(`tmux kill-session -t ${rc.tmuxSession} 2>/dev/null`);
+    await asyncShSafe(`tmux kill-session -t =${rc.tmuxSession} 2>/dev/null`);
   }
   rc.abort.abort();
   rc.killedByUser = true;
@@ -623,7 +623,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
         const tName = (params as any).name || "";
         const tCwd = (params as any).cwd || "";
         const n = tmuxClean(tName);
-        if (await tmuxHas(n)) await asyncShSafe(`tmux kill-session -t ${n} 2>/dev/null`);
+        if (await tmuxHas(n)) await asyncShSafe(`tmux kill-session -t =${n} 2>/dev/null`);
         // 2026-09-05:脚本不再写 /tmp(LESSON 064 铁律)--改 RuntimeCache 专属目录(bash 执行前 mkdir)
         const pidD = (globalThis as any).__genshinPersonId || process.env.PAIMON_AGENT_ID || "unknown";
         const exeCacheDir = join(homedir(), ".teyvat", "RuntimeCache", pidD);
@@ -663,7 +663,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
                 updateBgCount();
                 break;
               }
-              const pane = await asyncShSafe(`tmux capture-pane -pt ${n} -S -200 2>/dev/null`);
+              const pane = await asyncShSafe(`tmux capture-pane -pt =${n} -S -200 2>/dev/null`);
               const idx = pane.lastIndexOf(doneMarker);
               if (idx >= 0) {
                 const rest = pane.slice(idx + doneMarker.length);
@@ -862,7 +862,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
       const sessions = (await asyncShSafe(`tmux ls 2>/dev/null`)).split("\n").filter((l) => l.startsWith(scope));
       for (const s of sessions) {
         const name = s.split(":")[0];
-        if (name) await asyncShSafe(`tmux kill-session -t ${name} 2>/dev/null`);
+        if (name) await asyncShSafe(`tmux kill-session -t =${name} 2>/dev/null`);
       }
     } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
   });
@@ -914,7 +914,7 @@ function registerTmuxRestore(pi: ExtensionAPI): void {
               if (!running.has(id)) break;
               if (!(await tmuxHas(n))) {
                 // 会话关闭(完成或被杀--doneMarker 没抓到说明被杀)
-                const pane = await asyncShSafe(`tmux capture-pane -pt ${n} -S -200 2>/dev/null`);
+                const pane = await asyncShSafe(`tmux capture-pane -pt =${n} -S -200 2>/dev/null`);
                 running.delete(id); updateBgCount();
                 try {
                   const doneIdx = pane.lastIndexOf(doneMarker);

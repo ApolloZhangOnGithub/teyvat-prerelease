@@ -89,6 +89,7 @@ interface PublicRoom {
   created_by: string;
   closed: boolean;
   closed_at?: number;
+  closed_reason?: "dissolved" | "expired";   // 解散 vs TTL 过期（列表措辞据此区分）
   ttl_minutes?: number;   // 可选：N 分钟无消息自动关闭（<=0 或未设 = 不过期）
 }
 
@@ -442,6 +443,25 @@ function listPublics(): PublicRoom[] {
     return readdirSync(PUBLIC_DIR).filter(f => f.endsWith(".json")).map(f => readJson<PublicRoom | null>(join(PUBLIC_DIR, f), null)).filter((r): r is PublicRoom => !!r);
   } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return []; }
 }
+// TTL 惰性回收（用户要求「可临时建立的聊天室」）：任何一次 public 操作前先回收过期房间。
+//   「最后活动」= max(创建时刻, 最后一条消息时刻)；超过 ttl_minutes 未活动 → 自动解散（历史保留）。
+//   不做后台定时器（避免常驻开销与多进程竞争），只在被访问时判定。
+function sweepExpiredPublics(): void {
+  try {
+    for (const r of listPublics()) {
+      if (r.closed || !r.ttl_minutes || r.ttl_minutes <= 0) continue;
+      const msgs = readPublicMsgs(r.id);
+      const lastMsg = msgs.length ? (Number(msgs[msgs.length - 1].ts) || 0) : 0;
+      const lastActivity = Math.max(Number(r.created) || 0, lastMsg);
+      if (Date.now() - lastActivity > r.ttl_minutes * 60_000) {
+        r.closed = true;
+        r.closed_at = Date.now();
+        r.closed_reason = "expired";
+        savePublic(r);
+      }
+    }
+  } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); }
+}
 function myPublics(): PublicRoom[] {
   const me = getMyName();
   return listPublics().filter(r => r.members.includes(me) || r.members.includes(getMySid()));
@@ -561,6 +581,10 @@ function channelOf(to: string): { id: string; name: string; kind: "public" | "gr
   return { id, name, kind };
 }
 // 成员显示：优先用房内**注册名**，否则回退 displayName（后者自带 (sid) 后缀）
+// 关闭原因措辞（解散 / TTL 过期）—— 过期房不该被说成「已解散」（2026-09-24）
+function closedWord(x: PublicRoom): string {
+  return x.closed_reason === "expired" ? "已过期（ttl 到期自动解散）" : "已解散";
+}
 function memberLabel(r: PublicRoom, sid: string): string {
   // 2026-09-24：本地 agent 优先用**当前**注册名（改名后不残留旧的房内快照）——
   // 房内 member_names 是加入时的快照，改名后不会自动更新；外部 agent（无本地 registry）才回退快照。
@@ -1032,7 +1056,7 @@ async function sendMessage(opts: { to: string; text: string; mode?: SocialMode; 
     const room = findPublic(rid0);
     if (!room) throw new Error(`social.send: public room ${rid0} not found`);
     const rid = room.id;   // 归一化：日志/编号一律用稳定 id（名称可变、编号不可变）
-    if (room.closed) throw new Error(`social.send: public room "${room.name}" (${rid}) 已解散——不可再发（历史仍可读）`);
+    if (room.closed) throw new Error(`social.send: public room "${room.name}" (${rid}) ${closedWord(room)}——不可再发（历史仍可读）`);
     if (!room.members.includes(fromSid) && !room.members.includes(fromName)) throw new Error(`social.send: not a member of public room ${room.name}`);
     const prev = readPublicMsgs(rid);
     const seq = prev.length ? (Number(prev[prev.length - 1].seq) || prev.length) + 1 : 1;
@@ -1712,6 +1736,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
           const gop = String(p.gop ?? "").trim();
           const me = getMySid();
           const meName = getMyName();
+          sweepExpiredPublics();   // TTL 惰性回收：先回收过期房间，再做本次操作
           switch (gop) {
             case "create": {
               const name = String(p.gname ?? "").trim();
@@ -1737,7 +1762,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
               if (!all.length) return { content: [{ type: "text", text: "(no public rooms)" }], details: { social: true, action: "public", gop: "list", count: 0, lines: [] } };
               const lines = all.map(r => {
                 const members = r.members.map((x: string) => memberLabel(r, x)).join(", ") || "(none)";
-                return `${r.id} "${r.name}" ${r.closed ? "[dissolved]" : "[open]"}${r.members.includes(me) ? " (joined)" : ""}${publicMuteTag(loadPublicMuteStateOf(me, r.id))}  admin: ${displayName(r.created_by)}\n      members(${r.members.length}): ${members}`;
+                return `${r.id} "${r.name}" ${r.closed ? (r.closed_reason === "expired" ? "[expired]" : "[dissolved]") : "[open]"}${r.members.includes(me) ? " (joined)" : ""}${publicMuteTag(loadPublicMuteStateOf(me, r.id))}  admin: ${displayName(r.created_by)}\n      members(${r.members.length}): ${members}`;
               });
               return { content: [{ type: "text", text: `Public rooms:\n${lines.map(l => "  " + l).join("\n")}` }], details: { social: true, action: "public", gop: "list", count: all.length, lines } };
             }
@@ -1746,7 +1771,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
               if (!rid) throw new Error("social public join: gid(房间编号或名称) required");
               const r = findPublic(rid);
               if (!r) throw new Error(`social public join: room ${rid} not found`);
-              if (r.closed) throw new Error(`social public join: room "${r.name}" 已解散`);
+              if (r.closed) throw new Error(`social public join: room "${r.name}" ${closedWord(r)}`);
               // 注册身份必须起名（2026-09-24 用户要求：不能只有 id）——本地 agent 自动取注册名，外部 agent 必须传 mname
               const declared = String(p.mname ?? "").trim() || localNameOf(me) || "";
               if (!declared) throw new Error("social public join: 请用 mname 指定你的名字——注册身份必须有名字，不能只有 id");
@@ -1769,6 +1794,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
                 if (others.length === 0) {
                   r.closed = true;
                   r.closed_at = Date.now();
+                  r.closed_reason = "dissolved";
                   savePublic(r);
                   return { content: [{ type: "text", text: `房间 "${r.name}" (${r.id}) 只剩创建者一人——已自动解散` }], details: { social: true, action: "public", gop: "leave", roomId: r.id, roomName: r.name, count: 0, lines: [`auto-dissolved ${r.id}`] } };
                 }
@@ -1809,9 +1835,10 @@ function registerSocialTools(pi: ExtensionAPI): void {
               const r = findPublic(rid);
               if (!r) throw new Error(`social public dissolve: room ${rid} not found`);
               if (r.created_by !== me && r.created_by !== meName) throw new Error(`social public dissolve: 只有创建者可解散（admin: ${displayName(r.created_by)}）`);
-              if (r.closed) throw new Error(`social public dissolve: room "${r.name}" 已解散`);
+              if (r.closed) throw new Error(`social public dissolve: room "${r.name}" ${closedWord(r)}`);
               r.closed = true;
               r.closed_at = Date.now();
+              r.closed_reason = "dissolved";
               savePublic(r);
               const notice = `[解散] 房间 "${r.name}" (${rid}) 已被创建者解散。历史仍可读，不可再发。`;
               const offline: string[] = [];
@@ -1832,7 +1859,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
               const on = p.on !== false;
               // 与 join/send/history 对齐：已解散房间不再有任何消息，静音无意义 → 拒绝；
               // 但允许 on:false（取消静音）作为幂等清理（ISSUE: 联调发现 mute 曾静默成功）。
-              if (r.closed && on) throw new Error(`social public mute: room "${r.name}" (${r.id}) 已解散——静音无意义（不再有房间消息）；如需清理旧静音，用 on:false`);
+              if (r.closed && on) throw new Error(`social public mute: room "${r.name}" (${r.id}) ${closedWord(r)}——静音无意义（不再有房间消息）；如需清理旧静音，用 on:false`);
               const st = setPublicMuteFlags(r.id, { mute: on });
               return { content: [{ type: "text", text: `Public room "${r.name}" ${on ? "muted" : "unmuted"} for you (${r.id})${on ? "（@ 仍可突破）" : ""}` }], details: { social: true, action: "public", gop: "mute", roomId: r.id, roomName: r.name, lines: [`${on ? "muted" : "unmuted"} ${r.id}`], mute: st.mute, at_mute: st.at_mute } };
             }
@@ -1849,7 +1876,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
               if (mute === undefined && atMute === undefined) {
                 return { content: [{ type: "text", text: `"${r.name}" (${r.id}) 你的设置：room mute=${cur.mute === true}, @mute=${cur.at_mute === true}\n（默认 @ 可突破静音；要到 @ 也不打断，需先 mute:true 再 at_mute:true）` }], details: { social: true, action: "public", gop: "manage", roomId: r.id, roomName: r.name, lines: [`${r.id} mute=${cur.mute === true} at_mute=${cur.at_mute === true}`], mute: cur.mute === true, at_mute: cur.at_mute === true } };
               }
-              if (r.closed && (mute === true || atMute === true)) throw new Error(`social public manage: room "${r.name}" (${r.id}) 已解散——不能再开启静音`);
+              if (r.closed && (mute === true || atMute === true)) throw new Error(`social public manage: room "${r.name}" (${r.id}) ${closedWord(r)}——不能再开启静音`);
               const st = setPublicMuteFlags(r.id, { ...(mute !== undefined ? { mute } : {}), ...(atMute !== undefined ? { at_mute: atMute } : {}) });
               const desc = st.mute ? (st.at_mute ? "房间静音 + @ 也静音" : "房间静音（@ 仍可突破）") : "不静音（全部收）";
               return { content: [{ type: "text", text: `"${r.name}" (${r.id}) 已更新：${desc}` }], details: { social: true, action: "public", gop: "manage", roomId: r.id, roomName: r.name, lines: [`${r.id} ${desc}`], mute: st.mute, at_mute: st.at_mute } };
@@ -1862,7 +1889,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
               if (!newName) throw new Error("social public rename: gname(新名称) required");
               const r = findPublic(key);
               if (!r) throw new Error(`social public rename: room ${key} not found`);
-              if (r.closed) throw new Error(`social public rename: room "${r.name}" (${r.id}) 已解散——不可改名（历史仍可读）`);
+              if (r.closed) throw new Error(`social public rename: room "${r.name}" (${r.id}) ${closedWord(r)}——不可改名（历史仍可读）`);
               if (r.created_by !== me && r.created_by !== meName) throw new Error(`social public rename: 只有创建者可改名（admin: ${displayName(r.created_by)}）`);
               const old = r.name;
               r.name = newName;
