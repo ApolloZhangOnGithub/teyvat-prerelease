@@ -29,11 +29,8 @@ export const STATUS_DEFS = {
   "resting":              { label: "Waiting...",        color: "warning" },
   "hibernated":           { label: "Hibernating...",    color: "warning" },
   "paused":               { label: "Paused",            color: "accent" },
-  "aborted":              { label: "Aborted",           color: "error" },
+  "error":                { label: "Error",             color: "error" },
   "error-backoff":        { label: "Retrying",          color: "error" },
-  "sleeping(compacting)": { label: "Compacting Memory", color: "accent" },
-  "sleeping(nap)":        { label: "Nap",               color: "accent" },
-  "sleeping(sleep)":      { label: "Sleeping",          color: "accent" },
 };
 
 // 2026-09-13（ISSUE 226）：耗时格式唯一实现在 blocks_nongod（fmtElapsedCoarse=整秒计时器格式），这里只保留同名出口给既有调用方

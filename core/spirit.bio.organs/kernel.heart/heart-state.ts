@@ -23,6 +23,7 @@ export type Heart =
   | { kind: "resting"; resumeTimer: Timer; countdownTimer: Interval; waitSecs?: number; waiting?: boolean; interruptReason?: string; toolCallId?: string; ts?: number }
   | { kind: "hibernated"; ts: number; unloadTimer?: Timer }
   | { kind: "paused"; reason: string }
+  | { kind: "error"; reason: string }
   | { kind: "error-backoff"; retryTimer: Timer };
 
 export interface Limits {
@@ -237,9 +238,11 @@ export function isWaitDisabled(): boolean { return isToolDisabled("wait"); }
 
 // ── UI 状态桥接 (从 spirit.abio.status 迁入) ──
 export type AgentStatus =
-  | "working" | "resting" | "hibernated" | "paused"
-  | "aborted" | "error-backoff"
-  | "sleeping(compacting)" | "sleeping(nap)" | "sleeping(sleep)";
+  | "working" | "resting" | "hibernated" | "paused" | "error"
+  | "error-backoff";
+// 2026-09-24（用户：清理死状态——注释保留不删）：以下状态无任何 transition 到它们，仅历史残留。
+//   | "aborted"
+//   | "sleeping(compacting)" | "sleeping(nap)" | "sleeping(sleep)";
 
 let _agentStatus: AgentStatus = "working";
 let _statusUI: any = null;

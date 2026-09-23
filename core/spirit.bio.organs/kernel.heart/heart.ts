@@ -178,7 +178,7 @@ export default function (pi: ExtensionAPI) {
     setHasUserMessage(true);
     setErrorBackoffMs(0);
     const inputSt = heartState();
-    if (inputSt === "error-backoff" || inputSt === "paused" || inputSt === "resting" || inputSt === "hibernated") {
+    if (inputSt === "error-backoff" || inputSt === "error" || inputSt === "paused" || inputSt === "resting" || inputSt === "hibernated") {
       // 只有正在 wait（resting）时才标记 "user" 打断——其他状态（paused/error-backoff/
       // hibernated）设置该标记不会被消费，会残留成陈旧标记，导致下一个 wait 正常结束时
       // 被 exitState 误判为"interrupted by user message"（2026-08-15 用户报双 Waited 行）
@@ -891,7 +891,7 @@ export default function (pi: ExtensionAPI) {
       if (isFatal) {
         dlog(`agent_end: FATAL error (pause, no retry): ${errMsg}`);
         try { sendCustomMessage(pi, "continuous-error-retry", i18n(`【系统暂停】不可恢复错误: ${String(errMsg).slice(0, 200)}。已暂停，充值/解决后按任意键恢复。`, `[paused] Fatal error: ${String(errMsg).slice(0, 200)}. Paused — press any key after resolving.`)); } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
-        transition({ kind: "paused", reason: "fatal-error" });
+        transition({ kind: "error", reason: "fatal-error" });
         return;
       }
       setErrorBackoffMs(errorBackoffMs() ? Math.min(errorBackoffMs() * 2, 300_000) : 20_000);
