@@ -1186,23 +1186,34 @@ function registerSocialTools(pi: ExtensionAPI): void {
         }
         case "inbox": {
           const limit = Math.min(50, Math.max(1, p.limit ?? 20));
-          const msgs = readInbox(getMySid(), 200);
+          const msgs = readInbox(getMySid(), 2000);
           const pending = msgs.filter(m => !m.injected);
           const lines: string[] = [];
-          // 默认只看 pending（待处理），不刷历史；history:true 才带
+          // 2026-09-24（用户）：inbox 显示改成「total in history / No new message / in this session / (today) of (total)」，
+          // 不再用 "-- pending (N) -- / -- history (N) -- / (inbox empty)" 这种垃圾格式。
+          const now = Date.now();
+          const sessionStart = now - Math.round(process.uptime() * 1000);
+          const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
+          const todayCount = msgs.filter(m => m.ts >= dayStart.getTime()).length;
+          const inSessionCount = msgs.filter(m => m.ts >= sessionStart).length;
+          const total = msgs.length;
+          lines.push(`${total} total in history`);
           if (pending.length) {
-            lines.push(`-- pending (${pending.length}) --`);
-            for (const m of pending) lines.push(`[${m.mode_used}] ${m.from_name} (${fmtTime(m.ts)}): ${m.text}`);
+            lines.push(`${pending.length} new message${pending.length > 1 ? "s" : ""}`);
+            for (const m of pending) lines.push(`  [${m.mode_used}] ${m.from_name} (${fmtTime(m.ts)}): ${m.text}`);
+          } else {
+            lines.push("No new message");
           }
+          lines.push(`${inSessionCount} in this session`);
+          lines.push(`${todayCount} (today) of ${total} (total in history)`);
           if (p.history === true) {
             const history = msgs.filter(m => m.injected).slice(-Math.max(0, limit - pending.length));
             if (history.length) {
               lines.push(`-- history (${history.length}) --`);
-              for (const m of history) lines.push(`${m.from_name} (${fmtTime(m.ts)}): ${m.text}`);
+              for (const m of history) lines.push(`  ${m.from_name} (${fmtTime(m.ts)}): ${m.text}`);
             }
           }
-          if (!lines.length) return { content: [{ type: "text", text: "(inbox empty)" }], details: { social: true, action: "inbox", count: 0, lines: [] } };
-          return { content: [{ type: "text", text: lines.map(l => l.startsWith("--") ? l : "  " + l).join("\n") }], details: { social: true, action: "inbox", count: pending.length, lines } };
+          return { content: [{ type: "text", text: lines.join("\n") }], details: { social: true, action: "inbox", count: pending.length, lines } };
         }
         case "focus": {
           const mode = p.mode as SocialFocus | undefined;

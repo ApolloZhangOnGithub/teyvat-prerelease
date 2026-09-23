@@ -428,7 +428,11 @@ export function registerPaimonTool(toolDef: any): void {
             try {
               const api = (globalThis as any).__genshinPondSess?.prevPrompt || 0;
               const win = (globalThis as any).__genshinGetModel?.()?.contextWindow || 0;
-              if (api > 0) apiPart = `, api ${fmtTok(api)}${win > 0 ? ` (${Math.round((api / win) * 100)}%)` : ""}`;
+              // 2026-09-24（用户）：api 显示加 updated at（UTC+8）——ctx 口径已去掉（bioclock gauge 删了），只留 api 一个口径。
+              const _u8 = new Date(Date.now() + 8 * 3600 * 1000);
+              const _p2 = (n: number) => String(n).padStart(2, "0");
+              const _u8t = `${_p2(_u8.getUTCHours())}:${_p2(_u8.getUTCMinutes())}:${_p2(_u8.getUTCSeconds())}`;
+              if (api > 0) apiPart = `, api ${fmtTok(api)}${win > 0 ? ` (${Math.round((api / win) * 100)}%)` : ""} updated at ${_u8t} (UTC+8)`;
             } catch (e) { /* 取不到 API 值就只标 est */ }
             const lastContent = result.content[result.content.length - 1];
             if (lastContent?.type === "text") {
