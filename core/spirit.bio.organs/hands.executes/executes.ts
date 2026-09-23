@@ -48,7 +48,7 @@ function shortRecId(cmd: string): string {
 
 // 记录路径的可读短形式:ExecuteData/<id>.json(省去 ~/.teyvat/<personId>/ 前缀)
 function shortRecPath(file: string): string {
-  const m = file.match(/ExecuteData\/[^\/]+\/([^\/]+\.json)$/);
+  const m = file.match(/ExecuteData\/[^\/]+\/([^\/]+)$/);
   return m ? `ExecuteData/${m[1]}` : file;
 }
 
@@ -124,7 +124,24 @@ const tmuxHas = async (n: string): Promise<boolean> => {
   try { await asyncSh(`tmux has-session -t ${n} 2>/dev/null`); return true; } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); return false; }
 };
 const tmuxPeek = async (n: string): Promise<string> => {
-  return (await asyncShSafe(`tmux capture-pane -pt ${n} -S -200 2>/dev/null`)).split("\n").filter(Boolean).slice(-60).join("\n");
+  const raw = (await asyncShSafe(`tmux capture-pane -pt ${n} -S -200 2>/dev/null`)).split("\n").filter(Boolean);
+  const MAX = 100, HEAD = 30;
+  if (raw.length <= MAX) return raw.join("\n");
+  // 2026-09-24（ISSUE 272）：折行膨胀时保留头尾 + 中间省略落盘。
+  // 原来 .slice(-60) 只取末尾 60 行——宽表格在窄 pane 里折行后实际行数 >60，头部关键信息（如启动 URL）被切。
+  // 现在头尾保留 + 中间省略落盘，agent 可自行 read 完整画面。
+  let fullPath = "";
+  try {
+    mkdirSync(execPersonDir(), { recursive: true });
+    fullPath = join(execPersonDir(), `tmuxpeek-${n}.txt`);
+    writeFileSync(fullPath, raw.join("\n"), "utf8");
+  } catch (e) {
+    fullPath = "";
+  }
+  const tail = raw.slice(-(MAX - HEAD - 1));
+  const omitted = raw.length - HEAD - tail.length;
+  const note = `… 中间省略 ${omitted} 行（完整画面: ${fullPath ? shortRecPath(fullPath) : "(落盘失败)"}）…`;
+  return [...raw.slice(0, HEAD), note, ...tail].join("\n");
 };
 
 // ── execute tool ──
