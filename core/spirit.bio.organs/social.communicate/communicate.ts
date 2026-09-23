@@ -54,7 +54,9 @@ interface SocialMsg {
   id: string;
   from: string;        // sid
   from_name: string;
-  to: string;          // sid | group:<gid> | all
+  to: string;          // sid | group:<gid> | public:<rid> | all
+  chan?: string;       // 群/房间显示名（group 名或 public 房间名；public 属于 group 的一种；DM 无）
+  chan_id?: string;    // 群/房间编号（创建时生成、**不可更改**）
   mode: SocialMode;    // 发送方请求
   mode_used: SocialMode; // 实际生效
   at?: string[];       // @ 强调（群聊）
@@ -418,21 +420,69 @@ function appendPublicMsg(rid: string, m: any): void {
   mkdirSync(PUBLIC_DIR, { recursive: true });
   appendFileSync(publicMsgFile(rid), JSON.stringify(m) + "\n", "utf8");
 }
-// public 房间静音（per-agent，存自己名下列表——与群 @ 静音分开文件，语义不同）
+// public 房间静音（per-agent，两级：mute=房间静音 / at_mute=@ 也静音）
+// 语义（2026-09-24 用户定稿）：
+//   - 默认 @ 可**突破静音**（@ 到你 = interrupt，不管你否 mute 了房间）
+//   - 可再启用 at_mute → 连 @ 也不打断
+//   - 但**不能单独启用 at_mute**（必须 mute 已开）
+type PublicMuteState = { mute?: boolean; at_mute?: boolean };
+
+function loadPublicMuteMapOf(sid: string): Record<string, PublicMuteState> {
+  const raw = readJson<any>(join(MUTES_DIR, `${sid}.public.json`), {});
+  if (Array.isArray(raw)) { const o: Record<string, PublicMuteState> = {}; for (const r of raw) o[String(r)] = { mute: true }; return o; } // 兼容旧数组格式
+  return (raw && typeof raw === "object") ? raw as Record<string, PublicMuteState> : {};
+}
+function savePublicMuteMapOf(sid: string, m: Record<string, PublicMuteState>): void {
+  mkdirSync(MUTES_DIR, { recursive: true });
+  writeJson(join(MUTES_DIR, `${sid}.public.json`), m);
+}
+function loadPublicMuteStateOf(sid: string, rid: string): PublicMuteState {
+  return loadPublicMuteMapOf(sid)[rid] ?? {};
+}
 function loadPublicMutes(): string[] {
   return loadPublicMutesOf(getMySid());
 }
 function loadPublicMutesOf(sid: string): string[] {
-  return readJson<string[]>(join(MUTES_DIR, `${sid}.public.json`), []);
+  return Object.entries(loadPublicMuteMapOf(sid)).filter(([, v]) => !!(v && v.mute)).map(([k]) => k);
+}
+// 统一设置入口：mute / at_mute 联动（at_mute 必须在 mute 之上）
+function setPublicMuteFlags(rid: string, next: { mute?: boolean; at_mute?: boolean }): PublicMuteState {
+  const sid = getMySid();
+  if (!/^[a-f0-9]{8}$/.test(sid)) throw new Error("social public manage: cannot determine own session id");
+  const map = loadPublicMuteMapOf(sid);
+  const cur: PublicMuteState = map[rid] ?? {};
+  let mute = cur.mute === true;
+  let atMute = cur.at_mute === true;
+  if (next.mute !== undefined) {
+    const turningOn = next.mute === true && cur.mute !== true;
+    mute = next.mute === true;
+    if (!mute) atMute = false;                                                     // 关房间静音 → 连带关 @静音
+    else if (turningOn && next.at_mute === undefined) atMute = false;               // 新开静音 → @ 默认不静音
+  }
+  if (next.at_mute !== undefined) atMute = next.at_mute === true;
+  if (atMute && !mute) throw new Error("social public manage: 不能单独启用 @静音——请先开房间静音（mute:true），再设 at_mute:true");
+  if (!mute && !atMute) delete map[rid];
+  else map[rid] = { mute, at_mute: atMute };
+  savePublicMuteMapOf(sid, map);
+  return map[rid] ?? { mute: false, at_mute: false };
 }
 function setPublicMute(rid: string, on: boolean): void {
-  const sid = getMySid();
-  if (!/^[a-f0-9]{8}$/.test(sid)) return;
-  const mutes = loadPublicMutes();
-  const idx = mutes.indexOf(rid);
-  if (on && idx < 0) mutes.push(rid);
-  if (!on && idx >= 0) mutes.splice(idx, 1);
-  writeJson(join(MUTES_DIR, `${sid}.public.json`), mutes);
+  setPublicMuteFlags(rid, { mute: on });
+}
+// 房间查找：接受编号（pXXXX）**或名称**（2026-09-24 用户要求：id/name 都可用）
+function findPublic(idOrName: string): PublicRoom | null {
+  const key = String(idOrName ?? "").trim();
+  if (!key) return null;
+  const byId = loadPublic(key);
+  if (byId) return byId;
+  const matches = listPublics().filter(r => r.name === key);
+  if (matches.length > 1) throw new Error(`social public: 房间名 "${key}" 不唯一（${matches.length} 个）——请改用编号`);
+  return matches[0] ?? null;
+}
+function publicMuteTag(st: PublicMuteState): string {
+  if (st.mute && st.at_mute) return " [muted+@muted]";
+  if (st.mute) return " [muted]";
+  return "";
 }
 
 // ── 投递裁决 ──────────────────────────────────────────────────────────
@@ -688,7 +738,7 @@ async function findRemoteAgent(key: string): Promise<{ sid: string; name: string
   } catch { return null; }
 }
 
-async function remoteSendOne(toSid: string, text: string, mode: SocialMode, fromSid: string, fromName: string): Promise<{ to: string; mode_used: SocialMode; status: string }> {
+async function remoteSendOne(toSid: string, text: string, mode: SocialMode, fromSid: string, fromName: string, chan: { kind: "group" | "public"; id: string; name: string } | null = null): Promise<{ to: string; mode_used: SocialMode; status: string }> {
   const b = loadBinding();
   if (!b) throw new Error(`social.send: ${toSid} 不在本机且未绑定 GitHub 账号——跨设备投递需要 binding`);
   // 2026-09-07（用户反馈：send 渲染显示 id 而非 name）：查 presence 拿远端名字填缓存，供 displayName 渲染（跨设备 agent 不在本地 registry）
@@ -699,7 +749,8 @@ async function remoteSendOne(toSid: string, text: string, mode: SocialMode, from
     id: `msg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
     from: fromSid,
     from_name: fromName,
-    to: toSid,
+    to: chan ? `${chan.kind}:${chan.id}` : toSid,
+    ...(chan ? { chan: chan.name, chan_id: chan.id } : {}),
     mode,
     mode_used: mode,
     text,
@@ -770,12 +821,12 @@ async function _pullRemoteMessagesImpl(): Promise<number> {
   } catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] " + ((e as any)?.message || e)); return 0; } // 拉取失败静默（下次心跳再拉）
 }
 
-async function sendOne(to: string, text: string, mode: SocialMode, atList: string[], isGroup: boolean, gid: string | null, fromSid: string, fromName: string): Promise<{ to: string; mode_used: SocialMode; status: string }> {
+async function sendOne(to: string, text: string, mode: SocialMode, atList: string[], chan: { kind: "group" | "public"; id: string; name: string } | null, fromSid: string, fromName: string): Promise<{ to: string; mode_used: SocialMode; status: string }> {
   const receiverSid = to;
   // 跨设备：本机 registry 无此 sid → 远端投递（server messaging；对方设备 agent 拉取）。群/广播暂限本机。
   const reg = readJson<Record<string, RegistryEntry>>(REGISTRY_FILE, {});
   if (!reg[receiverSid]) {
-    return remoteSendOne(receiverSid, text, mode, fromSid, fromName);
+    return remoteSendOne(receiverSid, text, mode, fromSid, fromName, chan);
   }
   // 2026-08-14 用户定稿：social 是实时消息，对方不在线（offline）目前不支持发送（离线队列以后再设计）。
   if (!isAgentActive(receiverSid)) {
@@ -783,13 +834,14 @@ async function sendOne(to: string, text: string, mode: SocialMode, atList: strin
   }
   const focus = getFocus(receiverSid);
   const isAt = atList.includes(receiverSid);
-  const atMuted = isGroup && gid !== null && loadMutesOf(receiverSid).includes(gid);
+  const atMuted = chan?.kind === "group" && loadMutesOf(receiverSid).includes(chan.id);
   const modeUsed = resolveMode({ receiverFocus: focus, requested: mode, isAt, atMuted });
   const msg: SocialMsg = {
     id: `msg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
     from: fromSid,
     from_name: fromName,
-    to: isGroup && gid ? `group:${gid}` : to,
+    to: chan ? `${chan.kind}:${chan.id}` : to,
+    ...(chan ? { chan: chan.name, chan_id: chan.id } : {}),
     mode,
     mode_used: modeUsed,
     ...(atList.length ? { at: atList } : {}),
@@ -839,7 +891,7 @@ async function sendMessage(opts: { to: string; text: string; mode?: SocialMode; 
     const onlineMembers = members.filter(m => !offlineMembers.includes(m));
     for (const m of onlineMembers) {
       if (m === fromSid) continue;
-      receipts.push(await sendOne(m, text, mode, atList, true, gid, fromSid, fromName));
+      receipts.push(await sendOne(m, text, mode, atList, { kind: "group", id: gid, name: g.name }, fromSid, fromName));
     }
     if (offlineMembers.length) {
       receipts.push({ to: `(offline: ${offlineMembers.join(",")})`, mode_used: mode, status: "skipped-offline" });
@@ -849,9 +901,10 @@ async function sendMessage(opts: { to: string; text: string; mode?: SocialMode; 
 
   // public 聊天室（champion-01 2026-09-24）：先落房间日志（拿 seq），再分发给在线成员
   if (target.startsWith("public:")) {
-    const rid = target.slice(7);
-    const room = loadPublic(rid);
-    if (!room) throw new Error(`social.send: public room ${rid} not found`);
+    const rid0 = target.slice(7);
+    const room = findPublic(rid0);
+    if (!room) throw new Error(`social.send: public room ${rid0} not found`);
+    const rid = room.id;   // 归一化：日志/编号一律用稳定 id（名称可变、编号不可变）
     if (room.closed) throw new Error(`social.send: public room "${room.name}" (${rid}) 已解散——不可再发（历史仍可读）`);
     if (!room.members.includes(fromSid) && !room.members.includes(fromName)) throw new Error(`social.send: not a member of public room ${room.name}`);
     const prev = readPublicMsgs(rid);
@@ -863,9 +916,14 @@ async function sendMessage(opts: { to: string; text: string; mode?: SocialMode; 
     const onlineMembers = members.filter(m => !offlineMembers.includes(m));
     for (const m of onlineMembers) {
       if (m === fromSid) continue;
-      // per-room 静音：接收方对该房间静音 → 降为 queue（仍进 inbox，不打断）
-      const mMode: SocialMode = loadPublicMutesOf(m).includes(rid) ? "queue" : mode;
-      receipts.push(await sendOne(m, text, mMode, atList, true, `public:${rid}`, fromSid, fromName));
+      // per-room 静音 + @ 突破（2026-09-24 用户定稿）：
+      //   默认 @ 突破静音（@ 到你 = interrupt）；只有「房间静音 + @静音」都开才降 queue
+      const st = loadPublicMuteStateOf(m, rid);
+      const isAt = atList.includes(m);
+      const mMode: SocialMode = isAt
+        ? ((st.mute && st.at_mute) ? "queue" : "interrupt")
+        : (st.mute ? "queue" : mode);
+      receipts.push(await sendOne(m, text, mMode, atList, { kind: "public", id: rid, name: room.name }, fromSid, fromName));
     }
     if (offlineMembers.length) {
       receipts.push({ to: `(offline: ${offlineMembers.join(",")})`, mode_used: mode, status: "skipped-offline" });
@@ -877,7 +935,7 @@ async function sendMessage(opts: { to: string; text: string; mode?: SocialMode; 
   if (target === "all" || target === "*") {
     const agents = listAgents().filter(a => a.sid !== fromSid);
     for (const a of agents) {
-      receipts.push(await sendOne(a.sid, text, mode, [], false, null, fromSid, fromName));
+      receipts.push(await sendOne(a.sid, text, mode, [], null, fromSid, fromName));
     }
     return { receipts };
   }
@@ -891,7 +949,7 @@ async function sendMessage(opts: { to: string; text: string; mode?: SocialMode; 
   }
   if (!toSid) throw new Error(`social.send: unknown target "${target}" (use sid, agent name, group:<gid>, or all)`);
   if (toSid === fromSid) throw new Error("social.send: cannot message self");
-  const r = await sendOne(toSid, text, mode, atList, false, null, fromSid, fromName);
+  const r = await sendOne(toSid, text, mode, atList, null, fromSid, fromName);
   return { receipts: [r] };
 }
 
@@ -904,7 +962,9 @@ export function formatPendingMsgs(msgs: SocialMsg[]): string {
     const modeTag = `[${m.mode_used}]`;
     // 发送时间戳（MM-DD HH:MM；无 ts 不显示）——2026-08-14 用户要求：消息带发送时间
     const ts = m.ts ? new Date(m.ts).toLocaleString("sv").slice(5, 16) : "";
-    return `${modeTag} ${ts} ${from}${atTag}: ${m.text}`;
+    // 群/房间名（2026-09-24 用户要求：群消息不能只有发件人，要带对应 group 名称；public 属于 group）
+    const chanTag = m.chan ? `${m.chan} · ` : "";
+    return `${modeTag} ${ts} ${chanTag}${from}${atTag}: ${m.text}`;
   });
   return lines.join("\n");
 }
@@ -970,6 +1030,7 @@ function watchInterruptTriggers(pi: ExtensionAPI): void {
               pi, "social-message", text,
               {
                 from: toInject[0].from, from_name: toInject[0].from_name,
+                ...(toInject[0].chan ? { chan: toInject[0].chan } : {}),
                 mode: toInject[0].mode, mode_used: toInject[0].mode_used, ts: toInject[0].ts,
                 ...(toInject[0].at?.length ? { at: toInject[0].at } : {}),
                 interrupt: true,
@@ -1036,7 +1097,11 @@ function registerSocialTools(pi: ExtensionAPI): void {
       "  action:\"group\"  gop, ...           — group ops: create|list|send|mute|add|remove\n" +
       "      create: gname, members[]  /  send: gid, text, at?  /  mute: gid, on?  /  add|remove: gid, members[]\n" +
       "  action:\"public\" gop, ...            — 公共聊天室（⚠️ 仅供跨框架用：要和非 teyvat agent 一起聊天才开；teyvat 内部 agent 之间用 send / global 即可，不要用这个累赘）\n" +
-      "      create: gname, members?, ttl_minutes? / list / join: gid / leave: gid / send: gid, text, at? / history: gid, limit? / dissolve: gid（仅创建者；解散后成员收到通知、不可再发、历史仍可读）/ mute: gid, on?\n" +
+      "      create: gname, members?, ttl_minutes? / list（含成员名单）/ join: gid / leave: gid\n" +
+      "      send: gid, text, at?（gid 可用**编号或房间名**；@某人默认**突破静音**）/ history: gid, limit?\n" +
+      "      rename: gid, gname（改名，**编号不变**，仅创建者）/ dissolve: gid（仅创建者；解散后成员收到通知、不可再发、历史仍可读）\n" +
+      "      manage: gid, mute?, at_mute?（管理**自己**在该房间的权限；不带参数=查看当前设置）\n" +
+      "          默认 @ 可突破静音；要到 @ 也不打断，需先 mute:true 再 at_mute:true（**不能单独开 at_mute**）\n" +
       "  action:\"global\" [device|<id>]     — cross-device view (devices + agents); list 也支持 scope:'local'|'remote'|'global'\n" +
       "Messages auto-inject: interrupt immediately, queue at turn end (hibernate blocked while pending).",
     promptSnippet: "social(action, ...) — send|list|inbox|focus|group|public|global",
@@ -1052,10 +1117,12 @@ function registerSocialTools(pi: ExtensionAPI): void {
       limit: Type.Optional(Type.Number({ messageDescription: "Max messages (inbox, default 20)" })),
       history: Type.Optional(Type.Boolean({ messageDescription: "Include history in inbox (default false — pending only)" })),
       gop: Type.Optional(Type.String({ messageDescription: "Group op: create | list | send | mute | add | remove" })),
-      gname: Type.Optional(Type.String({ messageDescription: "Group name (group create)" })),
+      gname: Type.Optional(Type.String({ messageDescription: "群/房间名称（group create；public create / rename）" })),
       members: Type.Optional(Type.Array(Type.String(), { messageDescription: "Member sids/names (group create)" })),
-      gid: Type.Optional(Type.String({ messageDescription: "Group id (group send/mute)" })),
+      gid: Type.Optional(Type.String({ messageDescription: "群/房间编号（group send/mute；public 各操作——也可直接用房间名）" })),
       on: Type.Optional(Type.Boolean({ messageDescription: "Mute on/off (group mute, default true)" })),
+      mute: Type.Optional(Type.Boolean({ messageDescription: "public manage: 房间静音（消息降 queue 不打断；@ 仍可突破）" })),
+      at_mute: Type.Optional(Type.Boolean({ messageDescription: "public manage: @ 也静音（必须先 mute:true；默认@可突破静音）" })),
       ttl_minutes: Type.Optional(Type.Number({ messageDescription: "public create: N 分钟无消息自动解散（可选；不填=不过期）" })),
       // global 跨设备视图参数（2026-09-05 用户定稿：social global [device | <device_id>]）
       view: Type.Optional(Type.String({ messageDescription: "global: 'device'=设备列表（默认跨设备 agents 概览）；具体 device_id=该设备 agents" })),
@@ -1297,7 +1364,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
           lines.push(`${total} total in history`);
           if (pending.length) {
             lines.push(`${pending.length} new message${pending.length > 1 ? "s" : ""}`);
-            for (const m of pending) lines.push(`  [${m.mode_used}] ${m.from_name} (${fmtTime(m.ts)}): ${m.text}`);
+            for (const m of pending) lines.push(`  [${m.mode_used}] ${m.chan ? m.chan + " · " : ""}${m.from_name} (${fmtTime(m.ts)}): ${m.text}`);
           } else {
             lines.push("No new message");
           }
@@ -1307,7 +1374,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
             const history = msgs.filter(m => m.injected).slice(-Math.max(0, limit - pending.length));
             if (history.length) {
               lines.push(`-- history (${history.length}) --`);
-              for (const m of history) lines.push(`  ${m.from_name} (${fmtTime(m.ts)}): ${m.text}`);
+              for (const m of history) lines.push(`  ${m.chan ? m.chan + " · " : ""}${m.from_name} (${fmtTime(m.ts)}): ${m.text}`);
             }
           }
           return { content: [{ type: "text", text: lines.join("\n") }], details: { social: true, action: "inbox", count: pending.length, lines } };
@@ -1342,7 +1409,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
               const gs = myGroups();
               if (!gs.length) return { content: [{ type: "text", text: "(no groups)" }], details: { social: true, action: "group", gop: "list", count: 0, lines: [] } };
               const mutes = loadMutes();
-              const lines = gs.map(g => `${g.id} "${g.name}" (${g.members.length} members)${mutes.includes(g.id) ? " [@muted]" : ""}`);
+              const lines = gs.map(g => `${g.id} "${g.name}" (${g.members.length} members)${mutes.includes(g.id) ? " [@muted]" : ""}\n      members: ${g.members.map((x: string) => displayName(x) || x).join(", ")}`);
               return { content: [{ type: "text", text: `Groups:\n${lines.map(l => "  " + l).join("\n")}` }], details: { social: true, action: "group", gop: "list", count: gs.length, lines } };
             }
             case "send": {
@@ -1419,14 +1486,16 @@ function registerSocialTools(pi: ExtensionAPI): void {
             case "list": {
               const all = listPublics();
               if (!all.length) return { content: [{ type: "text", text: "(no public rooms)" }], details: { social: true, action: "public", gop: "list", count: 0, lines: [] } };
-              const mutes = loadPublicMutes();
-              const lines = all.map(r => `${r.id} "${r.name}" ${r.closed ? "[dissolved]" : "[open]"} (${r.members.length} members)${r.members.includes(me) ? " (joined)" : ""}${mutes.includes(r.id) ? " [muted]" : ""}  admin: ${displayName(r.created_by)}`);
+              const lines = all.map(r => {
+                const members = r.members.map((x: string) => displayName(x) || x).join(", ") || "(none)";
+                return `${r.id} "${r.name}" ${r.closed ? "[dissolved]" : "[open]"}${r.members.includes(me) ? " (joined)" : ""}${publicMuteTag(loadPublicMuteStateOf(me, r.id))}  admin: ${displayName(r.created_by)}\n      members(${r.members.length}): ${members}`;
+              });
               return { content: [{ type: "text", text: `Public rooms:\n${lines.map(l => "  " + l).join("\n")}` }], details: { social: true, action: "public", gop: "list", count: all.length, lines } };
             }
             case "join": {
               const rid = String(p.gid ?? "").trim();
-              if (!rid) throw new Error("social public join: gid(room) required");
-              const r = loadPublic(rid);
+              if (!rid) throw new Error("social public join: gid(房间编号或名称) required");
+              const r = findPublic(rid);
               if (!r) throw new Error(`social public join: room ${rid} not found`);
               if (r.closed) throw new Error(`social public join: room "${r.name}" 已解散`);
               if (!r.members.includes(me) && !r.members.includes(meName)) r.members.push(me);
@@ -1435,8 +1504,8 @@ function registerSocialTools(pi: ExtensionAPI): void {
             }
             case "leave": {
               const rid = String(p.gid ?? "").trim();
-              if (!rid) throw new Error("social public leave: gid(room) required");
-              const r = loadPublic(rid);
+              if (!rid) throw new Error("social public leave: gid(房间编号或名称) required");
+              const r = findPublic(rid);
               if (!r) throw new Error(`social public leave: room ${rid} not found`);
               if (r.created_by === me || r.created_by === meName) throw new Error("social public leave: 创建者不能直接退出——必须先移交管理权（移交机制待定）");
               r.members = r.members.filter(x => x !== me && x !== meName);
@@ -1446,7 +1515,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
             case "send": {
               const rid = String(p.gid ?? "").trim();
               const text = String(p.text ?? "").trim();
-              if (!rid) throw new Error("social public send: gid(room) required");
+              if (!rid) throw new Error("social public send: gid(房间编号或名称) required");
               if (!text) throw new Error("social public send: text required");
               const at = (p.at ?? []).map((a: string) => resolveSid(String(a).trim()) ?? String(a).trim()).filter(Boolean);
               const out = await sendMessage({ to: `public:${rid}`, text, mode: "interrupt", at });
@@ -1456,18 +1525,18 @@ function registerSocialTools(pi: ExtensionAPI): void {
             }
             case "history": {
               const rid = String(p.gid ?? "").trim();
-              if (!rid) throw new Error("social public history: gid(room) required");
-              const r = loadPublic(rid);
+              if (!rid) throw new Error("social public history: gid(房间编号或名称) required");
+              const r = findPublic(rid);
               if (!r) throw new Error(`social public history: room ${rid} not found`);
               const lim = Number(p.limit ?? 20) || 20;
-              const msgs = readPublicMsgs(rid).slice(-lim);
+              const msgs = readPublicMsgs(r.id).slice(-lim);
               const lines = msgs.map((m: any) => `#${m.seq} ${m.from_name || m.from}: ${m.text}`);
               return { content: [{ type: "text", text: `History "${r.name}" (${rid})${r.closed ? " [dissolved]" : ""} — last ${msgs.length}:\n${lines.map(l => "  " + l).join("\n") || "  (empty)"}` }], details: { social: true, action: "public", gop: "history", count: msgs.length, lines } };
             }
             case "dissolve": {
               const rid = String(p.gid ?? "").trim();
-              if (!rid) throw new Error("social public dissolve: gid(room) required");
-              const r = loadPublic(rid);
+              if (!rid) throw new Error("social public dissolve: gid(房间编号或名称) required");
+              const r = findPublic(rid);
               if (!r) throw new Error(`social public dissolve: room ${rid} not found`);
               if (r.created_by !== me && r.created_by !== meName) throw new Error(`social public dissolve: 只有创建者可解散（admin: ${displayName(r.created_by)}）`);
               if (r.closed) throw new Error(`social public dissolve: room "${r.name}" 已解散`);
@@ -1480,25 +1549,58 @@ function registerSocialTools(pi: ExtensionAPI): void {
               for (const m of r.members.map((x: string) => resolveSid(x) ?? x).filter((x: string) => /^[a-f0-9]{8}$/.test(x))) {
                 if (m === me) continue;
                 if (!isAgentActive(m)) { offline.push(m); continue; }
-                try { await sendOne(m, notice, "interrupt", [], false, null, me, meName); notified++; }
+                try { await sendOne(m, notice, "interrupt", [], null, me, meName); notified++; }
                 catch (e) { console.error("[spirit.bio.organs/social.communicate/communicate.ts] dissolve notify failed for " + m + ": " + ((e as any)?.message || e)); }
               }
               return { content: [{ type: "text", text: `Dissolved "${r.name}" (${rid}) — notified ${notified}, offline ${offline.length}` }], details: { social: true, action: "public", gop: "dissolve", lines: [`dissolved ${rid}`, `notified: ${notified}, offline: ${offline.length}`] } };
             }
             case "mute": {
               const rid = String(p.gid ?? "").trim();
-              if (!rid) throw new Error("social public mute: gid(room) required");
-              const r = loadPublic(rid);
+              if (!rid) throw new Error("social public mute: gid(房间编号或名称) required");
+              const r = findPublic(rid);
               if (!r) throw new Error(`social public mute: room ${rid} not found`);
               const on = p.on !== false;
               // 与 join/send/history 对齐：已解散房间不再有任何消息，静音无意义 → 拒绝；
               // 但允许 on:false（取消静音）作为幂等清理（ISSUE: 联调发现 mute 曾静默成功）。
-              if (r.closed && on) throw new Error(`social public mute: room "${r.name}" (${rid}) 已解散——静音无意义（不再有房间消息）；如需清理旧静音，用 on:false`);
-              setPublicMute(rid, on);
-              return { content: [{ type: "text", text: `Public room "${r.name}" ${on ? "muted" : "unmuted"} for you (${rid})` }], details: { social: true, action: "public", gop: "mute", lines: [`${on ? "muted" : "unmuted"} ${rid}`] } };
+              if (r.closed && on) throw new Error(`social public mute: room "${r.name}" (${r.id}) 已解散——静音无意义（不再有房间消息）；如需清理旧静音，用 on:false`);
+              const st = setPublicMuteFlags(r.id, { mute: on });
+              return { content: [{ type: "text", text: `Public room "${r.name}" ${on ? "muted" : "unmuted"} for you (${r.id})${on ? "（@ 仍可突破）" : ""}` }], details: { social: true, action: "public", gop: "mute", lines: [`${on ? "muted" : "unmuted"} ${r.id}`], mute: st.mute, at_mute: st.at_mute } };
+            }
+            case "manage": {
+              // 管理自己在该房间的权限/设置（2026-09-24 用户定稿：用某个 public 的 id/name 的 manage 来管理自己的权限）
+              // 不带参数 = 只读展示当前设置
+              const key = String(p.gid ?? "").trim();
+              if (!key) throw new Error("social public manage: gid(房间编号或名称) required");
+              const r = findPublic(key);
+              if (!r) throw new Error(`social public manage: room ${key} not found`);
+              const cur = loadPublicMuteStateOf(me, r.id);
+              const mute = p.mute;
+              const atMute = p.at_mute;
+              if (mute === undefined && atMute === undefined) {
+                return { content: [{ type: "text", text: `"${r.name}" (${r.id}) 你的设置：room mute=${cur.mute === true}, @mute=${cur.at_mute === true}\n（默认 @ 可突破静音；要到 @ 也不打断，需先 mute:true 再 at_mute:true）` }], details: { social: true, action: "public", gop: "manage", lines: [`${r.id} mute=${cur.mute === true} at_mute=${cur.at_mute === true}`], mute: cur.mute === true, at_mute: cur.at_mute === true } };
+              }
+              if (r.closed && (mute === true || atMute === true)) throw new Error(`social public manage: room "${r.name}" (${r.id}) 已解散——不能再开启静音`);
+              const st = setPublicMuteFlags(r.id, { ...(mute !== undefined ? { mute } : {}), ...(atMute !== undefined ? { at_mute: atMute } : {}) });
+              const desc = st.mute ? (st.at_mute ? "房间静音 + @ 也静音" : "房间静音（@ 仍可突破）") : "不静音（全部收）";
+              return { content: [{ type: "text", text: `"${r.name}" (${r.id}) 已更新：${desc}` }], details: { social: true, action: "public", gop: "manage", lines: [`${r.id} ${desc}`], mute: st.mute, at_mute: st.at_mute } };
+            }
+            case "rename": {
+              // 改名（编号不变）——2026-09-24 用户要求：支持改名但编号不可更改。仅创建者可改。
+              const key = String(p.gid ?? "").trim();
+              const newName = String(p.gname ?? "").trim();
+              if (!key) throw new Error("social public rename: gid(房间编号或名称) required");
+              if (!newName) throw new Error("social public rename: gname(新名称) required");
+              const r = findPublic(key);
+              if (!r) throw new Error(`social public rename: room ${key} not found`);
+              if (r.closed) throw new Error(`social public rename: room "${r.name}" (${r.id}) 已解散——不可改名（历史仍可读）`);
+              if (r.created_by !== me && r.created_by !== meName) throw new Error(`social public rename: 只有创建者可改名（admin: ${displayName(r.created_by)}）`);
+              const old = r.name;
+              r.name = newName;
+              savePublic(r);
+              return { content: [{ type: "text", text: `Renamed "${old}" → "${newName}"（编号 ${r.id} 不变）` }], details: { social: true, action: "public", gop: "rename", lines: [`${r.id}: "${old}" → "${newName}"`] } };
             }
             default:
-              throw new Error(`social public: unknown gop "${gop}" (create|list|join|leave|send|history|dissolve|mute)`);
+              throw new Error(`social public: unknown gop "${gop}" (create|list|join|leave|send|history|rename|dissolve|manage|mute)`);
           }
         }
         default:
@@ -1594,13 +1696,14 @@ function registerSocialRenderer(pi: ExtensionAPI): void {
     const { Container, Text } = require("@earendil-works/pi-tui");
     const d = message.details || {};
     const from = d.from_name || d.from || "unknown";
+    const chanTag = d.chan ? `${d.chan} · ` : "";   // 群/房间名（2026-09-24 用户要求：渲染不能只有发件人）
     const mode = d.mode_used || d.mode || "";
     const atTag = d.at?.length ? ` @${d.at.join(",")}` : "";
     // 收到消息：➤ from [mode] · HH:MM（时间戳在标签行尾，不沉底）— 专属 socialMessage 青蓝色
     // 2026-08-18 调暗：原 #4FC1FF（L65%）→ #3DBBFF（L62%，用户：message 太亮，与鲢鱼蓝 Result #718EF4 协调）
     // 2026-08-18 符号：◆ → ▸ → ➤（用户定稿：消息 ➤ / Result • / 事件 ✤；2026-08-27 Result 符号 » 改蓝点 •）
     const tsTag = d.ts ? ` · ${fmtTime(d.ts)}` : "";
-    const label = `${from}${atTag} [${mode}]${tsTag}`;
+    const label = `${chanTag}${from}${atTag} [${mode}]${tsTag}`;
     const content = emojifyTerminalSafe((message.content ?? "").toString());
     const c = new Container();
     c.addChild(new Text(theme.fg("socialMessage", "➤") + " " + theme.fg("socialMessage", theme.bold(label)), 0, 0));

@@ -23,9 +23,12 @@
   social({action:"public", gop, ...})  — 公共聊天室
       ⚠️ **仅供跨框架用**：要和非 teyvat 框架的 agent（codex / GPT / …）一起聊天才开这个。
       teyvat 内部 agent 之间用 send / global 就够，**不要用这个累赘的东西**。
-      create: gname, members?, ttl_minutes? / list / join: gid / leave: gid / send: gid, text, at? / history: gid, limit?
-      dissolve: gid（**仅创建者**可解散；解散后成员收到解散消息、不可再发、**历史仍可读**）/ mute: gid, on?（对自己静音该房间）
-      权限：创建者=管理员（可解散；退出必须**先移交管理权**）；其他成员可发消息/看历史/对自己静音/退出。
+      create: gname（必须命名，生成固定编号）, members?, ttl_minutes? / list（列房间 + **成员名单**）/ join: gid / leave: gid
+      send: gid, text, at?（gid 可用**编号或房间名**）/ history: gid, limit?
+      rename: gid, gname（改名，**编号不变**，仅创建者）/ dissolve: gid（**仅创建者**可解散；成员会收到解散消息、不可再发、**历史仍可读**）
+      manage: gid, mute?, at_mute?（管理**自己**在该房间的权限；不带参数则查看当前设置）
+      静音：房间静音 → 消息不打断（仍进 inbox）；但 **@ 默认突破静音**；要到 @ 也不打断，先 mute:true 再 at_mute:true（**不能单独开 at_mute**）
+      权限：创建者=管理员（可解散/改名；退出必须**先移交管理权**）；其他成员可发消息/看历史/对自己静音/退出
 
 # social.focus
 [专注模式（全局，无个人粒度）]
