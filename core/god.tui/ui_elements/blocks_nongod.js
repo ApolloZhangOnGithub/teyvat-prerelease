@@ -350,18 +350,9 @@ export const renderToolCall = {
   label(theme, name, detail, opts) {
     // 2026-09-13（用户）：opts.noDot → 不画状态点，但用空格占住点的宽度（否则文字左移 1 格对不齐）——Execute 调用行默认隐藏原点用，其他 tool 不受影响
     const d = opts?.noDot ? " " : dot(theme, opts || { partial: true });
-    // 2026-09-24（用户：工具名要当前缀，路径/参数折行对齐到工具名后而非工具名首字母）：
-    // detail 存在时用 wrapWithPrefix（前缀 = 点 + 工具名 + 空格，内容 = detail），不再走 prefixWidthOf 猜前缀。
-    if (detail) {
-      const prefixStr = d + " " + theme.bold(name) + " ";
-      return {
-        text: prefixStr + String(detail),
-        render(width) {
-          return wrapWithPrefix(String(detail), prefixStr, width, { visibleWidth: _visibleWidth, wrapTextWithAnsi: _wrapTextWithAnsi });
-        },
-      };
-    }
-    const text = theme.bold(name);
+    // 2026-09-24（用户定稿）：续行对齐到工具名首字母（E），不是路径 /——prefixWidthOf 识别「⏺ 」前缀（点+空格），
+    // 续行缩进到工具名首字母，比「对齐路径 /」更简洁。不再用 wrapWithPrefix 显式前缀。
+    const text = detail ? theme.bold(name) + " " + String(detail) : theme.bold(name);
     return bulletText(d, text);
   },
 
