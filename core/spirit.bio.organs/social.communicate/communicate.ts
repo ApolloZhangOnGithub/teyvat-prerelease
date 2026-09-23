@@ -1319,7 +1319,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
     promptSnippet: "social(action, ...) — send|list|inbox|focus|group|public|global",
     parameters: Type.Object({
       action: Type.String({ messageDescription: "send | list | inbox | check-message | focus | group | public | global（public=公共聊天室，仅供跨框架；check-message=取某房间被静音的消息（不自动注入的那批）；global=跨设备查看）" }),
-      to: Type.Optional(Type.String({ messageDescription: "目标：send: sid | agent name | group:<gid> | public:<rid> | all；public leave（创建者）: 管理权移交给哪位房内成员（sid 或房内名）" })),
+      to: Type.Optional(Type.String({ messageDescription: "目标：send **必填**（sid | agent name | group:<gid> | public:<rid> | all）；public leave（创建者）: 管理权移交给哪位房内成员（sid 或房内名）。注：at=[...] 只是群发里的定向强调，不能代替 to" })),
       text: Type.Optional(Type.String({ messageDescription: "send: 消息内容；check-message: 查询修饰（空/new/latest N/latest A-B）" })),
       mode: Type.Optional(Type.Union([
         Type.Literal("interrupt"), Type.Literal("queue"), // @DEP deferred 废弃 ISSUE 103
@@ -1453,7 +1453,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
       const p = (rawParams ?? {}) as any;
       switch (action) {
         case "send": {
-          if (!p.to) throw new Error("social send: to required");
+          if (!p.to) throw new Error(`social send: to required —— 收件人必填（sid | agent name | group:<gid> | public:<rid> | all）。注意：at=[...] 是「群发里的定向强调」，**不能代替 to**；发房间消息请用 action:"public", gop:"send", gid:"<房间编号>"`);
           if (!p.text) throw new Error("social send: text required");
           if (p.mode && !["interrupt", "queue"].includes(p.mode)) throw new Error(`social send: mode must be interrupt|queue (deferred 废弃, ISSUE 103), got "${p.mode}"`);
           const out = await sendMessage({ to: p.to, text: p.text, mode: p.mode ?? "interrupt", at: p.at ?? [] });
