@@ -387,13 +387,17 @@ export default function (pi: ExtensionAPI) {
     transition({ kind: "working" });
     resetLimits();
     if (getSessionRole() === "main") {
-      setTimeout(() => {
+      setTimeout(async () => {
         try {
           // 2026-08-20：headless 守护（PAIMON_HEADLESS_DAEMON=1，rpc + setsid 无 TTY）跳过孤儿检测——
           // setsid 脱离终端是 headless 的合法形态，不是孤儿；TUI 模式下无 TTY 才是异常。
           // （实测：headless 守护 node 的 TTY="??" 被此处击杀，7 秒后 shutdown）
           if (process.env.PAIMON_HEADLESS_DAEMON === "1") return;
-          const tty = require("child_process").execSync("ps -o tty= -p " + process.pid, { encoding: "utf8" }).trim();
+          // 2026-09-24（用户：非异步方法全禁）——execSync → 异步 execFile
+          const { execFile } = await import("node:child_process");
+          const tty = await new Promise<string>((resolve) => {
+            execFile("ps", ["-o", "tty=", "-p", String(process.pid)], { encoding: "utf8" }, (_e: any, so: any) => resolve(String(so || "").trim()));
+          });
           if (tty === "??") { dlog("orphan: no TTY, shutting down"); ctx.shutdown(); }
         } catch (e) { console.error("[spirit.bio.organs/kernel.heart/heart.ts] " + ((e as any)?.message || e)); }
       }, 60000);

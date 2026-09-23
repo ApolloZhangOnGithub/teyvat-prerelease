@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { readFile as fsReadFile, writeFile as fsWriteFile } from "node:fs/promises";
 import { createHash, randomBytes } from "node:crypto";
 import { homedir } from "node:os";
-import { execSync, execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 
 import { getPrompt } from "#kernel_ribosome";
 import { registerPaimonTool, sendCustomMessage, resultContent } from "#kernel_backbone";
@@ -40,26 +40,36 @@ function getAgentName(): string {
   return process.env.PAIMON_AGENT_NAME || process.env.USER || "unknown";
 }
 
-function readMeta(filePath: string): XattrFileMeta | null {
+// 2026-09-24（用户：非异步方法全禁）——execFile 异步子进程 helper（原 execFileSync 同步阻塞事件循环）。
+function execFileP(cmd: string, args: string[], opts: any): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, opts, (err: any, stdout: any) => {
+      if (err) reject(err); else resolve(String(stdout || ""));
+    });
+  });
+}
+
+async function readMeta(filePath: string): Promise<XattrFileMeta | null> {
   try {
-    // 2026-09-13：改 execFileSync（argv 传参）——之前把 agent 提供的文件名拼进 shell 字符串，`x$(touch /tmp/pwn).md` 这类文件名会在 xattr 阶段执行且不经 validateExecute
-    const raw = execFileSync("xattr", ["-p", XATTR_KEY, filePath], { encoding: "utf8", timeout: 2000, stdio: ["ignore","pipe","ignore"] });
+    // 2026-09-13：改 argv 传参——之前把 agent 提供的文件名拼进 shell 字符串，`x$(touch /tmp/pwn).md` 这类文件名会在 xattr 阶段执行且不经 validateExecute
+    // 2026-09-24：execFileSync → 异步 execFileP（不阻塞事件循环）
+    const raw = await execFileP("xattr", ["-p", XATTR_KEY, filePath], { encoding: "utf8", timeout: 2000, stdio: ["ignore","pipe","ignore"] });
     return JSON.parse(raw.trim());
   } catch { /* 2026-09-11（系统检查）：无 com.genshin.meta 属性 = 正常（绝大多数文件无 meta），xattr -p 非零退出不该打日志（原 → 50× spam）；返回 null 由调用方按无元数据处理 */
     return null;
   }
 }
 
-function writeMetaRaw(filePath: string, json: string): boolean {
+async function writeMetaRaw(filePath: string, json: string): Promise<boolean> {
   try {
-    execFileSync("xattr", ["-w", XATTR_KEY, json, filePath], { timeout: 2000, stdio: "ignore" }); // 2026-09-13：argv 传参，不拼 shell
+    await execFileP("xattr", ["-w", XATTR_KEY, json, filePath], { timeout: 2000, stdio: "ignore" }); // 2026-09-13：argv 传参，不拼 shell
     return true;
   } catch (e) { console.error("[spirit.bio.organs/hands.fileacts/fileacts.ts] " + ((e as any)?.message || e));
     return false;
   }
 }
 
-function writeMeta(filePath: string, meta: XattrFileMeta): boolean {
+async function writeMeta(filePath: string, meta: XattrFileMeta): Promise<boolean> {
   let json = JSON.stringify(meta);
   while (json.length > XATTR_MAX_SIZE && meta.edits && meta.edits.length > 0) {
     meta.edits.shift();
@@ -68,7 +78,7 @@ function writeMeta(filePath: string, meta: XattrFileMeta): boolean {
   return writeMetaRaw(filePath, json);
 }
 
-function initMeta(filePath: string, fileName: string): boolean {
+async function initMeta(filePath: string, fileName: string): Promise<boolean> {
   const meta: XattrFileMeta = {
     created: { agent: getAgentName(), ts: new Date().toISOString(), name: fileName },
     edits: [],
@@ -76,12 +86,12 @@ function initMeta(filePath: string, fileName: string): boolean {
   return writeMeta(filePath, meta);
 }
 
-function appendEdit(
+async function appendEdit(
   filePath: string,
   op: XattrEditEntry["op"],
   extra?: { lines?: number; chars?: number; oldName?: string }
-): boolean {
-  let meta = readMeta(filePath);
+): Promise<boolean> {
+  let meta = await readMeta(filePath);
   if (!meta) {
     meta = { created: { agent: "unknown", ts: new Date().toISOString(), name: filePath }, edits: [] };
   }
@@ -961,8 +971,8 @@ export default function (pi: ExtensionAPI) {
     const p = (event.input as any)?.path ?? (event.input as any)?.file_path;
     if (!p || isExempt(p)) return;
     try {
-      if (event.toolName === "write") initMeta(p, p.split("/").pop() || p);
-      else appendEdit(p, "edit");
+      if (event.toolName === "write") await initMeta(p, p.split("/").pop() || p);
+      else await appendEdit(p, "edit");
     } catch (e) { console.error("[spirit.bio.organs/hands.fileacts/fileacts.ts] " + ((e as any)?.message || e)); }
   });
 

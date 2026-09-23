@@ -82,10 +82,10 @@ export function registerStatusTool(_pi: ExtensionAPI) {
   registerPaimonTool({
     name: "status",
     label: "Status",
-    messageDescription: "Query yourself. Usage: status @identity | status @history [N] | status @nickname <name> | status @model | status @balance | status @permissions | status switch-model <id>",
-    promptSnippet: "status @identity — query identity | status @history [N] — session 存续时期 | status @nickname <name> — set nickname | status @model — list models | status @balance — 查余额（deepseek 实时/非 deepseek unavailable）| status @permissions — 授权状态 | status switch-model <id> — switch model (needs /a model auth)",
+    messageDescription: "Query yourself. Usage: status @identity | status @history [N] | status @nickname <name> | status @model (当前模型) | status @model list (可切换清单) | status @balance | status @permissions | status switch-model <id>",
+    promptSnippet: "status @identity — query identity | status @history [N] — session 存续时期 | status @nickname <name> — set nickname | status @model — 当前模型 | status @model list — 可切换清单 | status @balance — 查余额（deepseek 实时/非 deepseek unavailable）| status @permissions — 授权状态 | status switch-model <id> — switch model (needs /a model auth)",
     parameters: Type.Object({
-      instruction: Type.String({ messageDescription: i18n("指令：@identity | @history [N 最近几个 session] | @nickname <名字> | @model（可用模型列表）| @balance（查余额）| @permissions（授权状态）| switch-model <模型id>（切换模型，需 /a model 授权）", "Instruction: @identity | @history [N recent sessions] | @nickname <name> | @model (available models) | @balance (query balance) | @permissions (authorization status) | switch-model <id> (switch model, needs /a model auth)") }),
+      instruction: Type.String({ messageDescription: i18n("指令：@identity | @history [N 最近几个 session] | @nickname <名字> | @model（当前模型）| @model list（可切换清单）| @balance（查余额）| @permissions（授权状态）| switch-model <模型id>（切换模型，需 /a model 授权）", "Instruction: @identity | @history [N recent sessions] | @nickname <name> | @model (current model) | @model list (available models) | @balance (query balance) | @permissions (authorization status) | switch-model <id> (switch model, needs /a model auth)") }),
     }),
     renderCall(args: any, theme: any) {
       return renderToolCall.label(theme, "status", args?.instruction || "");
@@ -230,10 +230,20 @@ export function registerStatusTool(_pi: ExtensionAPI) {
         // 2026-09-07 teyvat：模型清单官方化——built-in catalog（官方 DEEPSEEK_MODELS 等）+ models.json custom 合并，
         // 不只见models.json（否则 vision-exp 需手改 models.json才出现）。deepseek 的 vision-exp 来自官方 catalog。
         if (params.instruction.startsWith("@model")) {
+          // 2026-09-24（用户）：拆两个 action——status @model（看自己是什么模型，简短）vs status @model list（看有什么可切换，完整清单）
+          const _mr = params.instruction.replace(/^@model\s*/, "").trim();
+          const cur = (globalThis as any).__genshinGetModel?.();
+          const curId = cur?.id ?? cur?.model ?? "";
+          if (!_mr) {
+            if (!curId) return { content: [{ type: "text", text: T("当前模型未知", "Current model unknown") }], isError: true };
+            const _vis = Array.isArray((cur as any)?.input) && (cur as any).input.includes("image");
+            return { content: [{ type: "text", text: T(`当前模型: ${curId} (${cur?.provider || ""})${_vis ? " ✓视觉" : ""}`, `Current model: ${curId} (${cur?.provider || ""})${_vis ? " ✓vision" : ""}`) }] };
+          }
+          if (_mr !== "list" && _mr !== "all" && _mr !== "ls") {
+            return { content: [{ type: "text", text: T(`未知参数 "${_mr}"。用法: status @model（当前）| status @model list（可切换清单）`, `Unknown "${_mr}". Usage: status @model (current) | status @model list (available)`) }], isError: true };
+          }
           try {
             const models = JSON.parse(readFileSync(join(homedir(), ".teyvat/config/models.json"), "utf8"));
-            const cur = (globalThis as any).__genshinGetModel?.();
-            const curId = cur?.id ?? cur?.model ?? "";
             // built-in catalog（官方）：MODELS[provider] 是 { modelId: {...} }，取 Object.values 成数组，与 models.json custom 合并
             let merged: any[] = [];
             try {

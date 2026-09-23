@@ -24,6 +24,12 @@
   .rail-btn .rail-unread { position: absolute; top: 2px; right: 2px; background: #fa5151; color: #fff; border-radius: 8px; font-size: 9px; line-height: 1; padding: 1px 4px; }
   .rail-spacer { flex: 1; }
   .rail-me { width: 34px; height: 34px; border-radius: 5px; background: #07c160; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .view-pop { position: fixed; left: 60px; bottom: 14px; width: 270px; max-height: 60vh; overflow-y: auto; background: #fff; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,.18); z-index: 200; animation: viewPopIn .15s ease; }
+  @keyframes viewPopIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+  /* 原神传送白光 bloom 过渡（仿 BloomTransition）：闪白淡出 */
+  .gi-loading { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 300; }
+  .gi-loading.on { animation: giFlash .95s cubic-bezier(.22,.61,.36,1); }
+  @keyframes giFlash { 0% { opacity: 0; } 22% { opacity: 1; } 62% { opacity: 1; } 100% { opacity: 0; } }
 
   /* ── ② 列表区 ── */
   .conv { width: 258px; min-width: 258px; background: #f7f7f7; display: flex; flex-direction: column; border-right: 1px solid #e2e2e2; position: relative; }
@@ -196,7 +202,10 @@
     </button>
     <div class="rail-spacer"></div>
     <div class="rail-me" id="railMeAvatar" title="我">我</div>
+    <div class="view-pop" id="viewSwitchPop" style="display:none"></div>
   </nav>
+
+  <div class="gi-loading" id="viewLoading"></div>
 
   <aside class="conv">
     <div class="conv-drag" id="convDrag" title="拖动调整宽度（双击恢复默认）"></div>
@@ -240,7 +249,8 @@
 
 <script>
 "use strict";
-let self = null, current = null, convs = [], filter = "", view = "chats", msgFilter = "", cachedMsgs = [];
+let self = null, current = null, convs = [], filter = "", view = "chats", msgFilter = "", cachedMsgs = [], viewAsAgent = null, agentMsgs = [];
+const agentNameMap = {};
 // 未读状态持久化（刷新不丢）
 let unread = {};
 try { unread = JSON.parse(localStorage.getItem("teyvat-im-unread") || "{}") || {}; } catch { unread = {}; }
@@ -289,7 +299,7 @@ function fmtTime(ts) {
   if (!ts) return "";
   const d = new Date(ts), now = new Date();
   if (d.toDateString() === now.toDateString()) return d.toTimeString().slice(0, 5);
-  return `${d.getMonth() + 1}/${d.getDate()}`;
+  return `${d.getMonth() + 1}/${d.getDate()} ${d.toTimeString().slice(0, 5)}`;
 }
 function isGroupPeer(sid) { return String(sid || "").startsWith("group:"); }
 // ── 边栏可拖动调宽（2026-09-13 用户需求）──
@@ -331,6 +341,7 @@ function shortModel(m) {
 
 // ── 数据 ──
 async function loadConvs() {
+  if (viewAsAgent) return; // agent 视角下不刷新（loadConvs 会覆盖 convs，导致点进去过滤对不上）
   try {
     const d = await (await fetch("/conversations")).json();
     self = d.self;
@@ -560,26 +571,34 @@ async function selectConv(c, focusMsgId, keepScroll = false) {
   const subTxt = group ? `${(c.members || []).length} 人` : `${c.remote ? "远程 " + (c.deviceId || "") : c.sid} · ${c.online ? "在线" : "离线"}`;
   const modelTxt = c.model ? ` <span class="model-tag" title="${esc(c.model)}">${esc(shortModel(c.model))}</span>` : "";
   $("chatTitle").innerHTML = `${esc(c.name)}${stateBadges(c.state)}<span class="sub">${subTxt}</span>${modelTxt}`;
-  $("input").disabled = false;
-  $("send").disabled = false;
+  if (!viewAsAgent) { $("input").disabled = false; $("send").disabled = false; }
   $("msgSearch").style.display = "none"; $("msgSearch").value = ""; msgFilter = "";
   $("chatMore").dataset.mode = "more"; $("chatMore").innerHTML = MORE_SVG;
   $("chatMore").style.display = "";
   toggleMore(false);
   resetMultiIfNeeded();
-  // 恢复草稿（刷新/切会话不丢）
-  try { $("input").value = localStorage.getItem("teyvat-im-draft-" + current) || ""; } catch { $("input").value = ""; }
+  // 恢复草稿（刷新/切会话不丢）——agent 视角只读，不恢复草稿
+  if (!viewAsAgent) { try { $("input").value = localStorage.getItem("teyvat-im-draft-" + current) || ""; } catch { $("input").value = ""; } }
   $("input").style.height = "40px";
   if ($("input").value) $("input").style.height = Math.min($("input").scrollHeight, 120) + "px";
-  $("input").focus();
+  if (!viewAsAgent) $("input").focus();
   renderList();
   await reloadChat(focusMsgId);
 }
 async function reloadChat(focusMsgId) {
   if (!current) return;
   try {
-    const d = await (await fetch("/messages?peer=" + encodeURIComponent(current))).json();
-    cachedMsgs = d.messages || [];
+    if (viewAsAgent) {
+      // agent 视角：从 agentMsgs 过滤该 peer 的对话（只读，不 fetch /messages）
+      cachedMsgs = agentMsgs.filter((m) => (m.out ? m.to : m.from) === current).sort((a, b) => (a.ts || 0) - (b.ts || 0));
+      $("input").disabled = true; $("input").placeholder = "只读视角，不能发送";
+      $("send").disabled = true;
+    } else {
+      const d = await (await fetch("/messages?peer=" + encodeURIComponent(current))).json();
+      cachedMsgs = d.messages || [];
+      $("input").disabled = false; $("input").placeholder = "";
+      $("send").disabled = false;
+    }
     // 未读分割线：读这次的已读位置，渲染后立即更新为最新（下次进来无分割线）
     curLastReadTs = parseInt(localStorage.getItem("teyvat-im-read-" + current) || "0", 10);
     renderChat();
@@ -669,6 +688,7 @@ function appendMsg(m) {
 
 // ── 发送 ──
 async function send() {
+  if (viewAsAgent) return; // agent 视角只读，禁止发送
   const input = $("input");
   const text0 = input.value.replace(/\n+$/, "");
   if (!text0.trim() || !current) return;
@@ -693,6 +713,13 @@ function connectSSE() {
   const es = new EventSource("/events");
   es.onmessage = (ev) => {
     let m; try { m = JSON.parse(ev.data); } catch { return; }
+    if (viewAsAgent) {
+      // agent 视角只读：仅追加当前会话的消息，不做 unread/横幅/通知/刷新（那些是「我视角」逻辑）
+      const grp = isGroupPeer(m.to);
+      const belongs = current && (grp ? m.to === current : (m.out ? m.to === current : m.from === current));
+      if (belongs) { cachedMsgs.push(m); if (!msgFilter.trim()) appendMsg(m); const b = $("chatBody"); b.scrollTop = b.scrollHeight; }
+      return;
+    }
     const grp = isGroupPeer(m.to);
     // 是否属于当前会话
     const belongs = current && (grp ? m.to === current : (m.out ? m.to === current : m.from === current));
@@ -745,8 +772,59 @@ const RAIL_TABS = [["railChats", "chats"], ["railContacts", "contacts"], ["railD
 const VIEW_TAB = { chats: "railChats", contacts: "railContacts", groups: "railContacts", archived: "railContacts", newfriends: "railContacts", createGroup: "railContacts", favs: "railMeTab", discover: "railDiscover", me: "railMeTab" };
 function syncRail() { const active = VIEW_TAB[view] || "railChats"; for (const [id] of RAIL_TABS) { const b = $(id); if (b) b.classList.toggle("active", id === active); } }
 for (const [id, v] of RAIL_TABS) { const b = $(id); if (b) b.onclick = () => { view = v; syncRail(); renderList(); }; }
-// 左下角头像（初始字母）→ 进「我」页（可看版本信息）
-$("railMeAvatar").onclick = () => { view = "me"; syncRail(); renderList(); };
+// 左下角头像 → 视角切换（选任意 agent，看它的全部 social，只读）
+$("railMeAvatar").onclick = () => { showViewSwitch(); };
+
+async function showViewSwitch() {
+  const pop = $("viewSwitchPop");
+  if (pop.style.display !== "none") { pop.style.display = "none"; return; }
+  let agents = [];
+  const archivedSids = new Set();
+  try {
+    const d = await (await fetch("/agents")).json(); agents = d.agents || [];
+    for (const a of agents) agentNameMap[a.sid] = a.name || a.sid;
+    const cd = await (await fetch("/conversations")).json();
+    for (const c of (cd.conversations || [])) if (c.archived) archivedSids.add(c.sid);
+  } catch { /* 忽略 */ }
+  agents = agents.filter((a) => !archivedSids.has(a.sid)); // 过滤归档 agent
+  const row = (sid, label, cur) => `<div data-sid="${esc(sid)}" style="padding:11px 16px;border-bottom:1px solid #eee;font-size:14px;cursor:pointer;${cur ? "color:#07c160;font-weight:600" : ""}">${esc(label)}${cur ? " · 当前" : ""}</div>`;
+  const rows = row("", "我（人类视角）", !viewAsAgent) + agents.map((a) => row(a.sid, a.name || a.sid, viewAsAgent === a.sid)).join("");
+  pop.innerHTML = `<div style="padding:8px 16px;font-size:12px;color:#999;border-bottom:1px solid #eee">切换</div>` + rows;
+  pop.style.display = "";
+  pop.querySelectorAll("[data-sid]").forEach((el2) => { el2.onclick = () => { pop.style.display = "none"; setViewAsAgent(el2.dataset.sid || null); }; });
+}
+document.addEventListener("click", (e) => { if (!e.target.closest("#viewSwitchPop") && !e.target.closest("#railMeAvatar")) $("viewSwitchPop").style.display = "none"; });
+
+async function setViewAsAgent(sid) {
+  current = null;
+  // 关闭右侧聊天窗口（切视角后不该还开着之前的会话）
+  document.body.classList.remove("chat-open");
+  $("chatTitle").textContent = "选择一个会话";
+  $("chatBody").innerHTML = '<div class="empty">← 选择左侧会话开始聊天</div>';
+  $("input").disabled = true; $("input").value = ""; $("input").placeholder = "";
+  $("send").disabled = true;
+  if (!sid) { viewAsAgent = null; agentMsgs = []; try { localStorage.removeItem("teyvat-im-view-as"); } catch { /* 忽略 */ } await loadConvs(); view = "chats"; syncRail(); renderList(); return; }
+  viewAsAgent = sid;
+  try { localStorage.setItem("teyvat-im-view-as", sid); } catch { /* 忽略 */ }
+  $("viewLoading").classList.remove("on"); void $("viewLoading").offsetWidth; $("viewLoading").classList.add("on");
+  // 归档过滤：不显示已归档的 peer（和「我」视角一致）
+  const archivedSids = new Set();
+  try { const cd = await (await fetch("/conversations")).json(); for (const c of (cd.conversations || [])) if (c.archived) archivedSids.add(c.sid); } catch { /* 忽略 */ }
+  try { const d = await (await fetch("/agent-social?sid=" + encodeURIComponent(sid))).json(); agentMsgs = d.messages || []; } catch { agentMsgs = []; }
+  const peers = {};
+  for (const m of agentMsgs) {
+    const peer = m.out ? m.to : m.from;
+    if (!peer || String(peer).startsWith("group:") || archivedSids.has(peer)) continue;
+    (peers[peer] = peers[peer] || []).push(m);
+  }
+  convs = Object.entries(peers).map(([peer, msgs]) => {
+    const sorted = msgs.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    const last = sorted[sorted.length - 1];
+    return { sid: peer, name: agentNameMap[peer] || peer, lastMsg: { out: last.out, text: last.text, ts: last.ts }, online: false };
+  }).sort((a, b) => (b.lastMsg?.ts || 0) - (a.lastMsg?.ts || 0));
+  $("railMeAvatar").textContent = initial(agentNameMap[sid] || sid);
+  view = "chats"; syncRail(); renderList();
+}
 
 // 未读红点：只在 rail 的「消息」tab 上（通讯录/归档不显示——用户定稿）
 function updateRailBadge() {
@@ -1075,7 +1153,8 @@ document.addEventListener("click", (e) => {
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") { $("msgMenu").style.display = "none"; $("convMenu").style.display = "none"; toggleMore(false); } });
 
 updateHint();
-loadConvs();
+// 刷新后恢复 agent 视角（不回到「我」）
+try { const _sva = localStorage.getItem("teyvat-im-view-as"); if (_sva) setViewAsAgent(_sva); else loadConvs(); } catch { loadConvs(); }
 // 版本号（源码版本 × 运行时版本分离；测试版标识）——点左下角头像也可查看
 let verInfo = null;
 fetch("/version").then((r) => r.json()).then((v) => {

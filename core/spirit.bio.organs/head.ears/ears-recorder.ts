@@ -14,7 +14,7 @@ import { existsSync, mkdirSync, appendFileSync, readFileSync, unlinkSync } from 
 import { dirname, basename, extname, join } from "node:path";
 import { homedir } from "node:os";
 import { connect, type Socket } from "node:net";
-import { spawn, execFileSync, type ChildProcess } from "node:child_process";
+import { spawn, execFile, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   createAsrBackend, loadConfig, readWav, SAMPLE_RATE, CHUNK_SIZE, type EarResult,
@@ -205,16 +205,22 @@ function isMediaFile(path: string): boolean {
   return MEDIA_EXT.has(extname(path).toLowerCase());
 }
 
-function extractAudio(videoPath: string): string {
+// 2026-09-24（用户：非异步方法全禁）——execFileSync → 异步 execFile
+function execFileP(cmd: string, args: string[], opts: any): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, opts, (err: any, so: any) => err ? reject(err) : resolve(String(so || "")));
+  });
+}
+async function extractAudio(videoPath: string): Promise<string> {
   // 2026-08-20：不写系统 /tmp——迁移到 teyvat RuntimeCache（随机名不冲突，处理完 finally 自删）
   const tmp = join(homedir(), ".teyvat/RuntimeCache", `ear-extract-${randomUUID()}.wav`);
   let dur = 0;
   try {
-    const r = execFileSync("ffprobe", ["-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", videoPath], { encoding: "utf8", timeout: 10000 });
+    const r = await execFileP("ffprobe", ["-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", videoPath], { encoding: "utf8", timeout: 10000 });
     dur = parseFloat(r.trim()) || 0;
   } catch (e) { console.error("[spirit.bio.organs/head.ears/ears-recorder.ts] " + ((e as any)?.message || e)); }
   console.error(`[ear-file] 提取音频: ${basename(videoPath)} (${dur.toFixed(0)}s) → WAV`);
-  execFileSync("ffmpeg", ["-y", "-v", "quiet", "-i", videoPath, "-ac", "1", "-ar", "16000", "-sample_fmt", "s16", "-f", "wav", tmp], { timeout: 120000 });
+  await execFileP("ffmpeg", ["-y", "-v", "quiet", "-i", videoPath, "-ac", "1", "-ar", "16000", "-sample_fmt", "s16", "-f", "wav", tmp], { timeout: 120000 });
   return tmp;
 }
 
@@ -285,7 +291,7 @@ async function runFileDoubao(wavPath: string, outputJsonl: string, speed: number
   console.error(`[ear-file] done (${count} segs)`);
 }
 
-function runFileWhisper(wavPath: string, outputJsonl: string, lang: string, model: string) {
+async function runFileWhisper(wavPath: string, outputJsonl: string, lang: string, model: string) {
   console.error(`[ear-file] whisper (${model})...`);
   const script = `
 import json, sys, time
@@ -300,19 +306,19 @@ for seg in segs:
     count += 1
 print(f"[ear-file] done ({count} segs)", file=sys.stderr)
 `;
-  execFileSync("python3", ["-c", script, wavPath, lang, model, outputJsonl], { stdio: ["ignore", "inherit", "inherit"] });
+  await execFileP("python3", ["-c", script, wavPath, lang, model, outputJsonl], { stdio: ["ignore", "inherit", "inherit"] });
 }
 
 async function runFile(mediaFile: string, outputJsonl: string, backend: string, lang: string, speed: number, chunk: number, model: string) {
   let audioPath = mediaFile;
   let tmpWav: string | null = null;
   if (isMediaFile(mediaFile)) {
-    tmpWav = extractAudio(mediaFile);
+    tmpWav = await extractAudio(mediaFile);
     audioPath = tmpWav;
   }
 
   try {
-    if (backend === "whisper") runFileWhisper(audioPath, outputJsonl, lang, model);
+    if (backend === "whisper") await runFileWhisper(audioPath, outputJsonl, lang, model);
     else await runFileDoubao(audioPath, outputJsonl, speed, chunk);
   } finally {
     if (tmpWav && existsSync(tmpWav)) unlinkSync(tmpWav);

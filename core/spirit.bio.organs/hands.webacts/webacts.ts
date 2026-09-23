@@ -11,6 +11,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { registerPaimonTool, sendCustomMessage, resultContent } from "#kernel_backbone";
 import { outboxSend } from "../kernel.backbone/backbone.ts"; // 2026-08-20：outbox 已合并进 backbone.ts（不再单独文件）
+import { registerBackgroundTask, unregisterBackgroundTask } from "#hands_execute"; // 2026-09-24：web 后台任务进共享注册表（statebar + @ 查询 + kill）
 import { renderToolCall, renderMessage } from "#tui_blockrender";
 import { i18n } from "#tui_localizations";
 import { syncEndpoint } from "#paths";
@@ -83,6 +84,20 @@ export default function (pi: ExtensionAPI) {
   // - BG_HARD_TIMEOUT_MS 硬超时：backend 挂死（无内部超时）时出超时推送
   // 格式化复用 formatFetch/formatSearch（它们已处理 r.error 分支）
   function backgroundPush(p: Promise<any>, label: string, format: (r: any) => { content: any[]; details: any; isError: boolean }): void {
+    // 2026-09-24（用户：web 要 statebar 显示 + @ 查询 + interrupt 式返回）：
+    // 注册进 execute 的共享后台任务表（statebar 读 __genshinBgCount，@ 读 running）；完成时 unregister + interrupt 推送。
+    const startTime = Date.now();
+    const ac = new AbortController();
+    const id = registerBackgroundTask({
+      command: `web ${label}`,
+      title: `Web ${label}`,
+      abort: ac,
+      startTime,
+      killedByUser: false,
+      context: "",
+      accum: "",
+      type: "web",
+    });
     (async () => {
       let r: any;
       try {
@@ -95,12 +110,29 @@ export default function (pi: ExtensionAPI) {
       } catch (e: any) {
         r = { error: e?.message ?? String(e) };
       }
+      // 被 kill（entry 已删）→ 不发完成推送
+      if (!unregisterBackgroundTask(id)) return;
+      const elapsed = Math.round((Date.now() - startTime) / 1000);
       const formatted = format(r);
       const text = formatted.content?.[0]?.text ?? "";
-      // ISSUE 119 P1：走 outbox——先落盘再发；若落入 wait 窗口被 SDK 吞掉，
-      // heart 唤醒时 outboxFlush 会 ack 检查后重发（at-least-once）
+      const isError = formatted.isError;
+      // ISSUE 119 P1：走 outbox——先落盘再发；若落入 wait 窗口被 SDK 吞掉，heart 唤醒时 outboxFlush 会 ack 检查后重发（at-least-once）。
+      // 2026-09-24：deliverAs:"interrupt" 打断 wait 立即返回（对齐 execute cmd-done）；details 带 elapsedSec/title/status 供渲染器显示时长（不再 "done instantly"）。
       try {
-        outboxSend(pi, "continuous-cmd-done", i18n(`Web ${label} 完成:\n${text}`, `Web ${label} done:\n${text}`));
+        outboxSend(pi, "continuous-cmd-done",
+          i18n(`Web ${label} 完成 (${elapsed}s):\n${text}`, `Web ${label} done (${elapsed}s):\n${text}`),
+          {
+            title: `Web ${label}`,
+            status: isError ? "failed" : "done",
+            recId: "",
+            exitCode: isError ? 1 : 0,
+            elapsedSec: elapsed,
+            endTs: Date.now(),
+            cmd: label,
+            output: text,
+          },
+          { deliverAs: "interrupt" },
+        );
       } catch (e) { console.error("[spirit.bio.organs/hands.webacts/webacts.ts] " + ((e as any)?.message || e)); }
     })();
   }

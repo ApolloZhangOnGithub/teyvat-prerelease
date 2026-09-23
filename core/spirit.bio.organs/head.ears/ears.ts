@@ -3,11 +3,11 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { openSync, closeSync, appendFileSync, readFileSync, statSync, unlinkSync, writeSync, writeFileSync, watch, mkdirSync } from "node:fs";
+import { openSync, closeSync, appendFileSync, readFileSync, statSync, unlinkSync, writeSync, writeFileSync, watch, mkdirSync, accessSync, constants } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, resolve, dirname } from "node:path";
 import { homedir } from "node:os";
-import { execSync, spawn, type ChildProcess, execFileSync } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { getPrompt } from "#kernel_ribosome";
 import { personDir as getPersonDir } from "#paths";
@@ -16,12 +16,22 @@ import { renderToolCall, renderMessage } from "#tui_blockrender";
 import { i18n } from "#tui_localizations";
 
 const PROMPT = getPrompt("ear.listen");
-const BUN = (() => {
-  try { return execSync("which bun", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch (e) { console.error("[spirit.bio.organs/head.ears/ears.ts] " + ((e as any)?.message || e)); }
+let _bun: string | null = null;
+// 2026-09-24（用户：非异步方法全禁）——原模块级 BUN IIFE 用 execSync（which/test -x），改惰性异步 getBun()
+async function getBun(): Promise<string> {
+  if (_bun) return _bun;
+  const which = await new Promise<string>((resolve) => {
+    execFile("which", ["bun"], { encoding: "utf8" }, (err: any, so: any) => resolve(err ? "" : String(so || "").trim()));
+  });
+  if (which) { _bun = which; return _bun; }
   const home = process.env.HOME;
-  if (home) { const p = `${home}/.bun/bin/bun`; try { execSync(`test -x "${p}"`, { stdio: "ignore" }); return p; } catch (e) { console.error("[spirit.bio.organs/head.ears/ears.ts] " + ((e as any)?.message || e)); } }
-  return "bun";
-})();
+  if (home) {
+    const p = `${home}/.bun/bin/bun`;
+    try { accessSync(p, constants.X_OK); _bun = p; return _bun; } catch (e) { console.error("[spirit.bio.organs/head.ears/ears.ts] " + ((e as any)?.message || e)); }
+  }
+  _bun = "bun";
+  return _bun;
+}
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const RECORDER_SCRIPT = resolve(__dirname, "ears-recorder.ts");
 
@@ -38,9 +48,10 @@ interface EarState {
 function _recorderPattern(outFile: string): string {
   return "ears-recorder\\.ts.*" + outFile.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
-function isRecorderAlive(outFile: string): boolean {
-  try { execFileSync("pgrep", ["-f", _recorderPattern(outFile)], { stdio: "ignore" }); return true; }
-  catch { return false; } // pgrep 无匹配 exit 1 = 没在跑，不是错误
+async function isRecorderAlive(outFile: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    execFile("pgrep", ["-f", _recorderPattern(outFile)], {}, (err) => resolve(!err));
+  });
 }
 
 export default function (pi: ExtensionAPI) {
@@ -65,9 +76,9 @@ export default function (pi: ExtensionAPI) {
   const earFile = () => voiceRc('ear_output.jsonl');
 
   let _rapidExits = 0; // 录音进程连续秒退计数（见 startRecorder 的 exit 处理）
-  function startRecorder(filePath: string = '') {
+  async function startRecorder(filePath: string = '') {
     const file = earFile();
-    if (isRecorderAlive(file)) return;
+    if (await isRecorderAlive(file)) return;
     recorderProc = null;
     const logDir = join(homedir(), ".teyvat/LogData", process.env.PAIMON_AGENT_ID || "unknown");
     mkdirSync(logDir, { recursive: true });
@@ -83,14 +94,14 @@ export default function (pi: ExtensionAPI) {
     }
     writeSync(logFd, `${new Date().toISOString()} [keep-alive] spawn ${args.join(' ')}\n`);
     const spawnedAt = Date.now();
-    recorderProc = spawn(BUN, args, { detached: true, stdio: ["ignore", logFd, logFd] });
+    recorderProc = spawn(await getBun(), args, { detached: true, stdio: ["ignore", logFd, logFd] });
     // 2026-09-13：子进程已 dup 了这个 fd，父进程这份必须关——之前每次 keep-alive 重启都泄漏 1 个 fd（录音进程秒退时每 5s 一个，约 20 分钟打满 ulimit 256 → EMFILE 波及整个 agent）
     try { closeSync(logFd); } catch (e) { console.error("[spirit.bio.organs/head.ears/ears.ts] closeSync(logFd): " + ((e as any)?.message || e)); }
     // 2026-09-11（prime-agent）：spawn 失败（ENOENT）是**异步 error 事件**，没有监听 → Node 抛未处理 'error'
     // → SDK uncaughtCrash → process.exit(1)（本仓注释已记过这个链）→ 录音没录上还顺手把 agent 弄闪退。
     // BUN 在 `which bun` 失败时会回落成字面量 "bun"（L23）→ bun 未安装时必现。
     recorderProc.on("error", (e: any) => {
-      const msg = `录音进程启动失败（bun 未安装？BUN=${BUN}）: ${e?.code || e?.message || e}`;
+      const msg = `录音进程启动失败（bun 未安装？bun=${_bun || "bun"}）: ${e?.code || e?.message || e}`;
       console.error("[spirit.bio.organs/head.ears/ears.ts] " + msg);
       try { appendFileSync(logFile, `${new Date().toISOString()} [keep-alive] spawn FAILED ${msg}\n`); } catch (e2) { console.error("[spirit.bio.organs/head.ears/ears.ts] " + ((e2 as any)?.message || e2)); }
       state.listening = false;      // 别让 keep-alive 以为"在录"（它会每 5s 重试，这里只标注状态）
@@ -112,16 +123,16 @@ export default function (pi: ExtensionAPI) {
     recorderProc.unref();
   }
 
-  function stopRecorder() {
+  async function stopRecorder() {
     if (recorderProc) { recorderProc.kill(); recorderProc = null; }
-    try { execFileSync("pkill", ["-f", _recorderPattern(earFile())], { stdio: "ignore" }); } catch { /* pkill 无匹配（录音进程不在）exit 1 是正常 */ }
+    await new Promise<void>((resolve) => { execFile("pkill", ["-f", _recorderPattern(earFile())], {}, () => resolve()); });
   }
 
   function startKeepAlive() {
     if (keepAliveTimer) return;
-    keepAliveTimer = setInterval(() => {
+    keepAliveTimer = setInterval(async () => {
       if (!state.listening || !state.personDir) return;
-      if (state.recorderType === 'mic' && !isRecorderAlive(earFile())) startRecorder();
+      if (state.recorderType === 'mic' && !(await isRecorderAlive(earFile()))) await startRecorder();
     }, 5000);
   }
 
@@ -146,7 +157,7 @@ export default function (pi: ExtensionAPI) {
   function startWatch() {
     if (watcher) { try { watcher.close(); } catch (e) { console.error("[spirit.bio.organs/head.ears/ears.ts] " + ((e as any)?.message || e)); } watcher = null; }
     if (!state.personDir) return;
-    try { execSync(`touch "${earFile()}"`); } catch (e) { console.error("[spirit.bio.organs/head.ears/ears.ts] " + ((e as any)?.message || e)); }
+    try { closeSync(openSync(earFile(), "a")); } catch (e) { console.error("[spirit.bio.organs/head.ears/ears.ts] " + ((e as any)?.message || e)); }
     try { const existing = readFileSync(earFile(), "utf8"); offset = existing.length; } catch (e) { console.error("[spirit.bio.organs/head.ears/ears.ts] " + ((e as any)?.message || e)); }
     watcher = watch(earFile(), async () => {
       if (!state.listening || !state.personDir) return;
@@ -220,7 +231,7 @@ export default function (pi: ExtensionAPI) {
         if (!state.personDir) return err("没有 personDir（需先 session_start）");
         state.listening = true;
         state.recorderType = 'mic';
-        startRecorder();
+        await startRecorder();
         startKeepAlive();
         startWatch();
         return ok("耳朵已开启。语音输入将实时转写并注入");
@@ -235,18 +246,18 @@ export default function (pi: ExtensionAPI) {
         const speed = parseFloat(params?.speed) || 1.0;
         state.fileSpeed = Math.max(0.25, Math.min(4.0, speed));
         state.recorderType = 'file';
-        stopRecorder();
+        await stopRecorder();
         stopKeepAlive();
         stopWatch();
         state.listening = true;
-        startRecorder(fpath);
+        await startRecorder(fpath);
         startWatch();
         return ok(`耳朵已开启（文件模式）：${fpath}，后端=${state.fileBackend}，速度=${state.fileSpeed}x`);
       }
 
       if (act === "off") {
         state.listening = false;
-        stopRecorder();
+        await stopRecorder();
         stopKeepAlive();
         stopWatch();
         return ok("耳朵已关闭");
@@ -272,7 +283,7 @@ export default function (pi: ExtensionAPI) {
         if (state.recorderType !== 'file') return err("仅文件模式支持停止");
         try { writeFileSync(voiceRc("ear_control.json"), JSON.stringify({ action: "stop" })); } catch (e) { console.error("[spirit.bio.organs/head.ears/ears.ts] " + ((e as any)?.message || e)); }
         state.listening = false;
-        stopRecorder();
+        await stopRecorder();
         stopKeepAlive();
         stopWatch();
         return ok("耳朵已停止");

@@ -59,6 +59,7 @@
   .index-bar { position: absolute; right: 3px; top: 120px; bottom: 20px; display: flex; flex-direction: column; justify-content: center; gap: 1px; font-size: 10px; color: #7a7a7a; z-index: 5; user-select: none; }
   .index-bar span { cursor: pointer; padding: 0 3px; line-height: 1.15; }
   .index-bar span:hover { color: #07c160; font-weight: 700; }
+  .view-mode-bar { display: flex; justify-content: flex-start; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid #f0f0f0; font-size: 13px; background: #fff; }
 
   /* 建群表单 */
   .form { padding: 14px 12px; }
@@ -290,6 +291,7 @@
     <div class="conv-head" id="listHead"><input id="search" class="conv-search" placeholder="搜索"></div>
     <div class="conv-list" id="convList"></div>
     <div class="index-bar" id="indexBar" style="display:none"></div>
+    <div class="view-mode-bar" id="viewModeBar" style="display:none"></div>
     <div id="sidever"></div>
   </aside>
 
@@ -328,7 +330,7 @@
 
 <script>
 "use strict";
-let self = null, current = null, convs = [], filter = "", view = "chats", msgFilter = "", cachedMsgs = [];
+let self = null, current = null, convs = [], filter = "", view = "chats", msgFilter = "", cachedMsgs = [], contactsViewMode = (() => { try { return localStorage.getItem("paimon-im-contacts-viewmode") || "alpha"; } catch { return "alpha"; } })();
 // 未读状态持久化（刷新不丢）
 let unread = {};
 
@@ -378,7 +380,6 @@ async function refreshHistoryBg() {
     const d = r.ok ? await r.json().catch(() => ({})) : {};
     historyAll = (d.messages || []).map((m) => m.payload || {});
     saveHistoryCache(historyAll);
-    if (current) reloadChat();
   } catch (e) { /* 忽略 */ }
   historyRefreshing = false;
 }
@@ -432,6 +433,12 @@ function enterMain() {
     const ch = JSON.parse(localStorage.getItem("paimon-im-cache-history") || "null");
     if (Array.isArray(ch)) historyAll = ch;
   } catch { /* 缓存损坏忽略 */ }
+  // 缓存恢复后立即恢复上次会话并渲染聊天区（用缓存 historyAll，不等 loadConvs 的 presence/devices 网络请求——消除刷新空白等待）
+  try {
+    const _last = localStorage.getItem("teyvat-im-last");
+    const _c0 = _last && convs.find((x) => x.sid === _last);
+    if (_c0) selectConv(_c0, null, true);
+  } catch { /* 忽略 */ }
   loadConvs();
   loadFavs();
   refreshHistoryBg();
@@ -552,10 +559,12 @@ async function loadConvs() {
     const pd = pr.ok ? await pr.json().catch(() => ({})) : {};
     const dr = await api("/auth/devices");
     const dd = dr.ok ? await dr.json().catch(() => ({})) : {};
-    const stateMap = {}, deviceBySid = {}, nameBySid = {};
-    for (const dev of (dd.devices || [])) for (const a of (dev.agents || [])) if (a && a.sid) { stateMap[a.sid] = a.state || ""; deviceBySid[a.sid] = dev.device_id; nameBySid[a.sid] = a.name; rememberName(a.sid, a.name); }
-    let localDevice = "";
-    for (const a of (pd.agents || [])) if (a && a.sid === MY_SID) { localDevice = a.device_id || ""; break; }
+    const stateMap = {}, deviceBySid = {}, nameBySid = {}, deviceNameById = {};
+    for (const dev of (dd.devices || [])) {
+      deviceNameById[dev.device_id] = dev.device_name || dev.device_id;
+      for (const a of (dev.agents || [])) if (a && a.sid) { stateMap[a.sid] = a.state || ""; deviceBySid[a.sid] = dev.device_id; nameBySid[a.sid] = a.name; rememberName(a.sid, a.name); }
+    }
+    const machineOf = (id) => (id ? (deviceNameById[id] || id) : "");
     const hd = await ensureHistory();
     const lastByPeer = {}, seen = new Set(), peerName = {};
     for (const p of hd) {
@@ -571,13 +580,13 @@ async function loadConvs() {
     for (const a of (pd.agents || [])) {
       if (!a || !a.sid || a.sid === MY_SID) continue;
       if (IM_HIDDEN.has(a.sid)) continue; // 精确按 sid 过滤，不按名字正则
-      list.push({ sid: a.sid, name: a.name || a.sid, online: a.online !== false, remote: a.device_id !== localDevice, model: a.model || "", deviceId: a.device_id || "", state: stateMap[a.sid] || "", archived: archSet.has(a.sid), lastMsg: lastByPeer[a.sid] || null });
+      list.push({ sid: a.sid, name: a.name || a.sid, online: a.online !== false, machine: machineOf(a.device_id), model: a.model || "", deviceId: a.device_id || "", state: stateMap[a.sid] || "", archived: archSet.has(a.sid), lastMsg: lastByPeer[a.sid] || null });
     }
     for (const peer of seen) {
       if (list.find((x) => x.sid === peer)) continue;
       const pname = nameBySid[peer] || peerName[peer] || nameCache[peer] || peer;
       if (IM_HIDDEN.has(peer)) continue; // 精确按 sid 过滤，不按名字正则
-      list.push({ sid: peer, name: pname, online: false, remote: (deviceBySid[peer] || "") !== localDevice, model: "", state: "O", archived: archSet.has(peer), lastMsg: lastByPeer[peer] || null });
+      list.push({ sid: peer, name: pname, online: false, machine: machineOf(deviceBySid[peer] || ""), model: "", state: "O", archived: archSet.has(peer), lastMsg: lastByPeer[peer] || null });
     }
     for (const g of groups) {
       if (!list.find((x) => x.sid === g.id)) list.push({ sid: g.id, name: g.name, isGroup: true, members: g.members, archived: false, lastMsg: null });
@@ -602,6 +611,7 @@ function renderList() {
   idx.style.display = "none";
   $("listHead").style.display = (view === "chats" || view === "contacts") ? "" : "none";
   el.innerHTML = "";
+  $("viewModeBar").style.display = "none";
   if (view === "discover") { el.innerHTML = '<div class="empty" style="padding:26px 16px;line-height:1.9">发现<br><span style="font-size:12px">demo 暂未实现</span></div>'; return; }
   if (view === "me") return renderMe(el);
   if (view === "createGroup") return renderCreateGroup(el);
@@ -631,20 +641,38 @@ function renderList() {
     '<svg viewBox="0 0 24 24" fill="#fff"><path d="M4 5h16v3H4zM5 9h14v10H5zM9 12h6v2H9z"/></svg>',
     () => { view = "archived"; syncRail(); renderList(); }));
   const newFriends = null; // 新的朋友功能未实现，不再自动列出在线无聊天 agent（避免测试/调试 agent 冒出）
-  if (!list.length) { el.insertAdjacentHTML("beforeend", '<div class="empty" style="padding:20px">无匹配联系人</div>'); return; }
-  const groups = {};
-  for (const c of list) (groups[letterOf(c.name)] = groups[letterOf(c.name)] || []).push(c);
-  const letters = Object.keys(groups).sort((a, b) => (a === "#" ? 1 : b === "#" ? -1 : a.localeCompare(b)));
-  for (const L of letters) {
-    const h = document.createElement("div");
-    h.className = "group-head"; h.id = "grp-" + L; h.textContent = L;
-    el.appendChild(h);
-    groups[L].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-    for (const c of groups[L]) el.appendChild(convItem(c, false, false));
+  // 底部视图切换器（按字母 / 按机器）
+  $("viewModeBar").style.display = "";
+  $("viewModeBar").innerHTML = `<span style="color:#666">使用机器分组</span><span class="switch ${contactsViewMode === "machine" ? "on" : ""}" id="viewModeSwitch"></span>`;
+  $("viewModeSwitch").onclick = () => { contactsViewMode = contactsViewMode === "machine" ? "alpha" : "machine"; try { localStorage.setItem("paimon-im-contacts-viewmode", contactsViewMode); } catch { /* 忽略 */ } renderList(); };
+  if (!list.length) { el.insertAdjacentHTML("beforeend", '<div class="empty" style="padding:20px">无匹配联系人</div>'); idx.style.display = "none"; return; }
+  if (contactsViewMode === "machine") {
+    // 按机器分组（同一 hostname 的 agent 归到一起）
+    const mgroups = {};
+    for (const c of list) { const m = c.machine || "未知设备"; (mgroups[m] = mgroups[m] || []).push(c); }
+    const machines = Object.keys(mgroups).sort((a, b) => a.localeCompare(b, "zh"));
+    for (const m of machines) {
+      const h = document.createElement("div"); h.className = "group-head"; h.textContent = m; el.appendChild(h);
+      mgroups[m].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+      for (const c of mgroups[m]) el.appendChild(convItem(c, false, false, false));
+    }
+    idx.style.display = "none";
+  } else {
+    // 传统 A-Z 分组
+    const groups = {};
+    for (const c of list) (groups[letterOf(c.name)] = groups[letterOf(c.name)] || []).push(c);
+    const letters = Object.keys(groups).sort((a, b) => (a === "#" ? 1 : b === "#" ? -1 : a.localeCompare(b)));
+    for (const L of letters) {
+      const h = document.createElement("div");
+      h.className = "group-head"; h.id = "grp-" + L; h.textContent = L;
+      el.appendChild(h);
+      groups[L].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+      for (const c of groups[L]) el.appendChild(convItem(c, false, false));
+    }
+    idx.innerHTML = letters.map((L) => `<span data-l="${L}">${L}</span>`).join("");
+    idx.style.display = "";
+    idx.querySelectorAll("span").forEach((s) => { s.onclick = () => { const g = $("grp-" + s.dataset.l); if (g) g.scrollIntoView({ block: "start" }); }; });
   }
-  idx.innerHTML = letters.map((L) => `<span data-l="${L}">${L}</span>`).join("");
-  idx.style.display = "";
-  idx.querySelectorAll("span").forEach((s) => { s.onclick = () => { const g = $("grp-" + s.dataset.l); if (g) g.scrollIntoView({ block: "start" }); }; });
 }
 
 // 归档联系人收纳（A-Z 分组）
@@ -716,13 +744,13 @@ function entryRow(label, color, svg, onclick) {
   return d;
 }
 
-function convItem(c, showTime, showUnread = true) {
+function convItem(c, showTime, showUnread = true, showMachine = true) {
   const div = document.createElement("div");
   div.className = "conv-item" + (current === c.sid ? " active" : "");
   const u = (showUnread && unread[c.sid]) ? `<span class="unread">${unread[c.sid]}</span>` : "";
   const preview = c.lastMsg ? (c.lastMsg.out ? "我: " : "") + c.lastMsg.text : "点这里开始聊天";
   const right = showTime ? `<span class="conv-time">${fmtTime(c.lastMsg && c.lastMsg.ts)}</span>` : (u || "");
-  const sub = c.isGroup ? `${(c.members || []).length} 人` : (c.remote ? `远程 ${c.deviceId || ""}` : c.sid);
+  const sub = c.isGroup ? `${(c.members || []).length} 人` : (showMachine ? (c.machine || c.sid) : c.sid);
   const modelTag = (!c.isGroup && c.model) ? ` <span class="model-tag-sm">${esc(shortModel(c.model))}</span>` : "";
   div.innerHTML =
     avatarHtml(c.name, c.online, c.isGroup) +
@@ -833,7 +861,7 @@ async function selectConv(c, focusMsgId, keepScroll = false) {
   try { localStorage.setItem("teyvat-im-last", current); } catch { /* 忽略隐私模式写失败 */ }
   restoreScrollOnce = !!keepScroll; // 仅“刷新后自动恢复会话”保持位置；手动切会话滚到最下方
   const group = isGroupPeer(c.sid);
-  const subTxt = group ? `${(c.members || []).length} 人` : `${c.remote ? "远程 " + (c.deviceId || "") : c.sid} · ${c.online ? "在线" : "离线"}`;
+  const subTxt = group ? `${(c.members || []).length} 人` : `${c.machine || c.sid} · ${c.online ? "在线" : "离线"}`;
   const modelTxt = c.model ? ` <span class="model-tag" title="${esc(c.model)}">${esc(shortModel(c.model))}</span>` : "";
   $("chatTitle").innerHTML = `${esc(c.name)}${stateBadges(c.state)}<span class="sub">${subTxt}</span>${modelTxt}`;
   $("input").disabled = false;
@@ -957,19 +985,26 @@ async function send() {
   try { localStorage.removeItem("teyvat-im-draft-" + current); } catch { /* 忽略 */ }
   clearQuote();
   const name = (ME && ME.login) || "我";
-  // 乐观渲染：先本地立即上屏（消除“卡一秒”），再后台发送
+  // 乐观渲染：先本地立即上屏（消除“卡一秒”），再后台发送。id 统一（乐观/payload 同一个），避免去重失效导致“发两遍”。
   const now = Date.now();
-  cachedMsgs.push(msgOf({ id: `msg_${now.toString(36)}_${Math.random().toString(36).slice(2, 8)}`, from: MY_SID, from_name: name, to: current, text, ts: now }));
+  const msgId = `msg_${now.toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  cachedMsgs.push(msgOf({ id: msgId, from: MY_SID, from_name: name, to: current, text, ts: now }));
+  seenIds.add(msgId);
+  if (historyAll) historyAll.push({ id: msgId, from: MY_SID, from_name: name, to: current, text, ts: now });
   const b = $("chatBody"); b.scrollTop = b.scrollHeight;
   renderChat();
   const group = isGroupPeer(current);
   const targets = group ? (convs.find((x) => x.sid === current)?.members || []) : [current];
   for (const to of targets) {
-    const ts = Date.now();
-    const payload = { id: `msg_${ts.toString(36)}_${Math.random().toString(36).slice(2, 8)}`, from: MY_SID, from_name: name, to, mode: cfg.mode, mode_used: cfg.mode, text, ts, injected: false };
+    const payload = { id: msgId, from: MY_SID, from_name: name, to, mode: cfg.mode, mode_used: cfg.mode, text, ts: now, injected: false };
     try { await api("/messages/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ toPerson: to, type: "agent-social", payload }) }); } catch (e) { console.error("send-fail", e); }
   }
-  loadConvs();
+  // 乐观更新会话列表（不重拉接口，避免发消息后列表顺序延迟卡顿）：当前会话 lastMsg 更新 + 移到最前
+  const _cc = convs.find((x) => x.sid === current);
+  if (_cc) _cc.lastMsg = { out: true, text, ts: now };
+  convs.sort((a, b) => (b.lastMsg?.ts || 0) - (a.lastMsg?.ts || 0));
+  renderList();
+  try { localStorage.setItem("paimon-im-cache-convs", JSON.stringify(convs)); } catch { /* 忽略 */ }
 }
 
 // ── 收消息（轮询 pending，替代 SSE）──
@@ -1168,11 +1203,11 @@ function openChatInfo() {
         `<div style="padding:16px;display:flex;gap:12px;align-items:center">` +
           avatarHtml(c.name, c.online) +
           `<div><div style="font-weight:600;font-size:15px">${esc(c.name)}</div>` +
-          `<div style="font-size:12px;color:#999">${esc(c.sid)}${c.remote ? " · 远程 " + esc(c.deviceId || "") : ""}</div>` +
+          `<div style="font-size:12px;color:#999">${esc(c.sid)}${c.machine ? " · " + esc(c.machine) : ""}</div>` +
           `<div style="font-size:12px;color:${c.online ? "#07c160" : "#999"}">${c.online ? "在线" : (c.archived ? "已归档" : "离线")}</div></div>` +
         `</div>` +
         `<div class="set-row"><span>模型</span><span style="font-size:12px;color:#666">${esc(c.model || "-")}</span></div>` +
-        `<div class="set-row"><span>类型</span><span style="font-size:12px;color:#666">${c.remote ? "跨设备 agent" : "本机 agent"}${c.archived ? "（已归档）" : ""}</span></div>` +
+        `<div class="set-row"><span>设备</span><span style="font-size:12px;color:#666">${esc(c.machine || "-")}${c.archived ? "（已归档）" : ""}</span></div>` +
       `</div>`;
   }
   modal.onclick = (e) => { if (e.target === modal) modal.style.display = "none"; };
@@ -1189,7 +1224,7 @@ function openAgentInfo(sid, groupCtx) {
       `<div style="padding:16px;display:flex;gap:12px;align-items:center">` +
         avatarHtml(a.name, a.online) +
         `<div><div style="font-weight:600;font-size:15px">${esc(a.name)}</div>` +
-        `<div style="font-size:12px;color:#999">${esc(a.sid)}${a.remote ? " · 远程 " + esc(a.deviceId || "") : ""}</div>` +
+        `<div style="font-size:12px;color:#999">${esc(a.sid)}${a.machine ? " · " + esc(a.machine) : ""}</div>` +
         `<div style="font-size:12px;color:${a.online ? "#07c160" : "#999"}">${a.online ? "在线" : (a.archived ? "已归档" : "离线")}</div></div>` +
       `</div>` +
       `<div class="set-row"><span>模型</span><span style="font-size:12px;color:#666">${esc(a.model || "-")}</span></div>` +

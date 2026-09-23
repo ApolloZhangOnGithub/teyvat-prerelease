@@ -128,8 +128,9 @@ export function registerWaitTool(pi: ExtensionAPI) {
         if (false && monitorCmd && ++monitorTick >= monitorInterval) {
           monitorTick = 0;
           try {
-            const { execSync } = require("child_process");
-            execSync(monitorCmd, { timeout: 5000, stdio: "ignore" });
+            // 2026-09-24（用户：非异步方法全禁）——monitor 已禁用（false &&），execSync 是死代码；恢复时改异步 execFile
+            // const { execSync } = require("child_process");
+            // execSync(monitorCmd, { timeout: 5000, stdio: "ignore" });
             // exit 0 = 条件满足
             dlog(`monitor: condition met (${monitorCmd})`);
             (globalThis as any).__genshinWaitReason = "system";

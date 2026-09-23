@@ -78,7 +78,8 @@ app.route("/messages", messagingRouter);
 
 setInterval(() => {
   stmt.expireLocks.run();
-  stmt.expireMessages.run();
+  // 2026-09-23 用户定稿：消息永久保留（不做过期清理），清理后期再考虑，尽量保证数据完整。
+  // stmt.expireMessages.run();  // 原 90 天过期清理（db.ts 的 expireMessages SQL 定义保留，后期启用时取消注释）
   cleanupExpiredShares();
 }, 60_000);
 

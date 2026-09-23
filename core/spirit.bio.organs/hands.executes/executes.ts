@@ -139,7 +139,7 @@ interface RunningCmd {
   killedByUser: boolean;
   context: string;
   accum: string;
-  type: "bg" | "tty";
+  type: "bg" | "tty" | "web";
   tmuxSession?: string;
   /** 执行记录 id(shortRecId(cmd)),供 TUI 黄点判定"该任务是否仍在运行" */
   recId?: string;
@@ -187,6 +187,22 @@ function updateBgCount() {
   try { (globalThis as any).__genshinRefreshUI?.(); } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
 }
 
+// 2026-09-24（用户：web fetch/search 也要 statebar 显示 + @ 查询进度）：
+// 后台任务注册表对 web 等工具开放——register/unregister 共享 running Map（statebar 读 __genshinBgCount，@ 读 running）。
+let _nextBgId = 1;
+export function registerBackgroundTask(entry: RunningCmd): number {
+  const id = _nextBgId++;
+  running.set(id, entry);
+  updateBgCount();
+  return id;
+}
+export function unregisterBackgroundTask(id: number): boolean {
+  if (!running.has(id)) return false; // 已被 kill（entry 已删）→ false，调用方据此抑制完成推送
+  running.delete(id);
+  updateBgCount();
+  return true;
+}
+
 /** 终止第 id 个后台任务(/b kill 与 @N kill 共用同一路径) */
 // 2026-09-04(test-01 反馈):字符串任务 ID(recId,如 "260904-154249-9fca9e02")→ running Map 的 number 键。
 // action show/kill 的 id 此前只收 number(schema 与解析都是),但任务 ID 实际全是 recId 字符串--支持完整 ID 或前缀匹配。
@@ -225,7 +241,7 @@ export function backgroundTasksSummary(): string {
   const lines = [i18n(`${running.size} 个后台 Execute 任务在运行:`, `${running.size} background Execute task(s) running:`) ];
   for (const [id, rc] of running) {
     const elapsed = Math.round((Date.now() - rc.startTime) / 1000);
-    const typeTag = rc.type === "tty" ? "tty" : "bg ";
+    const typeTag = rc.type === "tty" ? "tty" : rc.type === "web" ? "web" : "bg ";
     // 有标题优先显示标题(人类可读),无则截断命令
     const display = rc.title || (rc.command.length > 60 ? rc.command.slice(0, 57) + "..." : rc.command);
     lines.push(`  @${id}  ${elapsed}s  ${typeTag}  ${display}`);
@@ -234,7 +250,6 @@ export function backgroundTasksSummary(): string {
 }
 
 export default function registerExecute(pi: ExtensionAPI) {
-  let nextExecId = 1;
   let _lastCmd = "";
 let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
 
@@ -527,7 +542,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
           const lines = [`${running.size} background (use @N for details):`];
           for (const [id, rc] of running) {
             const elapsed = Math.round((Date.now() - rc.startTime) / 1000);
-            const typeTag = rc.type === "tty" ? "tty" : "bg ";
+            const typeTag = rc.type === "tty" ? "tty" : rc.type === "web" ? "web" : "bg ";
             const tail = rc.type === "tty" ? "(tmux)" : rc.accum ? rc.accum.split("\n").slice(-2).join(" | ").slice(0,120) : "";
             // 有标题优先显示标题(人类可读),无则截断命令
             const cmdDisplay = rc.title || (rc.command.length > 60 ? rc.command.slice(0,57) + "..." : rc.command);
@@ -601,7 +616,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
         await asyncShSafe(`chmod +x ${script}; tmux new-session -d -s ${n} "bash ${script}"`);
         const ac2 = new AbortController();
         const entry: RunningCmd = { command: cmd, abort: ac2, startTime: Date.now(), killedByUser: false, context: "", accum: "", type: "tty", tmuxSession: n, recId, title: (params as any).title || "" };
-        const ttyId = nextExecId++;
+        const ttyId = _nextBgId++;
         running.set(ttyId, entry);
         updateBgCount();
         // terminal 完成检测:脚本末尾会输出 `[${n} done exit=$ec]` 标记。
@@ -713,7 +728,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
         };
       }
 
-      const id = nextExecId++;
+      const id = _nextBgId++;
       let context = "";
       try {
         const msgs = _ctx.sessionManager?.getBranch?.() ?? [];
@@ -803,7 +818,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
             stdout: accum, stderr: err?.message ?? String(err),
           });
           const recInfo = recFile ? `\n[id: ${recId}]` : "";
-          try { outboxSend(pi, "continuous-cmd-done", `Command failed (${elapsed}s):\n$ ${cmd}\n${err?.message ?? err}${recInfo}`, { title: entry?.title, status: "failed", recId, exitCode: -1, elapsedSec: elapsed, endTs: Date.now(), cmd, output: String(err?.message ?? err) }, { deliverAs: "followUp" }); } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
+          try { outboxSend(pi, "continuous-cmd-done", `Command failed (${elapsed}s):\n$ ${cmd}\n${err?.message ?? err}${recInfo}`, { title: entry?.title, status: "failed", recId, exitCode: -1, elapsedSec: elapsed, endTs: Date.now(), cmd, output: String(err?.message ?? err) }, { deliverAs: "interrupt" }); } catch (e) { console.error("[spirit.bio.organs/hands.executes/executes.ts] " + ((e as any)?.message || e)); }
         } finally {
           running.delete(id);
           updateBgCount();
@@ -839,7 +854,7 @@ let _lastBgHash = ""; // @ 缓存:避免相同输出重复占用 context
   // 0.3.3 修复 H10:tmux restore 用独立 ID 分配,可能与 nextExecId 碰撞。
   // restore handler 先跑(注册顺序),这里跟一个 handler 把 nextExecId 推到 running 最大 key 之后。
   pi.on("session_start" as any, async () => {
-    for (const k of running.keys()) { if (k >= nextExecId) nextExecId = k + 1; }
+    for (const k of running.keys()) { if (k >= _nextBgId) _nextBgId = k + 1; }
   });
 }
 

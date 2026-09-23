@@ -1,14 +1,20 @@
 // 文档: B.docs/Dev.Common/Wiki/Mouth(Organ).WIKI
 // 文档: B.docs/Dev.Common/Wiki/Dependents(Bio Service Support).WIKI
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { type ChildProcess, spawn, execSync, execFileSync } from "node:child_process";
+import { type ChildProcess, spawn, execFile } from "node:child_process";
 import { writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { platform, homedir } from "node:os";
 
 // TTS 输出 MP3——fallback 链里只放能播 MP3 的播放器（paplay/aplay 只支持 WAV，不能用）
 let _cachedPlayer: { cmd: string; args: string[] } | null = null;
-function audioPlayer(): { cmd: string; args: string[] } {
+// 2026-09-24（用户：非异步方法全禁）——execFileSync → 异步 execFile
+function execFileOk(cmd: string, args: string[]): Promise<boolean> {
+  return new Promise((resolve) => {
+    execFile(cmd, args, {}, (err) => resolve(!err));
+  });
+}
+async function audioPlayer(): Promise<{ cmd: string; args: string[] }> {
   if (_cachedPlayer) return _cachedPlayer;
   if (platform() === "darwin") { _cachedPlayer = { cmd: "afplay", args: [] }; return _cachedPlayer; }
   const candidates: Array<{ cmd: string; args: string[] }> = [
@@ -17,8 +23,8 @@ function audioPlayer(): { cmd: string; args: string[] } {
     { cmd: "cvlc",   args: ["--play-and-exit", "--quiet"] },
   ];
   for (const c of candidates) {
-    // 2026-09-11：which 探测改为 execFileSync（argv 数组，不经 shell）—— 原 execSync(`which ${c.cmd}`) 是拼 shell
-    try { execFileSync("which", [c.cmd], { stdio: "ignore" }); _cachedPlayer = c; return c; } catch (e) { console.error("[spirit.bio.organs/head.mouth/mouth.ts] " + ((e as any)?.message || e)); }
+    // 2026-09-11：which 探测改为 argv 数组（不经 shell）—— 原 execSync(`which ${c.cmd}`) 是拼 shell
+    if (await execFileOk("which", [c.cmd])) { _cachedPlayer = c; return c; }
   }
   _cachedPlayer = { cmd: "ffplay", args: ["-nodisp", "-autoexit", "-loglevel", "quiet"] };
   return _cachedPlayer;
@@ -70,12 +76,12 @@ function processQueue() {
   try { writeFileSync(voiceRc("pi_mouth_speaking"), "1", "utf-8"); } catch (e) { console.error("[spirit.bio.organs/head.mouth/mouth.ts] " + ((e as any)?.message || e)); }
 
   // TTS 合成（voice.tts）+ 本地播放
-  tts.synthesize(text).then((res) => {
+  tts.synthesize(text).then(async (res) => {
       if ("error" in res) { finishCurrent(); return; }
       const mp3 = res.mp3;
       const mp3Path = voiceRc("pi_mouth.mp3");
       writeFileSync(mp3Path, mp3);
-      const player = audioPlayer();
+      const player = await audioPlayer();
       speakProc = spawn(player.cmd, [...player.args, mp3Path], { stdio: "ignore" });
       const thisProc = speakProc;
       const maxMs = Math.min(180000, 8000 + text.length * 350);

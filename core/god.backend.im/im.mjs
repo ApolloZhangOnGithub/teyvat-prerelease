@@ -291,6 +291,25 @@ function conversation(peer) {
   return readMyInbox().filter((m) => (m.out && m.to === peer) || (!m.out && m.from === peer));
 }
 
+// ── agent 视角：聚合指定 agent 的全部 social（收到 + 发出，含 agent↔agent）──
+// 收到 = inbox/<sid>.jsonl；发出 = 扫所有 inbox 里 from=<sid>（agent 侧 social 不镜像自己，需聚合）
+function agentSocial(sid) {
+  const byId = new Map();
+  for (const m of readInboxMessages(sid)) { if (!byId.has(m.id)) byId.set(m.id, { ...m, out: false }); }
+  try {
+    for (const f of readdirSync(INBOX_DIR)) {
+      if (!f.endsWith(".jsonl")) continue;
+      const otherSid = f.slice(0, -6);
+      if (otherSid === sid) continue;
+      for (const m of readInboxMessages(otherSid)) {
+        if (m.from !== sid) continue;
+        if (!byId.has(m.id)) byId.set(m.id, { ...m, out: true });
+      }
+    }
+  } catch { /* 目录不可读等，静默 */ }
+  return [...byId.values()].sort((a, b) => (a.ts || 0) - (b.ts || 0));
+}
+
 // ── 归档标记（plist.json：{id,name,archived,...}[]，archive.cjs 写入）──
 const PLIST_FILE = join(HOME, ".teyvat", "MemoryData", "plist.json");
 function loadArchivedMap() {
@@ -555,6 +574,13 @@ const server = http.createServer(async (req, res) => {
     const peer = url.searchParams.get("peer") || "";
     if (!peer) return sendJson(res, 400, { error: "peer required" });
     return sendJson(res, 200, { peer, messages: conversation(peer) });
+  }
+
+  // agent 视角：看指定 agent 的全部 social（收到+发出，含 agent↔agent；只读浏览）
+  if (req.method === "GET" && url.pathname === "/agent-social") {
+    const sid = url.searchParams.get("sid") || "";
+    if (!sid) return sendJson(res, 400, { error: "sid required" });
+    return sendJson(res, 200, { sid, messages: agentSocial(sid) });
   }
 
   // 发消息
