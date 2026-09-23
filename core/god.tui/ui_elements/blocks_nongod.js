@@ -169,6 +169,27 @@ export function hangWrapText(text, width, h) {
   return result;
 }
 
+// 显式前缀折行：content 折行，续行缩进到 prefixStr（含 ANSI）之后。
+// 供工具调用行（⏺ Edit <路径> / ⏺ Read <路径>）等「前缀已知」场景——不依赖 prefixWidthOf 猜工具名
+// （prefixWidthOf 只认 bullet/行号，不认工具名 → 工具行路径折行续行对齐到工具名首字母而非路径 /，2026-09-24 用户报）。
+export function wrapWithPrefix(content, prefixStr, width, h) {
+  const { visibleWidth, wrapTextWithAnsi } = h;
+  const s = String(content);
+  const prefixW = visibleWidth(prefixStr);
+  if (prefixW <= 0 || prefixW >= width || visibleWidth(prefixStr + s) <= width) {
+    return [prefixStr + s];
+  }
+  const contWidth = Math.max(1, width - prefixW);
+  const indent = " ".repeat(prefixW);
+  const result = [];
+  for (const line of s.split("\n")) {
+    const wrapped = wrapTextWithAnsi(line, contWidth);
+    result.push(prefixStr + wrapped[0]);
+    for (let i = 1; i < wrapped.length; i++) result.push(indent + wrapped[i]);
+  }
+  return result;
+}
+
 // 挂起缩进折行：超宽行折行时，续行缩进到「行首前缀」之后。
 // 前缀 = 行首空白 + 可选的 •/◦ bullet 及其后空格 → 续行和「• 后面的字」同列。
 // pi-tui 的宽度/切片 helper 跨包不同，由调用方注入 h = {visibleWidth, sliceWithWidth, sliceByColumn, isImageLine}。
@@ -338,7 +359,18 @@ export const renderToolCall = {
   label(theme, name, detail, opts) {
     // 2026-09-13（用户）：opts.noDot → 不画状态点，但用空格占住点的宽度（否则文字左移 1 格对不齐）——Execute 调用行默认隐藏原点用，其他 tool 不受影响
     const d = opts?.noDot ? " " : dot(theme, opts || { partial: true });
-    const text = detail ? theme.bold(name) + " " + String(detail) : theme.bold(name);
+    // 2026-09-24（用户：工具名要当前缀，路径/参数折行对齐到工具名后而非工具名首字母）：
+    // detail 存在时用 wrapWithPrefix（前缀 = 点 + 工具名 + 空格，内容 = detail），不再走 prefixWidthOf 猜前缀。
+    if (detail) {
+      const prefixStr = d + " " + theme.bold(name) + " ";
+      return {
+        text: prefixStr + String(detail),
+        render(width) {
+          return wrapWithPrefix(String(detail), prefixStr, width, { visibleWidth: _visibleWidth, wrapTextWithAnsi: _wrapTextWithAnsi });
+        },
+      };
+    }
+    const text = theme.bold(name);
     return bulletText(d, text);
   },
 

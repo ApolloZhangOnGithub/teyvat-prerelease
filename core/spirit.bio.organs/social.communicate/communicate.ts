@@ -1239,7 +1239,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
         const rcChan = channelOf(toName);
         // 2026-09-24 用户定稿：**发到房间用 in，发给人用 to**
         const toDisplay = rcChan
-          ? `${rcChan.name ? theme.fg("accent", rcChan.name) + " " : ""}(${theme.fg("accent", rcChan.id)})`
+          ? `${rcChan.name ? theme.fg("room", rcChan.name) + " " : ""}(${theme.fg("room", rcChan.id)})`
           : (toName ? theme.fg("accent", toName) : "");
         const modeWord = args?.mode === "queue" ? "queue" : "interrupt";
         const article = /^[aeiou]/i.test(modeWord) ? "an" : "a";
@@ -1251,7 +1251,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
       // public gop 的调用行：send 也用「in <房间>」（与上面的房间私信一致）
       if (a === "public" && args?.gop === "send" && args?.gid) {
         const rc = channelOf(`public:${args.gid}`);
-        return renderToolCall.detail(theme, "Social", `send a message in ${theme.fg("accent", rc?.name || String(args.gid))} (${theme.fg("accent", String(args.gid))})`, "");
+        return renderToolCall.detail(theme, "Social", `send a message in ${theme.fg("room", rc?.name || String(args.gid))} (${theme.fg("room", String(args.gid))})`, "");
       }
       const d = a === "inbox" ? (args?.limit ? `(${args.limit})` : "")
         : a === "focus" ? (args?.mode ?? "")
@@ -1284,8 +1284,8 @@ function registerSocialTools(pi: ExtensionAPI): void {
             const sid = d.targetSid;
             summary = `Sent a message to ${theme.fg("accent", String(name))}${sid ? ` (${sid}, in ${d.modeUsed} mode)` : ""}`;
           } else if (d.chanId) {
-            // 房间消息：面向房间结算，**不列个人**（2026-09-24 用户定稿）
-            summary = `Sent to ${theme.fg("accent", String(d.chanName ?? d.chanId))} (${d.chanId})`;
+            // 房间消息：面向房间结算，**不列个人**（2026-09-24 用户定稿）；房间名/编号用 room 橙色
+            summary = `Sent a message in ${theme.fg("room", String(d.chanName ?? d.chanId))} (${theme.fg("room", String(d.chanId))})`;
           } else {
             summary = d.count === 1 ? `Sent to ${theme.fg("accent", d.targetDisplay ?? d.target ?? "?")}` : `Sent to ${theme.bold(String(d.count))} receivers`;
           }
@@ -1300,9 +1300,9 @@ function registerSocialTools(pi: ExtensionAPI): void {
           const tag = d.roomName ? `${d.roomName}${d.roomId ? ` (${d.roomId})` : ""}` : (d.roomId ? String(d.roomId) : "");
           if (g === "create") summary = `create ${tag} · ${theme.bold(String(d.count ?? 0))} members`;
           else if (g === "list") summary = `${theme.bold(String(d.count ?? 0))} room(s)`;
-          else if (g === "join") summary = `join ${tag} as ${theme.fg("accent", String(d.memberName ?? ""))}`;
+          else if (g === "join") summary = `join ${theme.fg("room", tag)} as ${theme.fg("accent", String(d.memberName ?? ""))}`;
           else if (g === "leave") summary = `leave ${tag} · ${theme.bold(String(d.count ?? 0))} members left`;
-          else if (g === "send") summary = `Sent a message in ${theme.fg("accent", String(d.roomName ?? d.roomId ?? ""))} (${d.roomId ?? ""}, in ${d.modeUsed ?? "interrupt"} mode)${d.at?.length ? ` @${d.at.map((x: string) => displayNameShort(x)).join(", ")}` : ""}${d.offline ? ` · ${d.offline} 位成员不在线` : ""}`;
+          else if (g === "send") summary = `Sent a message in ${theme.fg("room", String(d.roomName ?? d.roomId ?? ""))} (${theme.fg("room", String(d.roomId ?? ""))}, in ${d.modeUsed ?? "interrupt"} mode)${d.at?.length ? ` @${d.at.map((x: string) => displayNameShort(x)).join(", ")}` : ""}${d.offline ? ` · ${d.offline} 位成员不在线` : ""}`;
           else if (g === "history") summary = `${tag} · ${theme.bold(String(d.count ?? 0))} msg`;
           else if (g === "rename") summary = `rename ${theme.fg("accent", String(d.oldName ?? ""))} → ${theme.fg("accent", String(d.roomName ?? ""))} (${d.roomId ?? ""})`;
           else if (g === "dissolve") summary = `dissolve ${tag} · notified ${theme.bold(String(d.count ?? 0))}`;

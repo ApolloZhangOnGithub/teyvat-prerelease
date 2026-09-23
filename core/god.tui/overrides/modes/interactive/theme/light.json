@@ -36,6 +36,7 @@
 		"warning": "yellow",
 		"metaconsciousness": "metaconsciousness",
 		"socialMessage": "socialMessage",
+		"room": "claude",
 		"muted": "mediumGray",
 		"dim": "dimGray",
 		"text": "text",
