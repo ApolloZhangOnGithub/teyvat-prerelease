@@ -70,6 +70,26 @@ const DIFF_CONTAINER_INDENT = 5;
 const BG_ADD_HIGHLIGHT = "\x1b[48;2;20;80;20m";   // 添加行变化部分：更亮绿底
 const BG_DEL_HIGHLIGHT = "\x1b[48;2;100;20;20m";  // 删除行变化部分：更亮红底
 const BG_RESET = "\x1b[49m";
+// 2026-09-25（ISSUE 260 续）：找公共前缀/后缀切点时，**绝不能把边界落在某个 ANSI 序列中间**。
+// 旧 bug：高亮开后两行都以 `\x1b[` 开头 → 公共前缀 = 2 → substring(0,2) 把 `\x1b[` 切开 →
+// 拼出「残缺序列 `\x1b[` + 新序列」→ 下游解析吃掉残缺段 → 只剩裸 `38;2;…m`（用户报的残渣）。
+// 高亮关时两行都无 ANSI → 不会踩到，所以只在开高亮时出现。
+const _ANSI_SPAN_RE = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-9;:?<=>!]*[\x20-\x2f]*[\x40-\x7e]|\x1b[\x30-\x7e]/g;
+function _ansiSpans(s) {
+    const out = [];
+    _ANSI_SPAN_RE.lastIndex = 0;
+    let m;
+    while ((m = _ANSI_SPAN_RE.exec(s))) out.push([m.index, m.index + m[0].length]);
+    return out;
+}
+function _snapForwardToBoundary(spans, i) {
+    for (const [a, b] of spans) if (i > a && i < b) return b;
+    return i;
+}
+function _snapBackToBoundary(spans, i) {
+    for (const [a, b] of spans) if (i > a && i < b) return a;
+    return i;
+}
 function inlineHighlight(text, oldText, type) {
     if (!oldText || !text) return text;
     let prefix = 0;
@@ -78,8 +98,9 @@ function inlineHighlight(text, oldText, type) {
     let suffix = 0;
     while (suffix < minLen - prefix && text[text.length - 1 - suffix] === oldText[oldText.length - 1 - suffix]) suffix++;
     if (prefix === text.length && suffix === 0) return text;
-    const changedStart = prefix;
-    const changedEnd = text.length - suffix;
+    const spans = _ansiSpans(text);
+    const changedStart = _snapForwardToBoundary(spans, prefix);
+    const changedEnd = _snapBackToBoundary(spans, text.length - suffix);
     if (changedStart >= changedEnd) return text;
     const bg = type === "del" ? BG_DEL_HIGHLIGHT : BG_ADD_HIGHLIGHT;
     return text.substring(0, changedStart) + bg + text.substring(changedStart, changedEnd) + BG_RESET + text.substring(changedEnd);
