@@ -70,7 +70,11 @@ export function spawnHeadlessBg(pid: string, reason: string): void {
   );
   const child = spawn(nodeBin, [cliJs, "-ne", "-e", indexTs, "--mode", "rpc", "--session-dir", sessionDir], {
     detached: true,
-    stdio: [fdIn, fdLog, fdLog, fdWrite],
+    // 2026-09-25（debug-01 修 ISSUE 239）：stdout → "ignore"（原为 fdLog）。
+    // rpc 模式的 stdout 是事件流（98.9% 是 message_update：每个 token delta 都重发整段消息）
+    // → 单会话实测 715MB、support-01 单文件 391MB。崩溃堆栈走 **stderr**（stdio[2]=fdLog 保留）
+    // → 诊断能力不丢（ISSUE 256 “启动即崩”就是靠 stderr 堆栈定位的）。
+    stdio: [fdIn, "ignore", fdLog, fdWrite],
     // 2026-09-09（用户报：Ctrl+C 转后台的 agent 60 秒后"自然超时退出"——heart.ts L298 孤儿检测误杀）：
     // 孤儿检测（启动 60s 后 ps TTY="??" → shutdown）只放行 PAIMON_HEADLESS_DAEMON=1 的合法 headless。
     // launcher.sh /h 路径设了此标志，但这里（Ctrl+C 转后台 spawn）漏了——spawn 的 headless 无 TTY →

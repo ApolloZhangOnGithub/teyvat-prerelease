@@ -779,7 +779,9 @@ if [ -f "$MOBILE_CLI_DIR/mobile-cli.sh" ]; then
   chmod +x "$HOME/.local/bin/mobile"
   ok "mobile cli"
 else
-  warn "mobile cli 源码不在 A.core（已移入 F.experimental），跳过安装"
+  # 2026-09-25（debug-01 去噪）：源码已移入 F.experimental（弃用主线）是**预期状态**，
+  # 每次 Linux/新机安装都打一行 WARN 只会让人误以为装坏了（房东原话：里面全是错误）。静默跳过。
+  : # mobile cli 源码在 F.experimental（不在 A.core 是正常的）
 fi
 
 # ── 5c. identity CLI ──
@@ -790,7 +792,7 @@ if [ -f "$IDENTITY_CLI" ]; then
   chmod +x "$HOME/.local/bin/identity"
   ok "identity cli"
 else
-  warn "identity cli 源码缺失: ${IDENTITY_CLI#$IMPL/}，跳过安装"
+  : # identity cli 源码已不在 A.core（仅存发布仓/历史）——预期状态，静默（去噪）
 fi
 
 # ── 5d. npm dependencies: 自动安装 A.core package.json 中新增的依赖 ──

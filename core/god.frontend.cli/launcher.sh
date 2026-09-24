@@ -1449,7 +1449,13 @@ case "$MODE" in
         # 单开读端会阻塞等写端——死锁！2026-08-20 实测踩坑）。fd 3 保持写端存活，
         # 外部 echo JSON > fifo 不阻塞；node 的 stdin（fifo 读端）也不会 EOF。
         exec 3<>"$FIFO"
-        PI_ALIVE_RESTART_LOOP=1 PI_ALIVE_WOKE="$WOKE" node "$RUNTIME_CLI" $EXT_FLAGS --mode rpc --session-dir "$SESSION_DIR" "$@" < "$FIFO" >> "$CONSOLE_LOG" 2>&1
+        # 2026-09-25（debug-01 修 ISSUE 239 日志二次增长）：原为 `>> "$CONSOLE_LOG" 2>&1`——
+        # 把 **stdout 和 stderr 一起**追加进 console.log。而 rpc 模式下的 stdout 是事件流：
+        # 实测 98.9% 是 message_update（每个 token delta 都重发整段 partial+message）→ 消息越长每行越大，
+        # 总量近 O(n²)：实测单个会话 14 分钟 715MB、support-01 单文件 391MB。
+        # 而崩溃堆栈走 **stderr**（ISSUE 256 就是靠它定位“启动即崩”）——保留 stderr 即可保住诊断能力。
+        # 已核实：全库无人读这个日志文件（只有两处错误提示让人去看尾部），故 stdout 可直接丢。
+        PI_ALIVE_RESTART_LOOP=1 PI_ALIVE_WOKE="$WOKE" node "$RUNTIME_CLI" $EXT_FLAGS --mode rpc --session-dir "$SESSION_DIR" "$@" < "$FIFO" > /dev/null 2>> "$CONSOLE_LOG"
         exec 3>&-
         SKIP_TUI=1  # headless 守护：headless node 结束后不启动 TUI，直接走 NONCE 检查（while 循环）
         elif [ "$LOOP_ITER" = "1" ]; then
