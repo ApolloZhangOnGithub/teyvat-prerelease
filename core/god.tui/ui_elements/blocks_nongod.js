@@ -234,12 +234,13 @@ export function wrapHanging(lines, width, h) {
 
 // 组件注入：调用方通过 initBlockrender() 注入 Text/Container/helpers，避免循环依赖
 let _Text = null, _Container = null, _visibleWidth = null, _wrapTextWithAnsi = null, _sliceByColumn = null, _Markdown = null, _markdownTheme = null;
-export function initBlockrender(Text, Container, visibleWidth, wrapTextWithAnsi, Markdown, markdownTheme) {
+export function initBlockrender(Text, Container, visibleWidth, wrapTextWithAnsi, Markdown, markdownTheme, sliceByColumn) {
   _Text = Text; _Container = Container;
   if (visibleWidth) _visibleWidth = visibleWidth;
   if (wrapTextWithAnsi) _wrapTextWithAnsi = wrapTextWithAnsi;
   if (Markdown) _Markdown = Markdown;
   if (markdownTheme) _markdownTheme = markdownTheme;
+  if (sliceByColumn) _sliceByColumn = sliceByColumn; // 2026-09-25：同步注入，不再只靠异步自举
 }
 
 // 自举：从 pi-tui 动态加载 helpers（install.sh 部署后可直接 import）

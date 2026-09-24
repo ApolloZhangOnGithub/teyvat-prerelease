@@ -1,4 +1,4 @@
-import { applyBackgroundToLine, extractTailAnsiOsc, visibleWidth, wrapTextWithAnsi } from "../utils.js";
+import { applyBackgroundToLine, extractTailAnsiOsc, visibleWidth, wrapTextWithAnsi, sliceByColumn } from "../utils.js";
 // teyvat 统一块渲染引擎(源:god.tui/ui_elements/blocks_nongod.js,install.sh 部署到 pi-tui/dist/)
 import { hangWrapText } from "../blocks_nongod.js";
 /**
@@ -55,7 +55,7 @@ export class Text {
         const contentWidth = Math.max(1, width - this.paddingX * 2);
         // teyvat: 折行走统一引擎的挂起缩进 —— 行首是 "• "/"◦ " 这类 bullet 时，续行对齐到内容列；
         // 没有 bullet 前缀就退回普通 wrapTextWithAnsi，行为和原来一致（不影响其它 Text 用途）。
-        const wrappedLines = hangWrapText(normalizedText, contentWidth, { visibleWidth, wrapTextWithAnsi });
+        const wrappedLines = hangWrapText(normalizedText, contentWidth, { visibleWidth, wrapTextWithAnsi, sliceByColumn });
         // Add margins and background to each line
         const leftMargin = " ".repeat(this.paddingX);
         const rightMargin = " ".repeat(this.paddingX);

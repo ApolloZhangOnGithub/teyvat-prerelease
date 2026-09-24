@@ -1,4 +1,4 @@
-import { Box, Container, getCapabilities, Image, Markdown, Spacer, Text, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { Box, Container, getCapabilities, Image, Markdown, Spacer, Text, visibleWidth, wrapTextWithAnsi, sliceByColumn } from "@earendil-works/pi-tui";
 import { createAllToolDefinitions } from "../../../core/tools/index.js";
 import { getTextOutput as getRenderedTextOutput } from "../../../core/tools/render-utils.js";
 import { convertToPng } from "../../../utils/image-convert.js";
@@ -12,7 +12,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 // teyvat 2026-09-13：状态点替换正则——只认行首（可带 ANSI/空白前缀）的 •/◦/⏺；WSL 下 SYM.dot 是 "*" 也要认（blocks_nongod 在 import 时已设 __genshinSYM）
 const __dotRe = new RegExp("^((?:\\x1b\\[[0-9;]*m|\\s)*)[•◦⏺" + (globalThis.__genshinSYM && globalThis.__genshinSYM.dot === "*" ? "\\*" : "") + "]");
-initBlockrender(Text, Container, visibleWidth, wrapTextWithAnsi, Markdown, getMarkdownTheme());
+initBlockrender(Text, Container, visibleWidth, wrapTextWithAnsi, Markdown, getMarkdownTheme(), sliceByColumn);
 // teyvat 2026-09-13（ISSUE 226）：状态点替换 / 行尾追加 各只留一份——此前同一段 replaceDot 在本文件复制了 3 份（第三份漏掉了"只认行首"的修复）、
 // appendToLastText 复制了 2 份。递归遍历 Text/Container 树：replaceLeadingDot 只替换行首（可带 ANSI/空白前缀）的状态点；
 // appendToLastText 给最后一个 Text 节点追加后缀（_waitSuffixed 防重复）。
