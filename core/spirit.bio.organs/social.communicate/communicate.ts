@@ -1316,7 +1316,6 @@ function registerSocialTools(pi: ExtensionAPI): void {
       "      at: [sids] highlight group members (they get interrupt unless muted)\n" +
       "      receipt shows mode_used — receiver focus may downgrade your mode\n" +
       "  action:\"list\"                      — all agents + focus (public; check before sending)\n" +
-      "  action:\"inbox\"  limit?             — your messages (pending first, then history)\n" +
       "  action:\"check-message\" [target] [new|latest N|latest A-B]  — 取消息 / 查历史（id 或 name 都支持；不支持 full）\n" +
       "      不带参数 / new      = 所有未读（拿走即已读）\n" +
       "      <房间id|名>           = 概览：共 N 条 / M 条新（并提示用 new 查看）\n" +
@@ -1335,9 +1334,9 @@ function registerSocialTools(pi: ExtensionAPI): void {
       "          静音：被静音房间的消息**不自动注入**（只在 social inbox 显示「N 条未读 + 最新预览」，用 social check-message <房间id> 取全文）；**@ 默认突破静音**；要到 @ 也不打断，先 mute:true 再 at_mute:true（**不能单独开 at_mute**）\n" +
       "  action:\"global\" [device|<id>]     — cross-device view (devices + agents); list 也支持 scope:'local'|'remote'|'global'\n" +
       "Messages auto-inject: interrupt immediately, queue at turn end (hibernate blocked while pending).",
-    promptSnippet: "social(action, ...) — send|list|inbox|focus|group|public|global",
+    promptSnippet: "social(action, ...) — send|list|focus|group|public|global",
     parameters: Type.Object({
-      action: Type.String({ messageDescription: "send | list | inbox | check-message | focus | group | public | global（public=公共聊天室，仅供跨框架；check-message=取某房间被静音的消息（不自动注入的那批）；global=跨设备查看）" }),
+      action: Type.String({ messageDescription: "send | list | check-message | focus | group | public | global（public=公共聊天室，仅供跨框架；check-message=取消息/查历史（空参=未读、<房间id|名>=概览、latest N=历史、<sid|名>=与某 agent 往来）；global=跨设备查看）" }),
       to: Type.Optional(Type.String({ messageDescription: "目标（发给**人**）：send 用它发给单个 agent（sid | agent name | all）；注：群/房间请用 in，at=[...] 只是群发里的定向强调不能当收件人" })),
       in: Type.Optional(Type.String({ messageDescription: "目标（发给**群 / 房间**）：send 用它发给群（group:<gid>）或房间（<6 位房间编号|房间名>）；public 各 gop 也可用它代替 gid。规则：to=人，in=群/房间" })),
       text: Type.Optional(Type.String({ messageDescription: "send: 消息内容；check-message: 查询修饰（空/new/latest N/latest A-B）" })),
@@ -1346,8 +1345,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
         Type.Literal("off"), Type.Literal("deep"), Type.Literal("rest"),
       ], { messageDescription: i18n("send: interrupt|queue (deferred 废弃, ISSUE 103); focus: off|deep|rest", "send: interrupt|queue (deferred deprecated, ISSUE 103); focus: off|deep|rest") })),
       at: Type.Optional(Type.Array(Type.String(), { messageDescription: "Highlighted members (send, by sid or name)" })),
-      limit: Type.Optional(Type.Number({ messageDescription: "Max messages (inbox, default 20)" })),
-      history: Type.Optional(Type.Boolean({ messageDescription: "Include history in inbox (default false — pending only)" })),
+      limit: Type.Optional(Type.Number({ messageDescription: "Max messages (public history latest N, default 20)" })),
       gop: Type.Optional(Type.String({ messageDescription: "Group op: create | list | send | mute | add | remove" })),
       gname: Type.Optional(Type.String({ messageDescription: "群/房间名称（group create；public create / rename）" })),
       members: Type.Optional(Type.Array(Type.String(), { messageDescription: "Member sids/names (group create)" })),
@@ -1392,8 +1390,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
         const art = /^[aeiou]/i.test(mw) ? "an" : "a";
         return renderToolCall.detail(theme, "Social", `send ${art} ${mw} message in ${theme.fg("room", rc?.name || String(args.gid))} (${theme.fg("room", String(args.gid))})`, "");
       }
-      const d = a === "inbox" ? (args?.limit ? `(${args.limit})` : "")
-        : a === "focus" ? (args?.mode ?? "")
+      const d = a === "focus" ? (args?.mode ?? "")
         : a === "group" ? `${args?.gop ?? ""}${args?.gname || args?.gid ? ` ${args?.gname || args?.gid}` : ""}`
         : a === "public" ? `${args?.gop ?? ""}${args?.gid || args?.gname ? ` ${args?.gid || args?.gname}` : ""}`
         : a === "check-message" ? `${args?.gid ?? "new"}${args?.text ? ` ${args.text}` : ""}`
@@ -1649,51 +1646,10 @@ function registerSocialTools(pi: ExtensionAPI): void {
           if (!lines.length) return { content: [{ type: "text", text: "(无设备——多设备跑过 genshin d 后可见)" }], details: { social: true, action: "global", count: 0, lines: [] } };
           return { content: [{ type: "text", text: "跨设备 (" + ds.length + " 设备):\n" + lines.join("\n") + "\n\n细节: social({action:'global',view:'device'}) 设备列表；social({action:'global',device:'<id>'}) 看设备 agents" }], details: { social: true, action: "global", count: ds.length, lines } };
         }
-        case "inbox": {
-          const limit = Math.min(50, Math.max(1, p.limit ?? 20));
-          const msgs = readInbox(getMySid(), 2000);
-          const split = splitPending(getMySid(), msgs);
-          const pending = split.injectable;
-          const lines: string[] = [];
-          // 2026-09-24（用户）：inbox 显示改成「total in history / No new message / in this session / (today) of (total)」，
-          // 不再用 "-- pending (N) -- / -- history (N) -- / (inbox empty)" 这种垃圾格式。
-          const now = Date.now();
-          const sessionStart = now - Math.round(process.uptime() * 1000);
-          const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
-          const todayCount = msgs.filter(m => m.ts >= dayStart.getTime()).length;
-          const inSessionCount = msgs.filter(m => m.ts >= sessionStart).length;
-          const total = msgs.length;
-          lines.push(`${total} total in history`);
-          if (pending.length) {
-            lines.push(`${pending.length} new message${pending.length > 1 ? "s" : ""}`);
-            for (const m of pending) lines.push(`  [${m.mode_used}] ${m.chan ? m.chan + " · " : ""}${m.from_name} (${fmtTime(m.ts)}): ${m.text}`);
-          } else {
-            lines.push("No new message");
-          }
-          lines.push(`${inSessionCount} in this session`);
-          lines.push(`${todayCount} (today) of ${total} (total in history)`);
-          // 被静音房间的消息：**不自动注入**，只给「N 条未读 + 最新一条预览」，要看全文用 social check-message <房间id>
-          // （2026-09-24 用户定稿：mute ≠ 降级 queue；手动 inbox 只给计数+预览）
-          const mutedMsgs = split.muted;
-          if (mutedMsgs.length) {
-            const byRoom = new Map<string, SocialMsg[]>();
-            for (const m of mutedMsgs) { const k = m.chan_id || m.chan || "?"; const arr = byRoom.get(k) ?? []; arr.push(m); byRoom.set(k, arr); }
-            lines.push(`${mutedMsgs.length} muted (静音房间——用 social check-message <房间id> 查看)`);
-            for (const [rid, arr] of byRoom) {
-              const last = arr.reduce((a, b) => (a.ts >= b.ts ? a : b));
-              const preview = String(last.text ?? "").replace(/\s+/g, " ").slice(0, 20);
-              lines.push(`  ${last.chan || rid} (${rid}): ${arr.length} 条未读 · 最新 "${preview}${String(last.text ?? "").length > 20 ? "…" : ""}"`);
-            }
-          }
-          if (p.history === true) {
-            const history = msgs.filter(m => m.injected).slice(-Math.max(0, limit - pending.length));
-            if (history.length) {
-              lines.push(`-- history (${history.length}) --`);
-              for (const m of history) lines.push(`  ${m.chan ? m.chan + " · " : ""}${m.from_name} (${fmtTime(m.ts)}): ${m.text}`);
-            }
-          }
-          return { content: [{ type: "text", text: lines.join("\n") }], details: { social: true, action: "inbox", count: pending.length, lines } };
-        }
+        case "inbox":
+          // 2026-09-25（用户）：inbox 单独查询已移除——消息都 interrupt 注入了，pending 永远空，没有单独查的必要。
+          // 查未读/历史用 check-message（空参=未读、<房间id|名>=概览、latest N=历史、<sid|名>=与某 agent 往来）。
+          return { content: [{ type: "text", text: "social inbox 已移除（消息都自动注入了，pending 永远空）。查未读/历史用 social check-message：空参=未读、<房间id|名>=概览、latest N=历史、<sid|名>=与某 agent 往来。" }], details: { social: true, action: "inbox", count: 0, lines: [] } };
         case "check-message": {
           // 取消息 / 查历史（2026-09-24 用户定稿）——id 与 name 都支持；不支持 full
           //   check-message                    → 所有未读（new）
@@ -2037,7 +1993,7 @@ function registerSocialTools(pi: ExtensionAPI): void {
           }
         }
         default:
-          throw new Error(`social: unknown action "${action}" (send|list|inbox|check-message|focus|group|public)`);
+          throw new Error(`social: unknown action "${action}" (send|list|check-message|focus|group|public)`);
       }
     },
   });

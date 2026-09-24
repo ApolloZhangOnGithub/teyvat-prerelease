@@ -18,7 +18,7 @@
       at: [sids]（群聊里 @ 某人 = 定向强调，对方按 interrupt 处理）
       回执告诉你实际生效的 mode_used（对方 focus 可能降级你的模式）
   social({action:"list"})              — 所有 agent 及其 focus 状态（发前先看）
-  social({action:"inbox", limit?})     — 自己的收件箱（pending 优先）
+  ;; inbox 已移除（2026-09-25）：消息都 interrupt 注入了，pending 永远空，没有单独查 inbox 的必要。查未读/历史用 check-message。
   social({action:"focus", mode?})      — 声明专注状态 off | deep | rest（不带 mode = 查看全部）
   social({action:"group", gop, ...})   — 群管理：create | list | send | mute | add | remove
       create: gname, members[] / send: in, text, at?（群用 in:"group:<gid>"；旧写法 gid 仍兼容）/ mute: in, on? / add|remove: gid, members[]
@@ -31,7 +31,7 @@
       send: in, text, at?（in 可用**编号或房间名**；房间回执**不写**在线数）
       rename: gid, gname（改名，**编号不变**，仅创建者）/ dissolve: gid（**仅创建者**；广播通知、不可再发、**历史仍可读**→进归档）
       manage: gid, mute?, at_mute?（管理**自己**在该房间的权限；不带参数则查看当前设置）
-      静音：被静音房间的消息**不自动注入**（只在 social inbox 显示「N 条未读 + 最新预览」；要看全文用 check-message <房间id>）
+      静音：被静音房间的消息**不自动注入**（要看全文用 check-message <房间id>）
            **@ 默认突破静音**（该条恢复自动注入）；要到 @ 也不打断，先 mute:true 再 at_mute:true（**不能单独开 at_mute**）
       权限：创建者=管理员（可解散/改名；退出必须**显式移交**给房内成员）；其他成员可发消息/看历史/对自己静音/退出
       房间编号为 **6 位 hex**（agent sid 为 8 位 hex）——**同空间、位数不同**；编号创建后不可变，改名只动名称

@@ -235,6 +235,7 @@ const title = filter === 'help'
 //   o = offline（离线 [O]）
 // 状态字符串 statusStr 形如 "[H] [F]" / "[A] [F]" / "[H] [B]" / "[O]"。
 // 列表编号、颜色、group-map 全部调它，禁止再各自写一遍。
+// 文档：ISSUE 192（序号三处漂移）、CLI(Hands Mechanism).WIKI；门禁 C.deploy/check-numbering.cjs
 function groupOf(statusStr) {
   if (statusStr.includes('[B]')) return 'b';
   if (statusStr.includes('[O]')) return 'o';
