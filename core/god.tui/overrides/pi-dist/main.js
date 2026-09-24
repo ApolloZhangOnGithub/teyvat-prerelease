@@ -648,7 +648,15 @@ export async function main(args, options) {
             })),
         ];
         const modelPatterns = parsed.models ?? settingsManager.getEnabledModels();
-        const scopedModels = modelPatterns && modelPatterns.length > 0 ? await resolveModelScope(modelPatterns, modelRegistry) : [];
+        // 2026-09-24（用户：defaultProvider 的模型自动进 scoped）——defaultProvider=deepseek/xiaomi 但 enabledModels 漏配它时，
+        // /m 的 scoped 视图看不到当前模型（切过去就“隐形”）。这里把 defaultProvider/* 补进 patterns；
+        // 具体的“只留某几个”（如 xiaomi 只留 mimo-v2.6）由 model-selector 的 scopedModelItems 过滤收口。
+        let _modelPatterns = modelPatterns;
+        const _dp = settingsManager.getDefaultProvider?.();
+        if (_dp && _modelPatterns && _modelPatterns.length > 0 && !_modelPatterns.some((p) => p === _dp || p.startsWith(_dp + "/"))) {
+            _modelPatterns = [..._modelPatterns, `${_dp}/*`];
+        }
+        const scopedModels = _modelPatterns && _modelPatterns.length > 0 ? await resolveModelScope(_modelPatterns, modelRegistry) : [];
         // 2026-09-22（用户：唯一真相）：把整个会话上下文交给 buildSessionOptions——配置链是唯一决定点，
         // 会话里的 model_change 只用来"对不上就说清楚"（此前只传 messages.length > 0 当开关用）。
         const sessionContext = sessionManager.buildSessionContext();
