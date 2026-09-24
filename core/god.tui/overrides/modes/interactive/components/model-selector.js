@@ -102,15 +102,15 @@ export class ModelSelectorComponent extends Container {
     // 架构通用：MODELSDEV_PROVIDERS 映射表加 provider id 即启用其他 provider。
     // 离线/超时/解析失败 → 返回 []（用内置目录，永不卡 /m）。
     // 2026-09-13（用户：bigmodel 下也不全）：启用 bigmodel→zhipuai、deepseek→deepseek（models.dev 的 provider 键）。
-    MODELSDEV_PROVIDERS = { openrouter: "openrouter", bigmodel: "zhipuai", deepseek: "deepseek" };
+    MODELSDEV_PROVIDERS = { bigmodel: "zhipuai", deepseek: "deepseek", xiaomi: "xiaomi" };
     MODELSDEV_URL = "https://models.dev/api.json";
     MODELSDEV_TTL_MS = 24 * 60 * 60 * 1000;
     // 2026-09-04：models.dev 目录合并——**只读缓存**（零网络，不卡 /m；缓存由启动时的后台预同步维护，见模块级 syncModelsDevCache）
     // 离线/缓存不存在 → 返回 []（用内置目录）。
-    MODELSDEV_PROVIDERS = { openrouter: "openrouter", bigmodel: "zhipuai", deepseek: "deepseek" }; // 2026-09-13 启用 bigmodel/deepseek
+    MODELSDEV_PROVIDERS = { bigmodel: "zhipuai", deepseek: "deepseek", xiaomi: "xiaomi" }; // 2026-09-24 去 openrouter（375 个不用）+ 加 xiaomi（mimo-v2.6）
     // 2026-09-15（用户定位）：无内置同名 provider 的（如 bigmodel）——合成条目的 baseUrl/api 从官方端点表取，
     // 否则 fallback 到 openrouter 打错地址。新 provider 启用时在此补端点。
-    MODELSDEV_ENDPOINTS = { bigmodel: { baseUrl: "https://open.bigmodel.cn/api/paas/v4", api: "openai-completions" } };
+    MODELSDEV_ENDPOINTS = { bigmodel: { baseUrl: "https://open.bigmodel.cn/api/paas/v4", api: "openai-completions" }, xiaomi: { baseUrl: "https://api.xiaomimimo.com/v1", api: "openai-completions" } };
     MODELSDEV_URL = "https://models.dev/api.json";
     MODELSDEV_TTL_MS = 24 * 60 * 60 * 1000;
     MODELSDEV_CACHE_FILE = () => join(homedir(), ".teyvat", "RuntimeCache", process.env.PAIMON_AGENT_ID || "unknown", "modelsdev-catalog.json");
@@ -190,6 +190,10 @@ export class ModelSelectorComponent extends Container {
             // （原实现把 baseUrl 硬编码成 openrouter——一旦启用 bigmodel/deepseek，请求会打到错误的端点）
             const base = inherit[prov] || this.MODELSDEV_ENDPOINTS?.[prov] || {};
             for (const mdModel of Object.values(mdProv.models)) {
+                // 2026-09-24（用户）：deepseek-flash 是 models.dev 的重复 id（registry 里是 deepseek-v4-flash），排除避免两套 id 混淆；
+                // xiaomi 只保留 mimo-v2.6 两个（过滤 tts 那些，用户只用 v2.6）。
+                if (prov === "deepseek" && mdModel.id === "deepseek-flash") continue;
+                if (prov === "xiaomi" && !/^mimo-v2\.6/.test(mdModel.id)) continue;
                 const fullId = mdModel.id; // models.dev 的 id 自带子前缀（openrouter: z-ai/glm-5.3；zhipuai: glm-5.3）
                 const key = `${prov}::${fullId}`;
                 if (seen.has(key)) continue;
