@@ -428,11 +428,9 @@ export class FooterComponent {
         }
         // 2026-09-23（用户：余额预警）——footer 显示余额（默认关，__genshinFooterBalance === true 时显示）
         if (globalThis.__genshinFooterBalance === true) {
-          // 2026-09-24（用户：切模型后余额还显示 deepseek——余额只对 deepseek 有效，跟当前 provider 走）
+          // 2026-09-24（用户：只对 deepseek 显示余额，非 deepseek 或查不到就完全不显示，不出现 bal n/a）
           const _curProv = (state.model?.provider || globalThis.__genshinGetModel?.()?.provider || "");
-          if (_curProv !== "deepseek") {
-            modelDisplay = `${modelDisplay}  ${theme.fg("muted", "bal n/a")}`;
-          } else {
+          if (_curProv === "deepseek") {
             // 优先读本机共享缓存 balance.json（所有 agent 一致，checkBalanceShared 写）
             let bal = globalThis.__genshinBalanceCache;
             try {
@@ -444,8 +442,6 @@ export class FooterComponent {
             } catch { /* 共享缓存读取失败用 per-agent fallback */ }
             if (bal && !bal.unavailable && bal.total_balance) {
               modelDisplay = `${modelDisplay}  ${theme.fg("muted", `¥${bal.total_balance}${bal.is_available ? "" : " ⚠"}`)}`;
-            } else if (bal?.unavailable) {
-              modelDisplay = `${modelDisplay}  ${theme.fg("muted", "bal n/a")}`;
             }
           }
         }
