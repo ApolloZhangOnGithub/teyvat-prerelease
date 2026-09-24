@@ -732,7 +732,40 @@ export default function registerMemory(pi: ExtensionAPI) {
       }).join("\n");
     }
 
-    // 默认【整份注入】(守"不切")；context 原样全量。
+    // 2026-09-25（用户定稿）：超窗口救命降级——注入体积超模型窗口（100% 线）时，只在「进入」这一步丢 tool result
+    // （工具结果），其他内容一律不动；context.md 原文不写不删（磁盘记忆完整，丢的只是本次注入的视图）。
+    // 告知口径按用户原话：未知管理 bug 导致；不提示去 amem（既然已被丢弃，就不再把善后推给 agent）。
+    // 触发 100%，降到 90% 以内即停（留余量给本轮对话 + 补全）；落盘 snapshot_overflow.jsonl 供事后排查。
+    let overflowNote = "";
+    try {
+      if (modelMax > 0 && context && estimateTokens(dnaIndex) + estimateTokens(context) > modelMax) {
+        const _lines = context.split("\n");
+        const _keep: boolean[] = _lines.map(() => true);
+        let _rows = 0, _chars = 0;
+        let _tok = estimateTokens(dnaIndex) + estimateTokens(context);
+        const _budget = Math.round(modelMax * 0.90);
+        for (let i = 0; i < _lines.length; i++) {
+          const _t = _lines[i].trim();
+          if (!_t.startsWith("{")) continue;
+          let _o: any;
+          try { _o = JSON.parse(_t); } catch { continue; }
+          if (!_o || _o.role !== "toolResult") continue;          // 只丢工具结果
+          _keep[i] = false; _rows++; _chars += _lines[i].length;
+          _tok -= estimateTokens(_lines[i]);                        // estimateTokens = ceil(cjk*1.8 + 非cjk/4)，按字符线性，可逐行扣减
+                                                                    //（每行 ceil 取整 → 扣得略多 → 偏保守，不会欠丢）
+          if (_tok <= _budget) break;
+        }
+        if (_rows > 0) {
+          context = _lines.filter((_, j) => _keep[j]).join("\n");
+          overflowNote = i18n(
+            `[系统] 记忆注入体积超出模型窗口（疑似未知管理 bug 导致）。本次进入已自动丢弃 tool result ${_rows} 条 / ${_chars} 字符以维持运行；context.md 原文未改动。`,
+            `[system] Injected memory exceeded the model window (suspected unknown management bug). Dropped ${_rows} tool result(s) / ${_chars} chars for this load to keep running; context.md on disk untouched.`);
+          try { monitorAppend("snapshot_overflow.jsonl", JSON.stringify({ ts: new Date().toISOString(), dropped_rows: _rows, dropped_chars: _chars, chars_after: context.length }) + "\n"); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
+        }
+      }
+    } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
+
+    // 默认【整份注入】(守"不切")；context 原样全量（除非触发上面的超窗降级）。
     // 2026-09-16（用户：禁用垃圾管线——静默 70% 截断切最旧记忆 = 隐性遗忘，且 snapshot_trim.jsonl 从不存在即从未触发。逐行注释禁用，不是删除）
     // let trimmed = false;
     // const SAFE = Math.round(modelMax * 0.70); // 留 30% 给对话+补全
@@ -759,7 +792,7 @@ export default function registerMemory(pi: ExtensionAPI) {
     if (typeRef) parts.push(typeRef);
     // if (cortex) parts.push(`[MEMORY — Cortex (long-term)]\n${cortex}`);
     // if (workMem) parts.push(`[MEMORY — Work Memory]\n${workMem}`);
-    if (context) parts.push(`[MEMORY — Context]\n${context}`);
+    if (context) parts.push(`[MEMORY — Context]\n${overflowNote ? overflowNote + "\n" : ""}${context}`);
     return parts.join("\n\n");
   }
 

@@ -523,7 +523,9 @@ export function sendCustomMessage(
       details,
     },
     {
-      deliverAs: (overrides?.deliverAs ?? def.feedAs) as any,
+      // 2026-09-25（用户：任何 system 提示都是 interrupt）——默认 deliverAs 改 interrupt（不退回 def.feedAs）。
+      // interrupt = 立即打断（同用户输入优先级）；个别类型需 queue 时才在 overrides.deliverAs 显式传。
+      deliverAs: (overrides?.deliverAs ?? "interrupt") as any,
       triggerTurn: overrides?.isTriggerNewTurn ?? def.triggerNewTurn,
     }
   );
