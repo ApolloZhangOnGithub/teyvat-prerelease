@@ -398,15 +398,19 @@ case "$NAME" in
         _tt_run_bg "拉取更新中" git -C "$dir" pull --ff-only
         return $?
       fi
-      # 2026-09-25（ISSUE 282）：pull 前先清「未完成的合并」态——上一次 update 被中断
-      # （网络断/进程被杀）会留下 .git/MERGE_HEAD 或 index 里的 UU(unmerged) 项，
-      # 此后**每次** pull 都直接 `fatal: Exiting because of an unresolved conflict.`
-      # （实测：阿里云服务器 20260914.3 版本，升级彻底卡死）。
-      # 发布镜像无本地改动价值 → 先 abort 掉半截合并再拉（不碰已提交内容，仅当检测到异常态时）。
-      if [ -f "$dir/.git/MERGE_HEAD" ] || git -C "$dir" status --porcelain 2>/dev/null | grep -q '^UU '; then
-        echo -e "  \033[33m*\033[0m 检测到上次更新中断留下的冲突态，先清理再拉取"
+      # 2026-09-25（ISSUE 282 二次加固——采纳阿里云 agent 的实测发现）：
+      # 发布镜像是**只读副本**，但它会被运行时/update **自动改写**（实测：apps.json 的 `generated` 时间戳、
+      # .last-deployed-head）→ 每跑一轮仓库就脏 → 下次 pull 就因「本地改动 + 未完成合并」卡死
+      # （这正是本次 UU(unmerged) 的成因）。所以**不能只清一次冲突态，而要每次 pull 前都把工作区对齐 HEAD**。
+      # 改动先备份到 .diff（发布镜像的本地改动无价值，但保留退路），再 merge --abort + reset --hard + clean -fd。
+      # 注：clean 不带 -x（不动 .gitignore 里的文件）；apps.json 的改动仅为时间戳，丢弃无副作用（对方实测）。
+      if [ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]; then
+        local _bak="$dir/.local-changes-$(date +%Y%m%d-%H%M%S).diff"
+        git -C "$dir" diff > "$_bak" 2>/dev/null
+        echo -e "  \033[33m*\033[0m 本地改动已备份到 $_bak（发布镜像为只读副本，工作区将被重置）"
         git -C "$dir" merge --abort 2>/dev/null
         git -C "$dir" reset --hard HEAD 2>/dev/null
+        git -C "$dir" clean -fd 2>/dev/null
       fi
       if _tt_run_bg "拉取更新中" git -C "$dir" pull --ff-only --autostash; then
         return 0
