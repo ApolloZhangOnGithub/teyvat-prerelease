@@ -4803,6 +4803,7 @@ export class InteractiveMode {
     getLogoutProviderOptions() {
         const authStorage = this.session.modelRegistry.authStorage;
         const options = [];
+        // auth.json（/login 写入的 pi authStorage 凭证）
         for (const providerId of authStorage.list()) {
             const credential = authStorage.get(providerId);
             if (!credential) {
@@ -4812,8 +4813,22 @@ export class InteractiveMode {
                 id: providerId,
                 name: this.session.modelRegistry.getProviderDisplayName(providerId),
                 authType: credential.type,
+                source: "auth",
             });
         }
+        // models.json（/c 写入的 custom provider apiKey）——2026-09-24（用户：logout 全部匹配，不漏 /c 的 poixe/gpu-5080 等）
+        try {
+            const mf = path.join(os.homedir(), ".teyvat", "config", "models.json");
+            if (fs.existsSync(mf)) {
+                const m = JSON.parse(fs.readFileSync(mf, "utf8"));
+                for (const [pid, pv] of Object.entries(m.providers || {})) {
+                    if (pv && (pv.apiKey || pv.api_key)) {
+                        options.push({ id: pid, name: pv.name || pid, authType: "api_key", source: "models" });
+                    }
+                }
+            }
+        }
+        catch { /* models.json 读取失败不阻断 */ }
         return options.sort((a, b) => a.name.localeCompare(b.name));
     }
     findLoginProviderOptions(providerRef) {
@@ -4935,7 +4950,7 @@ export class InteractiveMode {
         }
         const providerOptions = this.getLogoutProviderOptions();
         if (providerOptions.length === 0) {
-            this.showStatus("No stored credentials to remove. /logout only removes credentials saved by /login; environment variables and models.json config are unchanged.");
+            this.showStatus("No stored credentials to remove. /logout removes credentials from both /login (auth.json) and /c (models.json apiKey).");
             return;
         }
         this.showSelector((done) => {
@@ -4946,13 +4961,24 @@ export class InteractiveMode {
                     return;
                 }
                 try {
-                    this.session.modelRegistry.authStorage.logout(providerOption.id);
+                    if (providerOption.source === "models") {
+                        // 移除 models.json 的 provider（apiKey）——logout 全部匹配（/c 的 poixe/gpu-5080 等也能清）
+                        const mf = path.join(os.homedir(), ".teyvat", "config", "models.json");
+                        const m = JSON.parse(fs.readFileSync(mf, "utf8"));
+                        if (m.providers && m.providers[providerOption.id]) {
+                            delete m.providers[providerOption.id];
+                            fs.writeFileSync(mf, JSON.stringify(m, null, 2), "utf8");
+                        }
+                        this.showStatus(`Removed ${providerOption.name} from models.json.`);
+                    }
+                    else {
+                        this.session.modelRegistry.authStorage.logout(providerOption.id);
+                        this.showStatus(providerOption.authType === "oauth"
+                            ? `Logged out of ${providerOption.name}`
+                            : `Removed stored API key for ${providerOption.name}.`);
+                    }
                     this.session.modelRegistry.refresh();
                     await this.updateAvailableProviderCount();
-                    const message = providerOption.authType === "oauth"
-                        ? `Logged out of ${providerOption.name}`
-                        : `Removed stored API key for ${providerOption.name}. Environment variables and models.json config are unchanged.`;
-                    this.showStatus(message);
                 }
                 catch (error) {
                     this.showError(`Logout failed: ${error instanceof Error ? error.message : String(error)}`);
