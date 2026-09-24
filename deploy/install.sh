@@ -343,7 +343,10 @@ done
 # 只换 models.generated.js + providers/*.models.js（模型清单），不动 pi-ai 的 API（避免升级 PIN 的 override 不兼容风险）。
 if [ -d "$DEPLOY/pi-models" ]; then
   cp "$DEPLOY/pi-models/models.generated.js" "$RUNTIME/node_modules/@earendil-works/pi-ai/dist/models.generated.js" 2>/dev/null && \
+  cp "$DEPLOY/pi-models/model-catalog.js" "$RUNTIME/node_modules/@earendil-works/pi-ai/dist/model-catalog.js" 2>/dev/null && \
+  mkdir -p "$RUNTIME/node_modules/@earendil-works/pi-ai/dist/providers/data" && \
   cp "$DEPLOY/pi-models/providers/"*.models.js "$RUNTIME/node_modules/@earendil-works/pi-ai/dist/providers/" 2>/dev/null && \
+  cp "$DEPLOY/pi-models/providers/data/"*.json "$RUNTIME/node_modules/@earendil-works/pi-ai/dist/providers/data/" 2>/dev/null && \
   ok "pi-models updated (0.87.1 catalog)" || warn "pi-models copy failed"
 fi
 
