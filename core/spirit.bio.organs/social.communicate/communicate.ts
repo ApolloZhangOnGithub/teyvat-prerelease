@@ -1214,7 +1214,13 @@ function watchInterruptTriggers(pi: ExtensionAPI): void {
         // hibernate 语义 = 长期"等消息"状态（wait 的超长形态，房东定义 queue 会打断等待方）——queue 对齐 interrupt：
         // hibernated 也注入；下方 toInject 非空时已有 hibernated 唤醒分支（transition working + 清 hibernate 标记），queue 复用。
         const hibernated = existsSync(join(homedir(), ".teyvat", "RuntimeCache", mySid, "main-hibernate"));
-        const toInject = msgs.filter((m: SocialMsg) => m.mode_used === "interrupt" || ((resting || hibernated) && m.mode_used === "queue"));
+        const toInject = (() => {
+          // 2026-09-24（用户：接受 interrupt 时自动一起读其他 pending，避免消息顺序乱）——
+          // 只要有 interrupt 消息，queue 也一并注入（即使 working 非 resting/hibernate）；
+          // 否则 queue 仍只在 resting/hibernated 时注入（打断 wait/hibernate）。
+          const hasInterrupt = msgs.some((m: SocialMsg) => m.mode_used === "interrupt");
+          return msgs.filter((m: SocialMsg) => m.mode_used === "interrupt" || (hasInterrupt && m.mode_used === "queue") || ((resting || hibernated) && m.mode_used === "queue"));
+        })();
         // 2026-09-08（testor 03:12 实证：消息 injected 但 wait 未被唤醒——诊断打点）：trigger 消费路径低频事件——打点定位静默失败点（toInject 空 / resting 判断 / sendCustomMessage 未达）
         console.error("[social-trigger] consumed " + f.split("/").pop() + " trig=" + JSON.stringify(trig) + " inboxUninjected=" + msgs.length + " toInject=" + toInject.length + " resting=" + resting);
         if (toInject.length) {
