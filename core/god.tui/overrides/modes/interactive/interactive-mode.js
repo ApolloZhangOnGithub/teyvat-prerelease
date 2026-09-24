@@ -485,6 +485,8 @@ export class InteractiveMode {
         globalThis.__genshinFooterVersion = this.settingsManager?.globalSettings?.footerVersion ?? true;
         // 2026-09-23（用户：余额预警）——footer 显示 API 余额（默认关）
         globalThis.__genshinFooterBalance = this.settingsManager?.globalSettings?.footerBalance ?? false;
+        // 2026-09-24（用户：context 保持上次后加 updated ago 括号）——默认关
+        globalThis.__genshinCtxUpdatedAgo = this.settingsManager?.globalSettings?.ctxUpdatedAgo ?? false;
         // 2026-09-15（用户）：statebar 默认位置改为**底栏**；2026-09-22（用户：新装机器进去还是落在消息后面）
         // ——本行是新装机器唯一的默认来源（settings 里没有 statebarPos 时用它），此前仍写 "messages"，与
         // statebar.js 的 "footer" 默认不一致，导致新机器默认落在消息底部。现统一为 "footer"。

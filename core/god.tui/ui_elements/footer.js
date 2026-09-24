@@ -239,7 +239,24 @@ export class FooterComponent {
         // 2026-09-16（用户定稿）：去掉 est（记忆文件体量估算，CJK×1.8 虚高）——只保留 api（探针/latestPromptTokens 真实值）。
         const contextWindow = state.model?.contextWindow ?? 1000000;
         const probe = globalThis.__genshinProbeTokens;
-        const totalTokens = probe > 0 ? probe : latestPromptTokens;
+        // 2026-09-24（用户：重启后 context 显示 0.0%——新 session 无 usage，fallback 到上次 growth.jsonl 的 api_tokens 保持连续）
+        let _lastGrowthTokens = 0;
+        let _lastGrowthTs = null;
+        if (latestPromptTokens <= 0) {
+          try {
+            const _pid = globalThis.__genshinPersonId || process.env.PAIMON_AGENT_ID || "";
+            if (_pid) {
+              const _gf = `${homedir()}/.teyvat/AgentFileData/MonitorData/${_pid}/growth.jsonl`;
+              if (existsSync(_gf)) {
+                const _lines = readFileSync(_gf, "utf8").trim().split("\n");
+                for (let _i = _lines.length - 1; _i >= 0 && _i >= _lines.length - 50; _i--) {
+                  try { const _o = JSON.parse(_lines[_i]); if (_o && typeof _o.ratio === "number") { _lastGrowthTokens = _o.api_tokens || 0; _lastGrowthTs = _o.ts || null; break; } } catch { /* 坏行跳过 */ }
+                }
+              }
+            }
+          } catch { /* growth 读取失败静默 */ }
+        }
+        const totalTokens = probe > 0 ? probe : (latestPromptTokens > 0 ? latestPromptTokens : _lastGrowthTokens);
         const totalPercent = contextWindow > 0 ? Math.min(100, (totalTokens / contextWindow) * 100) : 0;
         // Replace home directory with ~
         let pwd = formatCwdForFooter(this.session.sessionManager.getCwd(), process.env.HOME || process.env.USERPROFILE);
@@ -311,6 +328,11 @@ export class FooterComponent {
           // 2026-09-13（用户澄清）：只去掉 "contexted" 前缀字，百分比照常显示（不是隐藏整个显示）
           // 2026-09-16（用户定稿）：est 兑底去掉——totalPercent 已是探针/latestPromptTokens 的真实值，不再有 est 估算标注
           memStr = `${tp}%/${ctxWindowStr}`;
+          // 2026-09-24（用户：context 保持上次后，加「updated xx min ago」括号，/s 开关 __genshinCtxUpdatedAgo，默认关）
+          if (globalThis.__genshinCtxUpdatedAgo && _lastGrowthTs) {
+            const _ageMin = Math.max(1, Math.round((Date.now() - new Date(_lastGrowthTs).getTime()) / 60000));
+            memStr += _ageMin >= 60 ? ` (updated ${Math.round(_ageMin / 60)}h ago)` : ` (updated ${_ageMin} min ago)`;
+          }
         }
         if (totalPercent > 90) {
           memStr = theme.fg("error", memStr);
