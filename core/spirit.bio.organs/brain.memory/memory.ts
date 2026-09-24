@@ -188,47 +188,43 @@ export default function registerMemory(pi: ExtensionAPI) {
   // 2026-09-12：gauge 唯一写入者是 message_end（L158，API prompt 真值）。
   // amem 后 gauge 暂时过期（到下一个 model response 才更新），但不再用另一个口径覆盖——
   // 之前用 memTokens 估算覆盖导致 gauge 在两个口径之间来回跳（30% vs 65%）。
-  function _refreshGaugeAfterContextChange(_newCtx: string): void {
-    // 2026-09-16（用户暴怒：amem 不生效——archive 只改磁盘不改内存）：
-    // amem 改了 context.md → 立即重建快照并设 _snapshotOverride，让 context 事件（下一轮 LLM 调用前）替换 memory-snapshot。
-    // 之前这里空着，靠 before_agent_start 的异步检测（meta2.ctxLen 缩水判断）——98% 卡死时那条链断了，api 纹丝不动。
-    // 2026-09-24（用户：amem 后卡住 30 秒——buildSnapshot 串行同步慢，改成异步不阻塞 amem 返回 + 下一轮）
-    if (getSessionRole() === "main" && _snapshotInjected) {
-      const _startTs = _sessionStartTs;
-      setTimeout(() => {
-        try { _snapshotOverride = buildSnapshot({ excludeRowsSince: _startTs }); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
-      }, 0);
-    }
-    // 2026-09-16（用户：动态 amem——实时改内存，不重启）：
-    // amem 清了 context.md，但活对话（agent.state.messages）里的 toolResult/toolCall 还是旧的，api 大头不降。
-    // 这里成对裁剪：删 toolResult + 清 assistant 的 tool_calls（避免 OpenAI 兼容 API 缺 tool_result 400）。
-    const _sess = (globalThis as any).__genshinGetSession?.();
-    const _msgs = _sess?.agent?.state?.messages;
-    if (Array.isArray(_msgs)) {
-      // 先删 toolResult + 清 assistant 的 tool_calls（现有逻辑，避免 OpenAI 兼容 API 缺 tool_result 400）
-      const _noTool: any[] = [];
-      for (const _m of _msgs) {
-        if (!_m || _m.role === "toolResult") continue; // 删工具结果（api 大头）
-        if (_m.role === "assistant" && Array.isArray(_m.tool_calls) && _m.tool_calls.length) {
-          const _textOnly = (_m.content || []).filter((_c: any) => _c?.type === "text" || _c?.type === "thinking");
-          _noTool.push({ ..._m, tool_calls: undefined, content: _textOnly.length ? _textOnly : [{ type: "text", text: "" }] });
-          continue;
-        }
-        _noTool.push(_m);
+  // amem 改完 context.md 后：算出"本 turn 起点"（context.md 最后一条 user 行的 ts）——
+  // 快照只装本 turn 之前的记忆，本 turn 的行留在活对话里（同一批内容不重复注入）。
+  function _lastUserRowTsInContext(): number {
+    if (!personDir) return 0;
+    try {
+      const lines = readFile(path.join(personDir, "context.md")).split("\n");
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const t = lines[i].trim();
+        if (!t.startsWith("{")) continue;
+        try {
+          const o = JSON.parse(t);
+          const isUser = o?.role === "user" || o?.type === "user_msg";
+          if (!isUser) continue;
+          const ts = typeof o?.ts_start === "number" ? o.ts_start : (typeof o?.ts === "number" ? o.ts : 0);
+          if (ts > 0) return ts;
+        } catch { /* 坏行跳过 */ }
       }
-      // 正文热加载（2026-09-24 用户：正文也裁剪，不用 full-reboot）——
-      // 保留最近 _KEEP_TAIL 条，更旧的 assistant 正文替换成占位符（旧对话已由 amem manage 归档进 context.md / ActiveManage，可回查）。
-      // user 消息不裁（用户输入是最高优先级）。
-      const _KEEP_TAIL = 30;
-      const _cutoff = _noTool.length - _KEEP_TAIL;
-      const _kept = _noTool.map((_m: any, _idx: number) => {
-        if (_idx < _cutoff && _m?.role === "assistant") {
-          return { ..._m, content: [{ type: "text", text: "[更早的对话正文已由 amem 归档压缩，见 ActiveManage 可回查]" }] };
-        }
-        return _m;
-      });
-      _sess.agent.state.messages = _kept;
-    }
+    } catch { /* 无 context.md → 0（调用方据此放弃本轮热重建） */ }
+    return 0;
+  }
+
+  function _refreshGaugeAfterContextChange(_newCtx: string): void {
+    // 2026-09-16（用户暴怒：amem 不生效——archive 只改磁盘不改内存）：amem 改了 context.md 必须下一轮就生效，不重启。
+    // 2026-09-24（用户：amem 后卡住 30 秒）：buildSnapshot 串行同步慢 → 异步预构建，不阻塞 amem 返回。
+    // 2026-09-25（用户："什么垃圾？重启才能 amem 生效"）—— 根因：原实现直接写 __genshinGetSession().agent.state.messages，
+    //   而 heart.ts 的 __genshinGetSession 每次返回**新对象**（ctx.sessionManager.buildSessionContext() 重建），
+    //   赋值只落在临时对象上 → 从未生效（实测：amem 后 api 纹丝不动，只有重启重注入快照才降）。
+    //   现改为：置位 _pendingWindowCompact，交给 pi 的 context 事件（唯一正式改写入口，每次 LLM 调用前）重建**请求视图**：
+    //   记忆 = context.md（本 turn 之前，用重建快照注入）＋ 活对话 = 本 turn（最后一条 user 消息起）。
+    //   session 存储一字不改（TUI 照常显示全史），只是发给模型的那份视图与 context.md 对齐。
+    if (getSessionRole() !== "main" || !_snapshotInjected) return;
+    const _t0 = _lastUserRowTsInContext();
+    if (_t0 <= 0) return; // context.md 里没有 user 行 → 切不出"本 turn"，本轮不重建（下轮再说）
+    _pendingWindowCompact = true;
+    setTimeout(() => {
+      try { _snapshotOverride = buildSnapshot({ excludeRowsSince: _t0 }); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
+    }, 0);
   }
 
   // ── session_start: 注入"记忆快照"一次（稳定前缀 = 缓存命中的关键）────────────
@@ -242,16 +238,61 @@ export default function registerMemory(pi: ExtensionAPI) {
   // 代价：前缀缓存失效一次（这是把窗口真正降下来的唯一方式，ISSUE 204 方案 a 的无重启版）。
   let _snapshotOverride: string | null = null;
   let _snapshotInjected = false;
+  let _pendingWindowCompact = false; // amem 改 context.md 后置位：下一轮 LLM 调用前重建请求视图（见 _refreshGaugeAfterContextChange）
+  // amem 后的活对话裁剪边界（持久）：pi 每次调用都从 session 重建消息数组，一次性裁剪下轮就弹回——
+  // 必须固定"amem 那一刻的本 turn 起点"，之后每轮按同一位置重放（边界之前的行已在重建快照里）。
+  let _compactBoundary: { index: number; ts: number | null } | null = null;
   let _sessionStartTs = Date.now();
   pi.on("context", async (event) => {
-    if (!_snapshotOverride) return;
     const msgs: any[] = (event as any).messages || [];
-    const idx = msgs.findIndex((m) => m && m.role === "custom" && m.customType === "memory-snapshot");
-    if (idx < 0) return;
-    if (msgs[idx].content === _snapshotOverride) return;
-    const next = msgs.slice();
-    next[idx] = { ...msgs[idx], content: _snapshotOverride };
-    return { messages: next };
+    const snapIdx = msgs.findIndex((m) => m && m.role === "custom" && m.customType === "memory-snapshot");
+    let next: any[] | null = null;
+
+    // (a) 快照替换：amem 改了 context.md → 用重建的快照换掉活窗口里那条 memory-snapshot
+    if (_snapshotOverride && snapIdx >= 0 && msgs[snapIdx].content !== _snapshotOverride) {
+      next = msgs.slice();
+      next[snapIdx] = { ...msgs[snapIdx], content: _snapshotOverride };
+    }
+
+    // (b) amem 后的窗口重建（视图层）：记忆 = context.md（本 turn 之前，已在重建的快照里）
+    //     → 请求视图只留 system/custom + 本 turn（最后一条 user 消息起）。session 存储不动。
+    //     保险：只有「记忆快照确实在这份请求里」时才裁——否则会把记忆整个裁掉。
+    if (_pendingWindowCompact && _snapshotOverride && snapIdx >= 0) {
+      _pendingWindowCompact = false;
+      const base = next || msgs;
+      let lastUser = -1;
+      for (let i = base.length - 1; i >= 0; i--) {
+        if (base[i]?.role === "user") { lastUser = i; break; }
+      }
+      if (lastUser > 0) {
+        const um: any = base[lastUser];
+        const ts = typeof um?.ts_start === "number" ? um.ts_start : (typeof um?.time?.created === "number" ? um.time.created : null);
+        _compactBoundary = { index: lastUser, ts };
+      }
+    }
+
+    // (b2) 重放边界（每轮）：边界之前的历史已在重建快照里 → 从请求视图里去掉（不重复注入、窗口才真降）
+    if (_compactBoundary) {
+      const base = next || msgs;
+      let cut = -1;
+      if (_compactBoundary.ts !== null) {
+        for (let i = base.length - 1; i >= 0; i--) {
+          const m: any = base[i];
+          const mts = typeof m?.ts_start === "number" ? m.ts_start : (typeof m?.time?.created === "number" ? m.time.created : null);
+          if (m?.role === "user" && mts === _compactBoundary.ts) { cut = i; break; }
+        }
+      }
+      if (cut < 0 && base[_compactBoundary.index]?.role === "user") cut = _compactBoundary.index;
+      if (cut > 0) {
+        const head = base.slice(0, cut).filter((m: any) => m?.role === "system" || m?.role === "custom");
+        next = [...head, ...base.slice(cut)];
+      } else if (cut < 0) {
+        _compactBoundary = null; // 边界失效（会话结构变了/重启过）→ 放弃裁剪（宁可不裁，也不误裁）
+      }
+    }
+
+    if (next) return { messages: next };
+    return;
   });
 
   // 切模型：上一轮 prompt 是旧模型算的，分子分母不再同源（1M→200k 会显示 245% 被钳成 100%，反向骤降）——清掉，等下一次回复再建
@@ -675,7 +716,21 @@ export default function registerMemory(pi: ExtensionAPI) {
     // const workMem = readFile(path.join(personDir, "work_memory.md"));
     let context = readFile(path.join(personDir, "context.md"));
     // 2026-09-24（用户定稿：context.md 就是 agent 全部当前上下文，amem 实时管理，不该有第二套快照压缩层）——
-    // 原样注入，不再 toolResult 500字截断 / excludeRowsSince 过滤 / DSML 过滤 / 元数据剥离。
+    // 原样注入，不再 toolResult 500字截断 / DSML 过滤 / 元数据剥离。
+    // 2026-09-25：excludeRowsSince 恢复——它**不是**第二套压缩：只跳过"还留在活对话里的本 turn 行"，
+    // 避免同一批内容既进快照又留在活窗口（重复注入 = 白烧 token + 模型看到重影）。除 ts 判定外不改写任何内容。
+    if (opts?.excludeRowsSince) {
+      const _cut = opts.excludeRowsSince;
+      context = context.split("\n").filter((line: string) => {
+        const t = line.trim();
+        if (!t.startsWith("{")) return true;
+        try {
+          const o = JSON.parse(t);
+          const ts = typeof o?.ts_start === "number" ? o.ts_start : (typeof o?.ts === "number" ? o.ts : 0);
+          return !(ts >= _cut);
+        } catch { return true; }
+      }).join("\n");
+    }
 
     // 默认【整份注入】(守"不切")；context 原样全量。
     // 2026-09-16（用户：禁用垃圾管线——静默 70% 截断切最旧记忆 = 隐性遗忘，且 snapshot_trim.jsonl 从不存在即从未触发。逐行注释禁用，不是删除）
@@ -784,18 +839,15 @@ export default function registerMemory(pi: ExtensionAPI) {
     //   injectedWorkMemLen = workMem.length;
     // }
 
-    // 2) 容量提醒。默认整份注入；超窗口时 buildSnapshot 会兜底切最旧 context（不崩）。
+    // 2) 容量提醒。默认整份注入；**teyvat 侧无任何静默兜底**——原「超窗口切最旧」2026-09-16 已按定稿禁用（见下方 736-751 行，静默截断 = 隐性遗忘）。
+    //    2026-09-25 去掉 toolResult 500 字压缩后，注入体积 = context.md 实际体积（此前 toolResult 被隐式压缩、意外充当了体积阀门）。
+    //    ⚠️ 待决：context.md 体积真超窗口时无自动降级，靠 URGE/FORCE 容量提醒驱动 amem 主动整理；是否要加「显式可见的救命降级」待用户定夺。
     //    所以高占用 = "最旧记忆正在被丢"，该 sleep 把它编码走（不是会崩，是会丢）。
-    const dna = readFile(path.join(personDir, "dna/index.md"));
-    // const dlc = readFile(path.join(personDir, `dna/${dnaState}.dlc`));
-    const memTokens = estimateTokens(dna) + estimateTokens(context);
-    const usageRatio = memTokens / modelMax;
-    const rawPct = Math.round(usageRatio * 100);
-    // ratio = 记忆文件体量估算（est）；api_ratio = 上一轮 API 真实 prompt。2026-09-13 起门禁是 api 为主、est 决定文案：
-    // api≥95% 且 est≥60% 才拦其他工具叫 amem；api 高 est 低说明是活对话撑大的，改提示 full-reboot / compact（ISSUE 234：amem 后快照经 context 事件替换，api 下一轮才降）。
+    // 2026-09-25（用户定稿：est 是垃圾——全部清理，只保留 api 真实值；ctx 口径 2026-09-24 已删）：
+    // 原 est 残留（dna 空读 + estimateTokens 估算 + usageRatio/rawPct）已删——全仓无消费者，growth.jsonl 只写 api 口径。
     const _apiTokNow = _pondSess.prevPrompt ?? 0;
     monitorAppend("growth.jsonl",
-      JSON.stringify({ ts: new Date().toISOString(), bytes: context.length, tokens: memTokens, ratio: +(usageRatio * 100).toFixed(1), api_tokens: _apiTokNow, api_ratio: _apiTokNow ? +((_apiTokNow / modelMax) * 100).toFixed(1) : null }) + "\n");
+      JSON.stringify({ ts: new Date().toISOString(), bytes: context.length, api_tokens: _apiTokNow, api_ratio: _apiTokNow ? +((_apiTokNow / modelMax) * 100).toFixed(1) : null }) + "\n");
     // 2026-09-12：gauge 唯一写入者是 message_end（API prompt 真值）。
     // before_agent_start 和 _refreshGaugeAfterContextChange 都不写——避免多写入者口径打架导致跳变。
     // 容量提醒——只在达到 URGE(80%) 真危险时发（用户反馈：这条是垃圾，
@@ -805,11 +857,9 @@ export default function registerMemory(pi: ExtensionAPI) {
     // 同一提醒周期（>=80% 连续期间）只发一条，回落 <80% 清除，下次再达 80% 才重新提醒。
     const fmtTok = (n: number) => n < 1000 ? n + "" : n < 1e6 ? (n / 1000).toFixed(1) + "k" : (n / 1e6).toFixed(1) + "M";
     const capTs = _fmtLocalTs(Date.now()).slice(6, 14); // HH:MM:SS（本地时区）
-    // 2026-09-12（ISSUE 203）：显示改用 API 真实值（_pondSess.prevPrompt = input+cacheRead，与 gauge/footer 同源）；
-    // usageRatio（est 5 项）保留作“记忆体量/截断”阈值——两者语义不同，分别标注不再混用。
+    // 2026-09-12（ISSUE 203）：显示改用 API 真实值（_pondSess.prevPrompt = input+cacheRead，与 gauge/footer 同源）。
     const _apiTok = _pondSess.prevPrompt ?? 0;
-    // 2026-09-16（用户定稿）：est（estimateTokens 文件估算）是垃圾——全部清理，只保留 api 真实值。
-    // usageRatio（est 5 项）仍保留作“记忆体量/截断”阈值（内部触发逻辑，不显示）。
+    // 2026-09-16 + 2026-09-25（用户定稿）：est 是垃圾——全部清理，只保留 api 真实值（唯一口径）。
     let capacityLine = _apiTok > 0
       ? `context ${fmtTok(_apiTok)} tokens / ${fmtTok(modelMax)} (api@${capTs})`
       : "context 待首轮请求";
@@ -819,7 +869,7 @@ export default function registerMemory(pi: ExtensionAPI) {
     else if (_apiRatio >= CAPACITY.URGE) capacityLine += i18n(" — 建议 amem 整理", " — consider amem cleanup");
     if (_apiRatio >= CAPACITY.URGE) {
       if (_lastCapacityUrge === 0) {
-        _lastCapacityUrge = rawPct;
+        _lastCapacityUrge = 1; // 2026-09-25：est 已删——去重标记不再借用 rawPct（只需一个非零值表示「本周期已提醒」）
         sendCustomMessage(pi, "memory-capacity", capacityLine);
       }
     } else {

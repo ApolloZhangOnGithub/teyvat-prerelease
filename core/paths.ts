@@ -103,13 +103,14 @@ export function agentFileDir(id: string): string { return join(AGENT_FILE_DATA, 
 export function monitorDataFile(id: string, file: string): string { return join(AGENT_FILE_DATA, "MonitorData", id, file); }
 // growth.jsonl 最新一条：从尾部向前找第一条含 ratio 的记录。
 // 2026-09-13：文件里还混有 snapshot_trim 事件行（没有 tokens/ratio）——只读"最后一行"会拿到它，门禁/URGENT/status 静默失效一轮。
-// 字段：tokens/ratio = 记忆文件体量估算（est）；api_tokens/api_ratio = 上一轮真实 prompt（活窗口）。
+// 2026-09-25（用户定稿：est 全清、只留 api 口径）：判行字段由 est 的 ratio 改为 api_tokens/api_ratio（兼容历史 ratio 行）。
+// 字段：api_tokens/api_ratio = 上一轮真实 prompt（活窗口，唯一口径）；tokens/ratio = 已废弃的 est 残留（仅历史行兼容）。
 export function readGrowthLast(id: string): { ts?: string; bytes?: number; tokens?: number; ratio?: number; api_tokens?: number; api_ratio?: number | null } | null {
   let raw = "";
   try { raw = readFileSync(monitorDataFile(id, "growth.jsonl"), "utf8"); } catch { return null; }
   const lines = raw.trim().split("\n");
   for (let i = lines.length - 1; i >= 0 && i >= lines.length - 50; i--) {
-    try { const o = JSON.parse(lines[i]); if (o && typeof o.ratio === "number") return o; } catch { /* 坏行跳过 */ }
+    try { const o = JSON.parse(lines[i]); if (o && (typeof o.api_tokens === "number" || typeof o.api_ratio === "number" || typeof o.ratio === "number")) return o; } catch { /* 坏行跳过 */ }
   }
   return null;
 }

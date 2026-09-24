@@ -118,6 +118,11 @@ _wait_msg() {
 # bash 会把多字节字符当成变量名的一部分，配 set -u 直接 "unbound variable" 崩掉（2026-09-11 实测）。
 _takeover_reason() {
   local st age p
+  # 2026-09-14（ISSUE 241）：坏锁优先判——锁目录出现预期外文件时立刻接管（不必等时间兜底）
+  if _lock_abnormal; then
+    echo "锁目录含预期外文件（正常只应有 started/pid/.pid.*）——坏锁，立刻接管（ISSUE 241）"
+    return 0
+  fi
   st=$(_owner_state); age=$(_age || echo ""); p=$(_owner_pid || echo 未知)
   case "$st" in
     dead) echo "owner 进程已消失（pid ${p}，锁龄 ${age:-?}s）"; return 0 ;;
@@ -133,9 +138,33 @@ _takeover_reason() {
 
 # 清掉死掉的锁。rmdir 非空会失败：那说明已经有人重新建了锁并写了 owner，
 # 此时什么都不做，交回等待循环，不会出现两个 owner。
+# 锁目录是否“异常”：出现 started/pid/.pid.* 以外的东西（如 ISSUE 241 现场的 "pid 2"）
+# → 正常实现只会写这三个名，所以这必是坏锁：立刻接管，不必等 30 分钟兜底（也避免旧实现下的永久死锁）。
+_lock_abnormal() {
+  local f n
+  [ -d "$LOCK_DIR" ] || return 1
+  for f in "$LOCK_DIR"/* "$LOCK_DIR"/.[!.]*; do
+    [ -e "$f" ] || continue
+    n=$(basename "$f")
+    case "$n" in started|pid|.pid.*) ;; *) return 0 ;; esac
+  done
+  return 1
+}
+
+# 清掉死掉/异常的锁。
+# 2026-09-14（ISSUE 241）：原实现 `rm -f "$STAMP" "$PIDFILE"; rmdir "$LOCK_DIR"` 在
+# 「锁目录含预期外文件」时必然失败（rm 打不中真名 → rmdir 非空失败），而且**静默** ——
+# 于是 mkdir 永远失败、等待者死循环：23:15-23:34 全团队部署停摆就是这么来的（不是等 30 分钟，是永久）。
+# 改为「整目录原子改名 + rm -rf」：mv 是原子的，且与别人的 mkdir 天然互斥；目录里是什么都能清掉。
 _take_over() {
-  rm -f "$STAMP" "$PIDFILE" 2>/dev/null
-  rmdir "$LOCK_DIR" 2>/dev/null
+  local dead="${LOCK_DIR}.dead.$$"
+  if mv "$LOCK_DIR" "$dead" 2>/dev/null; then
+    rm -rf "$dead" 2>/dev/null
+    return 0
+  fi
+  [ -d "$LOCK_DIR" ] || return 0          # 已被别人接管 → 视为成功
+  echo "  $(date +%H:%M:%S) ⚠ 接管失败：无法移走 ${LOCK_DIR}（请人工检查；ISSUE 241）" >&2
+  return 1
 }
 
 if ! _try_lock; then

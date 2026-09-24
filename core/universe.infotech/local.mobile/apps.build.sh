@@ -4,7 +4,7 @@
 MOBILE_DIR="${1:-$(dirname "$0")}"
 APPS_JSON="$MOBILE_DIR/apps.json"
 node -e "
-const fs=require('fs'),path=require('path'),cp=require('child_process');
+const fs=require('fs'),path=require('path'),cp=require('child_process'),crypto=require('crypto');
 const dir='$MOBILE_DIR', af='$APPS_JSON';
 let old={}; try{old=JSON.parse(fs.readFileSync(af,'utf8'));}catch {}
 const byDir={}; (old.apps||[]).forEach(a=>{byDir[a.dir||a.name]=a});
@@ -20,7 +20,10 @@ for(const tier of ['apps']){
     if(!files[0]) continue;
     const main=files.includes(dirName+'.ts')?dirName+'.ts':files[0];
     const tf=path.join(ad,main);
-    const md5=cp.execSync('md5 -q '+JSON.stringify(tf),{encoding:'utf8'}).trim();
+    // 2026-09-25（debug-01 修 Linux 安装崩溃）：原用 `md5 -q`（macOS 专有，Linux 是 md5sum）——
+    // Fedora 上 execSync 抛 status 127 → 整个 node 进程崩栈（用户装一次看到两坨堆栈）。
+    // 改用 Node 内置 crypto：零外部命令依赖、跨平台、结果同为 md5 hex（与旧 apps.json 兼容，build 号不会误增）。
+    const md5=crypto.createHash('md5').update(fs.readFileSync(tf)).digest('hex');
     const prev=byDir[dirName]||{};
     const build=(prev.md5===md5)?(prev.build||0):(prev.build||0)+1;
     const entry={name:prev.name||dirName,dir:dirName,tier,build,md5,file:main,handler:prev.handler||'code'};

@@ -101,15 +101,22 @@ else
   _install_bun || warn "bun 自动装失败（ear 语音不可用）；手动：curl -fsSL https://bun.sh/install | bash"
 fi
 
-# tmux 必需（execute terminal 模式 / 长驻任务）：缺失自动装
+# tmux 供 execute 的 terminal 模式使用
+# 2026-09-25（debug-01 修 Linux 安装阻断）：原标为“必需”并用 err 阻断整个部署——
+# 但 Linux 上 dnf/apt 装包需 root，非 root 用户必然失败 → 整个安装被判“部署失败”
+# （用户 Fedora 实测：tmux 装失败 → ✗ 部署失败，实际后面根本没跑）。
+# 参照其他可选依赖（trafilatura/rapidocr/office）做法：装不上只 warn + DEP_WARN，不阻断。
 if command -v tmux >/dev/null 2>&1; then
   ok "tmux 已就绪"
 else
-  warn "未找到 tmux — 自动安装"
+  warn "未找到 tmux — 尝试自动安装（仅 execute 的 terminal 模式需要，不影响其他功能）"
+  # sudo -n：免密可用时才装，否则立即失败（绝不挂起等密码）
   if [ "$_TV_OS" = "Darwin" ]; then command -v brew >/dev/null 2>&1 && brew install tmux >/dev/null 2>&1
-  elif command -v apt-get >/dev/null 2>&1; then apt-get install -y tmux >/dev/null 2>&1
-  elif command -v dnf >/dev/null 2>&1; then dnf install -y tmux >/dev/null 2>&1; fi
-  command -v tmux >/dev/null 2>&1 && ok "tmux 已装" || err "tmux 安装失败，手动装（execute terminal 模式需要）"
+  elif command -v apt-get >/dev/null 2>&1; then (sudo -n apt-get install -y tmux || apt-get install -y tmux) >/dev/null 2>&1
+  elif command -v dnf >/dev/null 2>&1; then (sudo -n dnf install -y tmux || dnf install -y tmux) >/dev/null 2>&1
+  fi
+  if command -v tmux >/dev/null 2>&1; then ok "tmux 已装"
+  else warn "tmux 未安装 — execute 的 terminal 模式不可用（其余功能正常）。手动: sudo dnf install -y tmux（Fedora）/ sudo apt install -y tmux（Debian）"; DEP_WARN=1; fi
 fi
 
 # git / rsync 必需（只报安装命令，不自动装）
@@ -381,8 +388,17 @@ STOCK_BACKUP="$(dirname "$IMPL")/$(basename "$DEPLOY")/pi-image-source/v${PIN}"
 # 表现为「改了源码但行为不变」或残留旧补丁 —— 静默跳过时这种退化极难发现。
 [ -d "$STOCK_BACKUP" ] || err "原版镜像缺失: $STOCK_BACKUP（应随 C.deploy 一起版本控制）"
 if [ -d "$STOCK_BACKUP/pi-coding-agent" ]; then
-  rsync -a --delete "$STOCK_BACKUP/pi-coding-agent/" "$PI_DIST/"
-  ok "runtime pi-coding-agent dist restored from stock"
+  # 2026-09-25（debug-01 修 Linux 安装报错）：rsync 只能创建**单级**目标目录——
+  # $PI_DIST 的父目录（$PI_PKG）在 Linux 首次安装时可能尚不存在 →
+  #   rsync: mkdir ".../pi-coding-agent/dist" failed: No such file or directory (2)
+  #   rsync error: error in file IO (code 11)
+  # 且旧写法无论成败都打 OK（假成功）。现：先建目录（幂等）再 rsync，失败如实报告（不阻断——下方 debug.js 兜底）。
+  mkdir -p "$PI_DIST" 2>/dev/null
+  if rsync -a --delete "$STOCK_BACKUP/pi-coding-agent/" "$PI_DIST/"; then
+    ok "runtime pi-coding-agent dist restored from stock"
+  else
+    warn "pi-coding-agent dist 恢复未完成（不阻断；若后续行为异常请重跑安装）"
+  fi
   # 2026-09-13（dev-01）：上面这行 --delete 会删掉 teyvat 的补丁 dist/debug.js，
   # 而 stub 重建原本在脚本后段 → make 的 extension load check（在 install **之前**跑）必然失败
   # （报 "Cannot find module .../dist/debug.js"）→ install 永不执行 → stub 永不重建（死循环，实测踩到）。
@@ -654,7 +670,12 @@ fi
 # 这里按内容逐字节校验源码树 vs 线上副本，不一致必须响、必须停。
 # 注意：I.Ecosystems 是附加部署域（源在 $PKG_ROOT/I.Ecosystems，线上 teyvat/I.Ecosystems/），
 # 不在 A.core 源码树内——主校验排除它，另在下方单独校验（2026-09-13 IM 迁移新增）。
-_tree_sum() { (cd "$1" && find . -type f -not -path '*/node_modules/*' -not -path './I.Ecosystems/*' -not -name '.DS_Store' -print0 | sort -z | xargs -0 shasum 2>/dev/null | shasum | cut -d' ' -f1); }
+# 2026-09-25（debug-01 修 Linux 部署阻塞）：原直接调 `shasum`——它是 macOS/Perl 专有，Fedora 默认**没有**（只有 sha256sum）。
+# 无 fallback → 两侧校验和都为空 → 误判"extensions 副本与源码不一致（rsync 没落地）"→ **部署失败**（用户实测被阻断）。
+# 统一走 sha256（shasum -a 256 / sha256sum 输出格式都是 "<hash>  <file>"，cut -f1 通吃；同一函数生成两侧值，算法一致即可）。
+_TREE_HASH="$(command -v sha256sum >/dev/null 2>&1 && echo sha256sum || { command -v shasum >/dev/null 2>&1 && echo 'shasum -a 256'; })"
+if [ -z "$_TREE_HASH" ]; then err "找不到 sha256sum/shasum——无法做部署校验（Linux: coreutils / macOS: perl 自带）"; fi
+_tree_sum() { (cd "$1" && find . -type f -not -path '*/node_modules/*' -not -path './I.Ecosystems/*' -not -name '.DS_Store' -print0 | sort -z | xargs -0 $_TREE_HASH 2>/dev/null | $_TREE_HASH | cut -d' ' -f1); }
 SRC_SUM=$(_tree_sum "$IMPL")
 DST_SUM=$(_tree_sum "$_EXT_NEW")
 if [ -z "$SRC_SUM" ] || [ "$SRC_SUM" != "$DST_SUM" ]; then
@@ -731,6 +752,21 @@ if [ -f "$LAUNCHER_SRC" ]; then
   # 2026-09-12：touch 强制更新 mtime——让快照重建逻辑检测到源比快照新
   touch "$HOME/.local/bin/genshin"
 fi
+# 2026-09-25（debug-01 修 Linux “装完还是不能用”）：确保 ~/.local/bin 在 PATH。
+# macOS 上它通常已在（用户环境自带）；**Fedora/Debian 等默认不含** → 装完跑 `genshin` 报“未找到命令”。
+# 判定：当前 PATH 已含 → 不动（不污染 rc）；不含 → 幂等追加一次（带标记防重复）。
+case ":$PATH:" in
+  *":$HOME/.local/bin:"*)
+    : # 已在 PATH（当前会话即可用），不改 shell rc
+    ;;
+  *)
+    for _rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
+      [ -f "$_rc" ] || continue
+      grep -qF '.teyvat: ~/.local/bin' "$_rc" 2>/dev/null || printf '\n# teyvat: ~/.local/bin（genshin 启动器）\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$_rc"
+    done
+    warn "~/.local/bin 不在 PATH——已写入 shell rc（重开终端或 source 后生效）"
+    ;;
+esac
 ok "launcher"
 
 # ── 5b. mobile CLI ──
