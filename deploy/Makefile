@@ -207,7 +207,7 @@ _dev-minutely: _integrity
 	echo "  $$detail" >> "$(ROOT)/../Makelogs_Minutely.KEYLOGS"; \
 	echo "" >> "$(ROOT)/../Makelogs_Minutely.KEYLOGS"; \
 	echo "$$TODAY $$COUNT $$REL_VER" > "$$COUNTER_FILE"; \
-	cd "$(DEV)" && eval "$$(bash "$(DEPLOY)/git-app-identity.sh" 2>/dev/null)" 2>/dev/null; git add -A && (git diff --cached --quiet || git -c user.name="$${GIT_APP_NAME:-$$committer}" -c user.email="$${GIT_APP_EMAIL:-$${committer}@localhost}" commit -m "$$PAIMON_VER" -m "[$$committer] $$msg" -m "$$detail") || { echo -e "  ${RED}git add/commit FAILED —— 停止部署（index.lock / hook / gpg？）${R}"; exit 1; }; \
+	cd "$(DEV)" && eval "$$(bash "$(DEPLOY)/git-app-identity.sh" 2>/dev/null)" 2>/dev/null; echo "  DBG GIT_APP_NAME=[$$GIT_APP_NAME] tokenLen=$${#GIT_APP_TOKEN}"; git add -A && (git diff --cached --quiet || git -c user.name="$${GIT_APP_NAME:-$$committer}" -c user.email="$${GIT_APP_EMAIL:-$${committer}@localhost}" commit -m "$$PAIMON_VER" -m "[$$committer] $$msg" -m "$$detail") || { echo -e "  ${RED}git add/commit FAILED —— 停止部署（index.lock / hook / gpg？）${R}"; exit 1; }; \
 	(cd "$(DEV)" && git fetch origin main 2>/dev/null; cd "$(DEV)" && git diff --quiet origin/main..HEAD 2>/dev/null || { echo -e "  pushing $$PAIMON_VER..."; cd "$(DEV)" && if git push "$${GIT_APP_TOKEN:+https://x-access-token:$$GIT_APP_TOKEN@github.com/ApolloZhangOnGithub/teyvat-dev.git}$${GIT_APP_TOKEN:-origin}" main 2>&1 | sed 's/^/  /'; then echo -e "  ${GRN}pushed${R}"; else echo -e "  ${RED}push FAILED —— 本地有 $$PAIMON_VER 但远端没有！先查网络/权限，再手动 git push origin main（不然后续版本会和远端分叉）${R}"; fi; }); \
 	echo "[$$(date +%H:%M:%S)] git done"; \
 	trash "$$DST_README" 2>/dev/null || true; \
