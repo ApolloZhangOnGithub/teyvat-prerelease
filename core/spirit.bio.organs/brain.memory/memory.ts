@@ -674,43 +674,10 @@ export default function registerMemory(pi: ExtensionAPI) {
     // const cortex = readFile(path.join(personDir, "neocortex.md"));
     // const workMem = readFile(path.join(personDir, "work_memory.md"));
     let context = readFile(path.join(personDir, "context.md"));
-    // 旧污染兜底：历史里若残留 DSML 乱码行，注入前整段滤掉——不把旧垃圾再喂回模型(否则鬼打墙不停)。
-    // 只按 ｜DSML｜ 这个特殊 token 滤（精确，不误伤含 "invoke name=" 之类的正常代码/文档行）。
-    if (context.includes("｜DSML｜")) {
-      context = context.split("\n").filter((l) => !l.includes("｜DSML｜")).join("\n");
-    }
+    // 2026-09-24（用户定稿：context.md 就是 agent 全部当前上下文，amem 实时管理，不该有第二套快照压缩层）——
+    // 原样注入，不再 toolResult 500字截断 / excludeRowsSince 过滤 / DSML 过滤 / 元数据剥离。
 
-    // 快照去 tool_result：context.md 里混入的 toolResult JSONL 行不进快照——原样重放会被当成假工具结果且自噬膨胀。
-    // 非 JSON 行（含空行）原样保留；正常 toolResult 压缩成一行 [tool: 前500字]；bad_frame 整行剔除。
-    context = context.split("\n").map((line: string): string | null => {
-      const t = line.trim();
-      if (!t.startsWith("{")) return line;
-      try {
-        const obj = JSON.parse(t);
-        if (opts?.excludeRowsSince && obj) {
-          const rts = typeof obj.ts_start === "number" ? obj.ts_start : (typeof obj.ts === "number" ? obj.ts : 0);
-          if (rts >= opts.excludeRowsSince) return null;
-        }
-        if (obj && obj.role === "toolResult") {
-          if (obj.type === "bad_frame") return null;
-          let text: any = obj.text ?? obj.content ?? "";
-          if (Array.isArray(text)) text = text.map((b: any) => (b && typeof b.text === "string" ? b.text : "")).join(" ");
-          text = String(text).trim();
-          return text ? `[tool: ${text.slice(0, 500).replace(/\n/g, " ")}]` : null;
-        }
-        // 2026-09-22（trajectory 元数据）：非 toolResult 的 JSON 行（如 toolCall）剥掉元数据字段再进快照——
-        // 元数据（toolCallId）只存在于 context.md，不进模型上下文（正是「session context 外加 metadata」）
-        if (obj && typeof obj === "object") {
-          let _ch = false;
-          if (obj.toolCallId !== undefined) { delete obj.toolCallId; _ch = true; }
-          if (obj.blockId !== undefined) { delete obj.blockId; _ch = true; }
-          if (_ch) return JSON.stringify(obj);
-        }
-      } catch { /* context.md 坏行（截断/历史格式）：保留原文不压缩、不刷日志（2026-08-20 定稿；2026-09-13 复原——曾被 fix-empty-catch 自动回填成 console.error，每次快照构建刷 Unexpected end of JSON input）*/ }
-      return line;
-    }).filter((l): l is string => l !== null).join("\n");
-
-    // 默认【整份注入】(守"不切")；cortex + work_memory 永远全量。
+    // 默认【整份注入】(守"不切")；context 原样全量。
     // 2026-09-16（用户：禁用垃圾管线——静默 70% 截断切最旧记忆 = 隐性遗忘，且 snapshot_trim.jsonl 从不存在即从未触发。逐行注释禁用，不是删除）
     // let trimmed = false;
     // const SAFE = Math.round(modelMax * 0.70); // 留 30% 给对话+补全
