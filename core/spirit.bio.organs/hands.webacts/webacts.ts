@@ -176,13 +176,26 @@ export default function (pi: ExtensionAPI) {
     if (r?.answer) {
       lines.push(`[${r.provider || "deepseek"} 回答] ${r.answer}`);
     }
-    if (r.items && r.items.length > 0) {
-      lines.push(...r.items.map((it: any, i: number) => `${i + 1}. ${it.title}\n   ${it.url}${it.description ? "\n   " + it.description : ""}`));
+    const items = r.items || [];
+    if (items.length > 0) {
+      // 2026-09-24（用户：search 结果折叠——共有几个结果 + 首尾，中间折叠）
+      const HEAD_N = 3, TAIL_N = 2;
+      if (items.length > HEAD_N + TAIL_N + 1) {
+        const head = items.slice(0, HEAD_N).map((it: any, i: number) => `${i + 1}. ${it.title}\n   ${it.url}`);
+        const tail = items.slice(-TAIL_N).map((it: any, i: number) => `${items.length - TAIL_N + i + 1}. ${it.title}\n   ${it.url}`);
+        const mid = items.length - HEAD_N - TAIL_N;
+        lines.push(`（共 ${items.length} 个结果，中间 ${mid} 个已折叠）`);
+        lines.push(...head);
+        lines.push(`…（中间 ${mid} 个结果已折叠，可用 count 参数取更多）…`);
+        lines.push(...tail);
+      } else {
+        lines.push(...items.map((it: any, i: number) => `${i + 1}. ${it.title}\n   ${it.url}${it.description ? "\n   " + it.description : ""}`));
+      }
     }
     if (lines.length === 0) {
       return { content: [{ type: "text", text: `Web ${label}: 无结果` }], details: { count: 0 }, isError: false };
     }
-    return { content: [{ type: "text", text: `Web ${label}（${r.provider || "brave"}）:\n${lines.join("\n")}` }], details: { count: r.items?.length ?? 0, provider: r.provider }, isError: false };
+    return { content: [{ type: "text", text: `Web ${label}（${r.provider || "brave"}）:\n${lines.join("\n")}` }], details: { count: items.length ?? 0, provider: r.provider }, isError: false };
   }
 
   registerPaimonTool({
