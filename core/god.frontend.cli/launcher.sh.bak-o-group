@@ -819,7 +819,7 @@ _resolve_active_arg() {
 if [ "$MODE" = "kill" ]; then
   if [ -z "$NAME" ]; then echo "$(_l "用法: genshin -k <名字|ID|序号>" "Usage: genshin -k <name|ID|index>")"; exit 1; fi
   # 数字/分组编号 => 运行中 agent（_resolve_active_arg：1f/1b/1a 分组 + 纯数字 F/B 跨组歧义提示）
-  if [[ "$NAME" =~ ^[0-9]+$ || "$NAME" =~ ^[0-9]+[fbao]$ || "$NAME" =~ ^[fbao][0-9]+$ ]]; then
+  if [[ "$NAME" =~ ^[0-9]+$ || "$NAME" =~ ^[0-9]+[fba]$ || "$NAME" =~ ^[fba][0-9]+$ ]]; then
     TARGET=$(_resolve_active_arg "$NAME")
     if [[ "$TARGET" == __AMBIG__* ]]; then
       echo "$(_l "序号有歧义（F 组/B 组同号），请用分组编号指定：" "Index ambiguous (front/background), use group-index:")"
@@ -836,25 +836,7 @@ if [ "$MODE" = "kill" ]; then
   # 修：精确匹配 agent 主进程标识 cmdline "genshin:<name>(main,"——绝不宽匹配、不碰其他进程。
   # 2026-09-13：也接受 8 位 id（help 写的是 name/id/index；进程标识是 genshin:<name>(main,<id>,…)）
   PID=$(ps -eo pid,command | grep -E "genshin:${NAME}\(main,|\(main,${NAME}," | grep -v grep | awk '{print $1}' | head -1)
-  if [ -z "$PID" ]; then
-    # 2026-09-25（房东实测 genshin k 1o）：原提示"没找到运行中的 1o"是误导——该 agent 明明在册，
-    # 只是处于 offline（没有运行中的进程）。先查 group-map 判定它是否已知（在册）：
-    #   在册且为 o 组 → 明确告知"已离线，无需 kill"（exit 0，这不是错误状态）
-    #   不在册 → 才是真正的"没找到"
-    _KNOWN=$(node --input-type=commonjs -e "
-      const fs=require('fs');
-      try{
-        const gm=JSON.parse(fs.readFileSync(process.argv[1]+'/RuntimeCache/genshin-group-map.json','utf8'));
-        const hit=Object.values(gm).find(v=>v.name===process.argv[2]);
-        if(hit)console.log(hit.g==='o'?'offline':hit.g);
-      }catch{}
-    " "$PAIMON_HOME" "$NAME" 2>/dev/null)
-    if [ "$_KNOWN" = "offline" ]; then
-      echo "$(_l "$NAME 已经是离线状态（没有运行中的进程），无需 kill" "$NAME is already offline (no running process) — nothing to kill")"
-      exit 0
-    fi
-    echo "$(_l "没找到运行中的 $NAME" "No running agent found: $NAME")"; exit 1
-  fi
+  if [ -z "$PID" ]; then echo "$(_l "没找到运行中的 $NAME" "No running agent found: $NAME")"; exit 1; fi
   if _confirm "杀掉 $NAME?" "Kill $NAME?"; then
     # 杀掉 pi 进程及其父 bash launcher，清 wake-restart 防重启
     PARENT_PID=$(ps -o ppid= -p "$PID" 2>/dev/null | tr -d ' ')
@@ -899,7 +881,7 @@ fi
 if [ "$MODE" = "tmux" ]; then
   if [ -z "$NAME" ]; then echo "$(_l "用法: genshin -t <名字|ID|序号>" "Usage: genshin -t <name|ID|index>")"; exit 1; fi
   # 数字/分组编号 => 运行中 agent（_resolve_active_arg：1f/1b/1a 分组 + 纯数字 F/B 跨组歧义提示）
-  if [[ "$NAME" =~ ^[0-9]+$ || "$NAME" =~ ^[0-9]+[fbao]$ || "$NAME" =~ ^[fbao][0-9]+$ ]]; then
+  if [[ "$NAME" =~ ^[0-9]+$ || "$NAME" =~ ^[0-9]+[fba]$ || "$NAME" =~ ^[fba][0-9]+$ ]]; then
     TARGET=$(_resolve_active_arg "$NAME")
     if [[ "$TARGET" == __AMBIG__* ]]; then
       echo "$(_l "序号有歧义（F 组/B 组同号），请用分组编号指定：" "Index ambiguous (front/background), use group-index:")"
@@ -988,7 +970,7 @@ fi
 # mc/tmux: 数字→运行中 agent（在 ENTRY 解析前）
 if [ "$MODE" = "mc" ] || [ "$MODE" = "tmux" ] || [ "$MODE" = "hc" ]; then
   # 数字/分组编号 => 运行中 agent（_resolve_active_arg：1f/1b/1a 分组 + 纯数字 F/B 跨组歧义提示）
-  if [[ "$NAME" =~ ^[0-9]+$ || "$NAME" =~ ^[0-9]+[fbao]$ || "$NAME" =~ ^[fbao][0-9]+$ ]]; then
+  if [[ "$NAME" =~ ^[0-9]+$ || "$NAME" =~ ^[0-9]+[fba]$ || "$NAME" =~ ^[fba][0-9]+$ ]]; then
     TARGET=$(_resolve_active_arg "$NAME")
     if [[ "$TARGET" == __AMBIG__* ]]; then
       echo "$(_l "序号有歧义（F 组/B 组同号），请用分组编号指定：" "Index ambiguous (front/background), use group-index:")"
