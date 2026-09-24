@@ -228,6 +228,13 @@ export class ModelSelectorComponent extends Container {
         // Load available models (built-in models still work even if models.json failed)
         try {
             let availableModels = await this.modelRegistry.getAvailable();
+            // 2026-09-24（用户）：openrouter 是聚合 marketplace（几百个模型，不用），整体去掉（pi 内置 + models.dev 都不进 /m）。
+            availableModels = availableModels.filter((m) => m.provider !== "openrouter");
+            // 2026-09-24（用户）：xiaomi 只保留 mimo-v2.6 两个（flash/pro），token-plan/ultraspeed/v2.5/v2-pro 都去掉。
+            availableModels = availableModels.filter((m) => {
+              if (!(m.provider || "").startsWith("xiaomi")) return true;
+              return m.id === "mimo-v2.6-flash" || m.id === "mimo-v2.6-pro";
+            });
             // 2026-09-04（用户定稿）：models.dev 目录自动维护——拉 models.dev api.json（缓存 24h），
             // 对 openrouter 先行（deepseek/zai/bigmodel→zhipuai 架构已通用，加映射即启用），
             // diff 内置缺失的模型合成条目合并进列表（元数据从 models.dev 换算），新模型即时出现在 /m。
