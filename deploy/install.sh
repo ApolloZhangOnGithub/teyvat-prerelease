@@ -339,6 +339,14 @@ for dep in pi-ai pi-agent-core pi-tui; do
   [ "$DEP_VER" = "$PIN" ] && ok "runtime $dep@$PIN" || warn "$dep version drift: ${DEP_VER:-none} (want $PIN)"
 done
 
+# ── 2026-09-24：model list 用最新模型目录（pi-models 独立于 PIN——0.87.1 的 models 目录，PIN 仍 0.80.7）──
+# 只换 models.generated.js + providers/*.models.js（模型清单），不动 pi-ai 的 API（避免升级 PIN 的 override 不兼容风险）。
+if [ -d "$DEPLOY/pi-models" ]; then
+  cp "$DEPLOY/pi-models/models.generated.js" "$RUNTIME/node_modules/@earendil-works/pi-ai/dist/models.generated.js" 2>/dev/null && \
+  cp "$DEPLOY/pi-models/providers/"*.models.js "$RUNTIME/node_modules/@earendil-works/pi-ai/dist/providers/" 2>/dev/null && \
+  ok "pi-models updated (0.87.1 catalog)" || warn "pi-models copy failed"
+fi
+
 # ── 2. live integrity check ──
 # 检查 runtime 是否被手动修改过（对比上次 install 保存的 manifest）
 # make dev-minutely/dev-restore 走正常部署流程，跳过 drift 检查
