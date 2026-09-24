@@ -245,7 +245,7 @@ export default function (pi: ExtensionAPI) {
         if (fast.done) return formatFetch(fast.value, label);
         // 慢：进后台，完成推送（LESSON 006 非阻塞；ISSUE 119 兑底：必有推送）
         backgroundPush(p, label, (r) => formatFetch(r, label));
-        return { content: [{ type: "text", text: i18n(`Web ${label} 进行中…（完成后推送）`, `Web ${label} in progress… (result pushed when done)`) }], details: { background: true } };
+        return { content: [{ type: "text", text: i18n(`Fetching ${url}…`, `Fetching ${url}…`) }], details: { background: true } };
       }
 
       if (op === "search") {
@@ -261,12 +261,12 @@ export default function (pi: ExtensionAPI) {
         if (provider === "deepseek") {
           // ISSUE 119：deepseek 10-60s，race 必然超阈值且白卡 loop 8s——恒后台
           backgroundPush(p, label, (r) => formatSearch(r, label));
-          return { content: [{ type: "text", text: i18n(`Web ${label} 进行中…（deepseek 深度搜索需 10-60s，完成后推送）`, `Web ${label} in progress… (deepseek takes 10-60s, result pushed when done)`) }], details: { background: true } };
+          return { content: [{ type: "text", text: i18n(`Searching ${query}…`, `Searching ${query}…`) }], details: { background: true } };
         }
         const fast = await raceFast(p, SEARCH_THRESHOLD_MS);
         if (fast.done) return formatSearch(fast.value, label);
         backgroundPush(p, label, (r) => formatSearch(r, label));
-        return { content: [{ type: "text", text: i18n(`Web ${label} 进行中…（完成后推送）`, `Web ${label} in progress… (result pushed when done)`) }], details: { background: true } };
+        return { content: [{ type: "text", text: i18n(`Searching ${query}…`, `Searching ${query}…`) }], details: { background: true } };
       }
 
       if (op === "upload") {
