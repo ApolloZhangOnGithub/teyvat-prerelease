@@ -48,6 +48,10 @@ const KIND_COLORS = { 'coding-agent': M, 'coding': M };
 const { pad, lpad, vw } = require(path.join(__dirname, 'pad.cjs'));
 const { computeAgentStats, readStats } = require(path.join(__dirname, 'agent-stats.cjs'));
 
+// 2026-09-25（用户：一套规则，不要写几遍）——前台/后台唯一判据：detached 标记存在 = 后台。
+// 排序（_fb）、状态字符串（[B]/[F]）、分组（groupOf）全部基于它，禁止各写一遍。
+function isDetached(id) { return fs.existsSync(`${PAIMON_HOME}/RuntimeCache/${id}/detached`); }
+
 function fmtSizeRaw(b) {
   const mb = b / 1024 / 1024;
   if (mb < 0.01) return '  —     ';
@@ -112,7 +116,7 @@ for (const p of list) {
   p._active = active;
   p._ago = Math.round((now - new Date(p.lastEnded || p.lastSeen).getTime()) / 60000);
   // 2026-08-20 用户需求：先 F（前台 TUI）后 B（后台 headless）——detached 标记存在 = 后台
-  p._fb = active && fs.existsSync(PAIMON_HOME + '/RuntimeCache/' + p.id + '/detached') ? 1 : 0;
+  p._fb = active && isDetached(p.id) ? 1 : 0;
 }
 // 排序：active > offline，同为 active 时 F > B，最后按 ago
 // 注意：不要改排序顺序——launcher 的 _resolve_active_arg 依赖与此一致的序号
@@ -123,19 +127,6 @@ if (filter === 'list') {
     const d = PAIMON_HOME + '/RuntimeCache';
     if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
     fs.writeFileSync(d + '/genshin-order-last.json', JSON.stringify(list.map(p => p.id)));
-    // 分组序号映射——launcher _resolve_active_arg 读这个实现单一真相源（ISSUE 186）
-    const groupMap = {};
-    let _f = 1, _b = 1, _o = 1;
-    for (const p of list) {
-      let g, n;
-      if (p._active) {
-        const rc = PAIMON_HOME + '/RuntimeCache/' + p.id;
-        const isHPB = fs.existsSync(rc + '/main-hibernate') || fs.existsSync(PAIMON_HOME + '/MemoryData/' + p.id + '/paused') || fs.existsSync(rc + '/paused') || fs.existsSync(rc + '/detached');
-        if (isHPB) { g = 'b'; n = _b++; } else { g = 'f'; n = _f++; }
-      } else { g = 'o'; n = _o++; }
-      groupMap[p.id] = { g, n, name: p.name };
-    }
-    fs.writeFileSync(d + '/genshin-group-map.json', JSON.stringify(groupMap));
   } catch (e) { console.error("[god.frontend.cli/list.cjs] " + (e?.message || e)); }
 }
   // 列表统计（磁盘大小 + 记忆 token）：优先读运行时缓存的 list-stats.json
@@ -238,6 +229,18 @@ const title = filter === 'help'
   : '  ' + LOGO + 'Teyvat' + R + D + ' · ' + list.length + ' agent' + (list.length === 1 ? '' : 's') + R
     + (() => { try { const v = JSON.parse(fs.readFileSync(PAIMON_HOME + '/agent/version.json', 'utf8')); const dv = (v.channel === 'prerelease' && v.pinnedDev) ? v.pinnedDev : v.genshin; return D + '  v' + dv + ' (' + v.channel + ')' + R; } catch(e) { try { fs.mkdirSync(PAIMON_HOME + '/LogData', { recursive: true }); fs.appendFileSync(PAIMON_HOME + '/LogData/genshin-list-error.log', 'version display: ' + (e?.message||e) + '\n'); } catch(_) { /* 日志写入失败不阻塞列表 */ } return ''; } })();
 
+// 2026-09-25（用户：一套规则，不要写几遍）——f/b/o 分组唯一真相：
+//   f = front（前台，含 [H][F]/[A][F]/[W][F] 等——hibernate 是状态、不改变分组）
+//   b = background（后台 [B]）
+//   o = offline（离线 [O]）
+// 状态字符串 statusStr 形如 "[H] [F]" / "[A] [F]" / "[H] [B]" / "[O]"。
+// 列表编号、颜色、group-map 全部调它，禁止再各自写一遍。
+function groupOf(statusStr) {
+  if (statusStr.includes('[B]')) return 'b';
+  if (statusStr.includes('[O]')) return 'o';
+  return 'f';
+}
+
 const statusStrs = list.map(p => {
   let tag = '', time = '';
   if (p._active) {
@@ -248,7 +251,7 @@ const statusStrs = list.map(p => {
       else if (fs.existsSync(`${rc}/main-hibernate`)) tag = '[H]';
       else tag = '[A]';
       // 2026-08-20 用户需求：前台/后台（TUI vs headless）——detached 标记存在 = 后台 [B]，否则前台 [F]
-      tag += fs.existsSync(`${rc}/detached`) ? ' [B]' : ' [F]';
+      tag += isDetached(p.id) ? ' [B]' : ' [F]';
     } catch (e) { console.error("[god.frontend.cli/list.cjs] " + (e?.message || e)); }
     const secs = Math.round((now - new Date(p.lastSeen).getTime()) / 1000);
     if (secs < 5) time = zh ? '刚刚' : 'just now';
@@ -298,6 +301,24 @@ const statusFullStrs = statusStrs.map((s, i) => {
 });
 const tw = Math.max(...statusFullStrs.map(s => vw(s)));
 
+// 2026-09-25（用户：一套规则，不要写几遍）——group-map 用同一个 groupOf（之前用文件判断 isHPB 写第二遍）。
+// launcher _resolve_active_arg 读这个实现单一真相源（ISSUE 186）。
+if (filter === 'list') {
+  try {
+    const d = PAIMON_HOME + '/RuntimeCache';
+    if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
+    const groupMap = {};
+    let _f = 1, _b = 1, _o = 1;
+    for (let i = 0; i < list.length; i++) {
+      const p = list[i];
+      const g = p._active ? groupOf(statusFullStrs[i]) : 'o';
+      const n = g === 'b' ? _b++ : g === 'f' ? _f++ : _o++;
+      groupMap[p.id] = { g, n, name: p.name };
+    }
+    fs.writeFileSync(d + '/genshin-group-map.json', JSON.stringify(groupMap));
+  } catch (e) { console.error("[god.frontend.cli/list.cjs] " + (e?.message || e)); }
+}
+
 if (filter !== 'help') {
 console.log('');
 console.log(title);
@@ -313,7 +334,7 @@ const showAge = termW >= baseW + (showOrg ? orgW + 2 : 0) + (showId ? idW + 2 : 
 const showPond = termW >= baseW + (showOrg ? orgW + 2 : 0) + (showId ? idW + 2 : 0) + (showAge ? ageW + 2 : 0) + pondW + 2;
 const r1Hdr = hdr + pad(L_NAME, nw) + (detailMode ? pad(L_KIND, kw) + ' ' : '') + (showOrg ? pad(L_ORG, orgW) + '  ' : '') + (showId ? pad(L_ID, idW) + '  ' : '') + (showAge ? pad(L_AGE, ageW) + '  ' : '') + (showPond ? pad(L_POND, pondW) : '') + (detailMode ? '  ' + pad(L_MEMOIR, 6) : '') + (detailMode && hostW > 0 ? '  ' + pad(L_HOST, hostW) : '') + (showStatus ? '  ' + L_STATE : '');
 
-let oNum = 1, fNum = 1, bNum = 1; // 分组编号：offline=o / front=f / background=b 各自独立（2026-08-20 用户定稿：管理命令按 1o/1f/1b 路由，不再混编）
+let oNum = 1, fNum = 1, bNum = 1; // f/b/o 三组各自独立编号（用 groupOf）
 // 分页：每 PAGE_SIZE 个 agent 暂停（直接 inline，无死代码）
 const PAGE_SIZE = 10;
 // 第一遍：收集所有行用于计算宽度
@@ -332,11 +353,10 @@ for (let i = 0; i < list.length; i++) {
   // 2026-09-11 序号颜色重设计：按状态区分
   // [W]/[F] 前台活跃 = 绿 | [P]/[B] 后台 = 蓝 | [H] 休眠 = 黄 | [O] 离线 = 白（默认色）
   let numIdx, numColor;
-  if (p._active) {
-    if (statusFull.includes('[H]') || statusFull.includes('[P]')) { numColor = Y; numIdx = bNum++; }
-    else if (statusFull.includes('[B]')) { numColor = '\x1b[38;2;113;142;244m'; numIdx = bNum++; }
-    else { numColor = G; numIdx = fNum++; }
-  } else { numColor = '\x1b[37m'; numIdx = oNum++; } // O 离线 = 白色
+  const _g = p._active ? groupOf(statusFull) : 'o';
+  if (_g === 'b') { numColor = '\x1b[38;2;113;142;244m'; numIdx = bNum++; }
+  else if (_g === 'f') { numColor = G; numIdx = fNum++; }
+  else { numColor = '\x1b[37m'; numIdx = oNum++; } // O 离线 = 白色
   statusColor = numColor; // 状态+时间与序号同色
   const num = numColor + String(numIdx).padStart(numW) + '. ' + R;
   const kc = KIND_COLORS[kind] || D;

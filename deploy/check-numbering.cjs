@@ -68,10 +68,12 @@ try {
     if (m) mappingA.push({ index: parseInt(m[1], 10), name: m[2], line });
   }
   if (mappingA.length === 0) throw new Error("list.cjs 输出里没解析到任何 `序号. 名字`（输出格式变了？）");
-  // 组：从行里的状态串判断（[H]/[P]/[B] → b，其余 active → f，[O] → o）
+  // 组：从行里的状态串判断（2026-09-25 用户定稿：f/b/o = 前台/后台/离线，和 hibernate 无关）——
+  // list.cjs 的 groupOf 规则是 [B]→b、[O]→o、其余（含 [H][F]/[P][F]/[A][F]）→f。
+  // 门禁的解析必须与 list.cjs 同一套规则（之前用 /[HPB]/→b 是旧规则，已同步）。
   mappingA = mappingA.map((r) => ({
     ...r,
-    group: /\[[HPB]\]/.test(r.line) ? "b" : (/\[O\]/.test(r.line) ? "o" : "f"),
+    group: /\[B\]/.test(r.line) ? "b" : (/\[O\]/.test(r.line) ? "o" : "f"),
   }));
 } catch (e) {
   console.error("[numbering] FAIL: 跑 list.cjs 失败: " + e.message);
