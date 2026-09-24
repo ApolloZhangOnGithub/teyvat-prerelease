@@ -9,6 +9,9 @@
 //   D. 2s 阈值对 search 太低（brave GFW 下 2-10s、deepseek 10-60s）→ search 几乎必然进后台
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import { writeFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
 import { registerPaimonTool, sendCustomMessage, resultContent } from "#kernel_backbone";
 import { outboxSend } from "../kernel.backbone/backbone.ts"; // 2026-08-20：outbox 已合并进 backbone.ts（不再单独文件）
 import { registerBackgroundTask, unregisterBackgroundTask } from "#hands_execute"; // 2026-09-24：web 后台任务进共享注册表（statebar + @ 查询 + kill）
@@ -144,7 +147,24 @@ export default function (pi: ExtensionAPI) {
     const modeTag = r.mode && r.mode !== "auto" ? ` (mode:${r.mode})` : "";
     const head = `[HTTP ${r.status}] ${r.url}${modeTag}`;
     const body = r.text ? `\n${r.text}` : "";
-    return { content: [{ type: "text", text: head + body }], details: { status: r.status, truncated: r.truncated, url: r.url }, isError: r.status >= 400 };
+    const fullText = head + body;
+    // 2026-09-24（用户：web fetch 大内容落盘 + 头尾 100 字，对齐 paste 转文件，不爆 token）
+    const _th = Number(process.env.GENSHIN_PASTE_FILE_CHARS) || 2000;
+    if (fullText.length > _th) {
+      try {
+        const _sid = String((globalThis as any).__genshinPersonId || process.env.PAIMON_AGENT_ID || "unknown");
+        const _dir = join(homedir(), ".teyvat", "AgentWorkDir", "Individual", _sid, "web-fetch");
+        mkdirSync(_dir, { recursive: true });
+        const _fp = join(_dir, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`);
+        writeFileSync(_fp, fullText, "utf8");
+        const _headTxt = fullText.slice(0, 100);
+        const _tailTxt = fullText.slice(-100);
+        const _folded = fullText.length - 100 - 100;
+        const _preview = `${_headTxt}\n…（中间 ${_folded} 字符已折叠）…\n${_tailTxt}`;
+        return { content: [{ type: "text", text: `[Web fetch 内容已存: ${_fp}]\n（共 ${fullText.length} 字符）\n${_preview}\n\n请 read 上述路径取回完整内容。` }], details: { status: r.status, truncated: true, url: r.url, savedPath: _fp }, isError: r.status >= 400 };
+      } catch (e) { console.error("[spirit.bio.organs/hands.webacts/webacts.ts] fetch 落盘失败: " + ((e as any)?.message || e)); }
+    }
+    return { content: [{ type: "text", text: fullText }], details: { status: r.status, truncated: r.truncated, url: r.url }, isError: r.status >= 400 };
   }
 
   function formatSearch(r: any, label: string): { content: any[]; details: any; isError: boolean } {
