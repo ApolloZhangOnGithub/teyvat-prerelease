@@ -192,8 +192,12 @@ export default function registerMemory(pi: ExtensionAPI) {
     // 2026-09-16（用户暴怒：amem 不生效——archive 只改磁盘不改内存）：
     // amem 改了 context.md → 立即重建快照并设 _snapshotOverride，让 context 事件（下一轮 LLM 调用前）替换 memory-snapshot。
     // 之前这里空着，靠 before_agent_start 的异步检测（meta2.ctxLen 缩水判断）——98% 卡死时那条链断了，api 纹丝不动。
+    // 2026-09-24（用户：amem 后卡住 30 秒——buildSnapshot 串行同步慢，改成异步不阻塞 amem 返回 + 下一轮）
     if (getSessionRole() === "main" && _snapshotInjected) {
-      _snapshotOverride = buildSnapshot({ excludeRowsSince: _sessionStartTs });
+      const _startTs = _sessionStartTs;
+      setTimeout(() => {
+        try { _snapshotOverride = buildSnapshot({ excludeRowsSince: _startTs }); } catch (e) { console.error("[spirit.bio.organs/brain.memory/memory.ts] " + ((e as any)?.message || e)); }
+      }, 0);
     }
     // 2026-09-16（用户：动态 amem——实时改内存，不重启）：
     // amem 清了 context.md，但活对话（agent.state.messages）里的 toolResult/toolCall 还是旧的，api 大头不降。
