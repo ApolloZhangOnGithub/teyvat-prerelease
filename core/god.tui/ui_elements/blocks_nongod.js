@@ -141,17 +141,24 @@ export function hangWrapText(text, width, h) {
   if (String(text).includes("\n")) {
     return String(text).split("\n").flatMap((line) => hangWrapText(line, width, h));
   }
-  const { visibleWidth, wrapTextWithAnsi } = h;
+  const { visibleWidth, wrapTextWithAnsi, sliceByColumn } = h;
   const stripped = String(text).replace(new RegExp(String.fromCharCode(27) + "\\[[0-9;]*m", "g"), ""); // 下游还要用（长 token 断点判断）
   const indW = prefixWidthOf(text, visibleWidth); // 2026-09-22：前缀识别收口到 prefixWidthOf（此前三处各写一份）
   if (indW <= 0 || indW >= width) return wrapTextWithAnsi(text, width);
   if (visibleWidth(text) <= width) return wrapTextWithAnsi(text, width);
+  // 2026-09-25（用户报代码高亮下出现 `38;2;190;132;255m` 残渣）：剥前缀必须**按可见列切片**。
+  // 旧实现用的是模块级 _sliceByColumn（懒注入，可能是 null）→ 退化成 src.slice(0, indW)【按**字符**切】
+  // → 行首是 ANSI 时会把 `\x1b[` 切掉，只剩裸 SGR 参数（乱码）。
+  // 现：优先用调用方传入的 h.sliceByColumn（再退模块级）；**仅当无按列切且文本含 ESC 时**才退回普通折行
+  // （有 ESC 又只能按字符切 → 必定切坏 ANSI）；无 ANSI 的文本保持原字符切行为（对齐不变）。
+  const _slice = sliceByColumn || _sliceByColumn;
+  if (!_slice && String(text).indexOf(String.fromCharCode(27)) !== -1) return wrapTextWithAnsi(text, width);
   // 预处理：长 token 含 / 时插入断点（空格后复原），避免 breakLongWord 逐字硬切路径
   let src = text;
   if (visibleWidth(stripped) > width && /\S{30,}/.test(stripped) && stripped.includes("/")) {
     src = text.replace(/\//g, "/ ");
   }
-  const prefix = _sliceByColumn ? _sliceByColumn(src, 0, indW) : src.slice(0, indW);
+  const prefix = _slice ? _slice(src, 0, indW) : src.slice(0, indW);
   const rest = src.slice(prefix.length);
   // 2026-09-24（统一）：折行核心收敛到 wrapWithPrefix（折内容 + 续行缩进到前缀后），此处只做前缀识别 + / 断点预处理。
   const result = wrapWithPrefix(rest, prefix, width, h);
