@@ -1377,7 +1377,7 @@ case "$MODE" in
       hits=$(ps -Ao pid=,command= 2>/dev/null | grep -E "\(main,${id}," | grep -v grep | awk '{print $1}')
       for pid in $hits; do
         case "$keep" in *" $pid "*) continue;; esac
-        echo "  $(_l "启动幂等：清理同 sid 残留实例 PID $pid（ISSUE 151②）" "startup idempotency: killing stale instance PID $pid")"
+        echo "  $(_l '启动幂等：清理同 sid 残留实例 PID '$pid 'startup idempotency: killing stale instance PID '$pid)"
         kill -TERM "$pid" 2>/dev/null
       done
       sleep 0.3
