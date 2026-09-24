@@ -11,6 +11,10 @@ head.ears/ears-config.json
 *ABANDONED*
 *REMOVED*
 *FUTURE*
+# 2026-09-25（ISSUE 283，来自阿里云 linux-server-manager-01 的实测）：
+# update 的「HEAD 未变则跳过重复部署」优化依赖这个标记文件；它没被 ignore（状态是 ??）
+# → pull 前的工作区对齐（clean -fd）会把它删掉 → 每轮都白跑一次部署。
+.last-deployed-head
 # 备份目录（2026-09-24 用户定稿）：prerelease 不打包 .backups-*（dev 仓保留）
 .backups-*
 # 开发期文件说明（2026-09-24 用户定稿）：prerelease 发布仓不打包 .SPEC（dev 仓保留）
