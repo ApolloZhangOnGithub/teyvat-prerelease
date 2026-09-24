@@ -298,23 +298,29 @@ export function bulletText(dotStr, text, cont) {
         const contW = _visibleWidth(cont);
         for (let i = 1; i < wrapped.length; i++) {
           if (contW <= indentW) {
-            wrapped[i] = cont + ' '.repeat(indentW - contW) + wrapped[i].slice(indentW);
+            // 2026-09-25（ISSUE 260 续，同类排查）：按**可见列**剥前导缩进——
+            // 续行可能以 ANSI 开头（wrapTextWithAnsi 会重挂 active 码），按字符切会切断序列 → 裸 SGR 残渣。
+            const body = _sliceByColumn ? _sliceByColumn(wrapped[i], indentW) : wrapped[i].replace(new RegExp("^ {0," + indentW + "}"), "");
+            wrapped[i] = cont + ' '.repeat(indentW - contW) + body;
           }
         }
       }
       // 安全网：硬截断任何超宽行（防止 wrapTextWithAnsi 偶发不折行）
       const safe = [];
       for (const w of wrapped) {
-        if (_visibleWidth(w) > width) {
-          let cur = ''; let remain = w;
-          while (_visibleWidth(remain) > width) {
-            let cut = width;
-            while (_visibleWidth(remain.slice(0, cut)) > width) cut--;
-            safe.push(remain.slice(0, cut));
-            remain = remain.slice(cut);
-          }
-          if (remain) safe.push(remain);
-        } else { safe.push(w); }
+        if (_visibleWidth(w) <= width) { safe.push(w); continue; }
+        // 2026-09-25（ISSUE 260 续，同类排查）：硬截断必须**按可见列**切。
+        // 旧实现 cut=width（可见宽）却当**字符索引**用切片——含 ANSI 的行会被从序列中间切断，
+        // 切出的前半以残缺序列结尾、后半以残缺序列开头（丢掉起头的 \x1b[）→ 裸 SGR 残渣。
+        // 现：用 sliceByColumn 按列切；拿不到能力就**不切**（宁可超宽也不切坏 ANSI）。
+        let remain = w;
+        while (_visibleWidth(remain) > width) {
+          const chunk = _sliceByColumn ? _sliceByColumn(remain, 0, width) : null;
+          if (!chunk || chunk.length >= remain.length) break;
+          safe.push(chunk);
+          remain = remain.slice(chunk.length);
+        }
+        if (remain) safe.push(remain);
       }
       return safe;
     },
