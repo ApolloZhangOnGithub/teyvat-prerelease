@@ -2459,7 +2459,7 @@ export class InteractiveMode {
         }
     }
     setupEditorSubmitHandler() {
-        this.defaultEditor.onSubmit = async (text) => {
+        const submit = async (text) => {
             text = text.trim();
             if (!text)
                 return;
@@ -2544,6 +2544,13 @@ export class InteractiveMode {
             }
             this.editor.addToHistory?.(text);
         };
+        // onSubmit 由编辑器 fire-and-forget 调用，这里抛出的任何 reject 都会变成 unhandledRejection 把进程带崩。
+        // 兜底：一律 catch 后在 UI 里显示错误。
+        this.defaultEditor.onSubmit = (text) => submit(text).catch((e) => {
+            console.error("[god.tui/overrides/modes/interactive/interactive-mode.js] onSubmit 失败: " + (e?.stack || e));
+            this.showError(`提交失败: ${e?.message || e}`);
+            this.ui.requestRender();
+        });
     }
     subscribeToAgent() {
         this.unsubscribe = this.session.subscribe(async (event) => {

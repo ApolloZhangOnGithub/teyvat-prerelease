@@ -223,8 +223,21 @@ GITEOF
   if git diff --cached --quiet 2>/dev/null; then
     echo "  无变更。"
   else
-    git commit -m "${VER} (pin ${PINNED_DEV}) $(date '+%Y-%m-%d %H:%M')"
-    git push origin main --force
+    # 2026-09-25（用户：trace 要能分清哪个 agent）：prerelease 仓也用 GitHub App 的 bot 身份提交/推送
+    # （与 Makefile 的 dev 流程同一套：git-app-identity.sh 出身份+token）。
+    # 无 PAIMON_AGENT_ID / 无该 agent 的 App 配置 → 脚本不输出任何东西 → 原样回退本机 git 身份，不阻断发布。
+    eval "$(bash "$SCRIPT_DIR/git-app-identity.sh" 2>/dev/null)" 2>/dev/null
+    if [ -n "$GIT_APP_NAME" ]; then
+      git -c "user.name=$GIT_APP_NAME" -c "user.email=$GIT_APP_EMAIL" commit -m "${VER} (pin ${PINNED_DEV}) $(date '+%Y-%m-%d %H:%M')"
+    else
+      git commit -m "${VER} (pin ${PINNED_DEV}) $(date '+%Y-%m-%d %H:%M')"
+    fi
+    if [ -n "$GIT_APP_TOKEN" ]; then
+      # token 走 http.extraHeader（不进 URL，失败日志里不会泄漏明文）
+      git -c "http.extraHeader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GIT_APP_TOKEN" | base64)" push origin main --force
+    else
+      git push origin main --force
+    fi
     echo "  OK pushed github-prerelease"
   fi
 }

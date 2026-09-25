@@ -797,17 +797,31 @@ export class AgentSession {
     // Prompting
     // =========================================================================
     async _runAgentPrompt(messages) {
+        // teyvat 2026-09-25（崩溃修复："Agent is already processing a prompt" unhandledRejection 直接带崩进程）：
+        // prompt() 在 isStreaming 检查之后还要 await 输入钩子 / 压缩检查 / before_agent_start，_isAgentRunActive 到这里才置 true。
+        // 这个窗口里 _flushBatch（心跳 / triggerTurn）或另一路 prompt 也能进来 → 两路同时 agent.prompt，后到的抛错；
+        // 抛错那路的 finally 还会把 _isAgentRunActive 错置 false（前一路其实还在跑）。
+        // 修法：用 promise 链把 run 串行化，后到的排队等前一路跑完再起；计数归零才 settle。
+        const prevRun = this._genshinRunChain ?? Promise.resolve();
+        let releaseRun;
+        this._genshinRunChain = new Promise((r) => { releaseRun = r; });
+        this._genshinPendingRuns = (this._genshinPendingRuns ?? 0) + 1;
         this._isAgentRunActive = true;
         try {
+            await prevRun;
+            await this.agent.waitForIdle(); // 兜住绕过本函数起的 run（如 agent.continue 路径）
             await this.agent.prompt(messages);
             while (await this._handlePostAgentRun()) {
                 await this.agent.continue();
             }
         }
         finally {
+            releaseRun();
             this._systemPromptOverride = undefined;
             this._flushPendingBashMessages();
-            await this._emitAgentSettled();
+            if (--this._genshinPendingRuns === 0) {
+                await this._emitAgentSettled();
+            }
         }
     }
     async _handlePostAgentRun() {
