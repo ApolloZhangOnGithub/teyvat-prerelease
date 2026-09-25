@@ -144,6 +144,12 @@ export function agentEntry(): AgentTrust {
   return (authDb.agents[agentId()] ??= { trusted: [] });
 }
 
+// 2026-09-25（ISSUE 285，用户：Eyes native 看截图被白名单拦）：只读取 path、不写它的工具。
+// 原来三处各自硬编码 read/view/ls/…，没列进去的带 path 工具（eyes 看图、ears 听 WAV）一律被当成写操作走白名单，
+// 报"想落盘就写工作目录"——读截图根本不落盘。收成一处；新增只读工具加到这里。
+// 注意 web(op=upload) 会把本地文件传出去，属外发，**不**算只读，继续走白名单。
+const READ_ONLY_PATH_TOOLS = new Set(["read", "view", "ls", "list", "glob", "grep", "find", "eyes", "ears"]);
+
 // null=允许；string=拒绝理由（自带出路，不留死局）
 function checkAuth(targetPath: string): string | null {
   if (!targetPath) return null;
@@ -515,7 +521,7 @@ export default function (pi: ExtensionAPI) {
     // ── 系统保护: SSH密钥/凭证/钱包/自身代码/pi dist ──
     const apl = (authPath || "").toLowerCase(); // 2026-09-13：大小写不敏感文件系统上统一小写比较
     if (authPath && isSystemProtected(authPath)) {
-      const isRead = ["read","view","ls","list","glob","grep","find"].includes(event.toolName);
+      const isRead = READ_ONLY_PATH_TOOLS.has(event.toolName);
       if (apl.includes("/.ssh/") || apl.includes("auth.json") || apl.includes("models.json")) {
         return { block: true, reason: i18n(`系统保护 — ${authPath.split("/").pop()} 是凭证文件，agent 不可访问。`, `System protected — ${authPath.split("/").pop()} is a credential file, not accessible to agents.`) };
       }
@@ -537,11 +543,11 @@ export default function (pi: ExtensionAPI) {
     }
 
     // ── #human 保护: agent 默认不可修改 #human 目录下的任何文件（含 companion） ──
-    if (authPath && isHumanProtected(authPath) && !["read","view","ls","list","glob","grep","find"].includes(event.toolName)) {
+    if (authPath && isHumanProtected(authPath) && !READ_ONLY_PATH_TOOLS.has(event.toolName)) {
       return { block: true, reason: i18n(`#human 保护 — ${authPath} 位于 #human 目录，agent 默认不可修改。如需允许，请确认。`, `#human protected — ${authPath} is in a #human directory; agents cannot modify it by default. Ask the user to confirm if needed.`) };
     }
 
-    if (authPath && !["read","view","ls","list","glob","grep","find"].includes(event.toolName)) {
+    if (authPath && !READ_ONLY_PATH_TOOLS.has(event.toolName)) {
       const authReason = checkAuth(authPath);
       if (authReason) {
         // write 新文件 → 软着陆：不拦，自动重定向到 agent 工作目录（混淆串防重名），tool_result 里告知落点

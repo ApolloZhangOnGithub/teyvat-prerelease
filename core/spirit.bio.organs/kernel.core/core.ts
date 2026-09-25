@@ -175,9 +175,26 @@ export default function kernelMain(pi: ExtensionAPI) {
         if (!_epipeLogged) { _epipeLogged = true; crashLog("EPIPE-ignored", e); }
         return;
       }
+      // 2026-09-25（ISSUE 285）：TUI 已起来 → 显示到 UI，不再静默（原来只落盘，用户看不见也不知道哪里坏了）
+      const showFatal = (globalThis as any).__teyvatShowFatal;
+      if (typeof showFatal === "function") {
+        crashLog("uncaughtException(survived)", e);
+        try { showFatal(`内部异常（已记录 ErrorData/*/crash.log，进程继续运行）: ${e?.message ?? e}`); } catch (e2) { logerr("K030", e2); }
+        return;
+      }
       (globalThis as any).__genshinSessionEndReason = "crash"; crashLog("uncaughtException", e);
     });
     process.prependListener("unhandledRejection", (e: any) => {
+      // 2026-09-25（ISSUE 285，用户："为什么总是闪退"）：9/22 起任何漏 catch 的 async 错误都 exit(1)——
+      // 近两周闪退 19 次全是运行期的零散 reject（17 次 ISSUE 284），会话直接没了。
+      // 9/22 要防的是**启动期**主流程死在 async 里导致空转卡死；TUI 起来之后错误能上屏，没有"卡死看不见"的问题。
+      // 所以按阶段分：TUI 就绪（interactive-mode init 末尾挂 __teyvatShowFatal）→ 上屏 + 落盘，继续跑；否则维持落盘退出。
+      const showFatal = (globalThis as any).__teyvatShowFatal;
+      if (typeof showFatal === "function") {
+        crashLog("unhandledRejection(survived)", e);
+        try { showFatal(`内部异常（已记录 ErrorData/*/crash.log，进程继续运行）: ${e?.message ?? e}`); } catch (e2) { logerr("K031", e2); }
+        return;
+      }
       (globalThis as any).__genshinSessionEndReason = "crash"; crashLog("unhandledRejection", e);
       // 2026-09-22（a_great_agent_on_imac_01 报的 #7 第二条：启动期 TypeError 被吞 → 进程空转"卡住"）：
       // **挂上任何 unhandledRejection 监听 = 关掉 Node 默认的"未处理 rejection 就崩溃退出"**。

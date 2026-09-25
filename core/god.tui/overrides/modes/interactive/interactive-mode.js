@@ -857,6 +857,12 @@ export class InteractiveMode {
         });
         // Initialize available provider count for footer display
         await this.updateAvailableProviderCount();
+        // 2026-09-25（ISSUE 285）：TUI 完整起来之后，全局 unhandledRejection/uncaughtException 不再退出进程，
+        // 而是经这个钩子显示到 UI（kernel.core/core.ts 读它）。启动完成前钩子不存在 → 仍按 9/22 语义落盘退出。
+        globalThis.__teyvatShowFatal = (msg) => {
+            this.showError(msg);
+            this.ui.requestRender();
+        };
     }
     /**
      * Update terminal title with session name and cwd.
@@ -5919,6 +5925,7 @@ export class InteractiveMode {
         }
     }
     stop() {
+        globalThis.__teyvatShowFatal = undefined; // UI 拆掉后异常回到"落盘退出"语义
         if (this.settingsManager.getShowTerminalProgress()) {
             this.ui.terminal.setProgress(false);
         }

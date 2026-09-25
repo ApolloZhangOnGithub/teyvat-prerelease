@@ -1,4 +1,5 @@
 import { execSync, spawn } from "node:child_process"; // ISSUE 132 (2026-09-06 teyvat): 选中复制系统剪贴板工具 fallback
+import { writeSync } from "node:fs"; // ISSUE 285：exit 钩子同步复原终端
 import { AltScreenFlashContainer } from "./components/alt-screen-flash.js";
 import { ScrollView } from "./components/scroll-view.js";
 import { getKeybindings } from "./keybindings.js";
@@ -138,6 +139,24 @@ export class TuiAltScreen extends TuiBase {
             ? ENABLE_BUTTON_MOTION_MOUSE
             : ENABLE_ALL_MOTION_MOUSE;
         this.terminal.write(`${ENTER_ALT_SCREEN}${DISABLE_AUTOWRAP}${this.mouseEnabled ? mouseSequence : ""}\x1b[2J\x1b[H\x1b[?25l`);
+        // 2026-09-25（ISSUE 285，用户："自动复制也坏了"）：终端状态只在 stop() 里复原；任何绕过 stop 的退出
+        // （process.exit / 崩溃 / 外部信号）都会把 shell 留在鼠标跟踪 + 备用屏 + raw 模式：
+        // 终端原生选中复制失效、屏幕刷 ^[[<39;54;30M 垃圾。exit 钩子同步兜底复原（exit 里只能做同步 IO）。
+        if (!this._exitRestoreHooked) {
+            this._exitRestoreHooked = true;
+            process.on("exit", () => {
+                if (!this.altScreenActive)
+                    return;
+                try {
+                    writeSync(1, `${this.mouseEnabled ? DISABLE_MOUSE : ""}\x1b[?2004l\x1b[<u\x1b[>4;0m${ENABLE_AUTOWRAP}${EXIT_ALT_SCREEN}\x1b[?25h\r\n`);
+                }
+                catch (e) { /* stdout 已断（终端关了）则无需复原 */ }
+                try {
+                    process.stdin.setRawMode?.(false);
+                }
+                catch (e) { /* stdin 非 TTY / 已关闭 */ }
+            });
+        }
     }
     beforeTerminalStop(_options) {
         this.stopSelectionAutoScroll();
