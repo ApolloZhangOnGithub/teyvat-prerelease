@@ -1,5 +1,5 @@
 # Teyvat
-
+![Uploading 截屏2026-09-26 23.58.00.png…]()
 ![Teyvat TUI](medias/teyvat-tui.png)
 
 Person-based AI agent framework. Each agent has persistent memory, identity, and biological metaphor architecture running on [pi](https://pi.dev).
