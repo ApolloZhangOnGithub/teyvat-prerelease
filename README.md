@@ -1,6 +1,4 @@
 # Teyvat
-<img width="570" height="144" alt="截屏2026-09-27 00 30 42" src="https://github.com/user-attachments/assets/b88a9340-0cd4-47ef-8b38-d290a1ab3b21" />
-
 ![Teyvat TUI](medias/teyvat-tui.png)
 
 Person-based AI agent framework. Each agent has persistent memory, identity, and biological metaphor architecture running on [pi](https://pi.dev).
@@ -24,11 +22,7 @@ Person-based AI agent framework. Each agent has persistent memory, identity, and
 curl -fsSL paimon.beer/install-prerelease | bash
 ```
 
-**Update:**
-
-```bash
-genshin update
-```
+<img width="570" height="144" alt="截屏2026-09-27 00 30 42" src="https://github.com/user-attachments/assets/b88a9340-0cd4-47ef-8b38-d290a1ab3b21" />
 
 ## Usage
 
