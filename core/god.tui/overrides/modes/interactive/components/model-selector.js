@@ -238,7 +238,7 @@ export class ModelSelectorComponent extends Container {
                 id: m.id,
                 name: m.name || m.id,
                 api: pickApi(vendor),
-                baseUrl: "https://openrouter.ai/api",
+                baseUrl: "https://openrouter.ai/api/v1",
                 provider: "openrouter",
                 reasoning: (Array.isArray(m.supported_parameters) && m.supported_parameters.includes("reasoning")) ||
                     m.reasoning === true || (!!m.reasoning && typeof m.reasoning === "object"),
@@ -352,6 +352,13 @@ export class ModelSelectorComponent extends Container {
             } catch { /* open_weighted_lists.json 缺失 → 全部未知 */ }
             const catalog = this.readModelsDevCache();
             for (const model of availableModels) {
+                // 2026-11-08（用户实测 404）：openrouter 的 baseUrl 必须带 /v1。
+                // pi 用 OpenAI SDK：`baseURL + "/chat/completions"`。teyvat 的 pi-models 数据（0.87.1，9/24 换入）里
+                // openrouter 写的是 "https://openrouter.ai/api" → 拼成 /api/chat/completions → **404**（实测确认）。
+                // 正确值是 /api/v1/chat/completions（200）。这里统一规范化，不依赖数据源写法。
+                if (model.provider === "openrouter" && typeof model.baseUrl === "string" && /\/api\/?$/.test(model.baseUrl)) {
+                    model.baseUrl = model.baseUrl.replace(/\/api\/?$/, "/api/v1");
+                }
                 // vendor 提取（openrouter ID 格式 vendor/model-name；非 openrouter 取 provider）
                 const vendor = model.id.includes("/") ? model.id.split("/")[0].toLowerCase() : model.provider.toLowerCase();
                 model._vendor = vendor;
