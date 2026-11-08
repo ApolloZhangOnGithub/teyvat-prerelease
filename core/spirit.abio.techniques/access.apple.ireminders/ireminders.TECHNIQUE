@@ -10,10 +10,34 @@ description: 用 AppleScript (osascript) 访问 Mac 提醒事项 (Reminders.app)
 osascript -e 'tell application "Reminders" to get name of every list'
 
 # 读某列表的提醒项（标题）
-osascript -e 'tell application "Reminders" to tell list "提醒" to get name of every reminder'
+osascript -e 'tell application "Reminders" to tell list "xxx" to get name of every reminder'
 
 # 字段：name / body / due date / completed / completion date
 ```
 
 首次执行需在系统设置 → 隐私与安全性 → 自动化 授权。
 可写：`make new reminder at list "xxx" with properties {name:"..."}`
+
+## 批量导出实测（2026-09-26）
+
+**结论：osascript 只适合小量；全量（数千条）必须用 EventKit（Swift）。**
+
+- SQLite 直读确被 TCC 拦：`~/Library/Group Containers/group.com.apple.reminders/Container_v1/Stores/`
+  报 `Operation not permitted`（需「完全磁盘访问」，非「自动化」能解）——与上文一致。
+- osascript **批量不可用**（实测）：
+  - `name of every reminder of list "<列表>"`（数千条规模）> 96 秒仍未返回
+  - `every reminder of l whose flagged is true` 直接 `AppleEvent 已超时 (-1712)`
+  - 全量逐条读预计 1 小时以上
+- ✅ 正确方案：**EventKit**，数千条 **秒级** 读完。
+  - 需 Info.plist 含 `NSRemindersFullAccessUsageDescription`，嵌入编译：
+    `swiftc -O ek_export.swift -o ek_export -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker Info.plist`
+  - ⚠️ **坑**：`predicateForReminders(in: nil)` 会漏列表（实测只返回了部分日历）→
+    必须按日历遍历：
+    `for c in store.calendars(for: .reminder) { fetchReminders(matching: predicateForReminders(in: [c])) }`
+- `flagged`（标记）EventKit **不暴露**（KVC `value(forKey:"flagged")` 抛 NSUnknownKeyException）→
+  只能回头用 osascript 慢速补（过滤查询会超时，需 `with timeout of 3600`）。
+- 两边 id 可对齐：EventKit `calendarItemIdentifier` == osascript `id` 去掉 `x-apple-reminder://` 前缀。
+- 字段对照：title / notes / isCompleted / completionDate / dueDateComponents（全天项无时分）
+  / alarms / priority / creationDate / lastModifiedDate / url
+- 参考实现（不进仓库）：`~/.teyvat/AgentWorkDir/Individual/<sid>/reminders_export/`
+  （`ek_export2.swift` 导出器 + `build_export.py` 生成 md/csv）

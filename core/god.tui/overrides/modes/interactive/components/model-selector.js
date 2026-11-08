@@ -138,6 +138,10 @@ export class ModelSelectorComponent extends Container {
     // 实际表现：/m 里 openrouter 只有 pi 内置的旧目录（7/30），新模型（如 z-ai/glm-5.3）永远进不来。
     // 逻辑：构建列表时若缓存缺失/过期（TTL 24h）→ 后台拉取写入（fire-and-forget，不阻塞本次 /m，下次生效）。
     syncModelsDevCache() {
+        // 2026-11-08（用户：维护 openrouter 模型清单）：openrouter 清单刷新**独立**做。
+        // 原实现把它挂在 models.dev 缓存的刷新分支里，而 models.dev 缓存新鲜就 `return` 早退
+        // → openrouter 缓存即使过期也永不刷新（9/25 的清单一直用到 11 月）。
+        this.syncOpenRouterCache();
         try {
             const f = this.MODELSDEV_CACHE_FILE();
             let fresh = false;
@@ -152,27 +156,98 @@ export class ModelSelectorComponent extends Container {
                     mkdirSync(dirname(f), { recursive: true });
                     writeFileSync(f + ".tmp", text);
                     renameSync(f + ".tmp", f); // 原子替换，避免读到半写文件
-                    // 2026-09-13：顺带拉 **OpenRouter 官方现存清单**（下架过滤的权威依据——
-                    // models.dev 是聚合目录、不及时清理已下架模型，拿它当“现存”依据会一个都过滤不掉）。
-                    try {
-                        const f2 = this.OPENROUTER_ALIVE_FILE();
-                        let fresh2 = false;
-                        try { fresh2 = Date.now() - statSync(f2).mtimeMs < this.MODELSDEV_TTL_MS; } catch { /* 无缓存 */ }
-                        if (!fresh2) {
-                            const r2 = await fetch(this.OPENROUTER_MODELS_URL, { signal: AbortSignal.timeout(30000) });
-                            if (r2 && r2.ok) {
-                                const j2 = await r2.json();
-                                const ids = Array.isArray(j2?.data) ? j2.data.map((m) => m.id).filter(Boolean) : [];
-                                if (ids.length > 100) {
-                                    writeFileSync(f2 + ".tmp", JSON.stringify({ ts: Date.now(), ids }));
-                                    renameSync(f2 + ".tmp", f2);
-                                }
-                            }
-                        }
-                    } catch (e) { console.error("[teyvat model-selector] OpenRouter 现存清单同步失败: " + (e?.message ?? e)); }
                 } catch (e) { console.error("[teyvat model-selector] models.dev 缓存同步失败: " + (e?.message ?? e)); }
             })();
         } catch (e) { console.error("[teyvat model-selector] models.dev 同步触发失败: " + (e?.message ?? e)); }
+    }
+    // 2026-11-08（用户：维护 openrouter 模型清单）：拉 OpenRouter 官方 /api/v1/models（24h TTL），
+    // 缓存**完整条目**（不只 ids），供两用：
+    //   ① 下架过滤（ids 权威清单，见 loadModels 里的 aliveOR 逻辑）
+    //   ② 合成官方有、内置缺的新模型（loadOpenRouterExtras）
+    syncOpenRouterCache() {
+        try {
+            const f = this.OPENROUTER_ALIVE_FILE();
+            let fresh = false;
+            try { fresh = Date.now() - statSync(f).mtimeMs < this.MODELSDEV_TTL_MS; } catch { /* 无缓存 → 需要拉取 */ }
+            if (fresh) return;
+            void (async () => {
+                try {
+                    const r = await fetch(this.OPENROUTER_MODELS_URL, { signal: AbortSignal.timeout(30000) });
+                    if (!r || !r.ok) return;
+                    const j = await r.json();
+                    const arr = Array.isArray(j?.data) ? j.data : [];
+                    if (arr.length < 100) return;
+                    const slim = arr.map((m) => ({
+                        id: m.id,
+                        name: m.name || m.id,
+                        context_length: m.context_length ?? m.top_provider?.context_length ?? 0,
+                        max_completion_tokens: m.top_provider?.max_completion_tokens ?? 0,
+                        pricing: m.pricing ?? null,
+                        input_modalities: m.architecture?.input_modalities ?? ["text"],
+                        supported_parameters: m.supported_parameters ?? [],
+                        reasoning: m.reasoning ?? null,
+                    }));
+                    mkdirSync(dirname(f), { recursive: true });
+                    writeFileSync(f + ".tmp", JSON.stringify({ ts: Date.now(), ids: slim.map((m) => m.id), models: slim }));
+                    renameSync(f + ".tmp", f);
+                } catch (e) { console.error("[teyvat model-selector] OpenRouter 清单同步失败: " + (e?.message ?? e)); }
+            })();
+        } catch (e) { console.error("[teyvat model-selector] OpenRouter 清单同步触发失败: " + (e?.message ?? e)); }
+    }
+    // 读 openrouter 完整清单缓存（新格式才有 models；旧格式只有 ids → 返回 null，只做下架过滤）
+    readOpenRouterCatalog() {
+        try {
+            const f = this.OPENROUTER_ALIVE_FILE();
+            if (!existsSync(f)) return null;
+            const j = JSON.parse(readFileSync(f, "utf8"));
+            return Array.isArray(j?.models) && j.models.length > 0 ? j.models : null;
+        } catch { return null; }
+    }
+    // 合成官方清单里「内置没收录」的模型（新模型 / 旧目录遗漏）
+    loadOpenRouterExtras(availableModels) {
+        const catalog = this.readOpenRouterCatalog();
+        if (!catalog) return [];
+        const builtin = new Set();
+        const vendorApi = new Map();
+        for (const m of availableModels) {
+            if (m.provider !== "openrouter") continue;
+            builtin.add(m.id);
+            const vendor = m.id.includes("/") ? m.id.split("/")[0] : "";
+            if (!vendor) continue;
+            const c = vendorApi.get(vendor) ?? new Map();
+            c.set(m.api, (c.get(m.api) || 0) + 1);
+            vendorApi.set(vendor, c);
+        }
+        // 协议继承：同 vendor 的内置模型多数用什么 api，新模型就用什么（找不到 → openai-completions）
+        const pickApi = (vendor) => {
+            const c = vendorApi.get(vendor);
+            if (!c) return "openai-completions";
+            let best = "openai-completions";
+            let n = -1;
+            for (const [api, cnt] of c) { if (cnt > n) { best = api; n = cnt; } }
+            return best;
+        };
+        const perM = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n * 1e6 : 0; };
+        const extras = [];
+        for (const m of catalog) {
+            if (!m?.id || builtin.has(m.id)) continue;
+            const vendor = m.id.includes("/") ? m.id.split("/")[0] : "";
+            const p = m.pricing ?? {};
+            extras.push({
+                id: m.id,
+                name: m.name || m.id,
+                api: pickApi(vendor),
+                baseUrl: "https://openrouter.ai/api",
+                provider: "openrouter",
+                reasoning: (Array.isArray(m.supported_parameters) && m.supported_parameters.includes("reasoning")) ||
+                    m.reasoning === true || (!!m.reasoning && typeof m.reasoning === "object"),
+                input: Array.isArray(m.input_modalities) && m.input_modalities.length ? m.input_modalities : ["text"],
+                cost: { input: perM(p.prompt), output: perM(p.completion), cacheRead: perM(p.input_cache_read), cacheWrite: perM(p.input_cache_write) },
+                contextWindow: m.context_length || 200000,
+                maxTokens: m.max_completion_tokens || 64000,
+            });
+        }
+        return extras;
     }
     async loadModelsDevExtras(availableModels) {
         this.syncModelsDevCache(); // 缓存缺失/过期 → 后台补（本次 /m 仍用现有缓存，下次生效）
@@ -233,7 +308,11 @@ export class ModelSelectorComponent extends Container {
             // diff 内置缺失的模型合成条目合并进列表（元数据从 models.dev 换算），新模型即时出现在 /m。
             try {
                 availableModels = [...availableModels, ...await this.loadModelsDevExtras(availableModels)];
-            } catch (e) { console.error("[teyvat model-selector] models.dev 合并失败（用内置目录）: " + (e?.message ?? e)); }
+                // 2026-11-08（用户：维护 openrouter 模型清单）：
+                // pi 内置 openrouter 目录（386 个）已过时——官方 461 个里有 129 个内置没有、54 个已下架。
+                // 这里把官方清单里内置缺失的补进列表（含 name/context/pricing/reasoning/input）。
+                availableModels = [...availableModels, ...this.loadOpenRouterExtras(availableModels)];
+            } catch (e) { console.error("[teyvat model-selector] models.dev/openrouter 合并失败（用内置目录）: " + (e?.message ?? e)); }
             // 2026-09-13（用户：下架模型当然要过滤）：对**启用了 models.dev 目录的 provider**，
             // 把内置目录里那些 models.dev 已不存在的模型（= 官方已下架，选了会报错）从列表里去掉。
             // （未启用目录的 provider 不动——它们没有权威现存清单，贸然过滤会误删）
