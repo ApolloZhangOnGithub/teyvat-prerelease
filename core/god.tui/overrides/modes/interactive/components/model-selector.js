@@ -227,7 +227,8 @@ export class ModelSelectorComponent extends Container {
             for (const [api, cnt] of c) { if (cnt > n) { best = api; n = cnt; } }
             return best;
         };
-        const perM = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n * 1e6 : 0; };
+        // 官方 pricing 是「每 token 美元」字符串（如 "0.0000002"）→ 转为「每百万 token」并压掉浮点尾差
+        const perM = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? Number((n * 1e6).toFixed(6)) : 0; };
         const extras = [];
         for (const m of catalog) {
             if (!m?.id || builtin.has(m.id)) continue;
